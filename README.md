@@ -80,7 +80,7 @@ MikroOrmModule.forRootAsync({
 | `@dudousxd/nestjs-telescope-testing` | ✅ shipped | In-memory store re-export, `FakeClock`, watcher test harness |
 | `@dudousxd/nestjs-telescope-ui` | ✅ shipped | Bundled dashboard SPA + composable React components/hooks/client |
 | `@dudousxd/nestjs-telescope-typeorm` | ✅ shipped | TypeORM query watcher (host-wired logger) |
-| `@dudousxd/nestjs-telescope-prisma` | planned | Prisma query watcher (runtime `$on('query')`) |
+| `@dudousxd/nestjs-telescope-prisma` | ✅ shipped | Prisma query watcher (`$on('query')`; see correlation caveat) |
 | `@dudousxd/nestjs-telescope-redis` | ✅ shipped | Redis-backed shared storage (multi-instance) |
 | `@dudousxd/nestjs-telescope-otel` | planned | Bidirectional OpenTelemetry bridge |
 | `@dudousxd/nestjs-telescope-pulse` | planned | Aggregate health dashboard (Pulse-mode) + N+1 insights |
