@@ -8,4 +8,6 @@ export * from './components/window-select.js';
 export * from './components/pulse-panel.js';
 export * from './components/queues-panel.js';
 export * from './components/sparkline.js';
+export * from './components/stacked-bars.js';
+export * from './components/queue-sparkline.js';
 export * from '../client/index.js';

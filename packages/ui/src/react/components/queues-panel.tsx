@@ -4,7 +4,13 @@ function p95(stats: DurationStats | null): string {
   return stats ? `${Math.round(stats.p95)}ms` : '—';
 }
 
-export function QueuesPanel({ report }: { report: QueueMetricsReport }): JSX.Element {
+export function QueuesPanel({
+  report,
+  sparkline,
+}: {
+  report: QueueMetricsReport;
+  sparkline?: (queue: string) => React.ReactNode;
+}): JSX.Element {
   return (
     <table className="w-full text-left text-xs">
       <thead className="text-zinc-500">
@@ -16,6 +22,7 @@ export function QueuesPanel({ report }: { report: QueueMetricsReport }): JSX.Ele
           <th className="font-normal">Per min</th>
           <th className="font-normal">Runtime p95</th>
           <th className="font-normal">Wait p95</th>
+          {sparkline && <th className="font-normal">Trend</th>}
         </tr>
       </thead>
       <tbody>
@@ -30,11 +37,12 @@ export function QueuesPanel({ report }: { report: QueueMetricsReport }): JSX.Ele
             <td className="text-zinc-400">{q.throughputPerMinute.toFixed(1)}</td>
             <td className="text-zinc-400">{p95(q.runtimeMs)}</td>
             <td className="text-zinc-400">{p95(q.waitMs)}</td>
+            {sparkline && <td className="text-zinc-400">{sparkline(q.queue)}</td>}
           </tr>
         ))}
         {report.queues.length === 0 && (
           <tr>
-            <td className="py-2 text-zinc-600" colSpan={7}>
+            <td className="py-2 text-zinc-600" colSpan={sparkline ? 8 : 7}>
               No queue activity in window.
             </td>
           </tr>
