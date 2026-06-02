@@ -52,6 +52,8 @@ wait-time percentiles, and failure rate (wait time = `processedOn − enqueue`).
 
 ## Not included
 
-Aggregate queue metrics (throughput, wait time, jobs-per-minute) are a
-dashboard/rollup concern handled by `@dudousxd/nestjs-telescope-pulse`, not this
-watcher.
+This watcher captures per-job entries; the aggregate queue metrics above are
+computed in core from those entries (`GET /telescope/api/queues`). Broader health
+rollups — N+1 insights, slowest request/query/job, top exceptions, and a visual
+dashboard — are the concern of `@dudousxd/nestjs-telescope-pulse` and
+`@dudousxd/nestjs-telescope-ui`, not this watcher.
