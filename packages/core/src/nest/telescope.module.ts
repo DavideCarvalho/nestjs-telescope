@@ -57,7 +57,10 @@ export class TelescopeModule implements NestModule {
     // NestJS 11 / path-to-regexp v8 route syntax: {*splat} is the optional catch-all (the '*' and '(.*)' forms throw). Requires @nestjs/common >= 11 for the middleware path matching.
     consumer
       .apply(TelescopeRequestMiddleware)
-      .exclude({ path: 'telescope/api/{*splat}', method: RequestMethod.ALL })
+      .exclude(
+        { path: 'telescope', method: RequestMethod.ALL },
+        { path: 'telescope/{*splat}', method: RequestMethod.ALL },
+      )
       .forRoutes({ path: '{*splat}', method: RequestMethod.ALL });
   }
 
