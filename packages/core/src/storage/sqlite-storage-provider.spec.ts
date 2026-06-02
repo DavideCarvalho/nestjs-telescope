@@ -60,6 +60,12 @@ describe('SqliteStorageProvider', () => {
     expect((await store.get({})).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('falls back to DEFAULT_LIMIT when limit is NaN', async () => {
+    await store.store([entry({ id: '1' }), entry({ id: '2' })]);
+    const page = await store.get({ limit: Number.NaN });
+    expect(page.data).toHaveLength(2);
+  });
+
   it('update patches fields but never the id', async () => {
     await store.store([entry({ id: '1', durationMs: null })]);
     await store.update('1', { durationMs: 42, id: 'hacked' });

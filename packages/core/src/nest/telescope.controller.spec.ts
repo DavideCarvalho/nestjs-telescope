@@ -29,6 +29,13 @@ describe('TelescopeController', () => {
     expect(page.data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('falls back to provider default when limit is a non-numeric string', async () => {
+    const { storage, controller } = setup();
+    await storage.store([entry({ id: '1' }), entry({ id: '2' })]);
+    const page = await controller.list({ limit: 'abc' });
+    expect(page.data).toHaveLength(2);
+  });
+
   it('returns an entry with its batch', async () => {
     const { storage, controller } = setup();
     await storage.store([entry({ id: '1', batchId: 'b', sequence: 0 }), entry({ id: '2', batchId: 'b', sequence: 1 })]);

@@ -54,7 +54,10 @@ export class InMemoryStorageProvider implements StorageProvider {
         )
       : filtered;
 
-    const limit = query.limit ?? DEFAULT_LIMIT;
+    const limit =
+      query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
+        ? query.limit
+        : DEFAULT_LIMIT;
     const slice = afterCursor.slice(0, limit);
     const hasMore = afterCursor.length > limit;
     const last = slice.at(-1);

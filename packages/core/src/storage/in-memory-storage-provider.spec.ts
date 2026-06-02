@@ -95,6 +95,13 @@ describe('InMemoryStorageProvider', () => {
     expect(page2.nextCursor).toBeNull();
   });
 
+  it('falls back to DEFAULT_LIMIT when limit is NaN', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([entry({ id: '1' }), entry({ id: '2' })]);
+    const page = await store.get({ limit: Number.NaN });
+    expect(page.data).toHaveLength(2);
+  });
+
   it('aggregates tag counts and prunes by age', async () => {
     const store = new InMemoryStorageProvider();
     await store.store([

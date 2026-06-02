@@ -156,7 +156,10 @@ export class SqliteStorageProvider implements StorageProvider {
       params.cId = cursor.id;
     }
 
-    const limit = query.limit ?? DEFAULT_LIMIT;
+    const limit =
+      query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
+        ? query.limit
+        : DEFAULT_LIMIT;
     const whereClause = where.length > 0 ? `where ${where.join(' and ')}` : '';
     const sql = `select * from telescope_entries
       ${whereClause}
