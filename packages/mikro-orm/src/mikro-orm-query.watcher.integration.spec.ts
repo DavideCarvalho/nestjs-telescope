@@ -182,28 +182,23 @@ describe('MikroOrmQueryWatcher integration (host-wired loggerFactory)', () => {
       .expect(200);
 
     const allEntries: Entry[] = (res.body as { data: Entry[] }).data;
-    const queryEntries = allEntries.filter((e) => e.type === 'query');
 
-    // Count how many times each batchId appears among query entries.
-    const countByBatch = new Map<string, number>();
-    for (const entry of queryEntries) {
-      countByBatch.set(entry.batchId, (countByBatch.get(entry.batchId) ?? 0) + 1);
-    }
-
-    // There must be at least one batch with >= 5 repeated queries
-    // (the 5 identical findOne calls from the /authors/repeated route).
-    const batchWithNPlusOne = [...countByBatch.entries()].find(
-      ([, count]) => count >= 5,
+    // The 5 repeated queries must correlate to the /authors/repeated REQUEST —
+    // same batchId. This proves query→request correlation, not just "some batch".
+    const repeatedRequest = allEntries.find(
+      (e) =>
+        e.type === 'request' &&
+        typeof (e.content as { uri?: unknown }).uri === 'string' &&
+        (e.content as { uri: string }).uri.includes('repeated'),
     );
-    expect(batchWithNPlusOne).toBeDefined();
+    expect(repeatedRequest).toBeDefined();
 
-    // The repeated queries in that batch must all share the same familyHash
-    // (same SQL template) and the N+1 detector must flag them.
-    const repeatedBatchId = batchWithNPlusOne![0];
-    const repeatedBatchEntries = allEntries.filter(
-      (e) => e.batchId === repeatedBatchId,
-    );
-    const insights = detectNPlusOne(repeatedBatchEntries, 5);
+    const batchEntries = allEntries.filter((e) => e.batchId === repeatedRequest!.batchId);
+    const correlatedQueries = batchEntries.filter((e) => e.type === 'query');
+    expect(correlatedQueries.length).toBeGreaterThanOrEqual(5);
+
+    // The N+1 detector flags the repeated template within that request's batch.
+    const insights = detectNPlusOne(batchEntries, 5);
     expect(insights.length).toBeGreaterThan(0);
     expect(insights[0]!.count).toBeGreaterThanOrEqual(5);
   });
