@@ -15,6 +15,16 @@ export class TelescopeContext {
     return this.als.run({ batch, sequence: 0 }, fn);
   }
 
+  /**
+   * Establish `batch` as the active batch for the current async execution and
+   * all its descendants, WITHOUT a callback scope. Used by the request
+   * middleware so the batch survives the middleware return and reaches the
+   * async handler and exception interceptor.
+   */
+  enterWith(batch: Batch): void {
+    this.als.enterWith({ batch, sequence: 0 });
+  }
+
   current(): Batch | undefined {
     return this.als.getStore()?.batch;
   }

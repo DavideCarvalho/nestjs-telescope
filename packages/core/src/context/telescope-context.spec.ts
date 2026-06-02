@@ -41,4 +41,22 @@ describe('TelescopeContext', () => {
     );
     expect(await Promise.all([a, b])).toEqual([0, 0]);
   });
+
+  it('enterWith establishes a batch for the rest of the async execution', async () => {
+    const { TelescopeContext } = await import('./telescope-context.js');
+    const { createBatch } = await import('./batch.js');
+    const ctx = new TelescopeContext();
+
+    async function handler() {
+      // No callback scope here — the batch must already be active.
+      await Promise.resolve();
+      return ctx.current()?.id;
+    }
+
+    const seen = await ctx.run(createBatch('manual', () => 'outer'), async () => {
+      ctx.enterWith(createBatch('http', () => 'req-1'));
+      return handler();
+    });
+    expect(seen).toBe('req-1');
+  });
 });
