@@ -116,6 +116,40 @@ describe('HttpClientWatcher', () => {
     expect(recorded[0]!.content).toMatchObject({ method: 'DELETE', host: 'api.example.com' });
   });
 
+  it('strips credentials and redacts sensitive query params from the captured url', async () => {
+    globalThis.fetch = vi.fn(async () => ({ status: 200 }) as Response) as typeof globalThis.fetch;
+    const { ctx, recorded } = makeHarness();
+    new HttpClientWatcher().register(ctx);
+
+    await globalThis.fetch('https://user:pass@api.example.com/x?api_key=supersecret&page=2');
+
+    const url = (recorded[0]!.content as { url: string }).url;
+    expect(url).not.toContain('supersecret');
+    expect(url).not.toContain('user:pass');
+    expect(url.toLowerCase()).toContain('redacted');
+    expect(url).toContain('page=2'); // non-sensitive param preserved
+    expect((recorded[0]!.content as { host: string }).host).toBe('api.example.com');
+  });
+
+  it('records a relative/invalid URL with host null', async () => {
+    globalThis.fetch = vi.fn(async () => ({ status: 200 }) as Response) as typeof globalThis.fetch;
+    const { ctx, recorded } = makeHarness();
+    new HttpClientWatcher().register(ctx);
+
+    await globalThis.fetch('/api/relative');
+    expect(recorded).toHaveLength(1);
+    expect((recorded[0]!.content as { host: string | null }).host).toBeNull();
+  });
+
+  it('does not tag a 4xx response as failed', async () => {
+    globalThis.fetch = vi.fn(async () => ({ status: 404 }) as Response) as typeof globalThis.fetch;
+    const { ctx, recorded } = makeHarness();
+    new HttpClientWatcher().register(ctx);
+
+    await globalThis.fetch('https://api.example.com/missing');
+    expect(recorded[0]!.tags ?? []).not.toContain('failed');
+  });
+
   it('never throws into the host when recording fails', async () => {
     globalThis.fetch = vi.fn(async () => ({ status: 200 }) as Response) as typeof globalThis.fetch;
     const ctx = {

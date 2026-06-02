@@ -11,31 +11,50 @@ export interface HttpClientWatcherOptions {
   clock?: { now(): number };
 }
 
-/** Marks a wrapped `fetch` so we patch the global exactly once. */
+/** Query-param keys whose VALUES are redacted from a captured URL (key-based
+ *  content redaction can't reach a URL string leaf, so we sanitize here). */
+const SENSITIVE_PARAM =
+  /(token|secret|password|passwd|api[-_]?key|access[-_]?key|auth|credential)/i;
+const REDACTED = '[REDACTED]';
+
+/** Marks a wrapped `fetch` so we patch the global exactly once. `Symbol.for`
+ *  (global registry) is deliberate: if two copies of core load, both see the
+ *  same marker and neither double-wraps the other's wrapper. */
 const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:httpClientPatched');
 
 type FetchInput = Parameters<typeof globalThis.fetch>[0];
 type FetchInit = Parameters<typeof globalThis.fetch>[1];
 
-/** Pull method/url/host out of fetch's (input, init) without throwing. */
+/** Pull method/url/host out of fetch's (input, init) without throwing. The
+ *  returned `url` is sanitized: userinfo stripped and sensitive query-param
+ *  values redacted, so credentials/secrets never reach storage. */
 function describeRequest(
   input: FetchInput,
   init: FetchInit,
 ): { method: string; url: string; host: string | null } {
-  let url = '';
+  let rawUrl = '';
   let method = 'GET';
-  if (typeof input === 'string') url = input;
-  else if (input instanceof URL) url = input.href;
+  if (typeof input === 'string') rawUrl = input;
+  else if (input instanceof URL) rawUrl = input.href;
   else if (input instanceof Request) {
-    url = input.url;
+    rawUrl = input.url;
     method = input.method;
   }
   if (init && typeof init.method === 'string') method = init.method;
 
   let host: string | null = null;
+  let url = rawUrl;
   try {
-    host = new URL(url).host;
+    const parsed = new URL(rawUrl);
+    host = parsed.host;
+    parsed.username = '';
+    parsed.password = '';
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (SENSITIVE_PARAM.test(key)) parsed.searchParams.set(key, REDACTED);
+    }
+    url = parsed.toString();
   } catch {
+    // Relative/invalid URL: keep the raw string, no host.
     host = null;
   }
   return { method: method.toUpperCase(), url, host };
@@ -55,7 +74,9 @@ function describeRequest(
  * Only the global `fetch` is instrumented. Clients that bypass it (a custom
  * `http.request`, native addons) are not captured. The global is replaced for
  * the process lifetime (not restored on shutdown) — appropriate for an
- * always-on observability tool.
+ * always-on observability tool. The captured URL has userinfo stripped and
+ * sensitive query-param values redacted; note that key-based content redaction
+ * does not otherwise apply to the URL string.
  */
 export class HttpClientWatcher implements Watcher {
   readonly type = EntryType.HttpClient;
@@ -116,6 +137,7 @@ export class HttpClientWatcher implements Watcher {
     try {
       const tags: string[] = [];
       if (content.host) tags.push(`host:${content.host}`);
+      // A 4xx is a valid response, not a transport failure — only 5xx / network errors are 'failed'.
       if (content.statusCode === null || content.statusCode >= 500) tags.push('failed');
       if (content.durationMs >= this.slowMs) tags.push('slow');
 
