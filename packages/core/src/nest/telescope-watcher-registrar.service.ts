@@ -26,16 +26,20 @@ export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
     if (!this.config.enabled) return;
     const watchers = this.options.watchers ?? [];
     const ctx = createWatcherContext(this.service, this.config, this.moduleRef);
+    const registered: string[] = [];
     for (const watcher of watchers) {
       try {
         await watcher.register(ctx);
+        // Only report a watcher as active once it has actually wired up — a
+        // failed register() must not show as "watching" in /meta.
+        registered.push(watcher.type);
       } catch (error) {
         this.logger.error(
           `Telescope watcher "${watcher.type}" failed to register: ${(error as Error).message}`,
         );
       }
     }
-    const types = [EntryType.Request, EntryType.Exception, ...watchers.map((w) => w.type)];
+    const types = [EntryType.Request, EntryType.Exception, ...registered];
     this.service.setWatchers(types);
     this.logger.log(`Telescope watching: ${types.join(', ')}`);
   }

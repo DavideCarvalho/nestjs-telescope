@@ -30,6 +30,7 @@ describe('TelescopeWatcherRegistrar', () => {
 
     expect(goodWatcher.register).toHaveBeenCalledOnce();
     expect(throwingWatcher.register).toHaveBeenCalledOnce();
-    expect(setWatchers).toHaveBeenCalledWith(['request', 'exception', 'good', 'bad']);
+    // 'bad' threw in register() → it must NOT be reported as an active watcher.
+    expect(setWatchers).toHaveBeenCalledWith(['request', 'exception', 'good']);
   });
 });
