@@ -12,6 +12,7 @@ import {
 import { durationToMs } from '../config/parse-duration.js';
 import type { Entry } from '../entry/entry.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
+import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -39,6 +40,7 @@ export class TelescopeController {
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
     @Inject(TelescopeService) private readonly service: TelescopeService,
     @Inject(QueueMetricsService) private readonly queueMetrics: QueueMetricsService,
+    @Inject(PulseService) private readonly pulse: PulseService,
   ) {}
 
   @Get('entries')
@@ -83,6 +85,20 @@ export class TelescopeController {
       throw new BadRequestException(`Window must be positive: ${window}`);
     }
     return this.queueMetrics.getQueueMetrics(windowMs);
+  }
+
+  @Get('pulse')
+  pulseHealth(@Query('window') window?: string): Promise<PulseResult> {
+    let windowMs: number;
+    try {
+      windowMs = durationToMs(window ?? '1h');
+    } catch {
+      throw new BadRequestException(`Invalid window: ${window}`);
+    }
+    if (!Number.isFinite(windowMs) || windowMs <= 0) {
+      throw new BadRequestException(`Window must be positive: ${window}`);
+    }
+    return this.pulse.getHealth(windowMs);
   }
 
   @Get('meta')
