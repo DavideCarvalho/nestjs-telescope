@@ -39,6 +39,17 @@ For an at-a-glance health snapshot, `GET /telescope/api/pulse?window=1h` returns
 per-type entry counts, the slowest entries, the most frequent exceptions, and
 N+1 query occurrences — all aggregated from captured entries.
 
+To capture outbound HTTP calls (correlated to the request/job that made them),
+add the built-in `HttpClientWatcher` — it instruments the global `fetch`, no peer
+dependency required, and sanitizes credentials/secret query params from captured
+URLs:
+
+```ts
+import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({ watchers: [new HttpClientWatcher({ slowMs: 1000 })] });
+```
+
 Capture queries from MikroORM by wiring its logger —
 see [`packages/mikro-orm`](./packages/mikro-orm/README.md):
 
