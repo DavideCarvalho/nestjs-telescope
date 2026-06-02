@@ -42,9 +42,11 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/testing": "^11.0.0",
     "@types/node": "^20.0.0",
+    "@types/supertest": "^6.0.2",
     "bullmq": "^5.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "supertest": "^7.0.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },
