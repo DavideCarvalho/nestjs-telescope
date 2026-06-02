@@ -1,0 +1,45 @@
+{
+  "name": "@dudousxd/nestjs-telescope-redis",
+  "version": "0.0.0",
+  "description": "Redis-backed shared storage provider for @dudousxd/nestjs-telescope.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DavideCarvalho/nestjs-telescope.git",
+    "directory": "packages/redis"
+  },
+  "author": "Davi Carvalho <davi@goflip.ai>",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@dudousxd/nestjs-telescope": "workspace:*",
+    "ioredis": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@types/node": "^20.0.0",
+    "ioredis": "^5.4.0",
+    "ioredis-mock": "^8.9.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": ["nestjs", "telescope", "redis", "storage", "observability"]
+}
