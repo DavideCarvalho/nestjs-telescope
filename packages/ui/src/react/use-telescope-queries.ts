@@ -28,6 +28,16 @@ export function queuesQuery(client: TelescopeClient, window: string) {
     refetchInterval: REFETCH_MS,
   });
 }
+export function timeseriesQuery(
+  client: TelescopeClient,
+  query: { window: string; buckets?: number; type?: string; tag?: string },
+) {
+  return queryOptions({
+    queryKey: ['telescope', 'timeseries', query],
+    queryFn: () => client.timeseries(query),
+    refetchInterval: REFETCH_MS,
+  });
+}
 
 export function useEntries(query: EntriesQuery = {}) {
   return useQuery(entriesQuery(useTelescopeClient(), query));
@@ -40,4 +50,12 @@ export function usePulse(window: string) {
 }
 export function useQueues(window: string) {
   return useQuery(queuesQuery(useTelescopeClient(), window));
+}
+export function useTimeseries(query: {
+  window: string;
+  buckets?: number;
+  type?: string;
+  tag?: string;
+}) {
+  return useQuery(timeseriesQuery(useTelescopeClient(), query));
 }
