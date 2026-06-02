@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import type { Entry } from '../entry/entry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
 import { QueueMetricsService } from './queue-metrics.service.js';
 
 function jobEntry(queue: string, status: 'completed' | 'failed', createdAt: Date): Entry {
@@ -66,5 +67,66 @@ describe('QueueMetricsService', () => {
     const report = await service.getQueueMetrics(3_600_000);
     expect(report.scanned).toBe(1200); // more than one 500-entry page
     expect(report.queues[0]!.total).toBe(1200);
+  });
+
+  it('caps the scan and flags truncation, keeping the newest entries', async () => {
+    const storage = new InMemoryStorageProvider();
+    const now = Date.now();
+    await storage.store([
+      jobEntry('mail', 'completed', new Date(now - 10)),
+      jobEntry('mail', 'completed', new Date(now - 20)),
+      jobEntry('mail', 'completed', new Date(now - 30)),
+      jobEntry('mail', 'completed', new Date(now - 40)),
+      jobEntry('mail', 'completed', new Date(now - 50)),
+    ]);
+    const service = new QueueMetricsService(storage, { scanCap: 3 });
+
+    const report = await service.getQueueMetrics(3_600_000);
+    expect(report.truncated).toBe(true);
+    expect(report.scanned).toBe(3);
+    expect(report.queues[0]!.total).toBe(3); // only the newest 3 aggregated
+  });
+
+  it('terminates when a store returns an empty page with a non-null cursor', async () => {
+    const hostile: StorageProvider = {
+      get: async () => ({ data: [], nextCursor: 'never-null' }),
+      store: async () => {},
+      update: async () => {},
+      find: async () => null,
+      batch: async () => [],
+      tags: async () => [],
+      prune: async () => 0,
+      clear: async () => {},
+    };
+    const service = new QueueMetricsService(hostile);
+
+    const report = await service.getQueueMetrics(60_000);
+    expect(report.scanned).toBe(0);
+    expect(report.truncated).toBe(false);
+  });
+
+  it('terminates when the cursor does not advance', async () => {
+    const stuck: StorageProvider = {
+      get: async () => ({ data: [jobEntry('mail', 'completed', new Date())], nextCursor: 'stuck' }),
+      store: async () => {},
+      update: async () => {},
+      find: async () => null,
+      batch: async () => [],
+      tags: async () => [],
+      prune: async () => 0,
+      clear: async () => {},
+    };
+    const service = new QueueMetricsService(stuck);
+
+    const report = await service.getQueueMetrics(60_000);
+    // page 1: cursor undefined -> push 1, nextCursor 'stuck' advances; page 2:
+    // nextCursor 'stuck' === cursor 'stuck' -> break. Two reads, then stop.
+    expect(report.scanned).toBe(2);
+  });
+
+  it('rejects a non-positive window', async () => {
+    const service = new QueueMetricsService(new InMemoryStorageProvider());
+    await expect(service.getQueueMetrics(0)).rejects.toBeInstanceOf(RangeError);
+    await expect(service.getQueueMetrics(-5)).rejects.toBeInstanceOf(RangeError);
   });
 });
