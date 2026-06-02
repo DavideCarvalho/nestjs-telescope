@@ -17,7 +17,7 @@
 //
 import 'reflect-metadata';
 import type { Entry } from '@dudousxd/nestjs-telescope';
-import { TelescopeModule, TelescopeService } from '@dudousxd/nestjs-telescope';
+import { TelescopeModule, TelescopeService, detectNPlusOne } from '@dudousxd/nestjs-telescope';
 import { EntityManager, EntitySchema, MikroORM } from '@mikro-orm/core';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { SqliteDriver } from '@mikro-orm/sqlite';
@@ -26,7 +26,6 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MikroOrmQueryWatcher } from './mikro-orm-query.watcher.js';
-import { detectNPlusOne } from './n-plus-one.js';
 import { telescopeMikroOrmLogger } from './telescope-mikro-orm.logger.js';
 
 // ---------------------------------------------------------------------------

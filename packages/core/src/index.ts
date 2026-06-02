@@ -27,4 +27,7 @@ export * from './nest/telescope-request.middleware.js';
 export * from './nest/telescope-exception.interceptor.js';
 export * from './nest/telescope-watcher-registrar.service.js';
 
+export * from './query/query-family-hash.js';
+export * from './query/n-plus-one.js';
+
 export const TELESCOPE_VERSION = '0.0.0';

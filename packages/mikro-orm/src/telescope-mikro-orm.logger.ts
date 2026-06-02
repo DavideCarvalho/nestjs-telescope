@@ -1,7 +1,6 @@
 // packages/mikro-orm/src/telescope-mikro-orm.logger.ts
-import { EntryType, type RecordInput } from '@dudousxd/nestjs-telescope';
+import { EntryType, type RecordInput, queryFamilyHash } from '@dudousxd/nestjs-telescope';
 import { DefaultLogger, type LogContext, type LoggerOptions } from '@mikro-orm/core';
-import { queryFamilyHash } from './query-family-hash.js';
 
 export interface TelescopeLoggerOptions {
   /** Queries at/above this many ms get a 'slow' tag. Default 100. */

@@ -1,5 +1,5 @@
 // packages/mikro-orm/src/n-plus-one.ts
-import { type Entry, EntryType } from '@dudousxd/nestjs-telescope';
+import { type Entry, EntryType } from '../entry/entry.js';
 
 export interface NPlusOneInsight {
   familyHash: string;

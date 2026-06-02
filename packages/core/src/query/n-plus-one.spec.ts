@@ -1,6 +1,6 @@
 // packages/mikro-orm/src/n-plus-one.spec.ts
-import type { Entry } from '@dudousxd/nestjs-telescope';
 import { describe, expect, it } from 'vitest';
+import type { Entry } from '../entry/entry.js';
 import { detectNPlusOne } from './n-plus-one.js';
 
 function query(over: Partial<Entry>): Entry {
