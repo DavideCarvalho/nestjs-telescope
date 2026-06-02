@@ -223,4 +223,26 @@ describe('Recorder', () => {
     const entry = (await storage.get({})).data[0]!;
     expect(entry.createdAt).toEqual(new Date(1_000));
   });
+
+  // ── Default sampling fallback ─────────────────────────────────────────────
+
+  it('drops an entry of any type when sampling default is 0 and no per-type rate exists', async () => {
+    const { recorder, storage } = makeRecorder({
+      sampling: { default: 0 },
+      random: () => 0.5,
+    });
+    recorder.record({ type: 'request', content: {} });
+    await recorder.flush();
+    expect((await storage.get({})).data).toHaveLength(0);
+  });
+
+  it('keeps a query entry when per-type rate is 1 even though default is 0', async () => {
+    const { recorder, storage } = makeRecorder({
+      sampling: { query: 1, default: 0 },
+      random: () => 0.5,
+    });
+    recorder.record({ type: 'query', content: {} });
+    await recorder.flush();
+    expect((await storage.get({})).data).toHaveLength(1);
+  });
 });

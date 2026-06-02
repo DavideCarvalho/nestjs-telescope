@@ -137,7 +137,7 @@ export class Recorder {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private passesSampling(type: string): boolean {
-    const rate = this.options.sampling[type];
+    const rate = this.options.sampling[type] ?? this.options.sampling.default;
     if (rate === undefined || rate >= 1) {
       return true;
     }

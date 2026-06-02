@@ -14,7 +14,9 @@ export interface PruneOptions {
 
 export interface RecorderTuning {
   bufferSize?: number;
+  /** Consumed by the NestJS integration layer's flush scheduler; the core Recorder itself does not start a timer. */
   flushIntervalMs?: number;
+  /** Consumed by the NestJS integration layer's flush scheduler; the core Recorder itself does not start a timer. */
   flushBatchSize?: number;
 }
 
@@ -24,6 +26,10 @@ export interface TelescopeCoreOptions {
   enabled?: boolean;
   storage?: StorageProvider;
   redact?: RedactOptions;
+  /**
+   * Per-entry-type keep rate (0–1). A bare number is normalised to `{ default: <rate> }`,
+   * which applies to every entry type that lacks a specific rate override.
+   */
   sampling?: number | Record<string, number>;
   recorder?: RecorderTuning;
   prune?: PruneOptions;

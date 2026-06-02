@@ -18,7 +18,7 @@ const optionsSchema = z.object({
     .default({}),
   prune: z
     .object({
-      after: z.union([z.number(), z.string()]),
+      after: z.union([z.number().positive(), z.string()]),
       keepLast: z.number().int().nonnegative().optional(),
       intervalMs: z.number().int().positive().default(60_000),
     })

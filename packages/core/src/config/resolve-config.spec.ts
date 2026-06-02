@@ -24,4 +24,12 @@ describe('resolveConfig', () => {
   it('rejects an out-of-range sampling rate', () => {
     expect(() => resolveConfig({ sampling: 2 })).toThrow();
   });
+
+  it('rejects prune.after of 0 (non-positive)', () => {
+    expect(() => resolveConfig({ prune: { after: 0 } })).toThrow();
+  });
+
+  it('rejects prune.after of -1 (negative)', () => {
+    expect(() => resolveConfig({ prune: { after: -1 } })).toThrow();
+  });
 });
