@@ -21,5 +21,10 @@ export * from './nest/telescope.guard.js';
 export * from './nest/telescope.controller.js';
 export * from './nest/telescope-pruner.service.js';
 export * from './nest/telescope.module.js';
+export * from './nest/platform-request.js';
+export * from './nest/watcher-context.factory.js';
+export * from './nest/telescope-request.middleware.js';
+export * from './nest/telescope-exception.interceptor.js';
+export * from './nest/telescope-watcher-registrar.service.js';
 
 export const TELESCOPE_VERSION = '0.0.0';
