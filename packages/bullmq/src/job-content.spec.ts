@@ -53,7 +53,9 @@ describe('buildJobContent', () => {
   });
 
   it('computes waitMs from processedOn - timestamp, null when either is missing', () => {
-    expect(buildJobContent({ timestamp: 1000, processedOn: 1700 }, 'completed', undefined, true).waitMs).toBe(700);
+    expect(
+      buildJobContent({ timestamp: 1000, processedOn: 1700 }, 'completed', undefined, true).waitMs,
+    ).toBe(700);
     expect(buildJobContent({ timestamp: 1000 }, 'completed', undefined, true).waitMs).toBeNull();
     expect(buildJobContent({ processedOn: 1700 }, 'completed', undefined, true).waitMs).toBeNull();
   });

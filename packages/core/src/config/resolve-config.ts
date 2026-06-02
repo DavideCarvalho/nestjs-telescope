@@ -2,8 +2,8 @@
 import { hostname } from 'node:os';
 import { z } from 'zod';
 import { BUILTIN_TAGGERS } from '../tagging/tagger.js';
-import { durationToMs } from './parse-duration.js';
 import type { ResolvedCoreConfig, TelescopeCoreOptions } from './options.js';
+import { durationToMs } from './parse-duration.js';
 
 const RATE = z.number().min(0).max(1);
 
