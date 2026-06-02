@@ -21,7 +21,11 @@ export const DEFAULT_REDACT_KEYS: readonly string[] = [
 export interface RedactOptions {
   /** Extra keys to mask (merged with DEFAULT_REDACT_KEYS, case-insensitive). */
   keys?: string[];
-  /** Exact dot-paths to mask regardless of key name, e.g. 'body.ssn'. */
+  /**
+   * Exact dot-paths to mask regardless of key name, e.g. `'body.ssn'`.
+   * Unlike `keys` (which match that key at any depth), a path must match the
+   * full traversal location from the root of the value passed to `redact()`.
+   */
   paths?: string[];
   /** Replacement string. Defaults to '[REDACTED]'. */
   mask?: string;
@@ -40,12 +44,17 @@ export function redact(value: unknown, options: RedactOptions): unknown {
     [...DEFAULT_REDACT_KEYS, ...(options.keys ?? [])].map((key) => key.toLowerCase()),
   );
   const paths = new Set(options.paths ?? []);
+  const seen = new WeakSet<object>();
 
   const walk = (node: unknown, path: string): unknown => {
     if (Array.isArray(node)) {
+      if (seen.has(node)) return '[Circular]';
+      seen.add(node);
       return node.map((item, index) => walk(item, path ? `${path}.${index}` : String(index)));
     }
     if (isPlainObject(node)) {
+      if (seen.has(node)) return '[Circular]';
+      seen.add(node);
       const result: Record<string, unknown> = {};
       for (const [key, child] of Object.entries(node)) {
         const childPath = path ? `${path}.${key}` : key;

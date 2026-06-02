@@ -38,4 +38,17 @@ describe('redact', () => {
     expect(DEFAULT_REDACT_KEYS).toContain('password');
     expect(DEFAULT_REDACT_KEYS).toContain('secret');
   });
+
+  it('handles circular references without overflowing', () => {
+    const node: Record<string, unknown> = { password: 'x', name: 'davi' };
+    node.self = node;
+    const out = redact(node, {}) as Record<string, any>;
+    expect(out.password).toBe('[REDACTED]');
+    expect(out.name).toBe('davi');
+    expect(out.self).toBe('[Circular]');
+  });
+
+  it('uses the configured mask string', () => {
+    expect((redact({ password: 'x' }, { mask: '***' }) as Record<string, any>).password).toBe('***');
+  });
 });
