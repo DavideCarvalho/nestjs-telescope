@@ -133,6 +133,25 @@ importers:
         specifier: ^3.0.0
         version: 3.2.6(@types/node@20.19.41)(jsdom@25.0.1)
 
+  packages/mail:
+    dependencies:
+      nodemailer:
+        specifier: '>=6'
+        version: 8.0.10
+    devDependencies:
+      '@dudousxd/nestjs-telescope':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.41
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.6(@types/node@20.19.41)(jsdom@25.0.1)
+
   packages/mikro-orm:
     devDependencies:
       '@dudousxd/nestjs-telescope':
@@ -2627,6 +2646,10 @@ packages:
   node-releases@2.0.47:
     resolution: {integrity: sha512-Uzmd6LXpouKo8EUK68IjH4+E01w/hXyV3R3g/geCJo+rXLNfh1xucB+LOzYEOQPSiUK3h/xZf0cQGcSsmyL2Og==}
     engines: {node: '>=18'}
+
+  nodemailer@8.0.10:
+    resolution: {integrity: sha512-BLFuSth7QtHOkBzyqTehWWyub0NTRDuK2Q2SQfnGLsrJnzyU+Yeh4WpV1eZGuARFj1xQJHIdnTuJZLP+b9R1GQ==}
+    engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -5862,6 +5885,8 @@ snapshots:
     optional: true
 
   node-releases@2.0.47: {}
+
+  nodemailer@8.0.10: {}
 
   normalize-path@3.0.0: {}
 

@@ -82,6 +82,7 @@ MikroOrmModule.forRootAsync({
 | `@dudousxd/nestjs-telescope-typeorm` | ✅ shipped | TypeORM query watcher (host-wired logger) |
 | `@dudousxd/nestjs-telescope-prisma` | ✅ shipped | Prisma query watcher (`$on('query')`; see correlation caveat) |
 | `@dudousxd/nestjs-telescope-redis` | ✅ shipped | Redis-backed shared storage (multi-instance) |
+| `@dudousxd/nestjs-telescope-mail` | ✅ shipped | Mail watcher (nodemailer sendMail) |
 | `@dudousxd/nestjs-telescope-otel` | planned | Bidirectional OpenTelemetry bridge |
 | `@dudousxd/nestjs-telescope-pulse` | planned | Aggregate health dashboard (Pulse-mode) + N+1 insights |
 | `@dudousxd/nestjs-telescope-ui` | planned | Optional dashboard SPA |
