@@ -4,6 +4,8 @@ import { TelescopeProvider } from '../react/index.js';
 import { DashboardLayout } from './dashboard-layout.js';
 import { EntriesPage } from './pages/entries-page.js';
 import { EntryPage } from './pages/entry-page.js';
+import { PulsePage } from './pages/pulse-page.js';
+import { QueuesPage } from './pages/queues-page.js';
 
 const queryClient = new QueryClient();
 
@@ -17,14 +19,8 @@ export function App(): JSX.Element {
               <Route path="/" element={<Navigate to="/entries" replace />} />
               <Route path="/entries" element={<EntriesPage />} />
               <Route path="/entries/:id" element={<EntryPage />} />
-              <Route
-                path="/pulse"
-                element={<div className="p-6 text-zinc-500">Pulse — coming next.</div>}
-              />
-              <Route
-                path="/queues"
-                element={<div className="p-6 text-zinc-500">Queues — coming next.</div>}
-              />
+              <Route path="/pulse" element={<PulsePage />} />
+              <Route path="/queues" element={<QueuesPage />} />
             </Routes>
           </DashboardLayout>
         </HashRouter>
