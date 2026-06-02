@@ -10,5 +10,6 @@
     "declaration": true,
     "types": ["node"]
   },
-  "include": ["src/client", "src/react"]
+  "include": ["src/client", "src/react"],
+  "exclude": ["dist/**", "**/*.spec.ts", "**/*.test.ts"]
 }
