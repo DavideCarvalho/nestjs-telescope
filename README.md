@@ -49,6 +49,7 @@ MikroOrmModule.forRootAsync({
 |---------|--------|------------|
 | `@dudousxd/nestjs-telescope` | ✅ shipped | Core: request + exception watchers, recorder, ALS correlation, SQLite store, headless API, guard, pruner |
 | `@dudousxd/nestjs-telescope-mikro-orm` | ✅ shipped | MikroORM query watcher + N+1 detector |
+| `@dudousxd/nestjs-telescope-bullmq` | ✅ shipped | BullMQ job watcher: per-job capture + query/exception correlation |
 | `@dudousxd/nestjs-telescope-testing` | ✅ shipped | In-memory store re-export, `FakeClock`, watcher test harness |
 | `@dudousxd/nestjs-telescope-typeorm` | planned | TypeORM query watcher |
 | `@dudousxd/nestjs-telescope-prisma` | planned | Prisma query watcher (runtime `$on('query')`) |
