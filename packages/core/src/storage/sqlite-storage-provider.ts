@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import type { Entry } from '../entry/entry.js';
 import { isBatchOrigin } from '../entry/entry.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
+import { safeJsonParse } from './safe-json.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -35,10 +36,22 @@ interface Row {
 /** Default storage provider: embedded SQLite via better-sqlite3, JSON1 for tags. */
 export class SqliteStorageProvider implements StorageProvider {
   private readonly db: Database.Database;
+  /** Prepared once; reused by store() and update(). */
+  private readonly stmtInsert: Database.Statement;
+  /** Prepared once; reused by find() and update(). */
+  private readonly stmtFindRow: Database.Statement;
+  /** Prepared once; reused by batch(). */
+  private readonly stmtBatch: Database.Statement;
 
   constructor(options: SqliteStorageOptions = {}) {
-    this.db = new Database(options.path ?? ':memory:');
-    this.db.pragma('journal_mode = WAL');
+    const path = options.path ?? ':memory:';
+    this.db = new Database(path);
+
+    // WAL is only meaningful for file-backed databases; skip for :memory:.
+    if (path !== ':memory:') {
+      this.db.pragma('journal_mode = WAL');
+    }
+
     this.db.exec(`
       create table if not exists telescope_entries (
         id text primary key,
@@ -56,8 +69,20 @@ export class SqliteStorageProvider implements StorageProvider {
       create index if not exists ix_te_created on telescope_entries (created_at, id);
       create index if not exists ix_te_type_created on telescope_entries (type, created_at);
       create index if not exists ix_te_batch on telescope_entries (batch_id, sequence);
-      create index if not exists ix_te_family on telescope_entries (family_hash);
+      create index if not exists ix_te_family on telescope_entries (family_hash) where family_hash is not null;
     `);
+
+    // Prepare hot-path statements once, after schema is guaranteed to exist.
+    this.stmtInsert = this.db.prepare(
+      `insert or replace into telescope_entries
+       (id, batch_id, type, family_hash, content, tags, sequence, duration_ms, origin, instance_id, created_at)
+       values (@id, @batch_id, @type, @family_hash, @content, @tags, @sequence, @duration_ms, @origin, @instance_id, @created_at)`,
+    );
+    this.stmtFindRow = this.db.prepare('select * from telescope_entries where id = ?');
+    /** Returns all entries in a batch, ordered by sequence ascending. Capped at 1000 rows. */
+    this.stmtBatch = this.db.prepare(
+      'select * from telescope_entries where batch_id = ? order by sequence asc limit 1000',
+    );
   }
 
   close(): void {
@@ -66,26 +91,26 @@ export class SqliteStorageProvider implements StorageProvider {
 
   async store(entries: Entry[]): Promise<void> {
     if (entries.length === 0) return;
-    const insert = this.db.prepare(
-      `insert or replace into telescope_entries
-       (id, batch_id, type, family_hash, content, tags, sequence, duration_ms, origin, instance_id, created_at)
-       values (@id, @batch_id, @type, @family_hash, @content, @tags, @sequence, @duration_ms, @origin, @instance_id, @created_at)`,
-    );
     const tx = this.db.transaction((rows: Row[]) => {
-      for (const row of rows) insert.run(row);
+      for (const row of rows) this.stmtInsert.run(row);
     });
     tx(entries.map((e) => this.toRow(e)));
   }
 
   async update(id: string, patch: Partial<Entry>): Promise<void> {
-    const existing = this.findRow(id);
-    if (!existing) return;
-    const merged: Entry = { ...this.fromRow(existing), ...patch, id: existing.id };
-    await this.store([merged]);
+    // Atomic read-modify-write: the findRow and write happen in a single transaction,
+    // eliminating the lost-update window.
+    const tx = this.db.transaction(() => {
+      const existing = this.stmtFindRow.get(id) as Row | undefined;
+      if (!existing) return;
+      const merged: Entry = { ...this.fromRow(existing), ...patch, id: existing.id };
+      this.stmtInsert.run(this.toRow(merged));
+    });
+    tx();
   }
 
   async find(id: string): Promise<EntryWithBatch | null> {
-    const row = this.findRow(id);
+    const row = this.stmtFindRow.get(id) as Row | undefined;
     if (!row) return null;
     const entry = this.fromRow(row);
     return { ...entry, batch: await this.batch(entry.batchId) };
@@ -149,12 +174,12 @@ export class SqliteStorageProvider implements StorageProvider {
     };
   }
 
+  /**
+   * Returns all entries belonging to `batchId`, sorted by sequence ascending.
+   * Capped at 1000 rows to avoid pathological memory loads.
+   */
   async batch(batchId: string): Promise<Entry[]> {
-    const rows = this.db
-      .prepare(
-        'select * from telescope_entries where batch_id = ? order by sequence asc',
-      )
-      .all(batchId) as Row[];
+    const rows = this.stmtBatch.all(batchId) as Row[];
     return rows.map((row) => this.fromRow(row));
   }
 
@@ -164,10 +189,12 @@ export class SqliteStorageProvider implements StorageProvider {
         ? `select value as tag, count(*) as count
            from telescope_entries, json_each(telescope_entries.tags)
            where value like @prefix || '%'
-           group by value`
+           group by value
+           order by count desc`
         : `select value as tag, count(*) as count
            from telescope_entries, json_each(telescope_entries.tags)
-           group by value`;
+           group by value
+           order by count desc`;
     const rows = this.db
       .prepare(sql)
       .all(prefix !== undefined ? { prefix } : {}) as { tag: string; count: number }[];
@@ -198,12 +225,6 @@ export class SqliteStorageProvider implements StorageProvider {
     this.db.exec('delete from telescope_entries');
   }
 
-  private findRow(id: string): Row | undefined {
-    return this.db
-      .prepare('select * from telescope_entries where id = ?')
-      .get(id) as Row | undefined;
-  }
-
   private toRow(entry: Entry): Row {
     return {
       id: entry.id,
@@ -221,13 +242,15 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   private fromRow(row: Row): Entry {
+    const rawContent = safeJsonParse<unknown>(row.content, {});
+    const rawTags = safeJsonParse<unknown>(row.tags, []);
     return {
       id: row.id,
       batchId: row.batch_id,
       type: row.type,
       familyHash: row.family_hash,
-      content: JSON.parse(row.content) as unknown,
-      tags: JSON.parse(row.tags) as string[],
+      content: rawContent,
+      tags: Array.isArray(rawTags) ? (rawTags as string[]) : [],
       sequence: row.sequence,
       durationMs: row.duration_ms,
       origin: isBatchOrigin(row.origin) ? row.origin : 'manual',
@@ -235,5 +258,4 @@ export class SqliteStorageProvider implements StorageProvider {
       createdAt: new Date(row.created_at),
     };
   }
-
 }

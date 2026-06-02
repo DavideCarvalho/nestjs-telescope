@@ -67,4 +67,12 @@ describe('SqliteStorageProvider', () => {
     expect(found?.id).toBe('1');
     expect(found?.durationMs).toBe(42);
   });
+
+  it('round-trips an entry with empty tags and object content without data loss', async () => {
+    const original = entry({ id: 'rt1', tags: [], content: { nested: { value: true } } });
+    await store.store([original]);
+    const found = await store.find('rt1');
+    expect(found?.tags).toEqual([]);
+    expect(found?.content).toEqual({ nested: { value: true } });
+  });
 });
