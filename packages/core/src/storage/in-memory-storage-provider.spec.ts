@@ -57,6 +57,23 @@ describe('InMemoryStorageProvider', () => {
     expect(page2.nextCursor).toBeNull();
   });
 
+  it('filters by empty-string type (falsy-but-present value)', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([
+      entry({ id: '1', type: '' }),
+      entry({ id: '2', type: 'request' }),
+    ]);
+    const result = await store.get({ type: '' });
+    expect(result.data.map((e) => e.id)).toEqual(['1']);
+  });
+
+  it('returns empty page for a stale cursor that no longer exists', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([entry({ id: '1' }), entry({ id: '2' })]);
+    const result = await store.get({ cursor: 'does-not-exist' });
+    expect(result).toEqual({ data: [], nextCursor: null });
+  });
+
   it('aggregates tag counts and prunes by age', async () => {
     const store = new InMemoryStorageProvider();
     await store.store([

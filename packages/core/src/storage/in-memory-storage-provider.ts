@@ -24,12 +24,10 @@ export class InMemoryStorageProvider implements StorageProvider {
 
   async update(id: string, patch: Partial<Entry>): Promise<void> {
     const index = this.entries.findIndex((entry) => entry.id === id);
-    if (index !== -1) {
-      const existing = this.entries[index];
-      if (existing) {
-        this.entries[index] = { ...existing, ...patch, id: existing.id };
-      }
-    }
+    if (index === -1) return;
+    const existing = this.entries[index];
+    if (existing === undefined) return;
+    this.entries[index] = { ...existing, ...patch, id: existing.id };
   }
 
   async find(id: string): Promise<EntryWithBatch | null> {
@@ -95,12 +93,12 @@ export class InMemoryStorageProvider implements StorageProvider {
   }
 
   private matches(entry: Entry, query: EntryQuery): boolean {
-    if (query.type && entry.type !== query.type) return false;
-    if (query.tag && !entry.tags.includes(query.tag)) return false;
-    if (query.familyHash && entry.familyHash !== query.familyHash) return false;
-    if (query.batchId && entry.batchId !== query.batchId) return false;
-    if (query.before && entry.createdAt >= query.before) return false;
-    if (query.after && entry.createdAt <= query.after) return false;
+    if (query.type !== undefined && entry.type !== query.type) return false;
+    if (query.tag !== undefined && !entry.tags.includes(query.tag)) return false;
+    if (query.familyHash !== undefined && entry.familyHash !== query.familyHash) return false;
+    if (query.batchId !== undefined && entry.batchId !== query.batchId) return false;
+    if (query.before !== undefined && entry.createdAt >= query.before) return false;
+    if (query.after !== undefined && entry.createdAt <= query.after) return false;
     return true;
   }
 
