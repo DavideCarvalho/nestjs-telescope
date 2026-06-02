@@ -46,6 +46,8 @@ export class TelescopeUiController {
 
   @Get('assets/:file')
   asset(@Param('file') file: string): StreamableFile {
+    // Trust assumption: assetsDir holds build-produced files (not user-writable).
+    // The basename + resolved-prefix checks below still prevent escaping assets/.
     // basename strips any path components, defeating traversal (../, nested, encoded).
     const safe = basename(file);
     if (safe !== file) throw new NotFoundException();

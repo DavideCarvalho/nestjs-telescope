@@ -50,6 +50,20 @@ describe('TelescopeUiController', () => {
     await request(app.getHttpServer()).get('/telescope/assets/..%2f..%2fpackage.json').expect(404);
   });
 
+  it('rejects backslash-separator traversal', async () => {
+    await request(app.getHttpServer()).get('/telescope/assets/..%5c..%5cpackage.json').expect(404);
+  });
+
+  it('rejects an absolute-path asset', async () => {
+    await request(app.getHttpServer()).get('/telescope/assets/%2fetc%2fpasswd').expect(404);
+  });
+
+  it('does not leak a parent file via encoded ../ (planted sibling stays unreachable)', async () => {
+    // Encoded `../app.js` must not resolve out of assets/ to a sibling; the guard 404s it.
+    const res = await request(app.getHttpServer()).get('/telescope/assets/%2e%2e%2fapp.js');
+    expect(res.status).toBe(404);
+  });
+
   it('404s an unknown asset', async () => {
     await request(app.getHttpServer()).get('/telescope/assets/missing.js').expect(404);
   });
