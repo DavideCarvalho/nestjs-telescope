@@ -53,3 +53,10 @@ export interface HttpClientContent {
   statusCode: number | null;
   durationMs: number;
 }
+
+export interface CacheContent {
+  operation: 'get' | 'set';
+  key: string;
+  /** `true`/`false` for a get (hit vs miss); `null` for a set (not applicable). */
+  hit: boolean | null;
+}

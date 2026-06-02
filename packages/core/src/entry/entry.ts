@@ -6,6 +6,7 @@ export const EntryType = {
   Job: 'job',
   Exception: 'exception',
   Mail: 'mail',
+  Cache: 'cache',
   HttpClient: 'http_client',
 } as const;
 
