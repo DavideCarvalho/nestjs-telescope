@@ -17,8 +17,14 @@ describe('taggers', () => {
     expect(tags).toEqual(['status:500']);
   });
 
-  it('slowTagger flags entries over the threshold', () => {
+  it('statusTagger ignores non-request entries even if content has a statusCode', () => {
+    expect(statusTagger(entry({ type: 'query', content: { statusCode: 200 } }))).toEqual([]);
+  });
+
+  it('slowTagger flags entries over the threshold (inclusive boundary)', () => {
     expect(slowTagger(entry({ durationMs: 1500 }))).toEqual(['slow']);
+    expect(slowTagger(entry({ durationMs: 1000 }))).toEqual(['slow']);
+    expect(slowTagger(entry({ durationMs: 999 }))).toEqual([]);
     expect(slowTagger(entry({ durationMs: 5 }))).toEqual([]);
   });
 
