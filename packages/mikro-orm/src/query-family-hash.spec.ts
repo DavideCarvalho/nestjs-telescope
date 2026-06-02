@@ -4,9 +4,9 @@ import { queryFamilyHash } from './query-family-hash.js';
 
 describe('queryFamilyHash', () => {
   it('hashes the same template identically regardless of bound values or whitespace', () => {
-    const a = queryFamilyHash("select * from author where id = 1");
-    const b = queryFamilyHash("select  *  from author  where id = 42");
-    const c = queryFamilyHash("select * from author where id = ?");
+    const a = queryFamilyHash('select * from author where id = 1');
+    const b = queryFamilyHash('select  *  from author  where id = 42');
+    const c = queryFamilyHash('select * from author where id = ?');
     expect(a).toBe(b);
     expect(a).toBe(c);
   });
@@ -23,7 +23,7 @@ describe('queryFamilyHash', () => {
     expect(hash.length).toBeGreaterThan(0);
   });
 
-  it("masks string literals too", () => {
+  it('masks string literals too', () => {
     expect(queryFamilyHash("select * from author where name = 'davi'")).toBe(
       queryFamilyHash("select * from author where name = 'maria'"),
     );

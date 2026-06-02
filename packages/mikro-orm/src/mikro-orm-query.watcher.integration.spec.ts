@@ -16,23 +16,17 @@
 // the EntityManager, bypassing reflection-based DI resolution.
 //
 import 'reflect-metadata';
-import {
-  Controller,
-  Get,
-  Inject,
-  Module,
-  type INestApplication,
-} from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import type { Entry } from '@dudousxd/nestjs-telescope';
+import { TelescopeModule, TelescopeService } from '@dudousxd/nestjs-telescope';
 import { EntityManager, EntitySchema, MikroORM } from '@mikro-orm/core';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { SqliteDriver } from '@mikro-orm/sqlite';
-import type { Entry } from '@dudousxd/nestjs-telescope';
-import { TelescopeModule, TelescopeService } from '@dudousxd/nestjs-telescope';
+import { Controller, Get, type INestApplication, Inject, Module } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { detectNPlusOne } from './n-plus-one.js';
 import { MikroOrmQueryWatcher } from './mikro-orm-query.watcher.js';
+import { detectNPlusOne } from './n-plus-one.js';
 import { telescopeMikroOrmLogger } from './telescope-mikro-orm.logger.js';
 
 // ---------------------------------------------------------------------------
@@ -147,9 +141,7 @@ describe('MikroOrmQueryWatcher integration (host-wired loggerFactory)', () => {
     // Flush so buffered entries reach storage.
     await app.get(TelescopeService).flush();
 
-    const res = await request(app.getHttpServer())
-      .get('/telescope/api/entries')
-      .expect(200);
+    const res = await request(app.getHttpServer()).get('/telescope/api/entries').expect(200);
 
     const entries: Entry[] = (res.body as { data: Entry[] }).data;
 
@@ -177,9 +169,7 @@ describe('MikroOrmQueryWatcher integration (host-wired loggerFactory)', () => {
     expect(repeatedRes.status).toBe(200);
     await app.get(TelescopeService).flush();
 
-    const res = await request(app.getHttpServer())
-      .get('/telescope/api/entries')
-      .expect(200);
+    const res = await request(app.getHttpServer()).get('/telescope/api/entries').expect(200);
 
     const allEntries: Entry[] = (res.body as { data: Entry[] }).data;
 

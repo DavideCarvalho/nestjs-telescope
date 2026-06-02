@@ -1,7 +1,7 @@
-// packages/mikro-orm/src/mikro-orm-query.watcher.ts
-import { Logger } from '@nestjs/common';
 import type { Watcher, WatcherContext } from '@dudousxd/nestjs-telescope';
 import { EntryType } from '@dudousxd/nestjs-telescope';
+// packages/mikro-orm/src/mikro-orm-query.watcher.ts
+import { Logger } from '@nestjs/common';
 
 export interface MikroOrmQueryWatcherOptions {
   slowMs?: number;

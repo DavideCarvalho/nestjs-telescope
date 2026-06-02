@@ -5,9 +5,18 @@ import { detectNPlusOne } from './n-plus-one.js';
 
 function query(over: Partial<Entry>): Entry {
   return {
-    id: 'id', batchId: 'b', type: 'query', familyHash: null, content: { sql: 'x' },
-    tags: [], sequence: 0, durationMs: 1, origin: 'http', instanceId: 'i',
-    createdAt: new Date(), ...over,
+    id: 'id',
+    batchId: 'b',
+    type: 'query',
+    familyHash: null,
+    content: { sql: 'x' },
+    tags: [],
+    sequence: 0,
+    durationMs: 1,
+    origin: 'http',
+    instanceId: 'i',
+    createdAt: new Date(),
+    ...over,
   };
 }
 
@@ -35,6 +44,8 @@ describe('detectNPlusOne', () => {
   });
 
   it('skips entries without a familyHash', () => {
-    expect(detectNPlusOne([query({ familyHash: null }), query({ familyHash: null })], 2)).toEqual([]);
+    expect(detectNPlusOne([query({ familyHash: null }), query({ familyHash: null })], 2)).toEqual(
+      [],
+    );
   });
 });
