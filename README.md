@@ -42,6 +42,9 @@ For an at-a-glance health snapshot, `GET /telescope/api/pulse?window=1h` returns
 per-type entry counts, the slowest entries, the most frequent exceptions, and
 N+1 query occurrences — all aggregated from captured entries.
 
+`GET /telescope/api/timeseries?window=1h&buckets=60` returns bucketed throughput
+(total + per type) over the window — the data behind the dashboard sparkline.
+
 To capture outbound HTTP calls (correlated to the request/job that made them),
 add the built-in `HttpClientWatcher` — it instruments the global `fetch`, no peer
 dependency required, and sanitizes credentials/secret query params from captured
