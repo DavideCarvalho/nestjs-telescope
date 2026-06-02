@@ -31,6 +31,7 @@ export * from './nest/telescope-watcher-registrar.service.js';
 export * from './query/query-family-hash.js';
 export * from './query/n-plus-one.js';
 
+export * from './metrics/collect-window.js';
 export * from './metrics/queue-metrics.js';
 export * from './metrics/queue-metrics.service.js';
 

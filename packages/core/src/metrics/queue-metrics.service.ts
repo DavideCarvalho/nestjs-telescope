@@ -1,8 +1,8 @@
 // packages/core/src/metrics/queue-metrics.service.ts
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import type { Entry } from '../entry/entry.js';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
-import type { EntryQuery, StorageProvider } from '../storage/storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { collectEntriesInWindow } from './collect-window.js';
 import { type QueueMetricsReport, aggregateQueueMetrics } from './queue-metrics.js';
 
 const DEFAULT_PAGE_SIZE = 500;
@@ -45,33 +45,13 @@ export class QueueMetricsService {
     const windowEnd = new Date();
     const windowStart = new Date(windowEnd.getTime() - windowMs);
 
-    const entries: Entry[] = [];
-    let cursor: string | undefined;
-    let truncated = false;
-    for (;;) {
-      const query: EntryQuery = {
-        type: 'job',
-        after: windowStart,
-        limit: this.pageSize,
-        ...(cursor !== undefined ? { cursor } : {}),
-      };
-      const page = await this.storage.get(query);
-      // No progress: an empty page means nothing more to read, even if a
-      // non-compliant store still returns a cursor. Guards against an infinite
-      // loop that SCAN_CAP cannot catch (entries.length would never grow).
-      if (page.data.length === 0) break;
-      entries.push(...page.data);
-      if (entries.length >= this.scanCap) {
-        truncated = true;
-        break;
-      }
-      // The cursor must advance, or we'd re-read the same page forever.
-      if (page.nextCursor === null || page.nextCursor === cursor) break;
-      cursor = page.nextCursor;
-    }
+    const { entries, scanned, truncated } = await collectEntriesInWindow(
+      this.storage,
+      { type: 'job', after: windowStart },
+      { pageSize: this.pageSize, scanCap: this.scanCap },
+    );
 
-    const scanned = Math.min(entries.length, this.scanCap);
-    const report = aggregateQueueMetrics(entries.slice(0, this.scanCap), windowStart, windowEnd);
+    const report = aggregateQueueMetrics(entries, windowStart, windowEnd);
     return { ...report, scanned, truncated };
   }
 }
