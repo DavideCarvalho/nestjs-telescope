@@ -7,6 +7,8 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
 import { runTaggers } from '../tagging/tagger.js';
 
+export type DropReason = 'overflow' | 'store-failed' | 'record-error';
+
 export interface RecorderOptions {
   storage: StorageProvider;
   context: TelescopeContext;
@@ -19,22 +21,73 @@ export interface RecorderOptions {
   now?: () => number;
   random?: () => number;
   idFactory: () => string;
+  /**
+   * Called (inside a try/catch) whenever entries are dropped, with the count
+   * and reason. A faulty hook will not propagate into the Recorder.
+   *
+   * Reasons:
+   * - `'overflow'`      — the ring buffer was full; the oldest entry was evicted.
+   * - `'store-failed'`  — the storage provider rejected a batch; the batch is dropped.
+   * - `'record-error'`  — an unexpected error occurred inside `record()`.
+   */
+  onDrop?: (count: number, reason: DropReason) => void;
 }
 
+/**
+ * Buffers {@link Entry} objects in a fixed-capacity O(1) ring buffer and
+ * periodically flushes them to a {@link StorageProvider}.
+ *
+ * **Overflow policy** — overflow drops the OLDEST buffered entry (so under
+ * sustained overload a batch may be stored without its earliest entries);
+ * recent activity is preferred.
+ *
+ * **Storage failures** — when `store()` rejects, the drained batch is dropped
+ * with no retry by design (fail-open, never grow). Drops are surfaced via the
+ * `onDrop` callback and the `storeFailedDropped` / `droppedCount` counters.
+ */
 export class Recorder {
-  private readonly buffer: Entry[] = [];
+  // ── Ring-buffer state ──────────────────────────────────────────────────────
+  private readonly ring: (Entry | undefined)[];
+  /** Index of the oldest entry in the ring. */
+  private head = 0;
+  /** Number of valid entries currently held. */
+  private count = 0;
+
+  // ── Drop counters ──────────────────────────────────────────────────────────
+  private overflowDrops = 0;
+  private storeFailedDrops = 0;
+  private recordErrorDrops = 0;
+
+  // ── Concurrency guard ─────────────────────────────────────────────────────
+  private flushing: Promise<void> | null = null;
+
+  // ── Determinism seams ─────────────────────────────────────────────────────
   private readonly now: () => number;
   private readonly random: () => number;
-  private dropped = 0;
 
   constructor(private readonly options: RecorderOptions) {
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
+    // Pre-size the ring so slot access is always O(1).
+    this.ring = new Array<Entry | undefined>(options.bufferSize).fill(undefined);
   }
 
-  get droppedCount(): number {
-    return this.dropped;
+  // ── Public getters ─────────────────────────────────────────────────────────
+
+  get overflowDropped(): number {
+    return this.overflowDrops;
   }
+
+  get storeFailedDropped(): number {
+    return this.storeFailedDrops;
+  }
+
+  /** Sum of all drop buckets (overflow + store-failed + record-error). */
+  get droppedCount(): number {
+    return this.overflowDrops + this.storeFailedDrops + this.recordErrorDrops;
+  }
+
+  // ── Core API ───────────────────────────────────────────────────────────────
 
   /** Synchronous, O(1), never throws into the caller. */
   record(input: RecordInput): void {
@@ -45,22 +98,43 @@ export class Recorder {
       this.push(this.enrich(input));
     } catch {
       // A telescope bug must never break the host. Swallow.
-      this.dropped += 1;
+      this.recordErrorDrops += 1;
+      this.notifyDrop(1, 'record-error');
     }
   }
 
+  /**
+   * Drains the buffer and persists via {@link StorageProvider.store}.
+   * Concurrent calls share the same in-flight promise — entries added
+   * while a flush is running are picked up on the next flush.
+   */
   async flush(): Promise<void> {
-    if (this.buffer.length === 0) {
+    if (this.flushing !== null) {
+      return this.flushing;
+    }
+
+    if (this.count === 0) {
       return;
     }
-    const drained = this.buffer.splice(0, this.buffer.length);
-    try {
-      await this.options.storage.store(drained);
-    } catch {
-      // Drop on storage failure rather than block or grow.
-      this.dropped += drained.length;
-    }
+
+    // Drain synchronously before first await so record() calls that arrive
+    // after this point are buffered for the next flush.
+    const drained = this.drain();
+
+    this.flushing = this.options.storage
+      .store(drained)
+      .catch(() => {
+        this.storeFailedDrops += drained.length;
+        this.notifyDrop(drained.length, 'store-failed');
+      })
+      .finally(() => {
+        this.flushing = null;
+      });
+
+    return this.flushing;
   }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
 
   private passesSampling(type: string): boolean {
     const rate = this.options.sampling[type];
@@ -89,16 +163,57 @@ export class Recorder {
       durationMs: input.durationMs ?? null,
       origin: batch?.origin ?? 'manual',
       instanceId: this.options.instanceId,
-      createdAt: new Date(this.now()),
+      createdAt: input.startedAt ?? new Date(this.now()),
     };
     return { ...base, tags: runTaggers(base, this.options.taggers) };
   }
 
+  /**
+   * O(1) ring-buffer push. On overflow the oldest entry is evicted so that
+   * recent activity is always preserved.
+   */
   private push(entry: Entry): void {
-    if (this.buffer.length >= this.options.bufferSize) {
-      this.buffer.shift();
-      this.dropped += 1;
+    const capacity = this.options.bufferSize;
+    if (this.count >= capacity) {
+      // Evict oldest (at head) to make room.
+      this.head = (this.head + 1) % capacity;
+      this.overflowDrops += 1;
+      this.notifyDrop(1, 'overflow');
+    } else {
+      this.count += 1;
     }
-    this.buffer.push(entry);
+    // Tail index: head + (count-1) wraps around the ring.
+    const tail = (this.head + this.count - 1) % capacity;
+    this.ring[tail] = entry;
+  }
+
+  /**
+   * Drains all entries from the ring in oldest→newest order and resets it.
+   * Returns a plain array for hand-off to storage.
+   */
+  private drain(): Entry[] {
+    const capacity = this.options.bufferSize;
+    const result: Entry[] = new Array<Entry>(this.count);
+    for (let i = 0; i < this.count; i++) {
+      const slot = (this.head + i) % capacity;
+      // The slot is always defined here because we only read within count.
+      result[i] = this.ring[slot] as Entry;
+    }
+    // Reset ring state.
+    this.head = 0;
+    this.count = 0;
+    return result;
+  }
+
+  /** Calls `onDrop` inside a try/catch so a faulty hook cannot escape. */
+  private notifyDrop(count: number, reason: DropReason): void {
+    if (this.options.onDrop === undefined) {
+      return;
+    }
+    try {
+      this.options.onDrop(count, reason);
+    } catch {
+      // A faulty hook must never break the Recorder.
+    }
   }
 }

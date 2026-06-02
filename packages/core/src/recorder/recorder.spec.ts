@@ -1,9 +1,11 @@
 // packages/core/src/recorder/recorder.spec.ts
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TelescopeContext } from '../context/telescope-context.js';
 import { createBatch } from '../context/batch.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import { Recorder } from './recorder.js';
+import type { Entry } from '../entry/entry.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
 
 function makeRecorder(over: Partial<ConstructorParameters<typeof Recorder>[0]> = {}) {
   const storage = new InMemoryStorageProvider();
@@ -23,6 +25,36 @@ function makeRecorder(over: Partial<ConstructorParameters<typeof Recorder>[0]> =
     ...over,
   });
   return { recorder, storage, context };
+}
+
+/** A StorageProvider whose store() resolves only when you call resolve(). */
+function makeDeferredStorage(): {
+  storage: StorageProvider;
+  resolve: () => void;
+  storeCallCount: () => number;
+} {
+  let callCount = 0;
+  let resolveFn: (() => void) | null = null;
+  const storage: StorageProvider = {
+    store: (_entries: Entry[]): Promise<void> => {
+      callCount += 1;
+      return new Promise<void>((resolve) => {
+        resolveFn = resolve;
+      });
+    },
+    update: () => Promise.resolve(),
+    find: () => Promise.resolve(null),
+    get: () => Promise.resolve({ data: [], nextCursor: null }),
+    batch: () => Promise.resolve([]),
+    tags: () => Promise.resolve([]),
+    prune: () => Promise.resolve(0),
+    clear: () => Promise.resolve(),
+  };
+  return {
+    storage,
+    resolve: () => resolveFn?.(),
+    storeCallCount: () => callCount,
+  };
 }
 
 describe('Recorder', () => {
@@ -83,5 +115,112 @@ describe('Recorder', () => {
   it('flush is a no-op when the buffer is empty', async () => {
     const { recorder } = makeRecorder();
     await expect(recorder.flush()).resolves.toBeUndefined();
+  });
+
+  // ── NEW TESTS ─────────────────────────────────────────────────────────────
+
+  it('serializes concurrent flush() calls: store is invoked only once while in-flight', async () => {
+    const { storage, resolve, storeCallCount } = makeDeferredStorage();
+    const { recorder } = makeRecorder({ storage });
+
+    recorder.record({ type: 'request', content: { n: 1 } });
+
+    const p1 = recorder.flush();
+    const p2 = recorder.flush(); // second call while first is in-flight
+
+    // store must have been called exactly once so far
+    expect(storeCallCount()).toBe(1);
+
+    resolve(); // unblock the in-flight store
+    await Promise.all([p1, p2]);
+
+    // still only one store call
+    expect(storeCallCount()).toBe(1);
+  });
+
+  it('overflowDropped and storeFailedDropped track separate buckets; droppedCount is their sum', async () => {
+    // overflow: bufferSize 2, push 3 entries
+    const { recorder: r1 } = makeRecorder({ bufferSize: 2 });
+    r1.record({ type: 'request', content: {} });
+    r1.record({ type: 'request', content: {} });
+    r1.record({ type: 'request', content: {} });
+    expect(r1.overflowDropped).toBe(1);
+    expect(r1.storeFailedDropped).toBe(0);
+    expect(r1.droppedCount).toBe(1);
+
+    // store-failure: rejecting storage
+    const failingStorage: StorageProvider = {
+      store: () => Promise.reject(new Error('disk full')),
+      update: () => Promise.resolve(),
+      find: () => Promise.resolve(null),
+      get: () => Promise.resolve({ data: [], nextCursor: null }),
+      batch: () => Promise.resolve([]),
+      tags: () => Promise.resolve([]),
+      prune: () => Promise.resolve(0),
+      clear: () => Promise.resolve(),
+    };
+    const { recorder: r2 } = makeRecorder({ storage: failingStorage });
+    r2.record({ type: 'request', content: {} });
+    r2.record({ type: 'request', content: {} });
+    await r2.flush(); // drains 2 entries, store rejects → storeFailedDropped += 2
+    expect(r2.overflowDropped).toBe(0);
+    expect(r2.storeFailedDropped).toBe(2);
+    expect(r2.droppedCount).toBe(2);
+  });
+
+  it('calls onDrop with reason "overflow" when buffer overflows', () => {
+    const onDrop = vi.fn();
+    const { recorder } = makeRecorder({ bufferSize: 2, onDrop });
+    recorder.record({ type: 'request', content: { n: 1 } });
+    recorder.record({ type: 'request', content: { n: 2 } });
+    recorder.record({ type: 'request', content: { n: 3 } }); // triggers overflow
+    expect(onDrop).toHaveBeenCalledWith(1, 'overflow');
+  });
+
+  it('calls onDrop with reason "store-failed" when storage rejects', async () => {
+    const onDrop = vi.fn();
+    const failingStorage: StorageProvider = {
+      store: () => Promise.reject(new Error('boom')),
+      update: () => Promise.resolve(),
+      find: () => Promise.resolve(null),
+      get: () => Promise.resolve({ data: [], nextCursor: null }),
+      batch: () => Promise.resolve([]),
+      tags: () => Promise.resolve([]),
+      prune: () => Promise.resolve(0),
+      clear: () => Promise.resolve(),
+    };
+    const { recorder } = makeRecorder({ storage: failingStorage, onDrop });
+    recorder.record({ type: 'request', content: {} });
+    await recorder.flush();
+    expect(onDrop).toHaveBeenCalledWith(1, 'store-failed');
+  });
+
+  it('a faulty onDrop hook does not break the Recorder', async () => {
+    const onDrop = () => { throw new Error('hook error'); };
+    const { recorder, storage } = makeRecorder({ bufferSize: 1, onDrop });
+    // overflow to trigger onDrop
+    recorder.record({ type: 'request', content: { n: 1 } });
+    recorder.record({ type: 'request', content: { n: 2 } });
+    // flush should still work and store the surviving entry
+    await expect(recorder.flush()).resolves.toBeUndefined();
+    const stored = await storage.get({});
+    expect(stored.data).toHaveLength(1);
+  });
+
+  it('uses startedAt as createdAt when provided', async () => {
+    const explicitDate = new Date('2024-01-15T10:30:00.000Z');
+    const { recorder, storage } = makeRecorder({ now: () => 9_999_999 });
+    recorder.record({ type: 'request', content: {}, startedAt: explicitDate });
+    await recorder.flush();
+    const entry = (await storage.get({})).data[0]!;
+    expect(entry.createdAt).toEqual(explicitDate);
+  });
+
+  it('falls back to now() for createdAt when startedAt is absent', async () => {
+    const { recorder, storage } = makeRecorder({ now: () => 1_000 });
+    recorder.record({ type: 'request', content: {} });
+    await recorder.flush();
+    const entry = (await storage.get({})).data[0]!;
+    expect(entry.createdAt).toEqual(new Date(1_000));
   });
 });
