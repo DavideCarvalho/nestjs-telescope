@@ -76,7 +76,6 @@ export function StackedBars({
     >
       {segments.map((segment, index) => (
         <rect
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional chart segments
           key={`${segment.type}-${segment.x}-${index}`}
           x={segment.x}
           y={segment.y}
