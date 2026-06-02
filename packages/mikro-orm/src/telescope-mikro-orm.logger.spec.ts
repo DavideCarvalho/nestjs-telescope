@@ -7,7 +7,8 @@ describe('telescopeMikroOrmLogger', () => {
   it('records a query entry with sql, bindings, duration, familyHash, and slow tag', () => {
     const records: RecordInput[] = [];
     const record = (input: RecordInput) => records.push(input);
-    const logger = telescopeMikroOrmLogger(record, { slowMs: 100 });
+    // telescopeMikroOrmLogger returns a loggerFactory; construct one with a no-op writer.
+    const logger = telescopeMikroOrmLogger(record, { slowMs: 100 })({ writer: () => undefined });
 
     // Drive the query-log hook with a structured context (shape per installed MikroORM v7.1.3).
     // DefaultLogger.logQuery takes { query: string } & LogContext where LogContext has
@@ -31,7 +32,9 @@ describe('telescopeMikroOrmLogger', () => {
 
   it('does not tag fast queries as slow', () => {
     const records: RecordInput[] = [];
-    const logger = telescopeMikroOrmLogger((i) => records.push(i), { slowMs: 100 });
+    const logger = telescopeMikroOrmLogger((i) => records.push(i), { slowMs: 100 })({
+      writer: () => undefined,
+    });
     logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
     expect(records[0]?.tags ?? []).not.toContain('slow');
   });

@@ -19,10 +19,9 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
     super(options);
   }
 
-  // DefaultLogger.logQuery signature is: (context: { query: string } & LogContext): void
-  // We override using the Logger interface's looser LogContext so we can call super.
-  override logQuery(context: LogContext): void {
-    const sql = typeof context.query === 'string' ? context.query : '';
+  // Matches DefaultLogger.logQuery's concrete signature exactly.
+  override logQuery(context: { query: string } & LogContext): void {
+    const sql = context.query;
     if (sql) {
       const took = typeof context.took === 'number' ? context.took : null;
       const tags: string[] = took !== null && took >= this.slowMs ? ['slow'] : [];
@@ -38,27 +37,25 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
         ...(tags.length > 0 ? { tags } : {}),
       });
     }
-    // Cast to the concrete DefaultLogger signature — query is always a string here
-    // since DefaultLogger.logQuery expects { query: string } & LogContext.
-    super.logQuery(context as { query: string } & LogContext);
+    super.logQuery(context);
   }
 }
 
-/** Creates a `TelescopeMikroOrmLogger` with a no-op writer.
- *  Useful for testing and as a direct-use instance.
+/** Builds a `loggerFactory`-compatible function that records every query.
  *
- * For `loggerFactory` integration pass a real writer:
+ * Host-wired usage:
  * ```ts
  * MikroORM.init({
  *   debug: ['query'],
- *   loggerFactory: (opts) => new TelescopeMikroOrmLogger(opts, record, 100),
+ *   loggerFactory: telescopeMikroOrmLogger(record, { slowMs: 100 }),
  * });
  * ```
  */
 export function telescopeMikroOrmLogger(
   record: (input: RecordInput) => void,
   options: TelescopeLoggerOptions = {},
-): TelescopeMikroOrmLogger {
+): (loggerOptions: LoggerOptions) => TelescopeMikroOrmLogger {
   const slowMs = options.slowMs ?? 100;
-  return new TelescopeMikroOrmLogger({ writer: () => undefined }, record, slowMs);
+  return (loggerOptions: LoggerOptions) =>
+    new TelescopeMikroOrmLogger(loggerOptions, record, slowMs);
 }
