@@ -2,6 +2,7 @@
 import { hostname } from 'node:os';
 import { z } from 'zod';
 import { BUILTIN_TAGGERS } from '../tagging/tagger.js';
+import { durationToMs } from './parse-duration.js';
 import type { ResolvedCoreConfig, TelescopeCoreOptions } from './options.js';
 
 const RATE = z.number().min(0).max(1);
@@ -26,26 +27,6 @@ const optionsSchema = z.object({
   instanceId: z.string().optional(),
 });
 
-const DURATION_UNITS: Record<string, number> = {
-  ms: 1,
-  s: 1_000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-};
-
-function toMs(duration: number | string): number {
-  if (typeof duration === 'number') {
-    return duration;
-  }
-  const match = /^(\d+)(ms|s|m|h|d)$/.exec(duration.trim());
-  if (!match) {
-    throw new Error(`Invalid duration: ${duration}`);
-  }
-  const unit = match[2] as keyof typeof DURATION_UNITS;
-  return Number(match[1]) * DURATION_UNITS[unit]!;
-}
-
 function normalizeSampling(
   sampling: number | Record<string, number> | undefined,
 ): Record<string, number> {
@@ -65,7 +46,7 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
   };
   if (parsed.prune) {
     const pruneEntry: ResolvedCoreConfig['prune'] = {
-      afterMs: toMs(parsed.prune.after),
+      afterMs: durationToMs(parsed.prune.after),
       intervalMs: parsed.prune.intervalMs,
     };
     if (parsed.prune.keepLast !== undefined) {

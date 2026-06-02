@@ -9,6 +9,7 @@ export * from './storage/in-memory-storage-provider.js';
 export * from './tagging/tagger.js';
 export * from './recorder/recorder.js';
 export * from './config/options.js';
+export * from './config/parse-duration.js';
 export * from './config/resolve-config.js';
 
 export * from './storage/cursor.js';
