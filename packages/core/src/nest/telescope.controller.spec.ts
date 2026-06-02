@@ -16,7 +16,7 @@ function entry(over: Partial<Entry>): Entry {
 
 function setup() {
   const storage = new InMemoryStorageProvider();
-  const service = new TelescopeService(resolveConfig({}), storage);
+  const service = new TelescopeService(resolveConfig({}), storage, {});
   const controller = new TelescopeController(storage, service);
   return { storage, controller };
 }

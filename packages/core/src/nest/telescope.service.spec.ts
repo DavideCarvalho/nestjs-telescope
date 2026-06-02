@@ -2,11 +2,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import type { TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
-function makeService(storage = new InMemoryStorageProvider()) {
+function makeService(storage = new InMemoryStorageProvider(), options: TelescopeModuleOptions = {}) {
   const config = resolveConfig({ recorder: { flushIntervalMs: 5 } });
-  const service = new TelescopeService(config, storage);
+  const service = new TelescopeService(config, storage, options);
   return { service, storage, config };
 }
 
@@ -53,12 +55,58 @@ describe('TelescopeService', () => {
   });
 
   it('runInBatch still runs fn but opens no batch when disabled', async () => {
-    const service = new TelescopeService(resolveConfig({ enabled: false }), new InMemoryStorageProvider());
+    const service = new TelescopeService(resolveConfig({ enabled: false }), new InMemoryStorageProvider(), {});
     active = service;
     const result = await service.runInBatch('http', async () => {
       expect(service.context.current()).toBeUndefined(); // no ALS batch when disabled
       return 'ran';
     });
     expect(result).toBe('ran');
+  });
+
+  it('onApplicationShutdown calls storage.close AFTER flush when module created the storage (options = {})', async () => {
+    const log: string[] = [];
+    const fakeStorage: StorageProvider & { close(): void } = {
+      store: () => { log.push('store'); return Promise.resolve(); },
+      update: () => Promise.resolve(),
+      find: () => Promise.resolve(null),
+      get: () => Promise.resolve({ data: [], nextCursor: null }),
+      batch: () => Promise.resolve([]),
+      tags: () => Promise.resolve([]),
+      prune: () => Promise.resolve(0),
+      clear: () => Promise.resolve(),
+      close: () => { log.push('close'); },
+    };
+    const config = resolveConfig({ recorder: { flushIntervalMs: 5 } });
+    const service = new TelescopeService(config, fakeStorage, {});
+    // record so that flush does real work and we can verify ordering
+    service.record({ type: 'request', content: {} });
+    await service.onApplicationShutdown();
+    // close must appear AFTER store (flush ran first)
+    const closeIdx = log.indexOf('close');
+    const storeIdx = log.indexOf('store');
+    expect(closeIdx).toBeGreaterThan(-1);
+    expect(storeIdx).toBeGreaterThan(-1);
+    expect(closeIdx).toBeGreaterThan(storeIdx);
+  });
+
+  it('onApplicationShutdown does NOT call storage.close when host supplied the storage (options.storage set)', async () => {
+    const closeCalled: boolean[] = [];
+    const fakeStorage: StorageProvider & { close(): void } = {
+      store: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+      find: () => Promise.resolve(null),
+      get: () => Promise.resolve({ data: [], nextCursor: null }),
+      batch: () => Promise.resolve([]),
+      tags: () => Promise.resolve([]),
+      prune: () => Promise.resolve(0),
+      clear: () => Promise.resolve(),
+      close: () => { closeCalled.push(true); },
+    };
+    const config = resolveConfig({ recorder: { flushIntervalMs: 5 } });
+    // Pass fakeStorage as options.storage to simulate host-supplied storage
+    const service = new TelescopeService(config, fakeStorage, { storage: fakeStorage });
+    await service.onApplicationShutdown();
+    expect(closeCalled).toHaveLength(0);
   });
 });

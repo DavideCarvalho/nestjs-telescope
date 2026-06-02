@@ -52,4 +52,7 @@ export interface StorageProvider {
   tags(prefix?: string): Promise<TagCount[]>;
   prune(olderThan: Date, keepLast?: number): Promise<number>;
   clear(): Promise<void>;
+  /** Release any held resources (DB handle, connections). Optional; providers
+   *  without resources omit it. The module closes a store it created on shutdown. */
+  close?(): void | Promise<void>;
 }
