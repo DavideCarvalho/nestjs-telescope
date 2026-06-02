@@ -64,6 +64,35 @@ describe('aggregateQueueMetrics', () => {
     expect(report.queues[0]!.total).toBe(1);
   });
 
+  it('counts non-terminal statuses toward total but neither completed nor failed', () => {
+    const processing: Entry = {
+      ...jobEntry('mail', 'completed', 100, 10),
+      content: { queue: 'mail', status: 'processing', waitMs: null },
+    };
+    const report = aggregateQueueMetrics(
+      [processing, jobEntry('mail', 'completed', 50, 5)],
+      start,
+      end,
+    );
+    const mail = report.queues[0]!;
+    expect(mail.total).toBe(2);
+    expect(mail.completed).toBe(1);
+    expect(mail.failed).toBe(0);
+    expect(mail.completed + mail.failed).toBeLessThanOrEqual(mail.total);
+  });
+
+  it('computes throughput against the actual window length (not a fixed 60m)', () => {
+    const start30 = new Date('2026-06-02T11:30:00Z'); // 30-minute window to `end`
+    const entries = [
+      jobEntry('mail', 'completed', 100, 10),
+      jobEntry('mail', 'completed', 100, 10),
+      jobEntry('mail', 'completed', 100, 10),
+    ];
+    const report = aggregateQueueMetrics(entries, start30, end);
+    expect(report.windowMs).toBe(1_800_000);
+    expect(report.queues[0]!.throughputPerMinute).toBeCloseTo(3 / 30);
+  });
+
   it('reports null runtime/wait stats when no samples are present', () => {
     const report = aggregateQueueMetrics([jobEntry('mail', 'completed', null, null)], start, end);
     expect(report.queues[0]!.runtimeMs).toBeNull();

@@ -80,7 +80,8 @@ interface QueueAccumulator {
 
 /** Group `job` entries by queue and compute per-queue throughput, runtime/wait
  *  percentiles, and failure rate over the [windowStart, windowEnd] window.
- *  Non-job entries are ignored. Pure: callers fetch the entries. */
+ *  Non-job entries are ignored. Pure: callers fetch the entries; entries are
+ *  assumed already windowed (createdAt is not re-checked here). */
 export function aggregateQueueMetrics(
   entries: Entry[],
   windowStart: Date,
@@ -101,6 +102,7 @@ export function aggregateQueueMetrics(
     group.total += 1;
     if (job.status === 'failed') group.failed += 1;
     else if (job.status === 'completed') group.completed += 1;
+    // Runtime samples are status-agnostic: any job with a numeric durationMs.
     if (typeof entry.durationMs === 'number') group.runtimes.push(entry.durationMs);
     if (job.waitMs !== null) group.waits.push(job.waitMs);
   }
