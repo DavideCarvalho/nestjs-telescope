@@ -50,6 +50,7 @@ const SHARED_PROVIDERS: Provider[] = [
 @Module({})
 export class TelescopeModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
+    // NestJS 11 / path-to-regexp v8 route syntax: {*splat} is the optional catch-all (the '*' and '(.*)' forms throw). Requires @nestjs/common >= 11 for the middleware path matching.
     consumer
       .apply(TelescopeRequestMiddleware)
       .exclude({ path: 'telescope/api/{*splat}', method: RequestMethod.ALL })

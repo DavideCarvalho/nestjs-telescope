@@ -1,0 +1,35 @@
+// packages/core/src/nest/telescope-watcher-registrar.service.spec.ts
+import type { ModuleRef } from '@nestjs/core';
+import { describe, expect, it, vi } from 'vitest';
+import { resolveConfig } from '../config/resolve-config.js';
+import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
+import type { TelescopeModuleOptions } from './telescope.options.js';
+import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
+import { TelescopeService } from './telescope.service.js';
+import type { Watcher } from './watcher.js';
+
+describe('TelescopeWatcherRegistrar', () => {
+  it('isolates a throwing watcher and still reports every configured type', async () => {
+    const goodWatcher: Watcher = {
+      type: 'good',
+      register: vi.fn(() => Promise.resolve()),
+    };
+    const throwingWatcher: Watcher = {
+      type: 'bad',
+      register: vi.fn(() => Promise.reject(new Error('boom'))),
+    };
+
+    const config = resolveConfig({});
+    const service = new TelescopeService(config, new InMemoryStorageProvider(), {});
+    const setWatchers = vi.spyOn(service, 'setWatchers');
+
+    const options: TelescopeModuleOptions = { watchers: [goodWatcher, throwingWatcher] };
+    const registrar = new TelescopeWatcherRegistrar(options, config, service, {} as ModuleRef);
+
+    await expect(registrar.onApplicationBootstrap()).resolves.toBeUndefined();
+
+    expect(goodWatcher.register).toHaveBeenCalledOnce();
+    expect(throwingWatcher.register).toHaveBeenCalledOnce();
+    expect(setWatchers).toHaveBeenCalledWith(['request', 'exception', 'good', 'bad']);
+  });
+});

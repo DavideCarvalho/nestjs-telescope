@@ -77,6 +77,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Register the set of active watcher type names (for meta). */
+  /** @internal Used by TelescopeWatcherRegistrar; not part of the public API. */
   setWatchers(types: string[]): void {
     this.watcherTypes = types;
   }
