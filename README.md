@@ -2,28 +2,25 @@
 
 > Laravel Telescope, redesigned for NestJS. Watch every request, query, job,
 > email, and exception — correlated under one batch, non-blocking, pluggable,
-> and safe in production.
+> and safe in production. Works on Express **and** Fastify.
 
 **Status:** early development (`0.0.0`). See [`DESIGN.md`](./DESIGN.md) for the
 architecture and [`PRODUCT.md`](./PRODUCT.md) for the product brief.
 
+## Quick start
+
+Import the module. Request and exception capture is wired automatically; the
+SQLite store and pruner are on by default.
+
 ```ts
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
-import { MikroOrmTelescope } from '@dudousxd/nestjs-telescope-mikro-orm';
 
 @Module({
   imports: [
     TelescopeModule.forRoot({
-      // dev: rich capture, open gate. prod: flip enabled, add authorizer + redact.
+      // dev: rich capture, open gate. prod: flip enabled + supply an authorizer.
       enabled: process.env.NODE_ENV !== 'production',
-      storage: MikroOrmTelescope.storage(),
-      watchers: [
-        TelescopeModule.requestWatcher(),
-        TelescopeModule.exceptionWatcher(),
-        TelescopeModule.jobWatcher(),
-        TelescopeModule.mailWatcher(),
-        MikroOrmTelescope.queryWatcher(),
-      ],
+      authorizer: () => true, // gates the API; defaults to deny in production
       prune: { after: '24h' },
     }),
   ],
@@ -31,21 +28,34 @@ import { MikroOrmTelescope } from '@dudousxd/nestjs-telescope-mikro-orm';
 export class AppModule {}
 ```
 
-Open `/telescope` (with the optional `@dudousxd/nestjs-telescope-ui`) and click a
-request to see the exact queries, jobs, and exceptions it produced.
+Hit `GET /telescope/api/entries` (or `/telescope/api/entries/:id` for a request
+and everything it caused). Capture queries from MikroORM by wiring its logger —
+see [`packages/mikro-orm`](./packages/mikro-orm/README.md):
+
+```ts
+MikroOrmModule.forRootAsync({
+  inject: [TelescopeService],
+  useFactory: (telescope: TelescopeService) => ({
+    // ...your config
+    debug: ['query'],
+    loggerFactory: telescopeMikroOrmLogger((input) => telescope.record(input)),
+  }),
+});
+```
 
 ## Packages
 
-| Package | What it is |
-|---------|------------|
-| `@dudousxd/nestjs-telescope` | Core: watchers (request/job/exception/mail), recorder, ALS correlation, SQLite store, headless API |
-| `@dudousxd/nestjs-telescope-mikro-orm` | MikroORM query watcher + storage |
-| `@dudousxd/nestjs-telescope-typeorm` | TypeORM query watcher + storage |
-| `@dudousxd/nestjs-telescope-prisma` | Prisma query watcher + storage |
-| `@dudousxd/nestjs-telescope-redis` | Shared, TTL-pruned storage for multi-instance production |
-| `@dudousxd/nestjs-telescope-otel` | Bidirectional OpenTelemetry bridge |
-| `@dudousxd/nestjs-telescope-ui` | Optional dashboard SPA |
-| `@dudousxd/nestjs-telescope-testing` | In-memory store + watcher test harness |
+| Package | Status | What it is |
+|---------|--------|------------|
+| `@dudousxd/nestjs-telescope` | ✅ shipped | Core: request + exception watchers, recorder, ALS correlation, SQLite store, headless API, guard, pruner |
+| `@dudousxd/nestjs-telescope-mikro-orm` | ✅ shipped | MikroORM query watcher + N+1 detector |
+| `@dudousxd/nestjs-telescope-testing` | ✅ shipped | In-memory store re-export, `FakeClock`, watcher test harness |
+| `@dudousxd/nestjs-telescope-typeorm` | planned | TypeORM query watcher |
+| `@dudousxd/nestjs-telescope-prisma` | planned | Prisma query watcher (runtime `$on('query')`) |
+| `@dudousxd/nestjs-telescope-redis` | planned | Shared, TTL-pruned storage for multi-instance production |
+| `@dudousxd/nestjs-telescope-otel` | planned | Bidirectional OpenTelemetry bridge |
+| `@dudousxd/nestjs-telescope-pulse` | planned | Aggregate health dashboard (Pulse-mode) + N+1 insights |
+| `@dudousxd/nestjs-telescope-ui` | planned | Optional dashboard SPA |
 
 ## License
 
