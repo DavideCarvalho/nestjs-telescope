@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { QueuesPanel, WindowSelect, useQueues } from '../../react/index.js';
+import { QueueSparkline, QueuesPanel, WindowSelect, useQueues } from '../../react/index.js';
 
 export function QueuesPage(): JSX.Element {
   const [window, setWindow] = useState('1h');
@@ -13,7 +13,10 @@ export function QueuesPage(): JSX.Element {
       {isLoading || !data ? (
         <p className="text-zinc-600">Loading…</p>
       ) : (
-        <QueuesPanel report={data} />
+        <QueuesPanel
+          report={data}
+          sparkline={(queue) => <QueueSparkline queue={queue} window={window} />}
+        />
       )}
     </div>
   );

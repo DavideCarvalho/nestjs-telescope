@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PulsePanel, Sparkline, WindowSelect, usePulse, useTimeseries } from '../../react/index.js';
+import {
+  PulsePanel,
+  StackedBars,
+  TYPE_COLOR,
+  WindowSelect,
+  deriveTypes,
+  usePulse,
+  useTimeseries,
+} from '../../react/index.js';
 
 export function PulsePage(): JSX.Element {
   const [window, setWindow] = useState('1h');
@@ -14,12 +22,20 @@ export function PulsePage(): JSX.Element {
         <WindowSelect value={window} onChange={setWindow} />
       </div>
       <div className="mb-6">
-        <p className="mb-1 text-xs uppercase tracking-wide text-zinc-500">Throughput</p>
-        <Sparkline
-          values={(series.data?.buckets ?? []).map((bucket) => bucket.total)}
-          width={640}
-          height={48}
-        />
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wide text-zinc-500">Throughput by type</p>
+          <div className="flex gap-2 text-[10px] text-zinc-500">
+            {deriveTypes(series.data?.buckets ?? []).map((type) => (
+              <span key={type} className="flex items-center gap-1">
+                <svg width={8} height={8} aria-hidden="true">
+                  <rect width={8} height={8} className={TYPE_COLOR[type] ?? 'fill-zinc-500'} />
+                </svg>
+                {type}
+              </span>
+            ))}
+          </div>
+        </div>
+        <StackedBars buckets={series.data?.buckets ?? []} width={640} height={48} />
       </div>
       {isLoading || !data ? (
         <p className="text-zinc-600">Loading…</p>
