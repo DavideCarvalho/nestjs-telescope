@@ -53,10 +53,13 @@ describe('TelescopeContext', () => {
       return ctx.current()?.id;
     }
 
-    const seen = await ctx.run(createBatch('manual', () => 'outer'), async () => {
-      ctx.enterWith(createBatch('http', () => 'req-1'));
-      return handler();
-    });
+    const seen = await ctx.run(
+      createBatch('manual', () => 'outer'),
+      async () => {
+        ctx.enterWith(createBatch('http', () => 'req-1'));
+        return handler();
+      },
+    );
     expect(seen).toBe('req-1');
   });
 });

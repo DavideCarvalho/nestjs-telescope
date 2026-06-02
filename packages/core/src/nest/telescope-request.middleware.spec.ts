@@ -3,8 +3,8 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import { TelescopeService } from './telescope.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
+import { TelescopeService } from './telescope.service.js';
 
 describe('TelescopeRequestMiddleware', () => {
   it('opens a batch and records a request entry on response finish', async () => {
@@ -12,7 +12,12 @@ describe('TelescopeRequestMiddleware', () => {
     const service = new TelescopeService(resolveConfig({}), storage, {});
     const mw = new TelescopeRequestMiddleware(service);
 
-    const req = { method: 'GET', url: '/orders/42', headers: {}, socket: { remoteAddress: '10.0.0.1' } };
+    const req = {
+      method: 'GET',
+      url: '/orders/42',
+      headers: {},
+      socket: { remoteAddress: '10.0.0.1' },
+    };
     const res = Object.assign(new EventEmitter(), { statusCode: 200 });
     const next = vi.fn();
 
@@ -34,10 +39,18 @@ describe('TelescopeRequestMiddleware', () => {
   });
 
   it('does nothing recordable when disabled but still calls next', () => {
-    const service = new TelescopeService(resolveConfig({ enabled: false }), new InMemoryStorageProvider(), {});
+    const service = new TelescopeService(
+      resolveConfig({ enabled: false }),
+      new InMemoryStorageProvider(),
+      {},
+    );
     const mw = new TelescopeRequestMiddleware(service);
     const next = vi.fn();
-    mw.use({ method: 'GET', url: '/', headers: {} }, Object.assign(new EventEmitter(), { statusCode: 200 }), next);
+    mw.use(
+      { method: 'GET', url: '/', headers: {} },
+      Object.assign(new EventEmitter(), { statusCode: 200 }),
+      next,
+    );
     expect(next).toHaveBeenCalledOnce();
   });
 });

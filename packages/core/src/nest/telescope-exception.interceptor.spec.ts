@@ -4,8 +4,8 @@ import { lastValueFrom, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import { TelescopeService } from './telescope.service.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
+import { TelescopeService } from './telescope.service.js';
 
 describe('TelescopeExceptionInterceptor', () => {
   it('records the thrown error and re-throws it', async () => {

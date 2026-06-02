@@ -3,8 +3,8 @@ import type { ModuleRef } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import type { TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
+import type { TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 import type { Watcher } from './watcher.js';
 

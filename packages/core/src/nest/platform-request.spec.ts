@@ -19,7 +19,9 @@ describe('normalizeRequest', () => {
   });
 
   it('prefers originalUrl when present (Express) and falls back to url', () => {
-    expect(normalizeRequest({ method: 'POST', originalUrl: '/a', url: '/b', headers: {} }).url).toBe('/a');
+    expect(
+      normalizeRequest({ method: 'POST', originalUrl: '/a', url: '/b', headers: {} }).url,
+    ).toBe('/a');
     expect(normalizeRequest({ method: 'POST', url: '/b', headers: {} }).url).toBe('/b');
   });
 

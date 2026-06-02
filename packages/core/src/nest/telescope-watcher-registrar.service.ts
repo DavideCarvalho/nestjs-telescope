@@ -3,7 +3,11 @@ import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs
 import { ModuleRef } from '@nestjs/core';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { EntryType } from '../entry/entry.js';
-import { TELESCOPE_CONFIG, TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
+import {
+  TELESCOPE_CONFIG,
+  TELESCOPE_OPTIONS,
+  type TelescopeModuleOptions,
+} from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 import { createWatcherContext } from './watcher-context.factory.js';
 
