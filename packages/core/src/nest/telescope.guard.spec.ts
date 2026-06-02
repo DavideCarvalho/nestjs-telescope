@@ -11,7 +11,9 @@ function ctx(): ExecutionContext {
 
 describe('TelescopeGuard', () => {
   const original = process.env.NODE_ENV;
-  afterEach(() => { process.env.NODE_ENV = original; });
+  afterEach(() => {
+    process.env.NODE_ENV = original;
+  });
 
   it('uses the provided authorizer when set', async () => {
     const guard = new TelescopeGuard({ authorizer: () => true });
@@ -33,7 +35,11 @@ describe('TelescopeGuard', () => {
   });
 
   it('fails closed (deny) when the authorizer throws', async () => {
-    const guard = new TelescopeGuard({ authorizer: () => { throw new Error('boom'); } });
+    const guard = new TelescopeGuard({
+      authorizer: () => {
+        throw new Error('boom');
+      },
+    });
     expect(await guard.canActivate(ctx())).toBe(false);
   });
 });

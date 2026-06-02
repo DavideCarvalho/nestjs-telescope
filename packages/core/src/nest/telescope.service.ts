@@ -1,5 +1,11 @@
 // packages/core/src/nest/telescope.service.ts
-import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { v7 } from 'uuid';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { createBatch } from '../context/batch.js';
@@ -7,7 +13,12 @@ import { TelescopeContext } from '../context/telescope-context.js';
 import type { BatchOrigin, RecordInput } from '../entry/entry.js';
 import { Recorder } from '../recorder/recorder.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
-import { TELESCOPE_CONFIG, TELESCOPE_OPTIONS, TELESCOPE_STORAGE, type TelescopeModuleOptions } from './telescope.options.js';
+import {
+  TELESCOPE_CONFIG,
+  TELESCOPE_OPTIONS,
+  TELESCOPE_STORAGE,
+  type TelescopeModuleOptions,
+} from './telescope.options.js';
 
 export interface TelescopeMeta {
   enabled: boolean;

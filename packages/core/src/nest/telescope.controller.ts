@@ -1,10 +1,16 @@
 // packages/core/src/nest/telescope.controller.ts
 import { Controller, Delete, Get, Inject, Param, Query, UseGuards } from '@nestjs/common';
 import type { Entry } from '../entry/entry.js';
-import type { EntryQuery, EntryWithBatch, Page, StorageProvider, TagCount } from '../storage/storage-provider.js';
-import { TELESCOPE_STORAGE } from './telescope.options.js';
+import type {
+  EntryQuery,
+  EntryWithBatch,
+  Page,
+  StorageProvider,
+  TagCount,
+} from '../storage/storage-provider.js';
 import { TelescopeGuard } from './telescope.guard.js';
-import { TelescopeService, type TelescopeMeta } from './telescope.service.js';
+import { TELESCOPE_STORAGE } from './telescope.options.js';
+import { type TelescopeMeta, TelescopeService } from './telescope.service.js';
 
 interface ListQuery {
   type?: string;

@@ -141,17 +141,13 @@ export class SqliteStorageProvider implements StorageProvider {
       params.after = query.after.getTime();
     }
     if (query.tag !== undefined) {
-      where.push(
-        'exists (select 1 from json_each(telescope_entries.tags) where value = @tag)',
-      );
+      where.push('exists (select 1 from json_each(telescope_entries.tags) where value = @tag)');
       params.tag = query.tag;
     }
 
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
     if (cursor) {
-      where.push(
-        '(created_at < @cCreated or (created_at = @cCreated and id < @cId))',
-      );
+      where.push('(created_at < @cCreated or (created_at = @cCreated and id < @cId))');
       params.cCreated = cursor.createdAt;
       params.cId = cursor.id;
     }
@@ -172,8 +168,7 @@ export class SqliteStorageProvider implements StorageProvider {
     const last = page.at(-1);
     return {
       data: page,
-      nextCursor:
-        hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
     };
   }
 
@@ -198,18 +193,18 @@ export class SqliteStorageProvider implements StorageProvider {
            from telescope_entries, json_each(telescope_entries.tags)
            group by value
            order by count desc`;
-    const rows = this.db
-      .prepare(sql)
-      .all(prefix !== undefined ? { prefix } : {}) as { tag: string; count: number }[];
+    const rows = this.db.prepare(sql).all(prefix !== undefined ? { prefix } : {}) as {
+      tag: string;
+      count: number;
+    }[];
     return rows.map((row) => ({ tag: row.tag, count: row.count }));
   }
 
   async prune(olderThan: Date, keepLast?: number): Promise<number> {
     const cutoff = olderThan.getTime();
     if (keepLast === undefined) {
-      return this.db
-        .prepare('delete from telescope_entries where created_at < ?')
-        .run(cutoff).changes;
+      return this.db.prepare('delete from telescope_entries where created_at < ?').run(cutoff)
+        .changes;
     }
     // Delete entries older than cutoff, but keep the newest `keepLast` of those old entries.
     return this.db

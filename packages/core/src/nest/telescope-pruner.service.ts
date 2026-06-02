@@ -1,5 +1,11 @@
 // packages/core/src/nest/telescope-pruner.service.ts
-import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+  type OnApplicationShutdown,
+} from '@nestjs/common';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { TELESCOPE_CONFIG, TELESCOPE_STORAGE } from './telescope.options.js';

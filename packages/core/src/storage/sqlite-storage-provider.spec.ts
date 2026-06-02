@@ -5,16 +5,29 @@ import { SqliteStorageProvider } from './sqlite-storage-provider.js';
 
 function entry(over: Partial<Entry>): Entry {
   return {
-    id: 'id', batchId: 'b', type: 'request', familyHash: null, content: {},
-    tags: [], sequence: 0, durationMs: null, origin: 'http', instanceId: 'i',
-    createdAt: new Date('2026-01-01T00:00:00Z'), ...over,
+    id: 'id',
+    batchId: 'b',
+    type: 'request',
+    familyHash: null,
+    content: {},
+    tags: [],
+    sequence: 0,
+    durationMs: null,
+    origin: 'http',
+    instanceId: 'i',
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    ...over,
   };
 }
 
 describe('SqliteStorageProvider', () => {
   let store: SqliteStorageProvider;
-  beforeEach(() => { store = new SqliteStorageProvider({ path: ':memory:' }); });
-  afterEach(() => { store.close(); });
+  beforeEach(() => {
+    store = new SqliteStorageProvider({ path: ':memory:' });
+  });
+  afterEach(() => {
+    store.close();
+  });
 
   it('stores and finds an entry with its batch (sequence-ordered)', async () => {
     await store.store([
@@ -45,7 +58,10 @@ describe('SqliteStorageProvider', () => {
     const page1 = await store.get({ limit: 2 });
     expect(page1.data.map((e) => e.id)).toEqual(['3', '2']);
     expect(page1.nextCursor).not.toBeNull();
-    const page2 = await store.get({ limit: 2, ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}) });
+    const page2 = await store.get({
+      limit: 2,
+      ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}),
+    });
     expect(page2.data.map((e) => e.id)).toEqual(['1']);
     expect(page2.nextCursor).toBeNull();
   });

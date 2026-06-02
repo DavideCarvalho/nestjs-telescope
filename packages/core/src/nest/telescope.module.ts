@@ -1,8 +1,15 @@
 // packages/core/src/nest/telescope.module.ts
-import { type DynamicModule, Module, type Provider, type InjectionToken, type OptionalFactoryDependency } from '@nestjs/common';
+import {
+  type DynamicModule,
+  type InjectionToken,
+  Module,
+  type OptionalFactoryDependency,
+  type Provider,
+} from '@nestjs/common';
 import { resolveConfig } from '../config/resolve-config.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import {
@@ -11,7 +18,6 @@ import {
   TELESCOPE_STORAGE,
   type TelescopeModuleOptions,
 } from './telescope.options.js';
-import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeService } from './telescope.service.js';
 
 const SHARED_PROVIDERS: Provider[] = [

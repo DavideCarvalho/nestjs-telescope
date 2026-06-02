@@ -1,7 +1,7 @@
 // packages/core/src/nest/watcher.ts
 import type { ModuleRef } from '@nestjs/core';
-import type { BatchOrigin, RecordInput } from '../entry/entry.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
+import type { BatchOrigin, RecordInput } from '../entry/entry.js';
 
 /** Handle to an open entry-point batch. */
 export interface BatchHandle {
