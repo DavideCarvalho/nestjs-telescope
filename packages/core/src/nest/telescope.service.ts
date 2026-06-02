@@ -19,6 +19,7 @@ import {
   TELESCOPE_STORAGE,
   type TelescopeModuleOptions,
 } from './telescope.options.js';
+import type { BatchHandle } from './watcher.js';
 
 export interface TelescopeMeta {
   enabled: boolean;
@@ -90,6 +91,19 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     if (!this.config.enabled) return fn();
     const batch = createBatch(origin, () => v7());
     return this.context.run(batch, fn);
+  }
+
+  /**
+   * Open a batch and make it active for the current async execution (no
+   * callback scope). Returns a handle; `end()` is a no-op today (the async
+   * scope ends naturally) but is part of the contract for future cleanup.
+   */
+  beginBatch(origin: BatchOrigin): BatchHandle {
+    const batch = createBatch(origin, () => v7());
+    if (this.config.enabled) {
+      this.context.enterWith(batch);
+    }
+    return { id: batch.id, end: () => {} };
   }
 
   async flush(): Promise<void> {
