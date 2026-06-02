@@ -38,4 +38,6 @@ export * from './metrics/queue-metrics.service.js';
 export * from './pulse/pulse-summary.js';
 export * from './pulse/pulse.service.js';
 
+export * from './http/http-client.watcher.js';
+
 export const TELESCOPE_VERSION = '0.0.0';

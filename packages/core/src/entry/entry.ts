@@ -6,6 +6,7 @@ export const EntryType = {
   Job: 'job',
   Exception: 'exception',
   Mail: 'mail',
+  HttpClient: 'http_client',
 } as const;
 
 export type BuiltinEntryType = (typeof EntryType)[keyof typeof EntryType];

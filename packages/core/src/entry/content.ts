@@ -45,3 +45,11 @@ export interface MailContent {
   preview: string | null;
   status: 'sent' | 'failed';
 }
+
+export interface HttpClientContent {
+  method: string;
+  url: string;
+  host: string | null;
+  statusCode: number | null;
+  durationMs: number;
+}
