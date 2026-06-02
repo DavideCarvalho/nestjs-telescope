@@ -9,7 +9,7 @@ import {
   type Provider,
   RequestMethod,
 } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, DiscoveryModule } from '@nestjs/core';
 import { resolveConfig } from '../config/resolve-config.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -60,6 +60,7 @@ export class TelescopeModule implements NestModule {
   static forRoot(options: TelescopeModuleOptions = {}): DynamicModule {
     return {
       module: TelescopeModule,
+      imports: [DiscoveryModule],
       controllers: [TelescopeController],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
       exports: [TelescopeService, TELESCOPE_STORAGE],
@@ -73,7 +74,7 @@ export class TelescopeModule implements NestModule {
   }): DynamicModule {
     return {
       module: TelescopeModule,
-      ...(config.imports ? { imports: config.imports } : {}),
+      imports: [DiscoveryModule, ...(config.imports ?? [])],
       controllers: [TelescopeController],
       providers: [
         {
