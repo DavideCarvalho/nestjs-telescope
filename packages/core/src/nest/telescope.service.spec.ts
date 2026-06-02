@@ -42,4 +42,23 @@ describe('TelescopeService', () => {
     expect(meta.droppedCount).toBe(0);
     expect(Array.isArray(meta.watchers)).toBe(true);
   });
+
+  it('getMeta returns a copy of watcher types (no internal-state leak)', async () => {
+    const { service } = makeService();
+    active = service;
+    service.setWatchers(['request']);
+    const meta = await service.getMeta();
+    meta.watchers.push('hacked');
+    expect((await service.getMeta()).watchers).toEqual(['request']);
+  });
+
+  it('runInBatch still runs fn but opens no batch when disabled', async () => {
+    const service = new TelescopeService(resolveConfig({ enabled: false }), new InMemoryStorageProvider());
+    active = service;
+    const result = await service.runInBatch('http', async () => {
+      expect(service.context.current()).toBeUndefined(); // no ALS batch when disabled
+      return 'ran';
+    });
+    expect(result).toBe('ran');
+  });
 });

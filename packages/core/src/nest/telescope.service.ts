@@ -67,6 +67,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   }
 
   runInBatch<T>(origin: BatchOrigin, fn: () => Promise<T>): Promise<T> {
+    // When disabled, do zero work — no batch, no ALS context.
+    if (!this.config.enabled) return fn();
     const batch = createBatch(origin, () => v7());
     return this.context.run(batch, fn);
   }
@@ -79,7 +81,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     return {
       enabled: this.config.enabled,
       droppedCount: this.recorder.droppedCount,
-      watchers: this.watcherTypes,
+      watchers: [...this.watcherTypes],
     };
   }
 }
