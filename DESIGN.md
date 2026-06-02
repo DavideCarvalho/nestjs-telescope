@@ -190,10 +190,10 @@ correlation survives the OTel bridge (§6) — a Telescope batch maps 1:1 to a t
 
 ```ts
 interface TelescopeModuleOptions {
-  enabled?: boolean | (() => boolean);     // master switch (e.g. disable in prod by default)
+  enabled?: boolean;                        // master switch; compute inline (e.g. NODE_ENV !== 'production')
   storage?: StorageProvider | StorageFactory; // default: SqliteStorageProvider
   watchers?: WatcherRegistration[];         // built-ins + custom; each individually configurable
-  path?: string;                            // API/UI mount path (default '/telescope')
+  path?: string;                            // RESERVED. v1 serves the API at a fixed '/telescope/api'; a configurable mount path is a follow-up.
 
   // --- privacy / safety (prod) ---
   redact?: {
@@ -232,7 +232,8 @@ permissive authorizer in dev, and in prod sets `enabled` behind a flag, a strict
 
 ## 5. HTTP surface (headless)
 
-The core registers a controller under `path` (default `/telescope`):
+The core registers a controller at a fixed base `/telescope/api` (a configurable
+`path` is a follow-up):
 
 | Route | Purpose |
 |-------|---------|
@@ -296,7 +297,7 @@ packages/
   otel/       @dudousxd/nestjs-telescope-otel      bidirectional OpenTelemetry bridge
   pulse/      @dudousxd/nestjs-telescope-pulse     aggregate health dashboard (Pulse-mode): cards over the entry stream
   ui/         @dudousxd/nestjs-telescope-ui        dashboard SPA + agnostic serve controller (Express + Fastify)
-  testing/    @dudousxd/nestjs-telescope-testing   in-memory store, fake clock, watcher test harness
+  testing/    @dudousxd/nestjs-telescope-testing   re-exports core's InMemoryStorageProvider + fake clock + watcher test harness
 examples/     runnable apps (express + fastify, each ORM)
 integration/  cross-package integration suites (real ORMs against SQLite/Postgres/MySQL)
 website/      docs site
