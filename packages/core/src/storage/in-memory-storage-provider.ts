@@ -1,5 +1,6 @@
 // packages/core/src/storage/in-memory-storage-provider.ts
 import type { Entry } from '../entry/entry.js';
+import { decodeCursor, encodeCursor } from './cursor.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -13,7 +14,7 @@ const DEFAULT_LIMIT = 50;
 /**
  * Process-local store. Used as a test double and as a zero-dependency option
  * for single-instance/serverless setups. Newest-first ordering by createdAt
- * then id; cursor is the last seen entry id (keyset pagination).
+ * then id; cursor is an opaque keyset (createdAt-ms, id) position.
  */
 export class InMemoryStorageProvider implements StorageProvider {
   private entries: Entry[] = [];
@@ -39,21 +40,28 @@ export class InMemoryStorageProvider implements StorageProvider {
   }
 
   async get(query: EntryQuery): Promise<Page<Entry>> {
-    const ordered = [...this.entries]
+    const filtered = [...this.entries]
       .filter((entry) => this.matches(entry, query))
       .sort(this.newestFirst);
 
-    let start = 0;
-    if (query.cursor) {
-      const cursorIndex = ordered.findIndex((entry) => entry.id === query.cursor);
-      start = cursorIndex === -1 ? ordered.length : cursorIndex + 1;
-    }
+    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+
+    const afterCursor = cursor
+      ? filtered.filter(
+          (e) =>
+            e.createdAt.getTime() < cursor.createdAt ||
+            (e.createdAt.getTime() === cursor.createdAt && e.id < cursor.id),
+        )
+      : filtered;
 
     const limit = query.limit ?? DEFAULT_LIMIT;
-    const slice = ordered.slice(start, start + limit);
+    const slice = afterCursor.slice(0, limit);
+    const hasMore = afterCursor.length > limit;
     const last = slice.at(-1);
-    const hasMore = last ? start + limit < ordered.length : false;
-    return { data: slice, nextCursor: hasMore && last ? last.id : null };
+    return {
+      data: slice,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
+    };
   }
 
   async batch(batchId: string): Promise<Entry[]> {

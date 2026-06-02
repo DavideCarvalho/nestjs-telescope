@@ -67,11 +67,32 @@ describe('InMemoryStorageProvider', () => {
     expect(result.data.map((e) => e.id)).toEqual(['1']);
   });
 
-  it('returns empty page for a stale cursor that no longer exists', async () => {
+  it('resumes from keyset position when cursor entry has been pruned', async () => {
     const store = new InMemoryStorageProvider();
-    await store.store([entry({ id: '1' }), entry({ id: '2' })]);
-    const result = await store.get({ cursor: 'does-not-exist' });
-    expect(result).toEqual({ data: [], nextCursor: null });
+    await store.store([
+      entry({ id: '1', createdAt: new Date('2026-01-01T00:00:01Z') }),
+      entry({ id: '2', createdAt: new Date('2026-01-01T00:00:02Z') }),
+      entry({ id: '3', createdAt: new Date('2026-01-01T00:00:03Z') }),
+    ]);
+    // Page 1 returns [3, 2]; cursor encodes the keyset position of entry "2"
+    const page1 = await store.get({ limit: 2 });
+    expect(page1.data.map((e) => e.id)).toEqual(['3', '2']);
+    expect(page1.nextCursor).not.toBeNull();
+
+    // Simulate a pruner removing entry "2" (the cursor's own entry) but leaving "1"
+    await store.clear();
+    await store.store([
+      entry({ id: '1', createdAt: new Date('2026-01-01T00:00:01Z') }),
+      entry({ id: '3', createdAt: new Date('2026-01-01T00:00:03Z') }),
+    ]);
+
+    // Page 2 with the stale cursor must RESUME from keyset (t=02Z, id="2") and return ["1"]
+    const page2 = await store.get({
+      limit: 2,
+      ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}),
+    });
+    expect(page2.data.map((e) => e.id)).toEqual(['1']);
+    expect(page2.nextCursor).toBeNull();
   });
 
   it('aggregates tag counts and prunes by age', async () => {

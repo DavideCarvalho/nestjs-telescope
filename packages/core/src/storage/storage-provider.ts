@@ -9,9 +9,11 @@ export interface EntryQuery {
   before?: Date;
   after?: Date;
   /**
-   * Keyset cursor: the `id` of the last entry seen in the previous page.
-   * If the entry no longer exists (e.g. it was pruned), the page is empty
-   * with `nextCursor: null`; callers should restart pagination without a cursor.
+   * Opaque keyset cursor representing a (createdAt, id) position.
+   * `get` returns entries strictly older than this position.
+   * If the cursor's original entry was since removed (e.g. pruned), pagination
+   * RESUMES from that position rather than returning an empty page.
+   * An undecodable cursor is silently ignored and pagination starts from the first page.
    */
   cursor?: string;
   limit?: number;
@@ -39,8 +41,9 @@ export interface StorageProvider {
   find(id: string): Promise<EntryWithBatch | null>;
   /**
    * Returns a page of entries matching `query`, sorted newest-first.
-   * If `query.cursor` refers to an entry that no longer exists (e.g. pruned),
-   * the page is empty with `nextCursor: null`; callers should restart pagination without a cursor.
+   * `query.cursor` is an opaque keyset position; entries strictly older than it are returned.
+   * If the cursor's original entry was since removed (e.g. pruned), pagination RESUMES from
+   * that position (not empty). An undecodable cursor starts from the first page.
    */
   get(query: EntryQuery): Promise<Page<Entry>>;
   /** Returned entries may share object references with the store; callers must not mutate them. */

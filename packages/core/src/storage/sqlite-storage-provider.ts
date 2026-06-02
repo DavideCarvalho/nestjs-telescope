@@ -2,6 +2,7 @@
 import Database from 'better-sqlite3';
 import type { Entry } from '../entry/entry.js';
 import { isBatchOrigin } from '../entry/entry.js';
+import { decodeCursor, encodeCursor } from './cursor.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -121,7 +122,7 @@ export class SqliteStorageProvider implements StorageProvider {
       params.tag = query.tag;
     }
 
-    const cursor = query.cursor ? this.decodeCursor(query.cursor) : null;
+    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
     if (cursor) {
       where.push(
         '(created_at < @cCreated or (created_at = @cCreated and id < @cId))',
@@ -144,7 +145,7 @@ export class SqliteStorageProvider implements StorageProvider {
     return {
       data: page,
       nextCursor:
-        hasMore && last ? this.encodeCursor(last.createdAt.getTime(), last.id) : null,
+        hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
     };
   }
 
@@ -235,16 +236,4 @@ export class SqliteStorageProvider implements StorageProvider {
     };
   }
 
-  private encodeCursor(createdAt: number, id: string): string {
-    return Buffer.from(`${createdAt}:${id}`).toString('base64url');
-  }
-
-  private decodeCursor(cursor: string): { createdAt: number; id: string } | null {
-    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-    const sep = decoded.indexOf(':');
-    if (sep === -1) return null;
-    const createdAt = Number(decoded.slice(0, sep));
-    if (Number.isNaN(createdAt)) return null;
-    return { createdAt, id: decoded.slice(sep + 1) };
-  }
 }
