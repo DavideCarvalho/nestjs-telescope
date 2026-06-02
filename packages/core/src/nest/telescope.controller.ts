@@ -1,6 +1,17 @@
 // packages/core/src/nest/telescope.controller.ts
-import { Controller, Delete, Get, Inject, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { durationToMs } from '../config/parse-duration.js';
 import type { Entry } from '../entry/entry.js';
+import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -27,6 +38,7 @@ export class TelescopeController {
   constructor(
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
     @Inject(TelescopeService) private readonly service: TelescopeService,
+    @Inject(QueueMetricsService) private readonly queueMetrics: QueueMetricsService,
   ) {}
 
   @Get('entries')
@@ -57,6 +69,20 @@ export class TelescopeController {
   @Get('tags')
   tags(@Query('prefix') prefix?: string): Promise<TagCount[]> {
     return this.storage.tags(prefix);
+  }
+
+  @Get('queues')
+  queues(@Query('window') window?: string): Promise<QueueMetricsResult> {
+    let windowMs: number;
+    try {
+      windowMs = durationToMs(window ?? '1h');
+    } catch {
+      throw new BadRequestException(`Invalid window: ${window}`);
+    }
+    if (!Number.isFinite(windowMs) || windowMs <= 0) {
+      throw new BadRequestException(`Window must be positive: ${window}`);
+    }
+    return this.queueMetrics.getQueueMetrics(windowMs);
   }
 
   @Get('meta')
