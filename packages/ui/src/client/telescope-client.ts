@@ -6,6 +6,8 @@ import type {
   PulseReport,
   QueueMetricsReport,
   TelescopeMeta,
+  TimeseriesQuery,
+  TimeseriesReport,
 } from './types.js';
 
 export interface TelescopeClientOptions {
@@ -20,6 +22,7 @@ export interface TelescopeClient {
   entry(id: string): Promise<EntryWithBatch>;
   pulse(window?: string): Promise<PulseReport>;
   queues(window?: string): Promise<QueueMetricsReport>;
+  timeseries(query?: TimeseriesQuery): Promise<TimeseriesReport>;
   meta(): Promise<TelescopeMeta>;
 }
 
@@ -58,6 +61,13 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     entry: (id) => get<EntryWithBatch>(`/entries/${encodeURIComponent(id)}`),
     pulse: (window) => get<PulseReport>('/pulse', { window }),
     queues: (window) => get<QueueMetricsReport>('/queues', { window }),
+    timeseries: (query = {}) =>
+      get<TimeseriesReport>('/timeseries', {
+        window: query.window,
+        buckets: query.buckets,
+        type: query.type,
+        tag: query.tag,
+      }),
     meta: () => get<TelescopeMeta>('/meta'),
   };
 }

@@ -89,3 +89,23 @@ export interface QueueMetricsReport {
   scanned: number;
   truncated: boolean;
 }
+
+export interface TimeseriesBucket {
+  t: string;
+  total: number;
+  byType: Record<string, number>;
+}
+export interface TimeseriesReport {
+  windowStart: string;
+  windowEnd: string;
+  bucketMs: number;
+  buckets: TimeseriesBucket[];
+  scanned: number;
+  truncated: boolean;
+}
+export interface TimeseriesQuery {
+  window?: string;
+  buckets?: number;
+  type?: string;
+  tag?: string;
+}

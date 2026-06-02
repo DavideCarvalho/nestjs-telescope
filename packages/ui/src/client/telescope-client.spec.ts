@@ -53,6 +53,18 @@ describe('createTelescopeClient', () => {
     expect(await client.pulse('1h')).toEqual(body);
   });
 
+  it('fetches timeseries with window + buckets', async () => {
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 200, json: async () => ({ buckets: [] }) }) as Response,
+    );
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.timeseries({ window: '1h', buckets: 60 });
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('/timeseries?');
+    expect(url).toContain('window=1h');
+    expect(url).toContain('buckets=60');
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchMock = vi.fn(
       async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,
