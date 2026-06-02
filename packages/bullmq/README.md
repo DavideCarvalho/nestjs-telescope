@@ -11,7 +11,7 @@ pnpm add @dudousxd/nestjs-telescope-bullmq
 ```
 
 Peer deps: `@dudousxd/nestjs-telescope`, `@nestjs/bullmq`, `bullmq`,
-`@nestjs/common`, `@nestjs/core`.
+`@nestjs/common`, `@nestjs/core`, `reflect-metadata`.
 
 ## Usage
 
