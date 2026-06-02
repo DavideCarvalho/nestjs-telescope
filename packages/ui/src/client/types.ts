@@ -31,5 +31,61 @@ export interface TelescopeMeta {
   droppedCount: number;
   watchers: string[];
 }
-export type PulseReport = Record<string, unknown>;
-export type QueueMetricsReport = Record<string, unknown>;
+export interface DurationStats {
+  avg: number;
+  p50: number;
+  p95: number;
+  max: number;
+}
+
+export interface SlowEntry {
+  id: string;
+  type: string;
+  durationMs: number;
+  label: string;
+  batchId: string;
+}
+export interface ExceptionGroup {
+  familyHash: string;
+  class: string;
+  message: string;
+  count: number;
+  lastSeen: string;
+}
+export interface NPlusOneOccurrence {
+  batchId: string;
+  familyHash: string;
+  count: number;
+  sql: string;
+}
+
+export interface PulseReport {
+  windowStart: string;
+  windowEnd: string;
+  windowMs: number;
+  counts: Record<string, number>;
+  slowest: SlowEntry[];
+  topExceptions: ExceptionGroup[];
+  nPlusOne: NPlusOneOccurrence[];
+  scanned: number;
+  truncated: boolean;
+}
+
+export interface QueueMetrics {
+  queue: string;
+  total: number;
+  completed: number;
+  failed: number;
+  failureRate: number;
+  throughputPerMinute: number;
+  runtimeMs: DurationStats | null;
+  waitMs: DurationStats | null;
+}
+export interface QueueMetricsReport {
+  windowStart: string;
+  windowEnd: string;
+  windowMs: number;
+  queues: QueueMetrics[];
+  scanned: number;
+  truncated: boolean;
+}

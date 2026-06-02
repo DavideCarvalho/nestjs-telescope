@@ -34,6 +34,25 @@ describe('createTelescopeClient', () => {
     expect(fetchMock.mock.calls[1]![0] as string).toBe('/telescope/api/queues?window=1h');
   });
 
+  it('returns the parsed pulse body', async () => {
+    const body = {
+      counts: { query: 2 },
+      slowest: [],
+      topExceptions: [],
+      nPlusOne: [],
+      windowMs: 3600000,
+      windowStart: '',
+      windowEnd: '',
+      scanned: 0,
+      truncated: false,
+    };
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 200, json: async () => body }) as Response,
+    );
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    expect(await client.pulse('1h')).toEqual(body);
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchMock = vi.fn(
       async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,
