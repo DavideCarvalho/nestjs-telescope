@@ -123,6 +123,60 @@ describe('summarizePulse', () => {
     expect(summary.slowest.map((s) => s.durationMs)).toEqual([8, 7, 6]);
   });
 
+  it('does not throw on malformed content and falls back to the entry type for labels', () => {
+    const summary = summarizePulse(
+      [
+        entry({ type: 'query', durationMs: 1, content: null }),
+        entry({ type: 'request', durationMs: 2, content: 42 }),
+      ],
+      start,
+      end,
+      opts,
+    );
+    const labels = summary.slowest.map((s) => s.label);
+    expect(labels).toContain('query');
+    expect(labels).toContain('request');
+  });
+
+  it('skips exceptions with a null familyHash', () => {
+    const summary = summarizePulse(
+      [entry({ type: 'exception', familyHash: null, content: { class: 'Error', message: 'x' } })],
+      start,
+      end,
+      opts,
+    );
+    expect(summary.topExceptions).toEqual([]);
+  });
+
+  it('sorts N+1 occurrences across batches by count desc', () => {
+    const batchA = Array.from({ length: 5 }, () =>
+      entry({ type: 'query', batchId: 'A', familyHash: 'q:a', content: { sql: 'a' } }),
+    );
+    const batchB = Array.from({ length: 7 }, () =>
+      entry({ type: 'query', batchId: 'B', familyHash: 'q:b', content: { sql: 'b' } }),
+    );
+    const summary = summarizePulse([...batchA, ...batchB], start, end, opts);
+    expect(summary.nPlusOne.map((n) => n.batchId)).toEqual(['B', 'A']); // 7 before 5
+  });
+
+  it('applies topN to exceptions and truncates long labels', () => {
+    const exceptions = Array.from({ length: 8 }, (_, i) =>
+      entry({ type: 'exception', familyHash: `E${i}:m`, content: { class: 'E', message: 'm' } }),
+    );
+    const byTopN = summarizePulse(exceptions, start, end, { topN: 3, nPlusOneThreshold: 5 });
+    expect(byTopN.topExceptions).toHaveLength(3);
+
+    const longSql = 'x'.repeat(1000);
+    const truncated = summarizePulse(
+      [entry({ type: 'query', durationMs: 1, content: { sql: longSql } })],
+      start,
+      end,
+      opts,
+    );
+    expect(truncated.slowest[0]!.label.endsWith('…')).toBe(true);
+    expect(truncated.slowest[0]!.label.length).toBeLessThanOrEqual(501); // 500 chars + ellipsis
+  });
+
   it('sets window fields and handles empty input', () => {
     const summary = summarizePulse([], start, end, opts);
     expect(summary.windowStart).toBe('2026-06-02T11:00:00.000Z');

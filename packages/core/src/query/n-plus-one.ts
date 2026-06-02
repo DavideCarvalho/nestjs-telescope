@@ -1,4 +1,4 @@
-// packages/mikro-orm/src/n-plus-one.ts
+// packages/core/src/query/n-plus-one.ts
 import { type Entry, EntryType } from '../entry/entry.js';
 
 export interface NPlusOneInsight {
@@ -12,10 +12,11 @@ export function detectNPlusOne(entries: Entry[], threshold: number): NPlusOneIns
   const groups = new Map<string, { count: number; sql: string }>();
   for (const entry of entries) {
     if (entry.type !== EntryType.Query || entry.familyHash === null) continue;
-    const sql =
-      typeof (entry.content as { sql?: unknown }).sql === 'string'
-        ? (entry.content as { sql: string }).sql
-        : '';
+    const record =
+      typeof entry.content === 'object' && entry.content !== null
+        ? (entry.content as Record<string, unknown>)
+        : null;
+    const sql = record !== null && typeof record.sql === 'string' ? record.sql : '';
     const existing = groups.get(entry.familyHash);
     if (existing) {
       existing.count += 1;

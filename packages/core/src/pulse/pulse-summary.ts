@@ -40,6 +40,13 @@ export interface PulseOptions {
   nPlusOneThreshold: number;
 }
 
+const MAX_LABEL_LENGTH = 500;
+
+/** Bound a label/sql string so the health snapshot payload stays small. */
+function truncate(value: string): string {
+  return value.length > MAX_LABEL_LENGTH ? `${value.slice(0, MAX_LABEL_LENGTH)}…` : value;
+}
+
 function asRecord(content: unknown): Record<string, unknown> | null {
   return typeof content === 'object' && content !== null
     ? (content as Record<string, unknown>)
@@ -89,7 +96,7 @@ export function summarizePulse(
         id: entry.id,
         type: entry.type,
         durationMs: entry.durationMs,
-        label: labelFor(entry),
+        label: truncate(labelFor(entry)),
         batchId: entry.batchId,
       });
     }
@@ -115,7 +122,9 @@ export function summarizePulse(
     else batches.set(entry.batchId, [entry]);
   }
 
-  const slowest = slowCandidates.sort((a, b) => b.durationMs - a.durationMs).slice(0, options.topN);
+  const slowest = slowCandidates
+    .sort((a, b) => b.durationMs - a.durationMs || a.id.localeCompare(b.id))
+    .slice(0, options.topN);
 
   const topExceptions = [...exceptionGroups.entries()]
     .map(([familyHash, group]) => ({
@@ -125,7 +134,7 @@ export function summarizePulse(
       count: group.count,
       lastSeen: group.lastSeen.toISOString(),
     }))
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => b.count - a.count || a.familyHash.localeCompare(b.familyHash))
     .slice(0, options.topN);
 
   const nPlusOne: NPlusOneOccurrence[] = [];
@@ -135,11 +144,16 @@ export function summarizePulse(
         batchId,
         familyHash: insight.familyHash,
         count: insight.count,
-        sql: insight.sql,
+        sql: truncate(insight.sql),
       });
     }
   }
-  nPlusOne.sort((a, b) => b.count - a.count);
+  nPlusOne.sort(
+    (a, b) =>
+      b.count - a.count ||
+      a.batchId.localeCompare(b.batchId) ||
+      a.familyHash.localeCompare(b.familyHash),
+  );
 
   return {
     windowStart: windowStart.toISOString(),
