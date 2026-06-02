@@ -1,4 +1,4 @@
-// packages/mikro-orm/src/n-plus-one.spec.ts
+// packages/core/src/query/n-plus-one.spec.ts
 import { describe, expect, it } from 'vitest';
 import type { Entry } from '../entry/entry.js';
 import { detectNPlusOne } from './n-plus-one.js';

@@ -2,11 +2,8 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
-import { collectEntriesInWindow } from './collect-window.js';
+import { DEFAULT_PAGE_SIZE, DEFAULT_SCAN_CAP, collectEntriesInWindow } from './collect-window.js';
 import { type QueueMetricsReport, aggregateQueueMetrics } from './queue-metrics.js';
-
-const DEFAULT_PAGE_SIZE = 500;
-const DEFAULT_SCAN_CAP = 50_000;
 
 export interface QueueMetricsServiceOptions {
   /** Entries fetched per storage page. Default 500. */
