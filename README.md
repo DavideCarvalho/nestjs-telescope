@@ -29,7 +29,13 @@ export class AppModule {}
 ```
 
 Hit `GET /telescope/api/entries` (or `/telescope/api/entries/:id` for a request
-and everything it caused). Capture queries from MikroORM by wiring its logger —
+and everything it caused).
+
+For queue health, `GET /telescope/api/queues?window=1h` returns per-queue
+throughput, runtime and wait-time percentiles, and failure rate aggregated from
+captured job entries.
+
+Capture queries from MikroORM by wiring its logger —
 see [`packages/mikro-orm`](./packages/mikro-orm/README.md):
 
 ```ts

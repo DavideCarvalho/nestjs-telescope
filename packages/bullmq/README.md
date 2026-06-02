@@ -38,6 +38,10 @@ Each processed job becomes a `job` entry with `origin: 'queue'`. Queries and
 exceptions emitted while the job runs share the job's `batchId`, so opening a
 job in the dashboard shows everything it caused.
 
+With these entries captured, the core endpoint
+`GET /telescope/api/queues?window=1h` reports per-queue throughput, runtime and
+wait-time percentiles, and failure rate (wait time = `processedOn − enqueue`).
+
 ## Options
 
 | Option | Default | Description |
