@@ -31,6 +31,9 @@ export class AppModule {}
 Hit `GET /telescope/api/entries` (or `/telescope/api/entries/:id` for a request
 and everything it caused).
 
+Add `TelescopeUiModule.forRoot()` to mount a visual dashboard at `/telescope` —
+see [`packages/ui`](./packages/ui/README.md).
+
 For queue health, `GET /telescope/api/queues?window=1h` returns per-queue
 throughput, runtime and wait-time percentiles, and failure rate aggregated from
 captured job entries.
@@ -72,6 +75,7 @@ MikroOrmModule.forRootAsync({
 | `@dudousxd/nestjs-telescope-mikro-orm` | ✅ shipped | MikroORM query watcher + N+1 detector |
 | `@dudousxd/nestjs-telescope-bullmq` | ✅ shipped | BullMQ job watcher: per-job capture + query/exception correlation |
 | `@dudousxd/nestjs-telescope-testing` | ✅ shipped | In-memory store re-export, `FakeClock`, watcher test harness |
+| `@dudousxd/nestjs-telescope-ui` | ✅ shipped | Bundled dashboard SPA + composable React components/hooks/client |
 | `@dudousxd/nestjs-telescope-typeorm` | planned | TypeORM query watcher |
 | `@dudousxd/nestjs-telescope-prisma` | planned | Prisma query watcher (runtime `$on('query')`) |
 | `@dudousxd/nestjs-telescope-redis` | planned | Shared, TTL-pruned storage for multi-instance production |
