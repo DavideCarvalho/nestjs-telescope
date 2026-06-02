@@ -9,9 +9,16 @@ export class TelescopeGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<unknown>();
     if (this.options.authorizer) {
-      return this.options.authorizer({ request });
+      try {
+        return await this.options.authorizer({ request });
+      } catch {
+        // Fail closed: a throwing authorizer denies access (clean 403),
+        // never accidentally grants it or surfaces a 500.
+        return false;
+      }
     }
-    // Safe default: open in dev, closed in production.
+    // Safe default: open in dev, closed in production. An unset NODE_ENV is
+    // treated as non-production (local/dev context).
     return process.env.NODE_ENV !== 'production';
   }
 }

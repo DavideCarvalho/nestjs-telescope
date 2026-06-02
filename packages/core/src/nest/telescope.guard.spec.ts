@@ -31,4 +31,9 @@ describe('TelescopeGuard', () => {
     const guard = new TelescopeGuard({});
     expect(await guard.canActivate(ctx())).toBe(false);
   });
+
+  it('fails closed (deny) when the authorizer throws', async () => {
+    const guard = new TelescopeGuard({ authorizer: () => { throw new Error('boom'); } });
+    expect(await guard.canActivate(ctx())).toBe(false);
+  });
 });
