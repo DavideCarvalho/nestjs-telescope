@@ -20,7 +20,7 @@ interface ListQuery {
 export class TelescopeController {
   constructor(
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
-    private readonly service: TelescopeService,
+    @Inject(TelescopeService) private readonly service: TelescopeService,
   ) {}
 
   @Get('entries')
