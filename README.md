@@ -35,6 +35,10 @@ For queue health, `GET /telescope/api/queues?window=1h` returns per-queue
 throughput, runtime and wait-time percentiles, and failure rate aggregated from
 captured job entries.
 
+For an at-a-glance health snapshot, `GET /telescope/api/pulse?window=1h` returns
+per-type entry counts, the slowest entries, the most frequent exceptions, and
+N+1 query occurrences — all aggregated from captured entries.
+
 Capture queries from MikroORM by wiring its logger —
 see [`packages/mikro-orm`](./packages/mikro-orm/README.md):
 
