@@ -5,9 +5,18 @@ import { runTaggers, slowTagger, statusTagger } from './tagger.js';
 
 function entry(over: Partial<Entry>): Entry {
   return {
-    id: 'id', batchId: 'b', type: 'request', familyHash: null, content: {},
-    tags: [], sequence: 0, durationMs: null, origin: 'http', instanceId: 'i',
-    createdAt: new Date(), ...over,
+    id: 'id',
+    batchId: 'b',
+    type: 'request',
+    familyHash: null,
+    content: {},
+    tags: [],
+    sequence: 0,
+    durationMs: null,
+    origin: 'http',
+    instanceId: 'i',
+    createdAt: new Date(),
+    ...over,
   };
 }
 

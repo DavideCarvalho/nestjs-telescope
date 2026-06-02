@@ -28,11 +28,17 @@ describe('TelescopeContext', () => {
 
   it('isolates sequences across concurrent batches', async () => {
     const ctx = new TelescopeContext();
-    const a = ctx.run(createBatch('http', () => 'a'), async () => {
-      await Promise.resolve();
-      return ctx.nextSequence();
-    });
-    const b = ctx.run(createBatch('http', () => 'b'), async () => ctx.nextSequence());
+    const a = ctx.run(
+      createBatch('http', () => 'a'),
+      async () => {
+        await Promise.resolve();
+        return ctx.nextSequence();
+      },
+    );
+    const b = ctx.run(
+      createBatch('http', () => 'b'),
+      async () => ctx.nextSequence(),
+    );
     expect(await Promise.all([a, b])).toEqual([0, 0]);
   });
 });

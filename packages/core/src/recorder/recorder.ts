@@ -1,6 +1,6 @@
+import type { TelescopeContext } from '../context/telescope-context.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
-import type { TelescopeContext } from '../context/telescope-context.js';
 import type { RedactOptions } from '../redaction/redact.js';
 import { redact } from '../redaction/redact.js';
 import type { StorageProvider } from '../storage/storage-provider.js';

@@ -1,11 +1,11 @@
 // packages/core/src/recorder/recorder.spec.ts
 import { describe, expect, it, vi } from 'vitest';
-import { TelescopeContext } from '../context/telescope-context.js';
 import { createBatch } from '../context/batch.js';
-import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import { Recorder } from './recorder.js';
+import { TelescopeContext } from '../context/telescope-context.js';
 import type { Entry } from '../entry/entry.js';
+import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { Recorder } from './recorder.js';
 
 function makeRecorder(over: Partial<ConstructorParameters<typeof Recorder>[0]> = {}) {
   const storage = new InMemoryStorageProvider();
@@ -60,9 +60,16 @@ function makeDeferredStorage(): {
 describe('Recorder', () => {
   it('enriches an input into an entry with batch id, sequence, instance id', async () => {
     const { recorder, storage, context } = makeRecorder();
-    await context.run(createBatch('http', () => 'batch-1', () => 1_000), async () => {
-      recorder.record({ type: 'request', content: { statusCode: 200 } });
-    });
+    await context.run(
+      createBatch(
+        'http',
+        () => 'batch-1',
+        () => 1_000,
+      ),
+      async () => {
+        recorder.record({ type: 'request', content: { statusCode: 200 } });
+      },
+    );
     await recorder.flush();
 
     const page = await storage.get({});
@@ -196,7 +203,9 @@ describe('Recorder', () => {
   });
 
   it('a faulty onDrop hook does not break the Recorder', async () => {
-    const onDrop = () => { throw new Error('hook error'); };
+    const onDrop = () => {
+      throw new Error('hook error');
+    };
     const { recorder, storage } = makeRecorder({ bufferSize: 1, onDrop });
     // overflow to trigger onDrop
     recorder.record({ type: 'request', content: { n: 1 } });

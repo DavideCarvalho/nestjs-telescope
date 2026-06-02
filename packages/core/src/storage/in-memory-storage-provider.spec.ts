@@ -52,17 +52,17 @@ describe('InMemoryStorageProvider', () => {
     const page1 = await store.get({ limit: 2 });
     expect(page1.data.map((e) => e.id)).toEqual(['3', '2']);
     expect(page1.nextCursor).not.toBeNull();
-    const page2 = await store.get({ limit: 2, ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}) });
+    const page2 = await store.get({
+      limit: 2,
+      ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}),
+    });
     expect(page2.data.map((e) => e.id)).toEqual(['1']);
     expect(page2.nextCursor).toBeNull();
   });
 
   it('filters by empty-string type (falsy-but-present value)', async () => {
     const store = new InMemoryStorageProvider();
-    await store.store([
-      entry({ id: '1', type: '' }),
-      entry({ id: '2', type: 'request' }),
-    ]);
+    await store.store([entry({ id: '1', type: '' }), entry({ id: '2', type: 'request' })]);
     const result = await store.get({ type: '' });
     expect(result.data.map((e) => e.id)).toEqual(['1']);
   });

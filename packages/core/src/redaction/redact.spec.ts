@@ -49,7 +49,9 @@ describe('redact', () => {
   });
 
   it('uses the configured mask string', () => {
-    expect((redact({ password: 'x' }, { mask: '***' }) as Record<string, any>).password).toBe('***');
+    expect((redact({ password: 'x' }, { mask: '***' }) as Record<string, any>).password).toBe(
+      '***',
+    );
   });
 
   it('does not flag a non-cyclic shared reference as circular', () => {
