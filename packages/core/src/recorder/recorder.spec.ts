@@ -254,4 +254,23 @@ describe('Recorder', () => {
     await recorder.flush();
     expect((await storage.get({})).data).toHaveLength(1);
   });
+
+  // ── Filter hook ───────────────────────────────────────────────────────────
+
+  it('filter hook: stores a request entry but excludes a query entry; droppedCount stays 0 for the excluded one', async () => {
+    const { recorder, storage } = makeRecorder({
+      filter: (entry) => entry.type !== 'query',
+    });
+
+    recorder.record({ type: 'request', content: { path: '/' } });
+    recorder.record({ type: 'query', content: { sql: 'SELECT 1' } });
+    await recorder.flush();
+
+    const stored = (await storage.get({})).data;
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.type).toBe('request');
+
+    // Intentional exclusion must NOT increment any drop counter.
+    expect(recorder.droppedCount).toBe(0);
+  });
 });

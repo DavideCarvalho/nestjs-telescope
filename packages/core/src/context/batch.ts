@@ -9,12 +9,6 @@ export interface Batch {
   spanId?: string;
 }
 
-/** Internal: mutable per-batch state held in the ALS store. */
-export interface BatchState {
-  batch: Batch;
-  sequence: number;
-}
-
 export function createBatch(
   origin: BatchOrigin,
   idFactory: () => string,

@@ -31,6 +31,11 @@ export interface RecorderOptions {
    * - `'record-error'`  — an unexpected error occurred inside `record()`.
    */
   onDrop?: (count: number, reason: DropReason) => void;
+  /**
+   * Final allow/deny predicate applied to the enriched entry; returning false
+   * excludes it (an intentional exclusion, not counted as a drop).
+   */
+  filter?: (entry: Entry) => boolean;
 }
 
 /**
@@ -95,7 +100,12 @@ export class Recorder {
       if (!this.passesSampling(input.type)) {
         return;
       }
-      this.push(this.enrich(input));
+      const entry = this.enrich(input);
+      if (this.options.filter !== undefined && !this.options.filter(entry)) {
+        // Intentional exclusion — not a drop, no counter increment.
+        return;
+      }
+      this.push(entry);
     } catch {
       // A telescope bug must never break the host. Swallow.
       this.recordErrorDrops += 1;

@@ -1,6 +1,12 @@
 // packages/core/src/context/telescope-context.ts
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Batch, BatchState } from './batch.js';
+import type { Batch } from './batch.js';
+
+/** Internal: mutable per-batch state held in the ALS store. */
+interface BatchState {
+  batch: Batch;
+  sequence: number;
+}
 
 export class TelescopeContext {
   private readonly als = new AsyncLocalStorage<BatchState>();
