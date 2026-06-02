@@ -1,5 +1,5 @@
 // packages/core/src/nest/telescope-request.middleware.ts
-import { Injectable, type NestMiddleware } from '@nestjs/common';
+import { Inject, Injectable, type NestMiddleware } from '@nestjs/common';
 import { EntryType } from '../entry/entry.js';
 import { normalizeRequest } from './platform-request.js';
 import { TelescopeService } from './telescope.service.js';
@@ -16,7 +16,7 @@ function asFinishable(res: unknown): FinishableResponse | null {
 
 @Injectable()
 export class TelescopeRequestMiddleware implements NestMiddleware {
-  constructor(private readonly service: TelescopeService) {}
+  constructor(@Inject(TelescopeService) private readonly service: TelescopeService) {}
 
   use(req: unknown, res: unknown, next: (error?: unknown) => void): void {
     // Open the request batch for the whole downstream async execution.

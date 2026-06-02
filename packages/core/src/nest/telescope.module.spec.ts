@@ -42,4 +42,31 @@ describe('TelescopeModule (e2e, Express)', () => {
     await app.init();
     await request(app.getHttpServer()).get('/telescope/api/meta').expect(403);
   });
+
+  it('correlates a request with an exception thrown by its handler', async () => {
+    const { Controller, Get } = await import('@nestjs/common');
+    @Controller('boom')
+    class BoomController {
+      @Get()
+      go(): never {
+        throw new TypeError('kaboom');
+      }
+    }
+    const moduleRef = await Test.createTestingModule({
+      imports: [TelescopeModule.forRoot({ authorizer: () => true })],
+      controllers: [BoomController],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+
+    await request(app.getHttpServer()).get('/boom').expect(500);
+    await app.get(TelescopeService).flush();
+
+    const entries = await request(app.getHttpServer()).get('/telescope/api/entries').expect(200);
+    const req = entries.body.data.find((e: { type: string }) => e.type === 'request');
+    const exc = entries.body.data.find((e: { type: string }) => e.type === 'exception');
+    expect(req).toBeDefined();
+    expect(exc).toBeDefined();
+    expect(req.batchId).toBe(exc.batchId); // the request and its exception share a batch
+  });
 });

@@ -2,6 +2,7 @@
 import {
   type CallHandler,
   type ExecutionContext,
+  Inject,
   Injectable,
   type NestInterceptor,
 } from '@nestjs/common';
@@ -11,7 +12,7 @@ import { TelescopeService } from './telescope.service.js';
 
 @Injectable()
 export class TelescopeExceptionInterceptor implements NestInterceptor {
-  constructor(private readonly service: TelescopeService) {}
+  constructor(@Inject(TelescopeService) private readonly service: TelescopeService) {}
 
   intercept(_context: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(

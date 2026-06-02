@@ -2,14 +2,21 @@
 import {
   type DynamicModule,
   type InjectionToken,
+  type MiddlewareConsumer,
   Module,
+  type NestModule,
   type OptionalFactoryDependency,
   type Provider,
+  RequestMethod,
 } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { resolveConfig } from '../config/resolve-config.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
+import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
+import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import {
@@ -35,10 +42,20 @@ const SHARED_PROVIDERS: Provider[] = [
   TelescopeService,
   TelescopeGuard,
   TelescopePruner,
+  TelescopeRequestMiddleware,
+  TelescopeWatcherRegistrar,
+  { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 
 @Module({})
-export class TelescopeModule {
+export class TelescopeModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(TelescopeRequestMiddleware)
+      .exclude({ path: 'telescope/api/{*splat}', method: RequestMethod.ALL })
+      .forRoutes({ path: '{*splat}', method: RequestMethod.ALL });
+  }
+
   static forRoot(options: TelescopeModuleOptions = {}): DynamicModule {
     return {
       module: TelescopeModule,
