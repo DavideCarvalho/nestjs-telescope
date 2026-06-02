@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@2.3.0/schema.json",
+  "changelog": ["@changesets/changelog-github", { "repo": "DavideCarvalho/nestjs-telescope" }],
+  "commit": false,
+  "fixed": [],
+  "linked": [
+    [
+      "@dudousxd/nestjs-telescope",
+      "@dudousxd/nestjs-telescope-mikro-orm",
+      "@dudousxd/nestjs-telescope-typeorm",
+      "@dudousxd/nestjs-telescope-prisma",
+      "@dudousxd/nestjs-telescope-redis",
+      "@dudousxd/nestjs-telescope-otel",
+      "@dudousxd/nestjs-telescope-ui",
+      "@dudousxd/nestjs-telescope-testing"
+    ]
+  ],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

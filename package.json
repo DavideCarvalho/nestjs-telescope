@@ -1,0 +1,37 @@
+{
+  "name": "nestjs-telescope",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Laravel Telescope-style observability console for NestJS — watchers, request correlation, pluggable storage, headless API + optional dashboard.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DavideCarvalho/nestjs-telescope.git"
+  },
+  "author": "Davi Carvalho <davi@goflip.ai>",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "typecheck": "turbo run typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "changeset": "changeset",
+    "version-packages": "changeset version && biome check --write .",
+    "release": "pnpm --filter './packages/*' build && changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.27.0",
+    "@swc/core": "^1.15.40",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  }
+}
