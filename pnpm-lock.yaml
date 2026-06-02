@@ -88,6 +88,51 @@ importers:
         specifier: ^3.0.0
         version: 3.2.6(@types/node@20.19.41)
 
+  packages/mikro-orm:
+    devDependencies:
+      '@dudousxd/nestjs-telescope':
+        specifier: workspace:*
+        version: link:../core
+      '@mikro-orm/core':
+        specifier: ^7.0.0
+        version: 7.1.3(dataloader@1.4.0)
+      '@mikro-orm/decorators':
+        specifier: ^7.0.0
+        version: 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))(reflect-metadata@0.2.2)
+      '@mikro-orm/nestjs':
+        specifier: ^7.0.0
+        version: 7.0.2(@mikro-orm/core@7.1.3(dataloader@1.4.0))(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)
+      '@mikro-orm/sql':
+        specifier: ^7.0.0
+        version: 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))
+      '@mikro-orm/sqlite':
+        specifier: ^7.0.0
+        version: 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^11.0.0
+        version: 11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/testing':
+        specifier: ^11.0.0
+        version: 11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24))
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.41
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      rxjs:
+        specifier: ^7.8.1
+        version: 7.8.2
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.6(@types/node@20.19.41)
+
 packages:
 
   '@babel/runtime@7.29.7':
@@ -412,6 +457,46 @@ packages:
 
   '@manypkg/get-packages@1.1.3':
     resolution: {integrity: sha512-fo+QhuU3qE/2TQMQmbVMqaQ6EWbMhi4ABWP+O4AM1NqPBuy0OrApV5LO6BrrgnhtAHS2NH6RrVk9OL181tTi8A==}
+
+  '@mikro-orm/core@7.1.3':
+    resolution: {integrity: sha512-fTZhCgqJqA1+hWmdE7oPbMYIm/6GsN3bxQAJqJFSG9NteUDILg/p86L/D/P+cmK2+iCv/3QE1k3YuBFEYAMzow==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      dataloader: 2.2.3
+    peerDependenciesMeta:
+      dataloader:
+        optional: true
+
+  '@mikro-orm/decorators@7.1.3':
+    resolution: {integrity: sha512-N1UBZBjClL2J+w/mUYZlaR++Z/r6VfmmAWKsFwS+3PBuyr5+18TKU7Y+cG4DjLw4omFCkrPH31QmIbo6suqDAg==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      '@mikro-orm/core': 7.1.3
+      reflect-metadata: ^0.1.0 || ^0.2.0
+    peerDependenciesMeta:
+      reflect-metadata:
+        optional: true
+
+  '@mikro-orm/nestjs@7.0.2':
+    resolution: {integrity: sha512-0iEr+YzhXQ8cZaAKzfJNijHHAL1Fg/PrauaMiwlZpaxOy0aMAPCQEwaSuxsz43X6XShrCv/TlE6kRn/QPIMzZA==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      '@mikro-orm/core': ^7.0.0 || ^7.0.0-dev.0
+      '@nestjs/common': ^11.0.5
+      '@nestjs/core': ^11.0.5
+      reflect-metadata: ^0.1.0 || ^0.2.0
+
+  '@mikro-orm/sql@7.1.3':
+    resolution: {integrity: sha512-ZEdl4+pUXwRfiTONEswsyEtntP+PKp0A5QL7P3UsAefd8g62XC0WsSLA4tYQzbjfSY0u8BDkBF/bhQej6IPjTw==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      '@mikro-orm/core': 7.1.3
+
+  '@mikro-orm/sqlite@7.1.3':
+    resolution: {integrity: sha512-NBymxiqzeSgPvzxx4JBtw6CdLTxZcCoBGVGf3HFVu/c/2v4bnWj+YHs8kd1ipdxZfvURacwnq1K1/mL8vvXZiQ==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      '@mikro-orm/core': 7.1.3
 
   '@nestjs/common@11.1.24':
     resolution: {integrity: sha512-9zHxaDDM+oXW9As6UsP5yYB+UqczBmpeSCIFWdPEtEukMnZhxODG1BBjaUcdBB8Sc1uzojSJSJlp3yFp853t1g==}
@@ -917,6 +1002,10 @@ packages:
   better-sqlite3@11.10.0:
     resolution: {integrity: sha512-EwhOpyXiOEL/lKzHz9AW1msWFNzGc/z+LzeB3/jnFJpxu+th2yqvzsSWas1v9jgs9+xiXJcD5A8CJxAG2TaghQ==}
 
+  better-sqlite3@12.10.0:
+    resolution: {integrity: sha512-CyzaZRQKyHkB2ZInfTTl2nvT33EbDpjkLEbE8/Zck3Ll6O0qqvuGdrJ45HgtH+HykRg88ITY3AdreBGN70aBSQ==}
+    engines: {node: 20.x || 22.x || 23.x || 24.x || 25.x || 26.x}
+
   bindings@1.5.0:
     resolution: {integrity: sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==}
 
@@ -1405,6 +1494,10 @@ packages:
 
   jsonfile@4.0.0:
     resolution: {integrity: sha512-m6F1R3z8jjlf2imQHS2Qez5sjKWQzbuuhuJ/FKYFRZvPE3PuHcSMVZzfsLhGVOkfd20obL5SWEBew5ShlquNxg==}
+
+  kysely@0.29.2:
+    resolution: {integrity: sha512-s6WVJyEZrbm6jhBpiKHsGHyePMrVQKJ85wZCFCr9W4QHv6WTjWIrdvTmO9hDEA3bNK0xkrE2DqrHsXMLWuZpQg==}
+    engines: {node: '>=22.0.0'}
 
   light-my-request@6.6.0:
     resolution: {integrity: sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A==}
@@ -2438,6 +2531,35 @@ snapshots:
       globby: 11.1.0
       read-yaml-file: 1.1.0
 
+  '@mikro-orm/core@7.1.3(dataloader@1.4.0)':
+    optionalDependencies:
+      dataloader: 1.4.0
+
+  '@mikro-orm/decorators@7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))(reflect-metadata@0.2.2)':
+    dependencies:
+      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
+    optionalDependencies:
+      reflect-metadata: 0.2.2
+
+  '@mikro-orm/nestjs@7.0.2(@mikro-orm/core@7.1.3(dataloader@1.4.0))(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)':
+    dependencies:
+      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
+      '@nestjs/common': 11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core': 11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      reflect-metadata: 0.2.2
+
+  '@mikro-orm/sql@7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))':
+    dependencies:
+      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
+      kysely: 0.29.2
+
+  '@mikro-orm/sqlite@7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))':
+    dependencies:
+      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
+      '@mikro-orm/sql': 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))
+      better-sqlite3: 12.10.0
+      kysely: 0.29.2
+
   '@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
       file-type: 21.3.4
@@ -2867,6 +2989,11 @@ snapshots:
       is-windows: 1.0.2
 
   better-sqlite3@11.10.0:
+    dependencies:
+      bindings: 1.5.0
+      prebuild-install: 7.1.3
+
+  better-sqlite3@12.10.0:
     dependencies:
       bindings: 1.5.0
       prebuild-install: 7.1.3
@@ -3454,6 +3581,8 @@ snapshots:
   jsonfile@4.0.0:
     optionalDependencies:
       graceful-fs: 4.2.11
+
+  kysely@0.29.2: {}
 
   light-my-request@6.6.0:
     dependencies:
