@@ -97,9 +97,18 @@ interface WatcherContext {
 ```
 
 Watchers never touch storage and never block. They call `record()`, which returns
-immediately. Built-in watchers (v1): **Request, Query, Job, Exception, Mail**.
-Designed-for and trivial to add via the same SPI: **HttpClient, Cache, Event,
-Schedule, Log, Redis, Notification, Gate**.
+immediately.
+
+**Committed watcher roster:**
+- *v1 (NestJS-integration plan):* **Request, Exception** (the runnable foundation),
+  then **Job, Mail, Query**.
+- *Expanded roster (follow-on plans):* **HttpClient** (outbound axios/undici),
+  **Cache** (cache-manager hits/misses), **Gate** (authz allow/deny on
+  guards/policies), **Dumps** (`dd()`-style debug dumps on the timeline),
+  **Schedule** (`@nestjs/schedule` cron ticks as their own batches), **Model**
+  (MikroORM/TypeORM entity hydration — feeds N+1 detection).
+
+All built on the same `Watcher` SPI; community watchers are first-class.
 
 ### 2.3 `StorageProvider`
 
@@ -285,7 +294,8 @@ packages/
   prisma/     @dudousxd/nestjs-telescope-prisma    QueryWatcher + StorageProvider (Prisma)
   redis/      @dudousxd/nestjs-telescope-redis     StorageProvider (shared, TTL-pruned, multi-instance)
   otel/       @dudousxd/nestjs-telescope-otel      bidirectional OpenTelemetry bridge
-  ui/         @dudousxd/nestjs-telescope-ui        dashboard SPA + serve middleware
+  pulse/      @dudousxd/nestjs-telescope-pulse     aggregate health dashboard (Pulse-mode): cards over the entry stream
+  ui/         @dudousxd/nestjs-telescope-ui        dashboard SPA + agnostic serve controller (Express + Fastify)
   testing/    @dudousxd/nestjs-telescope-testing   in-memory store, fake clock, watcher test harness
 examples/     runnable apps (express + fastify, each ORM)
 integration/  cross-package integration suites (real ORMs against SQLite/Postgres/MySQL)
@@ -326,3 +336,53 @@ Internal deps use `workspace:*`; everything is `peerDependency` against
    renderer; the API, pruner, and OTel bridge handle it generically.
 4. **Taggers:** `(entry) => string[]` functions that enrich entries with searchable
    tags without modifying watchers.
+
+---
+
+## 11. Platform support — Express AND Fastify
+
+NestJS runs on `@nestjs/platform-express` or `@nestjs/platform-fastify`; the library
+must be agnostic to both.
+
+- **HTTP API + guard** are plain Nest controllers/guards — they work on either
+  adapter unchanged.
+- **RequestWatcher** reads request data through `ExecutionContext.switchToHttp()`,
+  but the raw fields differ (`req.originalUrl` vs `req.url`, `req.ip` vs
+  `req.socket.remoteAddress`, header/body access). A small **`PlatformRequest`
+  adapter** normalizes these, selected via `HttpAdapterHost`. Never import
+  `express`/`fastify` types into core watcher logic.
+- **UI serving** (`-ui`) cannot use `express.static`/`@fastify/static` directly.
+  The dashboard assets are streamed through a Nest controller (`Readable` →
+  response), which both adapters handle.
+- **Tests** run the RequestWatcher + API against both an Express and a Fastify
+  Nest app to lock parity.
+
+`@nestjs/platform-express`/`-fastify` are `peerDependency` + `peerDependenciesMeta.optional`
+so neither is forced on the host.
+
+---
+
+## 12. Strategic features beyond per-entry browsing
+
+These are committed roadmap bets (each its own plan, layered on the spine + watchers):
+
+- **Pulse-mode (`-pulse`)** — an aggregate **health dashboard** of cards computed
+  over the entry stream: slowest requests/queries/jobs, top exceptions by family,
+  active users, cache hit rate, error rate. This is the "admin analytics about the
+  platform" surface; it complements (doesn't replace) the per-entry Telescope view.
+  Backed by periodic rollups over storage so cards are cheap to render.
+- **N+1 detector + query insights** — within a batch, group `query` entries by
+  `familyHash`; when one template runs more than a threshold, emit an **insight**
+  (a tagged synthetic entry / Pulse card) flagging the likely N+1, with the
+  offending SQL and the parent request. The Model watcher's hydration data sharpens
+  this.
+- **Horizon-style queue metrics** — over the Job watcher (BullMQ + SQS): throughput,
+  wait time, runtime percentiles, retries, and failure rate per queue, as a
+  dedicated dashboard view. The Job watcher records the lifecycle; this aggregates it.
+
+**Deferred (not in current roadmap):** AI-assisted triage (a `-ai` package using
+Claude to explain/cluster exceptions and slow batches) — revisit after the above land.
+
+Other differentiators kept in mind but unscheduled: trace-waterfall view of a batch,
+request replay, entity-change diffs, threshold→Slack alerting, multi-instance
+aggregation (the data model already carries `instanceId`).

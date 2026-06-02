@@ -11,6 +11,7 @@
       "@dudousxd/nestjs-telescope-prisma",
       "@dudousxd/nestjs-telescope-redis",
       "@dudousxd/nestjs-telescope-otel",
+      "@dudousxd/nestjs-telescope-pulse",
       "@dudousxd/nestjs-telescope-ui",
       "@dudousxd/nestjs-telescope-testing"
     ]
