@@ -12,6 +12,7 @@ import {
 import { durationToMs } from '../config/parse-duration.js';
 import type { Entry } from '../entry/entry.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
+import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
 import type {
   EntryQuery,
@@ -40,6 +41,7 @@ export class TelescopeController {
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
     @Inject(TelescopeService) private readonly service: TelescopeService,
     @Inject(QueueMetricsService) private readonly queueMetrics: QueueMetricsService,
+    @Inject(TimeseriesService) private readonly timeseriesService: TimeseriesService,
     @Inject(PulseService) private readonly pulse: PulseService,
   ) {}
 
@@ -99,6 +101,33 @@ export class TelescopeController {
       throw new BadRequestException(`Window must be positive: ${window}`);
     }
     return this.pulse.getHealth(windowMs);
+  }
+
+  @Get('timeseries')
+  timeseries(
+    @Query('window') window?: string,
+    @Query('buckets') buckets?: string,
+    @Query('type') type?: string,
+    @Query('tag') tag?: string,
+  ): Promise<TimeseriesResult> {
+    let windowMs: number;
+    try {
+      windowMs = durationToMs(window ?? '1h');
+    } catch {
+      throw new BadRequestException(`Invalid window: ${window}`);
+    }
+    if (!Number.isFinite(windowMs) || windowMs <= 0) {
+      throw new BadRequestException(`Window must be positive: ${window}`);
+    }
+    const bucketCount = buckets !== undefined ? Number(buckets) : undefined;
+    return this.timeseriesService.getTimeseries({
+      windowMs,
+      ...(bucketCount !== undefined && Number.isFinite(bucketCount)
+        ? { buckets: bucketCount }
+        : {}),
+      ...(type !== undefined ? { type } : {}),
+      ...(tag !== undefined ? { tag } : {}),
+    });
   }
 
   @Get('meta')

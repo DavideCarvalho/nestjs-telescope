@@ -34,6 +34,8 @@ export * from './query/n-plus-one.js';
 export * from './metrics/collect-window.js';
 export * from './metrics/queue-metrics.js';
 export * from './metrics/queue-metrics.service.js';
+export * from './metrics/timeseries.js';
+export * from './metrics/timeseries.service.js';
 
 export * from './pulse/pulse-summary.js';
 export * from './pulse/pulse.service.js';
