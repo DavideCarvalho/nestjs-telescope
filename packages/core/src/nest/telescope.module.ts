@@ -12,6 +12,7 @@ import {
 import { APP_INTERCEPTOR, DiscoveryModule } from '@nestjs/core';
 import { resolveConfig } from '../config/resolve-config.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
+import { PulseService } from '../pulse/pulse.service.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
@@ -44,6 +45,7 @@ const SHARED_PROVIDERS: Provider[] = [
   TelescopeGuard,
   TelescopePruner,
   QueueMetricsService,
+  PulseService,
   TelescopeRequestMiddleware,
   TelescopeWatcherRegistrar,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
@@ -65,7 +67,7 @@ export class TelescopeModule implements NestModule {
       imports: [DiscoveryModule],
       controllers: [TelescopeController],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
-      exports: [TelescopeService, TELESCOPE_STORAGE, QueueMetricsService],
+      exports: [TelescopeService, TELESCOPE_STORAGE, QueueMetricsService, PulseService],
     };
   }
 
@@ -86,7 +88,7 @@ export class TelescopeModule implements NestModule {
         },
         ...SHARED_PROVIDERS,
       ],
-      exports: [TelescopeService, TELESCOPE_STORAGE, QueueMetricsService],
+      exports: [TelescopeService, TELESCOPE_STORAGE, QueueMetricsService, PulseService],
     };
   }
 }

@@ -35,4 +35,7 @@ export * from './metrics/collect-window.js';
 export * from './metrics/queue-metrics.js';
 export * from './metrics/queue-metrics.service.js';
 
+export * from './pulse/pulse-summary.js';
+export * from './pulse/pulse.service.js';
+
 export const TELESCOPE_VERSION = '0.0.0';
