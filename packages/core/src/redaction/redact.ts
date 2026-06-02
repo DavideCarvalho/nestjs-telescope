@@ -47,10 +47,17 @@ export function redact(value: unknown, options: RedactOptions): unknown {
   const seen = new WeakSet<object>();
 
   const walk = (node: unknown, path: string): unknown => {
+    // `seen` tracks only the current ancestor path (added on the way down,
+    // removed on the way up), so genuine cycles are caught while a non-cyclic
+    // shared reference appearing in two sibling positions is NOT a false hit.
     if (Array.isArray(node)) {
       if (seen.has(node)) return '[Circular]';
       seen.add(node);
-      return node.map((item, index) => walk(item, path ? `${path}.${index}` : String(index)));
+      const mapped = node.map((item, index) =>
+        walk(item, path ? `${path}.${index}` : String(index)),
+      );
+      seen.delete(node);
+      return mapped;
     }
     if (isPlainObject(node)) {
       if (seen.has(node)) return '[Circular]';
@@ -64,6 +71,7 @@ export function redact(value: unknown, options: RedactOptions): unknown {
           result[key] = walk(child, childPath);
         }
       }
+      seen.delete(node);
       return result;
     }
     return node;
