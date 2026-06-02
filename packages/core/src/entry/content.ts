@@ -19,11 +19,13 @@ export interface QueryContent {
 }
 
 export interface JobContent {
+  id: string | null;
   name: string;
   queue: string;
   payload: unknown;
   status: 'queued' | 'processing' | 'completed' | 'failed';
   attempts: number;
+  maxAttempts: number | null;
   failureReason: string | null;
 }
 
