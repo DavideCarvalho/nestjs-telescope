@@ -21,15 +21,15 @@ function entry(over: Partial<Entry>): Entry {
   };
 }
 
-function newProvider(): RedisStorageProvider {
-  return new RedisStorageProvider(new RedisMock() as unknown as Redis);
-}
-
 describe('RedisStorageProvider', () => {
   let store: RedisStorageProvider;
 
-  beforeEach(() => {
-    store = newProvider();
+  beforeEach(async () => {
+    // ioredis-mock instances share one in-process datastore, so flush before
+    // each test to keep them isolated (fresh store per test).
+    const redis = new RedisMock() as unknown as Redis;
+    await redis.flushall();
+    store = new RedisStorageProvider(redis);
   });
 
   it('stores and finds an entry with its batch (createdAt revived as a Date)', async () => {
@@ -95,5 +95,142 @@ describe('RedisStorageProvider', () => {
     expect(await store.find('1')).toBeNull();
     expect(await store.batch('b')).toEqual([]);
     expect(await store.tags()).toEqual([]);
+  });
+
+  it('paginates newest-first via cursor with no dupes (120 entries, limit 50)', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    const entries = Array.from({ length: 120 }, (_, i) =>
+      entry({ id: `e${i}`, batchId: `b${i}`, createdAt: new Date(base + i * 1000) }),
+    );
+    await store.store(entries);
+
+    const collected: Entry[] = [];
+    const pageSizes: number[] = [];
+    let cursor: string | null | undefined;
+    let pages = 0;
+    do {
+      const page = await store.get({ limit: 50, cursor: cursor ?? undefined });
+      pageSizes.push(page.data.length);
+      collected.push(...page.data);
+      cursor = page.nextCursor;
+      pages++;
+      expect(pages).toBeLessThanOrEqual(10);
+    } while (cursor !== null);
+
+    expect(pages).toBe(3);
+    expect(pageSizes).toEqual([50, 50, 20]);
+    expect(collected).toHaveLength(120);
+
+    // No duplicate ids.
+    expect(new Set(collected.map((e) => e.id)).size).toBe(120);
+
+    // Newest-first: createdAt strictly descending across the whole concatenation.
+    for (let i = 1; i < collected.length; i++) {
+      expect(collected[i - 1].createdAt.getTime()).toBeGreaterThan(
+        collected[i].createdAt.getTime(),
+      );
+    }
+    // Newest entry first, oldest last.
+    expect(collected[0].id).toBe('e119');
+    expect(collected.at(-1)?.id).toBe('e0');
+  });
+
+  it('filters by type', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    await store.store([
+      entry({ id: '1', type: 'query', createdAt: new Date(base + 1000) }),
+      entry({ id: '2', type: 'request', createdAt: new Date(base + 2000) }),
+      entry({ id: '3', type: 'query', createdAt: new Date(base + 3000) }),
+      entry({ id: '4', type: 'request', createdAt: new Date(base + 4000) }),
+    ]);
+
+    const page = await store.get({ type: 'query' });
+    expect(page.data.map((e) => e.id)).toEqual(['3', '1']);
+    expect(page.data.every((e) => e.type === 'query')).toBe(true);
+  });
+
+  it('windows by before/after', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    // ids 0..9 at base + i*1000
+    await store.store(
+      Array.from({ length: 10 }, (_, i) =>
+        entry({ id: `e${i}`, batchId: `b${i}`, createdAt: new Date(base + i * 1000) }),
+      ),
+    );
+
+    const boundary = new Date(base + 5000); // e5
+
+    const after = await store.get({ after: boundary });
+    expect(after.data.map((e) => e.id)).toEqual(['e9', 'e8', 'e7', 'e6']);
+    expect(after.data.every((e) => e.createdAt.getTime() > boundary.getTime())).toBe(true);
+
+    const before = await store.get({ before: boundary });
+    expect(before.data.map((e) => e.id)).toEqual(['e4', 'e3', 'e2', 'e1', 'e0']);
+    expect(before.data.every((e) => e.createdAt.getTime() < boundary.getTime())).toBe(true);
+  });
+
+  it('updates a field while keeping id immutable', async () => {
+    await store.store([entry({ id: '1', durationMs: null })]);
+
+    await store.update('1', { durationMs: 42, id: 'hacked' });
+
+    const found = await store.find('1');
+    expect(found?.id).toBe('1');
+    expect(found?.durationMs).toBe(42);
+    expect(await store.find('hacked')).toBeNull();
+  });
+
+  it('update is a no-op for a missing entry', async () => {
+    await store.update('nope', { durationMs: 1 });
+    expect(await store.find('nope')).toBeNull();
+  });
+
+  it('prunes entries older than the cutoff and decrements tag counts', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    await store.store([
+      entry({ id: 'old1', tags: ['a'], createdAt: new Date(base) }),
+      entry({ id: 'old2', tags: ['a', 'b'], createdAt: new Date(base + 1000) }),
+      entry({ id: 'new1', tags: ['a'], createdAt: new Date(base + 10_000) }),
+    ]);
+
+    const cutoff = new Date(base + 5000);
+    const removed = await store.prune(cutoff);
+
+    expect(removed).toBe(2);
+    expect(await store.find('old1')).toBeNull();
+    expect(await store.find('old2')).toBeNull();
+    expect(await store.find('new1')).not.toBeNull();
+
+    const tagCounts = new Map((await store.tags()).map((t) => [t.tag, t.count]));
+    expect(tagCounts.get('a')).toBe(1); // only new1 remains
+    expect(tagCounts.get('b')).toBeUndefined(); // dropped to 0
+
+    const page = await store.get({});
+    expect(page.data.map((e) => e.id)).toEqual(['new1']);
+  });
+
+  it('prune keepLast retains the newest N of the pruned set', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    await store.store([
+      entry({ id: 'o0', createdAt: new Date(base) }),
+      entry({ id: 'o1', createdAt: new Date(base + 1000) }),
+      entry({ id: 'o2', createdAt: new Date(base + 2000) }),
+      entry({ id: 'o3', createdAt: new Date(base + 3000) }),
+      entry({ id: 'fresh', createdAt: new Date(base + 100_000) }),
+    ]);
+
+    const cutoff = new Date(base + 50_000); // o0..o3 are old, fresh survives
+    const removed = await store.prune(cutoff, 2);
+
+    // 4 old, keep newest 2 (o3, o2), remove 2 (o1, o0).
+    expect(removed).toBe(2);
+    expect(await store.find('o0')).toBeNull();
+    expect(await store.find('o1')).toBeNull();
+    expect(await store.find('o2')).not.toBeNull();
+    expect(await store.find('o3')).not.toBeNull();
+    expect(await store.find('fresh')).not.toBeNull();
+
+    const page = await store.get({});
+    expect(page.data.map((e) => e.id)).toEqual(['fresh', 'o3', 'o2']);
   });
 });

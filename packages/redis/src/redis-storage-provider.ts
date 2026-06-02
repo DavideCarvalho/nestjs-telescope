@@ -9,7 +9,7 @@ import {
   safeJsonParse,
 } from '@dudousxd/nestjs-telescope';
 import type { Redis } from 'ioredis';
-import { lexMember } from './lex-key.js';
+import { idFromMember, invBound, lexMember } from './lex-key.js';
 
 export interface RedisStorageOptions {
   /** Namespace for every Telescope key. Defaults to `'telescope:'`. */
@@ -18,6 +18,7 @@ export interface RedisStorageOptions {
 
 const DEFAULT_PREFIX = 'telescope:';
 const SCAN_COUNT = 200;
+const DEFAULT_LIMIT = 50;
 
 /**
  * Redis-backed shared storage provider (ioredis). Suitable for multi-replica
@@ -107,16 +108,132 @@ export class RedisStorageProvider implements StorageProvider {
     } while (cursor !== '0');
   }
 
-  async get(_query: EntryQuery): Promise<Page<Entry>> {
-    throw new Error('RedisStorageProvider.get is implemented in Task 4');
+  /**
+   * Newest-first keyset pagination via `ZRANGEBYLEX` over a single primary index.
+   *
+   * Members are `lexMember(createdAt, id)` = `<inv(createdAt)>:<id>` with newest
+   * sorting lexicographically smallest, so an ascending lex range is newest-first.
+   * The opaque cursor IS the last returned member string.
+   *
+   * NOTE: the dashboard issues single-filter queries (type OR tag OR family OR
+   * batch). When MULTIPLE filters are set we page the primary index and AND the
+   * remaining predicates in app code (best-effort), refetching pages until the
+   * limit is filled or the index is exhausted.
+   */
+  async get(query: EntryQuery): Promise<Page<Entry>> {
+    const limit =
+      query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
+        ? query.limit
+        : DEFAULT_LIMIT;
+
+    const indexKey = this.primaryIndexKey(query);
+    const max = this.maxBound(query);
+    const needsPostFilter = this.needsPostFilter(query, indexKey);
+
+    // Cursor is the opaque member string; an empty/undecodable cursor starts at `-`.
+    let min =
+      typeof query.cursor === 'string' && query.cursor.length > 0
+        ? `(${query.cursor}`
+        : this.minBound(query);
+
+    // We want `limit` matches plus one extra to know whether more remain. Each
+    // kept match carries its member so the page's last member becomes the cursor.
+    const kept: { entry: Entry; member: string }[] = [];
+
+    while (kept.length <= limit) {
+      const members = await this.redis.zrangebylex(indexKey, min, max, 'LIMIT', 0, limit + 1);
+      if (members.length === 0) break;
+
+      const ids = members.map(idFromMember);
+      const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
+
+      for (let i = 0; i < members.length; i++) {
+        const member = members[i];
+        if (member === undefined) continue;
+        // Advance the resume point past every member we examine.
+        min = `(${member}`;
+        const raw = raws[i];
+        const entry = raw === null || raw === undefined ? null : this.parseEntry(raw);
+        if (entry === null) continue;
+        if (needsPostFilter && !this.matchesSecondary(entry, query, indexKey)) continue;
+        kept.push({ entry, member });
+        if (kept.length > limit) break;
+      }
+
+      // Without post-filtering, a short page means the index is exhausted.
+      if (!needsPostFilter && members.length <= limit) break;
+      if (kept.length > limit) break;
+    }
+
+    const hasMore = kept.length > limit;
+    const page = kept.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      data: page.map((item) => item.entry),
+      nextCursor: hasMore && last ? last.member : null,
+    };
   }
 
-  async update(_id: string, _patch: Partial<Entry>): Promise<void> {
-    throw new Error('RedisStorageProvider.update is implemented in Task 4');
+  /** Mirror in-memory `update`: merge patch, keep `id` immutable; missing → no-op.
+   *  Patches never touch createdAt/id in practice, so the indexes never drift. */
+  async update(id: string, patch: Partial<Entry>): Promise<void> {
+    const raw = await this.redis.get(this.entryKey(id));
+    if (raw === null) return;
+    const existing = this.parseEntry(raw);
+    if (existing === null) return;
+    const merged: Entry = { ...existing, ...patch, id: existing.id };
+    await this.redis.set(this.entryKey(id), JSON.stringify(merged));
   }
 
-  async prune(_olderThan: Date, _keepLast?: number): Promise<number> {
-    throw new Error('RedisStorageProvider.prune is implemented in Task 4');
+  /**
+   * Remove entries with `createdAt < olderThan`. Older = larger inv = lexically
+   * greater, so the prune candidates are `ZRANGEBYLEX idx (<invBound(olderThan)> +`.
+   *
+   * Mirrors in-memory `prune`: when `keepLast` is set, the newest `keepLast` of
+   * the to-be-pruned entries survive; the rest (and their index/tag bookkeeping)
+   * are removed. Returns the number actually removed.
+   */
+  async prune(olderThan: Date, keepLast?: number): Promise<number> {
+    const boundary = invBound(olderThan.getTime());
+    // Candidates are returned oldest-first (largest member first is `+`, but
+    // ZRANGEBYLEX is ascending, so smaller inv→ first; within this range the
+    // smallest member is the newest of the OLD entries).
+    const candidates = await this.redis.zrangebylex(this.indexKey(), `(${boundary}`, '+');
+    if (candidates.length === 0) return 0;
+
+    // candidates ascending = newest-first among the old set. Keep the newest `keepLast`.
+    const keep = keepLast !== undefined ? Math.max(0, keepLast) : 0;
+    const toRemoveMembers = candidates.slice(keep);
+    if (toRemoveMembers.length === 0) return 0;
+
+    const ids = toRemoveMembers.map(idFromMember);
+    const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
+
+    const pipeline = this.redis.multi();
+    let removed = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const member = toRemoveMembers[i];
+      if (id === undefined || member === undefined) continue;
+      const raw = raws[i];
+      const entry = raw === null || raw === undefined ? null : this.parseEntry(raw);
+      removed++;
+      pipeline.del(this.entryKey(id));
+      pipeline.zrem(this.indexKey(), member);
+      if (entry !== null) {
+        pipeline.zrem(this.typeIndexKey(entry.type), member);
+        if (entry.familyHash !== null) {
+          pipeline.zrem(this.familyIndexKey(entry.familyHash), member);
+        }
+        pipeline.zrem(this.batchKey(entry.batchId), id);
+        for (const tag of entry.tags) {
+          pipeline.zrem(this.tagIndexKey(tag), member);
+          pipeline.hincrby(this.tagsKey(), tag, -1);
+        }
+      }
+    }
+    await pipeline.exec();
+    return removed;
   }
 
   /** The host owns the injected connection, so closing it is its responsibility. */
@@ -152,6 +269,83 @@ export class RedisStorageProvider implements StorageProvider {
       instanceId: typeof candidate.instanceId === 'string' ? candidate.instanceId : '',
       createdAt,
     };
+  }
+
+  /** Single primary index for a query: type, else tag, else family, else global. */
+  private primaryIndexKey(query: EntryQuery): string {
+    if (query.type !== undefined) return this.typeIndexKey(query.type);
+    if (query.tag !== undefined) return this.tagIndexKey(query.tag);
+    if (query.familyHash !== undefined) return this.familyIndexKey(query.familyHash);
+    return this.indexKey();
+  }
+
+  /**
+   * Lower lex bound for the range when there is no cursor. `before` (createdAt <
+   * beforeMs → older → larger inv → larger member) raises the MIN. Since createdAt
+   * is integer ms, `createdAt < beforeMs` ⟺ `createdAt <= beforeMs - 1`, whose
+   * smallest qualifying inv is `invBound(beforeMs - 1)`, so `[invBound(beforeMs-1)`
+   * is an inclusive lower bound.
+   */
+  private minBound(query: EntryQuery): string {
+    if (query.before !== undefined) {
+      return `[${invBound(query.before.getTime() - 1)}`;
+    }
+    return '-';
+  }
+
+  /**
+   * Upper lex bound. `after` (createdAt > afterMs → newer → smaller inv → smaller
+   * member) lowers the MAX. A member at exactly afterMs is `invBound(afterMs):id`
+   * which is `> invBound(afterMs)`, so `(invBound(afterMs)` (exclusive) excludes
+   * everything `>= invBound(afterMs)`, keeping only strictly-newer entries.
+   */
+  private maxBound(query: EntryQuery): string {
+    if (query.after !== undefined) {
+      return `(${invBound(query.after.getTime())}`;
+    }
+    return '+';
+  }
+
+  /** Whether predicates beyond the chosen primary index must be applied in app code. */
+  private needsPostFilter(query: EntryQuery, indexKey: string): boolean {
+    const primaryHandlesType =
+      query.type !== undefined && indexKey === this.typeIndexKey(query.type);
+    const primaryHandlesTag = query.tag !== undefined && indexKey === this.tagIndexKey(query.tag);
+    const primaryHandlesFamily =
+      query.familyHash !== undefined && indexKey === this.familyIndexKey(query.familyHash);
+
+    if (query.type !== undefined && !primaryHandlesType) return true;
+    if (query.tag !== undefined && !primaryHandlesTag) return true;
+    if (query.familyHash !== undefined && !primaryHandlesFamily) return true;
+    if (query.batchId !== undefined) return true;
+    return false;
+  }
+
+  /** Apply the secondary AND predicates not covered by the primary index. */
+  private matchesSecondary(entry: Entry, query: EntryQuery, indexKey: string): boolean {
+    if (
+      query.type !== undefined &&
+      indexKey !== this.typeIndexKey(query.type) &&
+      entry.type !== query.type
+    ) {
+      return false;
+    }
+    if (
+      query.tag !== undefined &&
+      indexKey !== this.tagIndexKey(query.tag) &&
+      !entry.tags.includes(query.tag)
+    ) {
+      return false;
+    }
+    if (
+      query.familyHash !== undefined &&
+      indexKey !== this.familyIndexKey(query.familyHash) &&
+      entry.familyHash !== query.familyHash
+    ) {
+      return false;
+    }
+    if (query.batchId !== undefined && entry.batchId !== query.batchId) return false;
+    return true;
   }
 
   private entryKey(id: string): string {
