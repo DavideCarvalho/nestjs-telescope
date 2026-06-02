@@ -10,6 +10,8 @@ describe('buildJobContent', () => {
     attemptsMade: 1,
     opts: { attempts: 3 },
     data: { to: 'ada@example.com' },
+    timestamp: 1000,
+    processedOn: 1250,
   };
 
   it('builds a completed job content conforming to the core JobContent shape', () => {
@@ -22,6 +24,7 @@ describe('buildJobContent', () => {
       status: 'completed',
       attempts: 1,
       maxAttempts: 3,
+      waitMs: 250,
       failureReason: null,
     });
   });
@@ -49,6 +52,12 @@ describe('buildJobContent', () => {
     expect(content.attempts).toBe(0);
   });
 
+  it('computes waitMs from processedOn - timestamp, null when either is missing', () => {
+    expect(buildJobContent({ timestamp: 1000, processedOn: 1700 }, 'completed', undefined, true).waitMs).toBe(700);
+    expect(buildJobContent({ timestamp: 1000 }, 'completed', undefined, true).waitMs).toBeNull();
+    expect(buildJobContent({ processedOn: 1700 }, 'completed', undefined, true).waitMs).toBeNull();
+  });
+
   it('defaults missing fields (name/queue empty, attempts 0, id/maxAttempts null)', () => {
     const content = buildJobContent({}, 'completed', undefined, true);
     expect(content.id).toBeNull();
@@ -56,5 +65,6 @@ describe('buildJobContent', () => {
     expect(content.queue).toBe('');
     expect(content.attempts).toBe(0);
     expect(content.maxAttempts).toBeNull();
+    expect(content.waitMs).toBeNull();
   });
 });

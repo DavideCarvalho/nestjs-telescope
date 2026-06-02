@@ -10,6 +10,10 @@ export interface JobLike {
   attemptsMade?: number;
   opts?: { attempts?: number };
   data?: unknown;
+  /** Epoch ms when the job was enqueued (BullMQ `Job.timestamp`). */
+  timestamp?: number;
+  /** Epoch ms when the worker began processing (BullMQ `Job.processedOn`). */
+  processedOn?: number;
 }
 
 /** The outcomes this watcher records (a subset of core JobContent['status']). */
@@ -18,6 +22,12 @@ export type JobStatus = 'completed' | 'failed';
 function failureMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function waitMsOf(job: JobLike): number | null {
+  return typeof job.processedOn === 'number' && typeof job.timestamp === 'number'
+    ? job.processedOn - job.timestamp
+    : null;
 }
 
 /** Normalize a BullMQ job + outcome into the canonical core `JobContent`.
@@ -38,6 +48,7 @@ export function buildJobContent(
     status,
     attempts: typeof job.attemptsMade === 'number' ? job.attemptsMade : 0,
     maxAttempts: typeof job.opts?.attempts === 'number' ? job.opts.attempts : null,
+    waitMs: waitMsOf(job),
     failureReason: status === 'failed' ? failureMessage(error) : null,
   };
 }

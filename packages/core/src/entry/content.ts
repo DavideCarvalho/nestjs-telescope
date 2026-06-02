@@ -26,6 +26,7 @@ export interface JobContent {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   attempts: number;
   maxAttempts: number | null;
+  waitMs: number | null;
   failureReason: string | null;
 }
 
