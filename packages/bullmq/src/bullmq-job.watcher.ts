@@ -22,6 +22,12 @@ export interface BullMqJobWatcherOptions {
 /** The prototype-level method we patch. `process(job, token?)` per BullMQ. */
 type ProcessHost = { process: (job: unknown, token?: string) => Promise<unknown> };
 
+/** Narrow an unknown BullMQ job to the structural `JobLike` we read. Every field
+ *  is accessed defensively in `buildJobContent`, so a non-object degrades to {}. */
+function toJobLike(job: unknown): JobLike {
+  return typeof job === 'object' && job !== null ? (job as JobLike) : {};
+}
+
 /**
  * Captures BullMQ jobs and correlates each job's queries/exceptions to its batch.
  *
@@ -37,6 +43,13 @@ type ProcessHost = { process: (job: unknown, token?: string) => Promise<unknown>
  *
  * The wrapper never swallows the host's error: on failure it records a `failed`
  * job entry and re-throws so BullMQ's own retry/lifecycle is unaffected.
+ *
+ * @remarks
+ * Processor detection uses `instanceof WorkerHost`. If the host application
+ * resolves two distinct copies of `@nestjs/bullmq` in its module tree,
+ * processors from the other copy won't match and will be left un-instrumented
+ * (surfaced only by the "no processors found" warning). A single, deduped
+ * `@nestjs/bullmq` is assumed.
  */
 export class BullMqJobWatcher implements Watcher {
   readonly type = EntryType.Job;
@@ -57,7 +70,7 @@ export class BullMqJobWatcher implements Watcher {
     const discovery = ctx.moduleRef.get(DiscoveryService, { strict: false });
     let count = 0;
     for (const wrapper of discovery.getProviders()) {
-      const instance = wrapper.instance as unknown;
+      const instance: unknown = wrapper.instance;
       if (!(instance instanceof WorkerHost)) continue;
       const proto = Object.getPrototypeOf(instance) as object;
       if (this.patched.has(proto)) continue;
@@ -89,45 +102,50 @@ export class BullMqJobWatcher implements Watcher {
         const startedAt = watcher.clock.now();
         try {
           const result = await original.call(this, job, token);
-          watcher.record(
-            ctx,
-            job as JobLike,
-            'completed',
-            watcher.clock.now() - startedAt,
-            undefined,
-          );
+          // safeRecord never throws, so a telescope failure cannot turn a
+          // successful job into a failed one.
+          watcher.safeRecord(ctx, job, 'completed', watcher.clock.now() - startedAt, undefined);
           return result;
         } catch (error) {
-          watcher.record(ctx, job as JobLike, 'failed', watcher.clock.now() - startedAt, error);
-          throw error;
+          watcher.safeRecord(ctx, job, 'failed', watcher.clock.now() - startedAt, error);
+          throw error; // never swallow the host's error
         }
       });
     };
   }
 
-  private record(
+  /** Build + hand a job entry to the Recorder, swallowing any failure. Core's
+   *  record() is already non-throwing; this double-guard keeps the watcher safe
+   *  even against a custom or regressed WatcherContext, so recording can never
+   *  alter the host job's outcome. */
+  private safeRecord(
     ctx: WatcherContext,
-    job: JobLike,
+    job: unknown,
     status: JobStatus,
     durationMs: number,
     error: unknown,
   ): void {
-    const content = buildJobContent(job, status, error, this.includeJobData);
-    const familyHash = [content.queue, content.name].filter(Boolean).join(':') || null;
+    try {
+      const content = buildJobContent(toJobLike(job), status, error, this.includeJobData);
+      const familyHash = [content.queue, content.name].filter(Boolean).join(':') || null;
 
-    const tags: string[] = [];
-    if (content.queue) tags.push(`queue:${content.queue}`);
-    if (content.name) tags.push(`job:${content.name}`);
-    if (status === 'failed') tags.push('failed');
-    if (durationMs >= this.slowMs) tags.push('slow');
+      const tags: string[] = [];
+      if (content.queue) tags.push(`queue:${content.queue}`);
+      if (content.name) tags.push(`job:${content.name}`);
+      if (status === 'failed') tags.push('failed');
+      if (durationMs >= this.slowMs) tags.push('slow');
 
-    const input: RecordInput = {
-      type: EntryType.Job,
-      content,
-      familyHash,
-      durationMs,
-    };
-    if (tags.length > 0) input.tags = tags;
-    ctx.record(input);
+      const input: RecordInput = {
+        type: EntryType.Job,
+        content,
+        familyHash,
+        durationMs,
+      };
+      if (tags.length > 0) input.tags = tags;
+      ctx.record(input);
+    } catch (recordError) {
+      const message = recordError instanceof Error ? recordError.message : String(recordError);
+      this.logger.error(`BullMqJobWatcher: failed to record job entry: ${message}`);
+    }
   }
 }
