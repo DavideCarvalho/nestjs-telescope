@@ -3,7 +3,9 @@
 > MikroORM query watcher for
 > [@dudousxd/nestjs-telescope](https://github.com/DavideCarvalho/nestjs-telescope).
 > Captures every executed SQL query, correlates it to the request that triggered
-> it, tags slow queries, and exposes a pure N+1 detector.
+> it, tags slow queries, and exposes a pure N+1 detector. Also ships a
+> `MikroOrmStorageProvider` so you can persist Telescope entries in your own
+> MySQL/SQLite instead of Redis.
 
 **Status:** early development (`0.0.0`). Requires MikroORM v7+.
 
@@ -80,6 +82,54 @@ const insights = detectNPlusOne(batchEntries, 5);
 entries for one batch (filter by `batchId`) and it returns every query template
 that ran at least `threshold` times.
 
+## MySQL / SQLite storage
+
+`MikroOrmStorageProvider` persists Telescope entries to your application's own
+database through MikroORM, so you can reuse your primary MySQL (or SQLite) for
+Telescope instead of standing up Redis. Register the shipped `TelescopeEntry`
+schema in MikroORM's `entities`, create its table (a migration in production, or
+`orm.schema.create()` in dev), then hand the provider your `EntityManager`:
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import {
+  MikroOrmStorageProvider,
+  TelescopeEntry,
+} from '@dudousxd/nestjs-telescope-mikro-orm';
+import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { MikroORM } from '@mikro-orm/core';
+
+@Module({
+  imports: [
+    MikroOrmModule.forRoot({
+      // ...your driver/dbName/etc.
+      entities: [/* your entities */ TelescopeEntry],
+    }),
+    TelescopeModule.forRootAsync({
+      inject: [MikroORM],
+      useFactory: (orm: MikroORM) => ({
+        storage: new MikroOrmStorageProvider(orm.em),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+Notes:
+
+- **Every method forks the `EntityManager`** (`orm.em.fork()`), so the provider
+  is safe to use outside a request scope (background flush, scheduled prune).
+- **Keyset pagination** is newest-first (`createdAt DESC, id DESC`); the cursor
+  encodes a `(createdAt, id)` position via `$or`, so paging resumes correctly
+  even after older entries are pruned.
+- **Tag filtering** runs against a space-padded `tagsText` column with
+  `LIKE '% <tag> %'` (JSON-array predicates are not portable across MySQL and
+  SQLite). The `tags` JSON column remains the source of truth for retrieval.
+- **Operational caveat:** observability is write-heavy. On a busy primary this
+  adds non-trivial load — point the provider at a separate connection/database
+  if that matters for you.
+
 ## Exports
 
 | Export | Description |
@@ -87,6 +137,8 @@ that ran at least `threshold` times.
 | `MikroOrmQueryWatcher` | Watcher marker — add to `TelescopeModule.forRoot({ watchers })` |
 | `telescopeMikroOrmLogger(record, opts?)` | `loggerFactory`-compatible factory; `opts.slowMs` defaults to `100` |
 | `TelescopeMikroOrmLogger` | `DefaultLogger` subclass (advanced: extend or instantiate directly) |
+| `MikroOrmStorageProvider` | `StorageProvider` persisting entries to MySQL/SQLite via the host `EntityManager` |
+| `TelescopeEntry` | `EntitySchema` for table `telescope_entries`; register in MikroORM `entities` |
 | `detectNPlusOne(entries, threshold)` | Pure N+1 detector |
 | `queryFamilyHash(sql)` | SQL template normalizer + FNV-1a hash (used internally) |
 
