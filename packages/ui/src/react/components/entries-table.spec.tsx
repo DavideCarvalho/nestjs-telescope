@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import type { Entry } from '../../client/index.js';
 import { EntriesTable, entryLabel } from './entries-table.js';
 
@@ -36,5 +36,34 @@ describe('EntriesTable', () => {
     render(<EntriesTable entries={[entry({ type: 'query', content: { sql: 'select 1' } })]} />);
     expect(screen.getByText('query')).toBeTruthy();
     expect(screen.getByText('select 1')).toBeTruthy();
+  });
+
+  it('renders a trace affordance linking to the trace page when traceId is set', () => {
+    render(
+      <EntriesTable
+        entries={[entry({ type: 'query', traceId: 'trace-abc123def', content: { sql: 'q' } })]}
+      />,
+    );
+    const link = screen.getByRole('link', { name: /trace/i });
+    expect(link.getAttribute('href')).toBe('#/traces/trace-abc123def');
+  });
+
+  it('does not render a trace affordance when traceId is null', () => {
+    render(
+      <EntriesTable entries={[entry({ type: 'query', traceId: null, content: { sql: 'q' } })]} />,
+    );
+    expect(screen.queryByRole('link', { name: /trace/i })).toBeNull();
+  });
+
+  it('does not trigger row select when the trace affordance is clicked', () => {
+    const onSelect = vi.fn();
+    render(
+      <EntriesTable
+        entries={[entry({ type: 'query', traceId: 'trace-xyz', content: { sql: 'q' } })]}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole('link', { name: /trace/i }));
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

@@ -73,11 +73,13 @@ export interface ExceptionGroup {
   count: number;
   lastSeen: string;
 }
-export interface NPlusOneOccurrence {
-  batchId: string;
+export interface NPlusOneHotspot {
   familyHash: string;
-  count: number;
   sql: string;
+  perRequest: number;
+  requests: number;
+  total: number;
+  sampleBatchId: string;
 }
 
 export interface PulseReport {
@@ -87,7 +89,7 @@ export interface PulseReport {
   counts: Record<string, number>;
   slowest: SlowEntry[];
   topExceptions: ExceptionGroup[];
-  nPlusOne: NPlusOneOccurrence[];
+  nPlusOne: NPlusOneHotspot[];
   scanned: number;
   truncated: boolean;
 }

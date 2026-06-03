@@ -58,7 +58,21 @@ export function EntriesTable({
             <td className="text-zinc-400">
               {entry.durationMs != null ? `${entry.durationMs}ms` : '—'}
             </td>
-            <td className="text-zinc-600">{entry.tags.join(' ')}</td>
+            <td className="text-zinc-600">
+              <span className="inline-flex items-center gap-1.5">
+                {entry.traceId !== null && (
+                  <a
+                    href={`#/traces/${entry.traceId}`}
+                    title={`View trace ${entry.traceId}`}
+                    onClick={(event) => event.stopPropagation()}
+                    className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-sky-400 hover:bg-zinc-800"
+                  >
+                    trace:{entry.traceId.slice(0, 6)}
+                  </a>
+                )}
+                {entry.tags.length > 0 && <span>{entry.tags.join(' ')}</span>}
+              </span>
+            </td>
           </tr>
         ))}
       </tbody>

@@ -90,29 +90,53 @@ describe('summarizePulse', () => {
     expect(summary.topExceptions[1]!.count).toBe(1);
   });
 
-  it('detects N+1 per batch (same query template >= threshold times in one batch)', () => {
-    const queries = Array.from({ length: 6 }, () =>
+  it('aggregates N+1 by family across requests into one hotspot', () => {
+    const batches = ['req-1', 'req-2', 'req-3'].flatMap((batchId) =>
+      Array.from({ length: 6 }, () =>
+        entry({
+          type: 'query',
+          batchId,
+          familyHash: 'q:findUser',
+          content: { sql: 'select * from users where id = ?' },
+        }),
+      ),
+    );
+    // A different batch where the same family only runs twice (below threshold).
+    const below = Array.from({ length: 2 }, () =>
       entry({
         type: 'query',
-        batchId: 'req-1',
+        batchId: 'req-4',
         familyHash: 'q:findUser',
         content: { sql: 'select * from users where id = ?' },
       }),
     );
-    const other = Array.from({ length: 2 }, () =>
-      entry({
-        type: 'query',
-        batchId: 'req-2',
-        familyHash: 'q:findUser',
-        content: { sql: 'select * from users where id = ?' },
-      }),
-    );
-    const summary = summarizePulse([...queries, ...other], start, end, opts);
+    const summary = summarizePulse([...batches, ...below], start, end, opts);
     expect(summary.nPlusOne).toHaveLength(1);
     expect(summary.nPlusOne[0]).toMatchObject({
-      batchId: 'req-1',
       familyHash: 'q:findUser',
-      count: 6,
+      sql: 'select * from users where id = ?',
+      perRequest: 6,
+      requests: 3,
+      total: 18,
+    });
+    expect(['req-1', 'req-2', 'req-3']).toContain(summary.nPlusOne[0]!.sampleBatchId);
+  });
+
+  it('tracks the worst batch as the sample for a hotspot', () => {
+    const small = Array.from({ length: 5 }, () =>
+      entry({ type: 'query', batchId: 'small', familyHash: 'q:x', content: { sql: 'x' } }),
+    );
+    const big = Array.from({ length: 9 }, () =>
+      entry({ type: 'query', batchId: 'big', familyHash: 'q:x', content: { sql: 'x' } }),
+    );
+    const summary = summarizePulse([...small, ...big], start, end, opts);
+    expect(summary.nPlusOne).toHaveLength(1);
+    expect(summary.nPlusOne[0]).toMatchObject({
+      familyHash: 'q:x',
+      perRequest: 9,
+      requests: 2,
+      total: 14,
+      sampleBatchId: 'big',
     });
   });
 
@@ -150,15 +174,15 @@ describe('summarizePulse', () => {
     expect(summary.topExceptions).toEqual([]);
   });
 
-  it('sorts N+1 occurrences across batches by count desc', () => {
-    const batchA = Array.from({ length: 5 }, () =>
+  it('orders distinct N+1 families by total repetitions desc', () => {
+    const familyA = Array.from({ length: 5 }, () =>
       entry({ type: 'query', batchId: 'A', familyHash: 'q:a', content: { sql: 'a' } }),
     );
-    const batchB = Array.from({ length: 7 }, () =>
+    const familyB = Array.from({ length: 7 }, () =>
       entry({ type: 'query', batchId: 'B', familyHash: 'q:b', content: { sql: 'b' } }),
     );
-    const summary = summarizePulse([...batchA, ...batchB], start, end, opts);
-    expect(summary.nPlusOne.map((n) => n.batchId)).toEqual(['B', 'A']); // 7 before 5
+    const summary = summarizePulse([...familyA, ...familyB], start, end, opts);
+    expect(summary.nPlusOne.map((n) => n.familyHash)).toEqual(['q:b', 'q:a']); // total 7 before 5
   });
 
   it('applies topN to exceptions and truncates long labels', () => {

@@ -18,11 +18,17 @@ export interface ExceptionGroup {
   lastSeen: string;
 }
 
-export interface NPlusOneOccurrence {
-  batchId: string;
+export interface NPlusOneHotspot {
   familyHash: string;
-  count: number;
   sql: string;
+  /** Worst (max) repetition count of this family within a single request/batch. */
+  perRequest: number;
+  /** Number of distinct requests/batches where this family tripped the threshold. */
+  requests: number;
+  /** Sum of repetition counts across those requests. */
+  total: number;
+  /** One batch id (the worst) to deep-link to. */
+  sampleBatchId: string;
 }
 
 export interface PulseSummary {
@@ -32,7 +38,7 @@ export interface PulseSummary {
   counts: Record<string, number>;
   slowest: SlowEntry[];
   topExceptions: ExceptionGroup[];
-  nPlusOne: NPlusOneOccurrence[];
+  nPlusOne: NPlusOneHotspot[];
 }
 
 export interface PulseOptions {
@@ -75,7 +81,7 @@ interface ExceptionAccumulator {
 }
 
 /** Summarize stored entries into a health snapshot: per-type counts, slowest
- *  entries, top exceptions, and per-batch N+1 occurrences. Pure: callers fetch
+ *  entries, top exceptions, and N+1 hotspots aggregated by query family. Pure: callers fetch
  *  the windowed entries (createdAt is not re-checked here). */
 export function summarizePulse(
   entries: Entry[],
@@ -137,22 +143,32 @@ export function summarizePulse(
     .sort((a, b) => b.count - a.count || a.familyHash.localeCompare(b.familyHash))
     .slice(0, options.topN);
 
-  const nPlusOne: NPlusOneOccurrence[] = [];
+  const hotspots = new Map<string, NPlusOneHotspot>();
   for (const [batchId, batchEntries] of batches) {
     for (const insight of detectNPlusOne(batchEntries, options.nPlusOneThreshold)) {
-      nPlusOne.push({
-        batchId,
-        familyHash: insight.familyHash,
-        count: insight.count,
-        sql: truncate(insight.sql),
-      });
+      const existing = hotspots.get(insight.familyHash);
+      if (existing) {
+        existing.requests += 1;
+        existing.total += insight.count;
+        if (insight.count > existing.perRequest) {
+          existing.perRequest = insight.count;
+          existing.sampleBatchId = batchId;
+        }
+      } else {
+        hotspots.set(insight.familyHash, {
+          familyHash: insight.familyHash,
+          sql: truncate(insight.sql),
+          perRequest: insight.count,
+          requests: 1,
+          total: insight.count,
+          sampleBatchId: batchId,
+        });
+      }
     }
   }
-  nPlusOne.sort(
+  const nPlusOne = [...hotspots.values()].sort(
     (a, b) =>
-      b.count - a.count ||
-      a.batchId.localeCompare(b.batchId) ||
-      a.familyHash.localeCompare(b.familyHash),
+      b.total - a.total || b.requests - a.requests || a.familyHash.localeCompare(b.familyHash),
   );
 
   return {

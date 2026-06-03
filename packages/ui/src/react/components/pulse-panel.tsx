@@ -12,11 +12,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function PulsePanel({
   report,
   onSelectEntry,
-  onSelectBatch,
+  onSelectFamily,
 }: {
   report: PulseReport;
   onSelectEntry?: (id: string) => void;
-  onSelectBatch?: (batchId: string) => void;
+  onSelectFamily?: (familyHash: string) => void;
 }): JSX.Element {
   return (
     <div className="text-xs">
@@ -89,19 +89,25 @@ export function PulsePanel({
       <Section title="N+1 query hotspots">
         <table className="w-full text-left">
           <tbody>
-            {report.nPlusOne.map((occurrence) => (
+            {report.nPlusOne.map((hotspot) => (
               <tr
-                key={`${occurrence.batchId}:${occurrence.familyHash}`}
+                key={hotspot.familyHash}
                 tabIndex={0}
-                onClick={() => onSelectBatch?.(occurrence.batchId)}
+                onClick={() => onSelectFamily?.(hotspot.familyHash)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ')
-                    onSelectBatch?.(occurrence.batchId);
+                    onSelectFamily?.(hotspot.familyHash);
                 }}
                 className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
               >
-                <td className="py-1 text-amber-400">×{occurrence.count}</td>
-                <td className="max-w-md truncate text-zinc-300">{occurrence.sql}</td>
+                <td className="whitespace-nowrap py-1 text-amber-400">
+                  ×{hotspot.perRequest}
+                  <span className="text-zinc-500"> per request</span>
+                </td>
+                <td className="max-w-md truncate text-zinc-300">{hotspot.sql}</td>
+                <td className="whitespace-nowrap text-right text-zinc-500">
+                  {hotspot.requests} requests · {hotspot.total} total
+                </td>
               </tr>
             ))}
             {report.nPlusOne.length === 0 && (

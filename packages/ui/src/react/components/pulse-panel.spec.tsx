@@ -1,5 +1,5 @@
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import type { PulseReport } from '../../client/index.js';
 import { PulsePanel } from './pulse-panel.js';
 
@@ -14,11 +14,20 @@ const report: PulseReport = {
   topExceptions: [
     { familyHash: 'Error:boom', class: 'Error', message: 'boom', count: 2, lastSeen: '' },
   ],
-  nPlusOne: [{ batchId: 'b', familyHash: 'q:x', count: 6, sql: 'select * from t' }],
+  nPlusOne: [
+    {
+      familyHash: 'q:x',
+      sql: 'select * from t',
+      perRequest: 6,
+      requests: 3,
+      total: 18,
+      sampleBatchId: 'b',
+    },
+  ],
 };
 
 describe('PulsePanel', () => {
-  it('renders counts, slowest, exceptions, and N+1', () => {
+  it('renders counts, slowest, exceptions, and aggregated N+1', () => {
     render(<PulsePanel report={report} />);
     const countsSection = screen.getByText('Entries by type').closest('section');
     expect(countsSection).toBeTruthy();
@@ -28,5 +37,22 @@ describe('PulsePanel', () => {
     expect(screen.getByText('select 1')).toBeTruthy();
     expect(screen.getByText('boom')).toBeTruthy();
     expect(screen.getByText('×6')).toBeTruthy();
+    expect(screen.getByText(/3 requests/)).toBeTruthy();
+  });
+
+  it('collapses identical families to a single hotspot row', () => {
+    render(<PulsePanel report={report} />);
+    const hotspotSection = screen.getByText('N+1 query hotspots').closest('section');
+    expect(hotspotSection).toBeInstanceOf(HTMLElement);
+    if (hotspotSection instanceof HTMLElement) {
+      expect(within(hotspotSection).getAllByText('select * from t')).toHaveLength(1);
+    }
+  });
+
+  it('links a hotspot to its query family', () => {
+    const onSelectFamily = vi.fn();
+    render(<PulsePanel report={report} onSelectFamily={onSelectFamily} />);
+    fireEvent.click(screen.getByText('select * from t'));
+    expect(onSelectFamily).toHaveBeenCalledWith('q:x');
   });
 });
