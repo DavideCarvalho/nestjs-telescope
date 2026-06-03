@@ -3,9 +3,9 @@ import { buildTraceHref } from './trace-link.js';
 
 describe('buildTraceHref', () => {
   it('substitutes both placeholders', () => {
-    expect(
-      buildTraceHref('https://tracing.example/{traceId}/spans/{spanId}', 'abc', 'def'),
-    ).toBe('https://tracing.example/abc/spans/def');
+    expect(buildTraceHref('https://tracing.example/{traceId}/spans/{spanId}', 'abc', 'def')).toBe(
+      'https://tracing.example/abc/spans/def',
+    );
   });
 
   it('substitutes every occurrence of a placeholder', () => {

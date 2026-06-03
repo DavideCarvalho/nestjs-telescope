@@ -58,9 +58,7 @@ describe('TelescopeService', () => {
     });
     const service = new TelescopeService(config, new InMemoryStorageProvider(), {});
     active = service;
-    expect((await service.getMeta()).traceLink).toBe(
-      'https://traces.example/{traceId}/{spanId}',
-    );
+    expect((await service.getMeta()).traceLink).toBe('https://traces.example/{traceId}/{spanId}');
   });
 
   it('getMeta returns null traceLink when unset', async () => {

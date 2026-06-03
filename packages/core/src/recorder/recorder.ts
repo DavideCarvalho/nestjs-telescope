@@ -6,10 +6,7 @@ import { redact } from '../redaction/redact.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
 import { runTaggers } from '../tagging/tagger.js';
-import type {
-  TraceContext,
-  TraceContextProvider,
-} from '../trace/trace-context-provider.js';
+import type { TraceContext, TraceContextProvider } from '../trace/trace-context-provider.js';
 
 export type DropReason = 'overflow' | 'store-failed' | 'record-error';
 

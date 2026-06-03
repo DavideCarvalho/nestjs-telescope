@@ -164,7 +164,9 @@ describe('SqliteStorageProvider additive trace-column guard', () => {
     provider = new SqliteStorageProvider({ path: dbPath });
     await provider.init?.();
 
-    await provider.store([entry({ id: 'healed', traceId: 'c'.repeat(32), spanId: 'd'.repeat(16) })]);
+    await provider.store([
+      entry({ id: 'healed', traceId: 'c'.repeat(32), spanId: 'd'.repeat(16) }),
+    ]);
     const found = await provider.find('healed');
     expect(found?.traceId).toBe('c'.repeat(32));
     expect(found?.spanId).toBe('d'.repeat(16));
