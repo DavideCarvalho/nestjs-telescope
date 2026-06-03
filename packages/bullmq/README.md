@@ -85,8 +85,48 @@ Telescope authorizer** (same gate as the rest of the dashboard):
 Job payloads (`data`) are passed through core redaction before they leave the
 server, so secret-keyed fields (e.g. `password`, `token`) are masked.
 
-> **Reads only (this phase).** Queue actions (retry / remove / promote / redrive)
-> land in Phase 2; `BullMqQueueManager` exposes no mutating methods yet.
+## Queue actions (mutations)
+
+`BullMqQueueManager` also implements the action side of the `QueueManager` SPI —
+`retry`, `remove`, `promote`, and `retryAll` — backed by the real BullMQ
+`Job.retry()` / `Job.remove()` / `Job.promote()` and `Queue.retryJobs()` APIs.
+These surface as **POST** endpoints on the core controller:
+
+| Method & path | Effect |
+|---------------|--------|
+| `POST /telescope/api/queues/live/bullmq/:queue/jobs/:id/retry` | Re-queue a failed (or completed) job. |
+| `POST /telescope/api/queues/live/bullmq/:queue/jobs/:id/remove` | Delete a job. |
+| `POST /telescope/api/queues/live/bullmq/:queue/jobs/:id/promote` | Promote a delayed job to run now. |
+| `POST /telescope/api/queues/live/bullmq/:queue/actions/retry-all?state=failed` | Bulk re-queue every job in `state`; responds `{ ok: true, count }` (the pre-action count). |
+
+`redrive` is **SQS-only** and is not implemented by `BullMqQueueManager`; calling
+`.../actions/redrive` against the bullmq driver returns `405 Method Not Allowed`.
+
+### Enabling mutations — `authorizeAction` (default-deny)
+
+Mutations are **denied by default**. They run behind a second guard
+(`TelescopeActionGuard`) on top of the read `authorizer`, and that guard fails
+closed: **without an `authorizeAction` callback, every mutation endpoint returns
+`403`** — even for callers the read `authorizer` already trusts. Opt in by
+supplying `authorizeAction` on `TelescopeModule.forRoot`:
+
+```ts
+TelescopeModule.forRoot({
+  // Reads (browse queues/jobs) — the existing gate:
+  authorizer: (ctx) => isAdmin(ctx.request),
+  // Mutations (retry/remove/promote/retry-all) — separate, default-deny:
+  authorizeAction: (ctx, action) => {
+    // action: { driver, queue, action, jobId?, state? }
+    return canMutateQueues(ctx.request);
+  },
+  queueManagers: [new BullMqQueueManager()],
+});
+```
+
+`authorizeAction` receives the same `AuthorizerContext` plus a typed
+`QueueActionRequest` describing the requested mutation. Returning a falsy value —
+or throwing — denies the request (`403`). Keep it strictly narrower than your
+read gate: browsing a queue should not imply the right to drain it.
 
 ## Options
 
