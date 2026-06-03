@@ -4,18 +4,19 @@ import { EntryType } from '../entry/entry.js';
 import { normalizeRequest } from './platform-request.js';
 import { TelescopeService } from './telescope.service.js';
 
-/** The dashboard UI, its API and assets are all mounted under this prefix; skip them to avoid self-capture of the dashboard's own polling. */
-const TELESCOPE_PATH_PREFIX = '/telescope';
-
 interface FinishableResponse {
   statusCode: number;
   once(event: 'finish', listener: () => void): void;
 }
 
-function isTelescopePath(url: string): boolean {
+/**
+ * The dashboard UI, its API and assets are all mounted under the configured
+ * path prefix; skip them to avoid self-capture of the dashboard's own polling.
+ */
+function isTelescopePath(url: string, prefix: string): boolean {
   const queryStart = url.indexOf('?');
   const path = queryStart === -1 ? url : url.slice(0, queryStart);
-  return path === TELESCOPE_PATH_PREFIX || path.startsWith(`${TELESCOPE_PATH_PREFIX}/`);
+  return path === prefix || path.startsWith(`${prefix}/`);
 }
 
 function asFinishable(res: unknown): FinishableResponse | null {
@@ -32,7 +33,7 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
 
     // Skip telescope's own routes (dashboard, API, assets) before any batch/recording work.
     // .exclude() can't do this reliably under a global prefix, so we gate in-middleware instead.
-    if (isTelescopePath(request.url)) {
+    if (isTelescopePath(request.url, `/${this.service.path}`)) {
       next();
       return;
     }

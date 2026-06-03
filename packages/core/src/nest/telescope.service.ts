@@ -55,6 +55,11 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     });
   }
 
+  /** Normalized mount segment (no leading/trailing slash). Default `'telescope'`. */
+  get path(): string {
+    return this.config.path;
+  }
+
   async onModuleInit(): Promise<void> {
     if (!this.config.enabled) return;
     // Let the storage acquire resources / ensure its schema before first use.

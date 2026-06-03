@@ -41,10 +41,19 @@ export interface TelescopeCoreOptions {
   traceContext?: TraceContextProvider;
   /** UI trace-link URL template with {traceId}/{spanId} placeholders. */
   traceLink?: string;
+  /**
+   * Mount path for the dashboard + API (no leading/trailing slash needed).
+   * Defaults to `'telescope'` — when unset everything behaves exactly as before
+   * (dashboard at `/telescope`, API at `/telescope/api`). Set e.g.
+   * `'observability'` for `/observability` + `/observability/api`.
+   */
+  path?: string;
 }
 
 export interface ResolvedCoreConfig {
   enabled: boolean;
+  /** Normalized mount segment (no leading/trailing slash). Default `'telescope'`. */
+  path: string;
   redact: RedactOptions;
   sampling: Record<string, number>;
   recorder: Required<RecorderTuning>;

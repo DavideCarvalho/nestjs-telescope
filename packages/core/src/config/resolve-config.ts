@@ -2,6 +2,7 @@
 import { hostname } from 'node:os';
 import { z } from 'zod';
 import { BUILTIN_TAGGERS } from '../tagging/tagger.js';
+import { normalizeTelescopePath } from './normalize-path.js';
 import type { ResolvedCoreConfig, TelescopeCoreOptions } from './options.js';
 import { durationToMs } from './parse-duration.js';
 
@@ -38,6 +39,7 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
   const parsed = optionsSchema.parse(options);
   const resolved: ResolvedCoreConfig = {
     enabled: parsed.enabled,
+    path: normalizeTelescopePath(options.path),
     redact: options.redact ?? {},
     sampling: normalizeSampling(parsed.sampling),
     recorder: parsed.recorder,

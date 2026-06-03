@@ -1,9 +1,39 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTelescopeClient } from './telescope-client.js';
 
 function jsonResponse(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response;
 }
+
+describe('createTelescopeClient default base URL', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('falls back to /telescope/api when the global base is absent', async () => {
+    vi.stubGlobal('window', undefined);
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const client = createTelescopeClient({ fetch: fetchMock });
+    await client.meta();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/meta');
+  });
+
+  it('derives the base from window.__TELESCOPE_BASE__ when present', async () => {
+    vi.stubGlobal('window', { __TELESCOPE_BASE__: '/observability' });
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const client = createTelescopeClient({ fetch: fetchMock });
+    await client.meta();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/observability/api/meta');
+  });
+
+  it('lets an explicit baseUrl win over the injected global', async () => {
+    vi.stubGlobal('window', { __TELESCOPE_BASE__: '/observability' });
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const client = createTelescopeClient({ baseUrl: '/custom/api', fetch: fetchMock });
+    await client.meta();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/custom/api/meta');
+  });
+});
 
 describe('createTelescopeClient', () => {
   it('lists entries with type + cursor query params', async () => {

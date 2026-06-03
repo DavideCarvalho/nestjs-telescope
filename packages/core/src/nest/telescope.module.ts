@@ -11,6 +11,7 @@ import {
   RequestMethod,
 } from '@nestjs/common';
 import { APP_INTERCEPTOR, DiscoveryModule } from '@nestjs/core';
+import { normalizeTelescopePath } from '../config/normalize-path.js';
 import { resolveConfig } from '../config/resolve-config.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { StatsService } from '../metrics/stats.service.js';
@@ -19,6 +20,7 @@ import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { dynamicController } from './dynamic-controller.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
@@ -84,10 +86,11 @@ export class TelescopeModule implements NestModule {
   }
 
   static forRoot(options: TelescopeModuleOptions = {}): DynamicModule {
+    const path = normalizeTelescopePath(options.path);
     return {
       module: TelescopeModule,
       imports: [DiscoveryModule],
-      controllers: [TelescopeController],
+      controllers: [dynamicController(TelescopeController, `${path}/api`)],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
       exports: [
         TelescopeService,
@@ -104,11 +107,18 @@ export class TelescopeModule implements NestModule {
     useFactory: (...args: unknown[]) => Promise<TelescopeModuleOptions> | TelescopeModuleOptions;
     inject?: (InjectionToken | OptionalFactoryDependency)[];
     imports?: DynamicModule['imports'];
+    /**
+     * Mount path for the dashboard + API. Must be passed statically here (not
+     * via the async factory) because the controller route is bound at
+     * module-build time. Defaults to `'telescope'`.
+     */
+    path?: string;
   }): DynamicModule {
+    const path = normalizeTelescopePath(config.path);
     return {
       module: TelescopeModule,
       imports: [DiscoveryModule, ...(config.imports ?? [])],
-      controllers: [TelescopeController],
+      controllers: [dynamicController(TelescopeController, `${path}/api`)],
       providers: [
         {
           provide: TELESCOPE_OPTIONS,

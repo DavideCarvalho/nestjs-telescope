@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normalizeTelescopePath } from '@dudousxd/nestjs-telescope';
 import {
   Controller,
   Get,
@@ -26,12 +27,31 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
 };
 
-@Controller('telescope')
+/**
+ * The SPA is built once with a fixed Vite `base` of `/telescope/`, so every
+ * asset URL in the built index.html is hardcoded to that placeholder. When the
+ * dashboard is mounted under a custom path we rewrite those occurrences at serve
+ * time instead of rebuilding the bundle per-path. When the path is the default
+ * `'telescope'` the source and target strings are identical, so this is a no-op.
+ */
+function rewriteAssetBase(html: string, path: string): string {
+  const injectedBase = `<script>window.__TELESCOPE_BASE__ = ${JSON.stringify(`/${path}`)};</script>`;
+  const rebased = html.split('/telescope/').join(`/${path}/`);
+  // Expose the runtime base before the bundle so the client can derive API URLs.
+  if (rebased.includes('</head>')) {
+    return rebased.replace('</head>', `${injectedBase}</head>`);
+  }
+  return `${injectedBase}${rebased}`;
+}
+
+@Controller()
 export class TelescopeUiController {
   private readonly assetsDir: string;
+  private readonly path: string;
 
   constructor(@Inject(TELESCOPE_UI_OPTIONS) options: TelescopeUiModuleOptions) {
     this.assetsDir = options.assetsDir ?? defaultAssetsDir();
+    this.path = normalizeTelescopePath(options.path);
   }
 
   @Get()
@@ -41,7 +61,7 @@ export class TelescopeUiController {
     if (!existsSync(indexPath)) {
       throw new NotFoundException('Telescope UI is not built. Run the package build.');
     }
-    return readFileSync(indexPath, 'utf8');
+    return rewriteAssetBase(readFileSync(indexPath, 'utf8'), this.path);
   }
 
   @Get('assets/:file')

@@ -10,6 +10,7 @@ export * from './storage/in-memory-storage-provider.js';
 export * from './tagging/tagger.js';
 export * from './recorder/recorder.js';
 export * from './config/options.js';
+export * from './config/normalize-path.js';
 export * from './config/parse-duration.js';
 export * from './config/resolve-config.js';
 
@@ -17,6 +18,7 @@ export * from './storage/cursor.js';
 export * from './storage/safe-json.js';
 export * from './storage/sqlite-storage-provider.js';
 export * from './nest/watcher.js';
+export * from './nest/dynamic-controller.js';
 export * from './nest/telescope.options.js';
 export * from './nest/telescope.service.js';
 export * from './nest/telescope.guard.js';

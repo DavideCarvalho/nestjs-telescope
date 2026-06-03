@@ -17,11 +17,29 @@ import type {
   TimeseriesReport,
 } from './types.js';
 
+declare global {
+  interface Window {
+    /**
+     * Mount base (e.g. `/observability`) injected by the UI controller's
+     * index.html when the dashboard is served under a custom path. Absent on the
+     * default mount and in SSR/tests, where the API base falls back to
+     * `/telescope/api`.
+     */
+    __TELESCOPE_BASE__?: string;
+  }
+}
+
 export interface TelescopeClientOptions {
-  /** Base URL of the telescope API. Default '/telescope/api'. */
+  /** Base URL of the telescope API. Default '/telescope/api' (or `${window.__TELESCOPE_BASE__}/api`). */
   baseUrl?: string;
   /** Fetch implementation (injectable for tests). Default global fetch. */
   fetch?: typeof globalThis.fetch;
+}
+
+/** Derives the API base from the server-injected mount base, falling back to the default. */
+function defaultBaseUrl(): string {
+  const base = (typeof window !== 'undefined' && window.__TELESCOPE_BASE__) || '/telescope';
+  return `${base}/api`;
 }
 
 export type JobActionName = 'retry' | 'remove' | 'promote';
@@ -59,7 +77,7 @@ export interface TelescopeClient {
 }
 
 export function createTelescopeClient(options: TelescopeClientOptions = {}): TelescopeClient {
-  const baseUrl = (options.baseUrl ?? '/telescope/api').replace(/\/$/, '');
+  const baseUrl = (options.baseUrl ?? defaultBaseUrl()).replace(/\/$/, '');
   const doFetch = options.fetch ?? globalThis.fetch;
 
   async function get<T>(
