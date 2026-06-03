@@ -52,7 +52,17 @@ export interface StorageProvider {
   tags(prefix?: string): Promise<TagCount[]>;
   prune(olderThan: Date, keepLast?: number): Promise<number>;
   clear(): Promise<void>;
-  /** Release any held resources (DB handle, connections). Optional; providers
-   *  without resources omit it. The module closes a store it created on shutdown. */
+  /**
+   * Acquire resources / ensure schema. Optional; called ONCE at application boot,
+   * before any other method, and awaited by the module during startup. Providers
+   * with no startup work omit it.
+   */
+  init?(): void | Promise<void>;
+  /**
+   * Release PROVIDER-OWNED resources (DB handle, connection pool). Optional.
+   * Called ONCE at shutdown, AFTER the final flush, and ALWAYS — so a provider
+   * that BORROWS a host-owned resource (e.g. a shared connection) must implement
+   * this as a no-op. Providers with no owned resources omit it.
+   */
   close?(): void | Promise<void>;
 }

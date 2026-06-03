@@ -53,8 +53,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     });
   }
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     if (!this.config.enabled) return;
+    // Let the storage acquire resources / ensure its schema before first use.
+    await this.storage.init?.();
     this.flushTimer = setInterval(() => {
       this.recorder.flush().catch((error: unknown) => {
         this.logger.warn(`Telescope flush failed: ${(error as Error).message}`);
@@ -70,10 +72,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       this.flushTimer = null;
     }
     await this.recorder.flush();
-    // Close the store only if the module created it (host-supplied storage is the host's to close).
-    if (!this.options.storage) {
-      await this.storage.close?.();
-    }
+    // Always close after the final flush. Providers that borrow a host resource no-op close().
+    await this.storage.close?.();
   }
 
   /** Register the set of active watcher type names (for meta). */

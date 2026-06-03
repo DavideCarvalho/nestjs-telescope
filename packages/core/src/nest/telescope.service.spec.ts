@@ -105,7 +105,7 @@ describe('TelescopeService', () => {
     expect(closeIdx).toBeGreaterThan(storeIdx);
   });
 
-  it('onApplicationShutdown does NOT call storage.close when host supplied the storage (options.storage set)', async () => {
+  it('onApplicationShutdown ALWAYS calls storage.close after flush, even for host-supplied storage', async () => {
     const closeCalled: boolean[] = [];
     const fakeStorage: StorageProvider & { close(): void } = {
       store: () => Promise.resolve(),
@@ -124,6 +124,50 @@ describe('TelescopeService', () => {
     // Pass fakeStorage as options.storage to simulate host-supplied storage
     const service = new TelescopeService(config, fakeStorage, { storage: fakeStorage });
     await service.onApplicationShutdown();
-    expect(closeCalled).toHaveLength(0);
+    expect(closeCalled).toHaveLength(1);
+  });
+
+  it('onModuleInit awaits storage.init when enabled', async () => {
+    const initLog: string[] = [];
+    const fakeStorage: StorageProvider & { init(): void } = {
+      store: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+      find: () => Promise.resolve(null),
+      get: () => Promise.resolve({ data: [], nextCursor: null }),
+      batch: () => Promise.resolve([]),
+      tags: () => Promise.resolve([]),
+      prune: () => Promise.resolve(0),
+      clear: () => Promise.resolve(),
+      init: () => {
+        initLog.push('init');
+      },
+    };
+    const config = resolveConfig({ recorder: { flushIntervalMs: 5 } });
+    const service = new TelescopeService(config, fakeStorage, {});
+    active = service;
+    await service.onModuleInit();
+    expect(initLog).toEqual(['init']);
+  });
+
+  it('onModuleInit does not start (or await init) when disabled', async () => {
+    const initLog: string[] = [];
+    const fakeStorage: StorageProvider & { init(): void } = {
+      store: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+      find: () => Promise.resolve(null),
+      get: () => Promise.resolve({ data: [], nextCursor: null }),
+      batch: () => Promise.resolve([]),
+      tags: () => Promise.resolve([]),
+      prune: () => Promise.resolve(0),
+      clear: () => Promise.resolve(),
+      init: () => {
+        initLog.push('init');
+      },
+    };
+    const config = resolveConfig({ enabled: false, recorder: { flushIntervalMs: 5 } });
+    const service = new TelescopeService(config, fakeStorage, {});
+    active = service;
+    await service.onModuleInit();
+    expect(initLog).toEqual([]);
   });
 });
