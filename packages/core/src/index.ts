@@ -42,6 +42,7 @@ export * from './metrics/queue-metrics.service.js';
 export * from './metrics/timeseries.js';
 export * from './metrics/timeseries.service.js';
 export * from './metrics/stats.js';
+export * from './metrics/stats.service.js';
 
 export * from './pulse/pulse-summary.js';
 export * from './pulse/pulse.service.js';

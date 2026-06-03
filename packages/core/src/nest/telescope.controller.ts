@@ -16,6 +16,8 @@ import {
 import { durationToMs } from '../config/parse-duration.js';
 import type { Entry } from '../entry/entry.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
+import type { StatsResult } from '../metrics/stats.js';
+import { StatsService } from '../metrics/stats.service.js';
 import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
 import {
@@ -74,6 +76,7 @@ export class TelescopeController {
     @Inject(TelescopeService) private readonly service: TelescopeService,
     @Inject(QueueMetricsService) private readonly queueMetrics: QueueMetricsService,
     @Inject(TimeseriesService) private readonly timeseriesService: TimeseriesService,
+    @Inject(StatsService) private readonly statsService: StatsService,
     @Inject(PulseService) private readonly pulse: PulseService,
     @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
@@ -162,6 +165,34 @@ export class TelescopeController {
         : {}),
       ...(type !== undefined ? { type } : {}),
       ...(tag !== undefined ? { tag } : {}),
+    });
+  }
+
+  @Get('stats')
+  stats(
+    @Query('type') type?: string,
+    @Query('window') window?: string,
+    @Query('buckets') buckets?: string,
+  ): Promise<StatsResult> {
+    if (type === undefined || type === '') {
+      throw new BadRequestException('Query parameter "type" is required.');
+    }
+    let windowMs: number;
+    try {
+      windowMs = durationToMs(window ?? '1h');
+    } catch {
+      throw new BadRequestException(`Invalid window: ${window}`);
+    }
+    if (!Number.isFinite(windowMs) || windowMs <= 0) {
+      throw new BadRequestException(`Window must be positive: ${window}`);
+    }
+    const bucketCount = buckets !== undefined ? Number(buckets) : undefined;
+    return this.statsService.getStats({
+      type,
+      windowMs,
+      ...(bucketCount !== undefined && Number.isFinite(bucketCount)
+        ? { buckets: bucketCount }
+        : {}),
     });
   }
 
