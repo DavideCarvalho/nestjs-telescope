@@ -2,7 +2,33 @@
 //
 // A StorageProvider that persists Telescope entries to MySQL/SQLite via MikroORM.
 //
-// Design notes:
+// Connection ownership:
+//
+//  - This provider OWNS a dedicated MikroORM instance scoped to ONLY the
+//    `TelescopeEntry` entity, running on its OWN connection. The connection
+//    config is, by default, DERIVED from a host `MikroORM` the caller passes
+//    (we copy only the connection-relevant keys), or it can be supplied
+//    explicitly as MikroORM options. Either way the provider forces
+//    `entities: [TelescopeEntry]`.
+//
+//  - Why a dedicated, single-entity ORM rather than reusing the host's:
+//      (a) Schema self-heal: `schema.update()` has no per-entity filter, so it
+//          diffs the WHOLE metadata against the WHOLE database. Running it on an
+//          ORM whose metadata is only `TelescopeEntry` guarantees the diff can
+//          never create, alter, or drop any of the host's other tables.
+//      (b) No self-capture loop: the host ORM has Telescope's query logger wired
+//          in. If storage I/O ran on it, every `INSERT INTO telescope_entries`
+//          during a flush would be captured as a `query` entry, recorded,
+//          flushed, and re-captured — a feedback loop. A separate connection the
+//          host's loggerFactory never wraps eliminates this entirely.
+//
+//  - Boot lifecycle: `init()` (called once before first use) creates the owned
+//    ORM and, when `ensureSchema` is on, ensures the database exists and runs an
+//    ADDITIVE-only schema update (`{ safe: true }` — no DROP of tables or
+//    columns). `close()` (called once at shutdown after the final flush) closes
+//    the owned ORM.
+//
+// I/O design notes (unchanged):
 //
 //  - Per-op `em.fork()`: storage runs OUTSIDE the request scope (entries are
 //    flushed from a background buffer, pruned by a scheduler, etc.), so every
@@ -23,10 +49,6 @@
 //    and last tag matchable and prevent substring false-positives ('slow' must
 //    not match 'slowest'). The `tags` JSON column stays the source of truth.
 //
-//  - Operational caveat: high-volume observability writes land on the same DB.
-//    On a busy primary this adds non-trivial write load — consider pointing this
-//    provider at a separate connection/database in production.
-//
 import type {
   Entry,
   EntryQuery,
@@ -36,10 +58,19 @@ import type {
   TagCount,
 } from '@dudousxd/nestjs-telescope';
 import { decodeCursor, encodeCursor, isBatchOrigin } from '@dudousxd/nestjs-telescope';
-import type { EntityManager, FilterQuery } from '@mikro-orm/core';
+import type { EntityManager, FilterQuery, Options } from '@mikro-orm/core';
+import { MikroORM } from '@mikro-orm/core';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
 
 const DEFAULT_LIMIT = 50;
+
+/**
+ * Options for the dedicated, single-entity ORM the provider owns. These are
+ * standard MikroORM `Options` (connection config) plus an optional
+ * `ensureSchema` flag. Any `entities` provided here is overridden — the provider
+ * always forces `entities: [TelescopeEntry]`.
+ */
+export type MikroOrmStorageProviderOptions = Options & { ensureSchema?: boolean };
 
 function padTags(tags: string[]): string {
   return tags.length ? ` ${tags.join(' ')} ` : ' ';
@@ -69,12 +100,99 @@ function resolveLimit(limit: number | undefined): number {
   return typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT;
 }
 
+/**
+ * Connection-relevant keys copied from a host MikroORM's resolved config when
+ * deriving the owned ORM's connection. Deliberately EXCLUDES entities,
+ * migrations, seeder, subscribers, extensions, and discovery so the owned ORM
+ * sees only `TelescopeEntry` and never inherits the host's metadata or wiring.
+ */
+function pickHostConnection(hostConfig: Options): Partial<Options> {
+  const connection: Partial<Options> = {};
+  if (hostConfig.driver !== undefined) connection.driver = hostConfig.driver;
+  if (hostConfig.dbName !== undefined) connection.dbName = hostConfig.dbName;
+  if (hostConfig.clientUrl !== undefined) connection.clientUrl = hostConfig.clientUrl;
+  if (hostConfig.host !== undefined) connection.host = hostConfig.host;
+  if (hostConfig.port !== undefined) connection.port = hostConfig.port;
+  if (hostConfig.user !== undefined) connection.user = hostConfig.user;
+  if (hostConfig.password !== undefined) connection.password = hostConfig.password;
+  if (hostConfig.schema !== undefined) connection.schema = hostConfig.schema;
+  if (hostConfig.driverOptions !== undefined) connection.driverOptions = hostConfig.driverOptions;
+  if (hostConfig.pool !== undefined) connection.pool = hostConfig.pool;
+  if (hostConfig.charset !== undefined) connection.charset = hostConfig.charset;
+  if (hostConfig.collate !== undefined) connection.collate = hostConfig.collate;
+  if (hostConfig.forceUtcTimezone !== undefined) {
+    connection.forceUtcTimezone = hostConfig.forceUtcTimezone;
+  }
+  if (hostConfig.timezone !== undefined) connection.timezone = hostConfig.timezone;
+  return connection;
+}
+
 export class MikroOrmStorageProvider implements StorageProvider {
-  constructor(private readonly em: EntityManager) {}
+  private readonly source: MikroORM | MikroOrmStorageProviderOptions;
+  private readonly ensureSchema: boolean;
+  private orm: MikroORM | null = null;
+
+  constructor(
+    source: MikroORM | MikroOrmStorageProviderOptions,
+    opts?: { ensureSchema?: boolean },
+  ) {
+    this.source = source;
+    if (opts?.ensureSchema !== undefined) {
+      this.ensureSchema = opts.ensureSchema;
+    } else if (!(source instanceof MikroORM) && source.ensureSchema !== undefined) {
+      this.ensureSchema = source.ensureSchema;
+    } else {
+      this.ensureSchema = true;
+    }
+  }
+
+  private buildOrmOptions(): Partial<Options> {
+    if (this.source instanceof MikroORM) {
+      const connection = pickHostConnection(this.source.config.getAll());
+      return {
+        ...connection,
+        entities: [TelescopeEntry],
+        allowGlobalContext: true,
+      };
+    }
+
+    const { ensureSchema: _ensureSchema, entities: _entities, ...rest } = this.source;
+    return {
+      ...rest,
+      entities: [TelescopeEntry],
+      allowGlobalContext: true,
+    };
+  }
+
+  async init(): Promise<void> {
+    if (this.orm) return;
+    this.orm = await MikroORM.init(this.buildOrmOptions());
+    if (this.ensureSchema) {
+      await this.orm.schema.ensureDatabase();
+      // `{ safe: true }` disables BOTH table and column dropping, so the update
+      // is additive-only: it creates the table and adds missing columns/indexes
+      // but never drops anything that already exists.
+      await this.orm.schema.update({ safe: true });
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.orm) {
+      await this.orm.close(true);
+      this.orm = null;
+    }
+  }
+
+  private forkEm(): EntityManager {
+    if (!this.orm) {
+      throw new Error('MikroOrmStorageProvider: init() must run before use');
+    }
+    return this.orm.em.fork();
+  }
 
   async store(entries: Entry[]): Promise<void> {
     if (entries.length === 0) return;
-    const em = this.em.fork();
+    const em = this.forkEm();
     for (const entry of entries) {
       em.create(TelescopeEntry, entryToRowData(entry));
     }
@@ -82,7 +200,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
   }
 
   async update(id: string, patch: Partial<Entry>): Promise<void> {
-    const em = this.em.fork();
+    const em = this.forkEm();
     const row = await em.findOne(TelescopeEntry, { id });
     if (!row) return;
 
@@ -96,7 +214,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
   }
 
   async find(id: string): Promise<EntryWithBatch | null> {
-    const em = this.em.fork();
+    const em = this.forkEm();
     const row = await em.findOne(TelescopeEntry, { id });
     if (!row) return null;
     const batch = await this.batch(row.batchId);
@@ -104,7 +222,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
   }
 
   async get(query: EntryQuery): Promise<Page<Entry>> {
-    const em = this.em.fork();
+    const em = this.forkEm();
     const where: FilterQuery<TelescopeEntryRow> = {};
 
     if (query.type) where.type = query.type;
@@ -137,20 +255,19 @@ export class MikroOrmStorageProvider implements StorageProvider {
     const hasMore = rows.length > limit;
     const slice = rows.slice(0, limit);
     const last = slice.at(-1);
-    const nextCursor =
-      hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null;
+    const nextCursor = hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null;
 
     return { data: slice.map(rowToEntry), nextCursor };
   }
 
   async batch(batchId: string): Promise<Entry[]> {
-    const em = this.em.fork();
+    const em = this.forkEm();
     const rows = await em.find(TelescopeEntry, { batchId }, { orderBy: { sequence: 'asc' } });
     return rows.map(rowToEntry);
   }
 
   async tags(prefix?: string): Promise<TagCount[]> {
-    const em = this.em.fork();
+    const em = this.forkEm();
     const rows = await em.find(
       TelescopeEntry,
       {},
@@ -168,7 +285,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
   }
 
   async prune(olderThan: Date, keepLast?: number): Promise<number> {
-    const em = this.em.fork();
+    const em = this.forkEm();
     if (keepLast === undefined) {
       return em.nativeDelete(TelescopeEntry, { createdAt: { $lt: olderThan } });
     }
@@ -184,7 +301,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
   }
 
   async clear(): Promise<void> {
-    const em = this.em.fork();
+    const em = this.forkEm();
     await em.nativeDelete(TelescopeEntry, {});
   }
 }
