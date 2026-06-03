@@ -29,6 +29,7 @@ export * from './nest/telescope-exception.interceptor.js';
 export * from './nest/telescope-watcher-registrar.service.js';
 
 export * from './queue/queue-manager.js';
+export * from './queue/queue-manager.registry.js';
 
 export * from './query/query-family-hash.js';
 export * from './query/n-plus-one.js';

@@ -14,6 +14,7 @@ import { resolveConfig } from '../config/resolve-config.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { TimeseriesService } from '../metrics/timeseries.service.js';
 import { PulseService } from '../pulse/pulse.service.js';
+import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
@@ -50,6 +51,7 @@ const SHARED_PROVIDERS: Provider[] = [
   PulseService,
   TelescopeRequestMiddleware,
   TelescopeWatcherRegistrar,
+  QueueManagerRegistry,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 

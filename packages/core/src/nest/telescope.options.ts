@@ -1,5 +1,6 @@
 // packages/core/src/nest/telescope.options.ts
 import type { TelescopeCoreOptions } from '../config/options.js';
+import type { QueueManager } from '../queue/queue-manager.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Watcher } from './watcher.js';
 
@@ -14,6 +15,8 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   storage?: StorageProvider;
   /** Watchers to register. Empty in the host plan. */
   watchers?: Watcher[];
+  /** Live-queue managers (e.g. BullMqQueueManager). Each contributes a driver to /queues/live. */
+  queueManagers?: QueueManager[];
   /**
    * Authorizes API access. Default: allow when NODE_ENV !== 'production',
    * deny otherwise (until the host supplies one).
@@ -28,3 +31,5 @@ export interface TelescopeOptionsFactory {
 export const TELESCOPE_OPTIONS = Symbol('TELESCOPE_OPTIONS');
 export const TELESCOPE_STORAGE = Symbol('TELESCOPE_STORAGE');
 export const TELESCOPE_CONFIG = Symbol('TELESCOPE_CONFIG');
+/** Kept for future DI use; the registry reads `options.queueManagers` directly. */
+export const QUEUE_MANAGERS = Symbol('QUEUE_MANAGERS');
