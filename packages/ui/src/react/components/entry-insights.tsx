@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import type {
   AreaChartPoint,
   BarChartDatum,
@@ -54,6 +55,7 @@ function familyBars(families: FamilyLatency[]): BarChartDatum[] {
   return families.map((family) => ({
     label: family.label !== '' ? family.label : family.familyHash.slice(0, 12),
     value: family.p99,
+    id: family.familyHash,
   }));
 }
 
@@ -73,6 +75,7 @@ function cacheKeyBars(cache: CacheStats): BarChartDatum[] {
 
 function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
   const latency = stats.latency;
+  const navigate = useNavigate();
   return (
     <>
       <StatRow>
@@ -95,6 +98,13 @@ function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
             title="Slowest query shapes (p99)"
             valueLabel="p99 ms"
             data={familyBars(stats.families)}
+            horizontal
+            truncateLabel={40}
+            onBarClick={(datum) => {
+              if (datum.id !== undefined) {
+                navigate(`/entries/query?familyHash=${encodeURIComponent(datum.id)}`);
+              }
+            }}
           />
         ) : null}
         <AreaChartCard

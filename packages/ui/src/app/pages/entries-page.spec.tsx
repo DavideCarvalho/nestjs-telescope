@@ -120,6 +120,24 @@ describe('EntriesPage', () => {
     });
   });
 
+  it('filters by familyHash from the query string and shows a clearable chip', async () => {
+    const { client, entries } = mockClient([]);
+    renderAt('/entries/query?familyHash=abc123', client);
+
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({ type: 'query', familyHash: 'abc123' });
+    });
+
+    // active filter chip (clearable) shows the truncated hash
+    const chip = await screen.findByText('abc123');
+    expect(chip).toBeTruthy();
+
+    fireEvent.click(chip);
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({ type: 'query' });
+    });
+  });
+
   it('shows a type-aware empty state when nothing matches', async () => {
     const { client } = mockClient([]);
     renderAt('/entries/cache', client);

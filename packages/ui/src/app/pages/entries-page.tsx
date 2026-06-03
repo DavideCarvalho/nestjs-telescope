@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   EntriesTable,
   EntryInsights,
@@ -19,21 +19,29 @@ function emptyMessage(type: string | undefined, tag: string): string {
 export function EntriesPage(): JSX.Element {
   const { type: routeType } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [tag, setTag] = useState('');
 
   const activeType = routeType && isKnownType(routeType) ? routeType : undefined;
   const trimmedTag = tag.trim();
-  const hasFilters = activeType !== undefined || trimmedTag !== '';
+  const familyHash = searchParams.get('familyHash') ?? '';
+  const hasFamilyHash = familyHash !== '';
+  const hasFilters = activeType !== undefined || trimmedTag !== '' || hasFamilyHash;
 
   const { data, isLoading } = useEntries({
     ...(activeType ? resolveEntryQuery(activeType) : {}),
     ...(trimmedTag !== '' ? { tag: trimmedTag } : {}),
+    ...(hasFamilyHash ? { familyHash } : {}),
   });
   const entries = data?.data ?? [];
 
   function clearFilters(): void {
     setTag('');
     navigate('/entries');
+  }
+
+  function clearFamilyHash(): void {
+    navigate(activeType ? `/entries/${activeType}` : '/entries');
   }
 
   return (
@@ -63,6 +71,21 @@ export function EntriesPage(): JSX.Element {
           aria-label="Filter by tag"
           className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
         />
+        {hasFamilyHash ? (
+          <button
+            type="button"
+            onClick={clearFamilyHash}
+            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-200 hover:bg-zinc-800"
+          >
+            <span className="text-zinc-500" aria-hidden="true">
+              family:
+            </span>
+            {familyHash.slice(0, 12)}
+            <span className="text-zinc-500" aria-hidden="true">
+              ×
+            </span>
+          </button>
+        ) : null}
         {hasFilters ? (
           <button
             type="button"
