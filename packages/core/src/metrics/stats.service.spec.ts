@@ -40,6 +40,29 @@ function cacheEntry(createdAt: Date, operation: 'get' | 'set', hit: boolean | nu
   };
 }
 
+function exceptionEntry(
+  createdAt: Date,
+  familyHash: string,
+  className: string,
+  message: string,
+): Entry {
+  return {
+    id: `exception-${Math.random()}`,
+    batchId: 'b',
+    type: 'exception',
+    familyHash,
+    content: { class: className, message, stack: null, context: {} },
+    tags: [],
+    sequence: 0,
+    durationMs: null,
+    origin: 'http',
+    instanceId: 'i',
+    traceId: null,
+    spanId: null,
+    createdAt,
+  };
+}
+
 describe('StatsService', () => {
   it('returns latency + families for the query type', async () => {
     const storage = new InMemoryStorageProvider();
@@ -77,6 +100,27 @@ describe('StatsService', () => {
     expect(result.cache?.misses).toBe(1);
     expect(result.cache?.sets).toBe(1);
     expect(result.cache?.hitRatio).toBeCloseTo(0.5);
+  });
+
+  it('returns exception groups (with class/message from content) for the exception type', async () => {
+    const storage = new InMemoryStorageProvider();
+    const now = Date.now();
+    await storage.store([
+      exceptionEntry(new Date(now - 1000), 'TypeError:boom', 'TypeError', 'boom'),
+      exceptionEntry(new Date(now - 2000), 'TypeError:boom', 'TypeError', 'boom'),
+      exceptionEntry(new Date(now - 3000), 'RangeError:nope', 'RangeError', 'nope'),
+    ]);
+    const service = new StatsService(storage);
+    const result = await service.getStats({ type: 'exception', windowMs: 300_000 });
+
+    expect(result.type).toBe('exception');
+    expect(result.exceptions).toBeDefined();
+    expect(result.exceptions).toHaveLength(2);
+    const first = result.exceptions?.[0];
+    expect(first?.key).toBe('TypeError:boom');
+    expect(first?.class).toBe('TypeError');
+    expect(first?.message).toBe('boom');
+    expect(first?.count).toBe(2);
   });
 
   it('respects the slowMs option when counting slow entries', async () => {

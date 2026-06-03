@@ -189,6 +189,17 @@ export interface StatusBreakdown {
   '5xx': number;
   other: number;
 }
+/** An exception group in the stats payload — keyed by familyHash (or `class: message`),
+ *  with occurrence count, last-seen, and a per-bucket over-time series. `lastAt`
+ *  is JSON-serialized to an ISO string over the wire. */
+export interface StatsExceptionGroup {
+  key: string;
+  class: string;
+  message: string;
+  count: number;
+  lastAt: string;
+  overTime: number[];
+}
 export interface StatsResult {
   type: string;
   windowMs: number;
@@ -199,5 +210,6 @@ export interface StatsResult {
   families?: FamilyLatency[];
   cache?: CacheStats;
   status?: StatusBreakdown;
+  exceptions?: StatsExceptionGroup[];
   truncated: boolean;
 }

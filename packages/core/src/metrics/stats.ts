@@ -1,5 +1,10 @@
 // packages/core/src/metrics/stats.ts
-import type { CacheContent, QueryContent, RequestContent } from '../entry/content.js';
+import type {
+  CacheContent,
+  ExceptionContent,
+  QueryContent,
+  RequestContent,
+} from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { type TimeseriesReport, bucketTimeseries } from './timeseries.js';
 
@@ -36,6 +41,18 @@ export interface StatusBreakdown {
   other: number;
 }
 
+export interface ExceptionGroupStats {
+  /** The family key — the entry's `familyHash` when present, else `${class}: ${message}`. */
+  key: string;
+  class: string;
+  message: string;
+  count: number;
+  /** Most recent occurrence in the window. */
+  lastAt: Date;
+  /** Per-bucket occurrence counts, aligned to the report's `overTime` buckets. */
+  overTime: number[];
+}
+
 export interface StatsResult {
   type: string;
   windowMs: number;
@@ -50,6 +67,8 @@ export interface StatsResult {
   cache?: CacheStats;
   /** Request only. */
   status?: StatusBreakdown;
+  /** Exception only: top groups by class+message, with count, last-seen, over-time. */
+  exceptions?: ExceptionGroupStats[];
   /** Caller-supplied: whether the scan hit its cap. */
   truncated: boolean;
 }
@@ -65,10 +84,12 @@ export interface SummarizeStatsInput {
   truncated: boolean;
   topFamilies?: number;
   topKeys?: number;
+  topExceptions?: number;
 }
 
 const DEFAULT_TOP_FAMILIES = 8;
 const DEFAULT_TOP_KEYS = 8;
+const DEFAULT_TOP_EXCEPTIONS = 8;
 const MAX_FAMILY_LABEL_LENGTH = 60;
 
 /** Nearest-rank percentile over a NON-EMPTY ascending array; 0 for empty.
@@ -108,6 +129,13 @@ function asCacheContent(content: unknown): CacheContent | null {
   const hit = content.hit;
   if (hit !== true && hit !== false && hit !== null) return null;
   return { operation: content.operation, key: content.key, hit };
+}
+
+function asExceptionContent(content: unknown): Pick<ExceptionContent, 'class' | 'message'> | null {
+  if (!isRecord(content)) return null;
+  const className = typeof content.class === 'string' ? content.class : 'Error';
+  const message = typeof content.message === 'string' ? content.message : '';
+  return { class: className, message };
 }
 
 function asRequestContent(content: unknown): Pick<RequestContent, 'statusCode'> | null {
@@ -226,6 +254,80 @@ function computeStatus(entries: Entry[]): StatusBreakdown {
   return breakdown;
 }
 
+interface ExceptionAccumulator {
+  class: string;
+  message: string;
+  count: number;
+  lastAt: Date;
+  overTime: number[];
+}
+
+/** The family key for an exception entry: its `familyHash` when present (the
+ *  interceptor sets `${class}:${message}`), else a `${class}: ${message}`
+ *  fallback derived from content. */
+function exceptionKey(entry: Entry, fields: Pick<ExceptionContent, 'class' | 'message'>): string {
+  return entry.familyHash ?? `${fields.class}: ${fields.message}`;
+}
+
+/** The bucket index a timestamp falls into for the report's `overTime` buckets;
+ *  mirrors {@link bucketTimeseries}'s clamping so the per-group series aligns. */
+function bucketIndexFor(
+  createdAt: Date,
+  windowStart: Date,
+  windowEnd: Date,
+  bucketCount: number,
+): number {
+  const count = Math.max(1, Math.floor(bucketCount));
+  const startMs = windowStart.getTime();
+  const spanMs = Math.max(1, windowEnd.getTime() - startMs);
+  const bucketMs = Math.max(1, Math.floor(spanMs / count));
+  const rawIndex = Math.floor((createdAt.getTime() - startMs) / bucketMs);
+  return Math.min(count - 1, Math.max(0, rawIndex));
+}
+
+function computeExceptions(
+  entries: Entry[],
+  windowStart: Date,
+  windowEnd: Date,
+  buckets: number,
+  topExceptions: number,
+): ExceptionGroupStats[] {
+  const bucketCount = Math.max(1, Math.floor(buckets));
+  const groups = new Map<string, ExceptionAccumulator>();
+
+  for (const entry of entries) {
+    const fields = asExceptionContent(entry.content);
+    if (fields === null) continue;
+    const key = exceptionKey(entry, fields);
+    const index = bucketIndexFor(entry.createdAt, windowStart, windowEnd, bucketCount);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (entry.createdAt > existing.lastAt) existing.lastAt = entry.createdAt;
+      const current = existing.overTime[index] ?? 0;
+      existing.overTime[index] = current + 1;
+    } else {
+      const overTime = new Array<number>(bucketCount).fill(0);
+      overTime[index] = 1;
+      groups.set(key, {
+        class: fields.class,
+        message: fields.message,
+        count: 1,
+        lastAt: entry.createdAt,
+        overTime,
+      });
+    }
+  }
+
+  return [...groups.entries()]
+    .map(([key, group]) => ({ key, ...group }))
+    .sort(
+      (a, b) =>
+        b.count - a.count || b.lastAt.getTime() - a.lastAt.getTime() || a.key.localeCompare(b.key),
+    )
+    .slice(0, topExceptions);
+}
+
 /** Aggregate a window of entries into per-type analytics: latency percentiles,
  *  query-family breakdown, cache hit/miss, request status breakdown, and a
  *  throughput time-series. Pure: callers fetch the windowed entries and supply
@@ -242,6 +344,7 @@ export function summarizeStats(input: SummarizeStatsInput): StatsResult {
     truncated,
     topFamilies = DEFAULT_TOP_FAMILIES,
     topKeys = DEFAULT_TOP_KEYS,
+    topExceptions = DEFAULT_TOP_EXCEPTIONS,
   } = input;
 
   const overTime = bucketTimeseries(entries, windowStart, windowEnd, buckets);
@@ -262,6 +365,10 @@ export function summarizeStats(input: SummarizeStatsInput): StatsResult {
   }
   if (type === EntryType.Cache) result.cache = computeCache(entries, topKeys);
   if (type === EntryType.Request) result.status = computeStatus(entries);
+  if (type === EntryType.Exception) {
+    const exceptions = computeExceptions(entries, windowStart, windowEnd, buckets, topExceptions);
+    if (exceptions.length > 0) result.exceptions = exceptions;
+  }
 
   return result;
 }

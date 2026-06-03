@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { CacheContent, QueryContent, RequestContent } from '../entry/content.js';
+import type {
+  CacheContent,
+  ExceptionContent,
+  QueryContent,
+  RequestContent,
+} from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { percentile, summarizeStats } from './stats.js';
 
@@ -45,6 +50,10 @@ function requestContent(statusCode: number | null): RequestContent {
 
 function cacheContent(operation: 'get' | 'set', key: string, hit: boolean | null): CacheContent {
   return { operation, key, hit };
+}
+
+function exceptionContent(className: string, message: string): ExceptionContent {
+  return { class: className, message, stack: null, context: {} };
 }
 
 function baseInput(type: string) {
@@ -256,6 +265,105 @@ describe('summarizeStats status', () => {
       '5xx': 1,
       other: 1,
     });
+  });
+});
+
+describe('summarizeStats exceptions', () => {
+  function exc(
+    familyHash: string,
+    className: string,
+    message: string,
+    createdAt: Date,
+  ): Entry<ExceptionContent> {
+    return entry<ExceptionContent>({
+      type: EntryType.Exception,
+      familyHash,
+      content: exceptionContent(className, message),
+      createdAt,
+    });
+  }
+
+  it('groups exceptions by family key with count, lastAt, class/message and over-time', () => {
+    const t = (min: number) => new Date(start.getTime() + min * 60_000);
+    const entries = [
+      // TypeError group: 3 occurrences, last at minute 50
+      exc('TypeError:boom', 'TypeError', 'boom', t(10)),
+      exc('TypeError:boom', 'TypeError', 'boom', t(30)),
+      exc('TypeError:boom', 'TypeError', 'boom', t(50)),
+      // RangeError group: 2 occurrences, last at minute 20
+      exc('RangeError:nope', 'RangeError', 'nope', t(5)),
+      exc('RangeError:nope', 'RangeError', 'nope', t(20)),
+    ];
+    const result = summarizeStats({ ...baseInput(EntryType.Exception), entries, buckets: 6 });
+
+    expect(result.exceptions).toBeDefined();
+    expect(result.exceptions).toHaveLength(2);
+    // Sorted by count desc -> TypeError (3) first.
+    const [first, second] = result.exceptions ?? [];
+    expect(first?.key).toBe('TypeError:boom');
+    expect(first?.class).toBe('TypeError');
+    expect(first?.message).toBe('boom');
+    expect(first?.count).toBe(3);
+    expect(first?.lastAt).toEqual(t(50));
+    expect(second?.key).toBe('RangeError:nope');
+    expect(second?.count).toBe(2);
+    expect(second?.lastAt).toEqual(t(20));
+    // overTime aligned to 6 buckets (10-min each): TypeError at buckets 1,3,5.
+    expect(first?.overTime).toHaveLength(6);
+    expect(first?.overTime?.[1]).toBe(1);
+    expect(first?.overTime?.[3]).toBe(1);
+    expect(first?.overTime?.[5]).toBe(1);
+    expect(second?.overTime?.[0]).toBe(1);
+    expect(second?.overTime?.[2]).toBe(1);
+  });
+
+  it('tiebreaks equal counts by lastAt desc and respects topExceptions', () => {
+    const t = (min: number) => new Date(start.getTime() + min * 60_000);
+    const entries = [
+      exc('a:a', 'A', 'a', t(10)),
+      exc('b:b', 'B', 'b', t(40)),
+      exc('c:c', 'C', 'c', t(20)),
+    ];
+    const result = summarizeStats({
+      ...baseInput(EntryType.Exception),
+      entries,
+      topExceptions: 2,
+    });
+    expect(result.exceptions).toHaveLength(2);
+    // All count 1 -> lastAt desc: b(40), c(20); a(10) dropped by top-2.
+    expect(result.exceptions?.map((group) => group.key)).toEqual(['b:b', 'c:c']);
+  });
+
+  it('falls back to `class: message` key when familyHash is null', () => {
+    const entries = [
+      entry<ExceptionContent>({
+        type: EntryType.Exception,
+        familyHash: null,
+        content: exceptionContent('TypeError', 'boom'),
+      }),
+      entry<ExceptionContent>({
+        type: EntryType.Exception,
+        familyHash: null,
+        content: exceptionContent('TypeError', 'boom'),
+      }),
+    ];
+    const result = summarizeStats({ ...baseInput(EntryType.Exception), entries });
+    expect(result.exceptions).toHaveLength(1);
+    expect(result.exceptions?.[0]?.key).toBe('TypeError: boom');
+    expect(result.exceptions?.[0]?.count).toBe(2);
+  });
+
+  it('is omitted for non-exception types', () => {
+    const entries = [
+      entry<QueryContent>({
+        type: EntryType.Query,
+        durationMs: 1,
+        familyHash: 'f',
+        content: queryContent('select 1'),
+      }),
+    ];
+    const result = summarizeStats({ ...baseInput(EntryType.Query), entries });
+    expect(result.exceptions).toBeUndefined();
   });
 });
 

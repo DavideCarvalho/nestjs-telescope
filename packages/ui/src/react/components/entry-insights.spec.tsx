@@ -122,6 +122,41 @@ describe('EntryInsights', () => {
     expect(screen.getByText('30%')).toBeTruthy();
   });
 
+  it('renders exception groups with class, message, count, and a drill-through link', async () => {
+    const stats = statsFor({
+      type: 'exception',
+      total: 5,
+      exceptions: [
+        {
+          key: 'TypeError:boom',
+          class: 'TypeError',
+          message: 'cannot read property of undefined',
+          count: 3,
+          lastAt: new Date(Date.now() - 30_000).toISOString(),
+          overTime: [0, 1, 0, 1, 0, 1],
+        },
+        {
+          key: 'RangeError:nope',
+          class: 'RangeError',
+          message: 'out of range',
+          count: 2,
+          lastAt: new Date(Date.now() - 120_000).toISOString(),
+          overTime: [1, 0, 1, 0, 0, 0],
+        },
+      ],
+    });
+    const { container } = renderInsights('exception', stats);
+
+    expect(await screen.findByText('Exception groups')).toBeTruthy();
+    expect(screen.getByText('TypeError')).toBeTruthy();
+    expect(screen.getByText('cannot read property of undefined')).toBeTruthy();
+    expect(screen.getByText('RangeError')).toBeTruthy();
+    // Drill-through link to the family scoped to the exception type. (MemoryRouter
+    // renders the path without the HashRouter `#` prefix used by the real app.)
+    const hrefs = [...container.querySelectorAll('a')].map((anchor) => anchor.getAttribute('href'));
+    expect(hrefs).toContain('/entries/exception?familyHash=TypeError%3Aboom');
+  });
+
   it('renders a generic total + over-time header for other types', async () => {
     const stats = statsFor({ type: 'mail', total: 4 });
     renderInsights('mail', stats);

@@ -1,15 +1,17 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type {
   AreaChartPoint,
   BarChartDatum,
   CacheStats,
   FamilyLatency,
+  StatsExceptionGroup,
   StatsResult,
   StatusBreakdown,
   TimeseriesReport,
 } from '../index.js';
 import { useStats } from '../use-telescope-queries.js';
 import { AreaChartCard, BarChartCard } from './charts/index.js';
+import { relativeTime } from './queues/queue-format.js';
 
 const DEFAULT_WINDOW = '1h';
 
@@ -189,6 +191,78 @@ function RequestInsights({ stats }: { stats: StatsResult }): JSX.Element {
   );
 }
 
+/** A tiny inline bar chart of per-bucket counts — no axes, no recharts. */
+function Sparkline({ values }: { values: number[] }): JSX.Element | null {
+  if (values.length === 0) return null;
+  const max = Math.max(1, ...values);
+  return (
+    <div className="flex h-6 items-end gap-px" aria-hidden="true">
+      {values.map((value, index) => (
+        <div
+          // Buckets are positional and fixed-length; index is a stable key here.
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional buckets
+          key={index}
+          className="w-1 rounded-sm bg-amber-500/60"
+          style={{ height: `${Math.max(2, Math.round((value / max) * 100))}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ExceptionGroupRow({ group }: { group: StatsExceptionGroup }): JSX.Element {
+  const lastAtMs = new Date(group.lastAt).getTime();
+  return (
+    <Link
+      to={`/entries/exception?familyHash=${encodeURIComponent(group.key)}`}
+      className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 transition hover:border-zinc-700 hover:bg-zinc-900/70"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-mono text-sm font-semibold text-red-300">{group.class}</p>
+        <p className="truncate text-xs text-zinc-400">{group.message}</p>
+      </div>
+      <Sparkline values={group.overTime} />
+      <div className="shrink-0 text-right">
+        <p className="text-sm font-semibold tabular-nums text-zinc-100">
+          {group.count.toLocaleString()}
+        </p>
+        <p className="text-[10px] text-zinc-500">
+          {relativeTime(Number.isNaN(lastAtMs) ? null : lastAtMs)}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+function ExceptionInsights({ stats }: { stats: StatsResult }): JSX.Element {
+  const groups = stats.exceptions ?? [];
+  return (
+    <>
+      <StatRow>
+        <StatCard label="Total" value={stats.total.toLocaleString()} />
+        <StatCard
+          label="Groups"
+          value={groups.length.toLocaleString()}
+          accent={groups.length > 0 ? 'text-amber-400' : 'text-zinc-100'}
+        />
+      </StatRow>
+      {groups.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-wide text-zinc-500">Exception groups</p>
+          {groups.map((group) => (
+            <ExceptionGroupRow key={group.key} group={group} />
+          ))}
+        </div>
+      ) : null}
+      <AreaChartCard
+        title="Exceptions over time"
+        valueLabel="exceptions"
+        data={toAreaSeries(stats.overTime)}
+      />
+    </>
+  );
+}
+
 function GenericInsights({ stats }: { stats: StatsResult }): JSX.Element {
   return (
     <>
@@ -204,6 +278,7 @@ function InsightsBody({ stats }: { stats: StatsResult }): JSX.Element {
   if (stats.type === 'query') return <QueryInsights stats={stats} />;
   if (stats.type === 'cache') return <CacheInsights stats={stats} />;
   if (stats.type === 'request') return <RequestInsights stats={stats} />;
+  if (stats.type === 'exception') return <ExceptionInsights stats={stats} />;
   return <GenericInsights stats={stats} />;
 }
 
