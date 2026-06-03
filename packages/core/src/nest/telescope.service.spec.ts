@@ -1,5 +1,6 @@
 // packages/core/src/nest/telescope.service.spec.ts
-import { afterEach, describe, expect, it } from 'vitest';
+import { Logger } from '@nestjs/common';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -33,6 +34,34 @@ describe('TelescopeService', () => {
     const all = (await storage.get({})).data;
     expect(all).toHaveLength(2);
     expect(new Set(all.map((e) => e.batchId)).size).toBe(1); // same batch
+  });
+
+  it('warns at boot when no prune is configured', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const service = new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {});
+      active = service;
+      await service.onModuleInit();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('No `prune` configured'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not warn about prune when retention is configured', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const service = new TelescopeService(
+        resolveConfig({ prune: { after: '1h' } }),
+        new InMemoryStorageProvider(),
+        {},
+      );
+      active = service;
+      await service.onModuleInit();
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('No `prune` configured'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('drains the buffer on application shutdown', async () => {

@@ -62,6 +62,17 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
 
   async onModuleInit(): Promise<void> {
     if (!this.config.enabled) return;
+    // Retention guardrail: without `prune`, the entry table grows unbounded and
+    // the windowed analytics scans (pulse/timeseries/stats) get slower over time.
+    // Warn once at boot so hosts opt into a retention window (and/or `sampling`
+    // for noisy request floods) rather than discovering the slowdown in prod.
+    if (this.config.prune === undefined) {
+      this.logger.warn(
+        'No `prune` configured — Telescope entries accumulate without bound, ' +
+          'slowing analytics over time. Set e.g. `prune: { after: "1h" }` ' +
+          '(and/or `sampling` to down-sample noisy request volume).',
+      );
+    }
     // Let the storage acquire resources / ensure its schema before first use.
     await this.storage.init?.();
     this.flushTimer = setInterval(() => {
