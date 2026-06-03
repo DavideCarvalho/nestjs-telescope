@@ -21,7 +21,7 @@ Driven by Davi "queremos tudo bora" + the perf diagnosis (analytics scans read f
 The dominant cost against a remote SQL store is **round-trip count**, not content size (flip's content is only ~819 B avg, so A1's projection win is marginal *there* — it matters when content is large).
 - ✅ **Larger window page** (`80c8f97`, DEFAULT_PAGE_SIZE 500→5000) — the scan paginated in 500-row pages = ~10 sequential RTTs for 4700 rows. One big page → timeseries 4.3s→2.1s.
 - ✅ **Prune is the big lever at volume** — flip's frontend polling floods ~780 rows/min. 15m retention = ~11k rows. Tightened to **5m** (`flip dd…`→5m) → 4700→**204 rows**; timeseries 0.9s, lists/traces **instant** (0.2s), no more "loading forever".
-- ⬜ **NEXT perf win — batch the pulse hydration.** With few rows, pulse is still ~2.2s because its two-pass hydration issues **N individual `storage.find(id)` calls** (top-N slowest + exception reps + N+1 reps) = N remote RTTs. Fix: a single batched fetch (`EntryQuery.ids?: string[]` → `WHERE id IN (...)`, or a `findMany(ids)`), so hydration is ONE round-trip. Then pulse → ~1s.
+- ✅ **Batched pulse hydration** (`6a4d8d5`) — `EntryQuery.ids?: string[]` (`WHERE id IN (...)`; redis uses MGET); pulse hydrate is now ONE query instead of N `find()`s. Live: pulse 2.2s→**1.46s cold / 0.42s warm**. Whole dashboard now snappy (pulse 0.4–1.5s, timeseries 0.9s, lists/traces/search 0.2s).
 - The real production answer remains **A3 rollups** (read pre-aggregated buckets, never scan raw rows).
 
 ## A. PERFORMANCE (foundational — do first)
