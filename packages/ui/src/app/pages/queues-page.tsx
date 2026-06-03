@@ -26,7 +26,7 @@ export function QueuesPage(): JSX.Element {
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm text-emerald-400">Queues</h2>
+        <h2 className="text-sm text-emerald-400">Queue metrics</h2>
         <WindowSelect value={window} onChange={setWindow} />
       </div>
       <BarChartCard
