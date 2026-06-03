@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Inject,
+  NotFoundException,
   Param,
   Query,
   UseGuards,
@@ -14,6 +15,15 @@ import type { Entry } from '../entry/entry.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
+import {
+  type JobPage,
+  type QueueCounts,
+  type QueueJobDetail,
+  type QueueManager,
+  type QueueSummary,
+  isQueueState,
+} from '../queue/queue-manager.js';
+import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -43,6 +53,7 @@ export class TelescopeController {
     @Inject(QueueMetricsService) private readonly queueMetrics: QueueMetricsService,
     @Inject(TimeseriesService) private readonly timeseriesService: TimeseriesService,
     @Inject(PulseService) private readonly pulse: PulseService,
+    @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
   ) {}
 
   @Get('entries')
@@ -128,6 +139,48 @@ export class TelescopeController {
       ...(type !== undefined ? { type } : {}),
       ...(tag !== undefined ? { tag } : {}),
     });
+  }
+
+  @Get('queues/live')
+  async liveQueues(): Promise<{ queues: QueueSummary[] }> {
+    const all = await Promise.all(this.queueManagers.all().map((m) => m.listQueues()));
+    return { queues: all.flat() };
+  }
+
+  @Get('queues/live/:driver/:queue/counts')
+  liveCounts(@Param('driver') driver: string, @Param('queue') queue: string): Promise<QueueCounts> {
+    return this.requireManager(driver).counts(queue);
+  }
+
+  @Get('queues/live/:driver/:queue/jobs')
+  liveJobs(
+    @Param('driver') driver: string,
+    @Param('queue') queue: string,
+    @Query('state') state?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ): Promise<JobPage> {
+    if (!isQueueState(state)) throw new BadRequestException(`Invalid state: ${state}`);
+    const page = {
+      ...(cursor !== undefined ? { cursor } : {}),
+      ...(limit !== undefined && Number.isFinite(Number(limit)) ? { limit: Number(limit) } : {}),
+    };
+    return this.requireManager(driver).listJobs(queue, state, page);
+  }
+
+  @Get('queues/live/:driver/:queue/jobs/:id')
+  liveJob(
+    @Param('driver') driver: string,
+    @Param('queue') queue: string,
+    @Param('id') id: string,
+  ): Promise<QueueJobDetail | null> {
+    return this.requireManager(driver).getJob(queue, id);
+  }
+
+  private requireManager(driver: string): QueueManager {
+    const manager = this.queueManagers.get(driver);
+    if (!manager) throw new NotFoundException(`Unknown queue driver: ${driver}`);
+    return manager;
   }
 
   @Get('meta')
