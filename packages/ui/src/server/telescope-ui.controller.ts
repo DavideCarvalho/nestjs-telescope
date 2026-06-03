@@ -54,8 +54,13 @@ export class TelescopeUiController {
     this.path = normalizeTelescopePath(options.path);
   }
 
+  // index.html references hash-named asset bundles. It MUST NOT be cached, or a
+  // browser keeps loading a stale bundle across deploys (the classic "one widget
+  // stuck loading / old labels after an upgrade"). The hashed assets below are
+  // immutable and cached forever instead.
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'no-store, must-revalidate')
   index(): string {
     const indexPath = join(this.assetsDir, 'index.html');
     if (!existsSync(indexPath)) {
@@ -64,7 +69,10 @@ export class TelescopeUiController {
     return rewriteAssetBase(readFileSync(indexPath, 'utf8'), this.path);
   }
 
+  // Asset filenames are content-hashed by the build, so they're safe to cache
+  // forever — a new bundle gets a new filename referenced by the (uncached) index.
   @Get('assets/:file')
+  @Header('Cache-Control', 'public, max-age=31536000, immutable')
   asset(@Param('file') file: string): StreamableFile {
     // Trust assumption: assetsDir holds build-produced files (not user-writable).
     // The basename + resolved-prefix checks below still prevent escaping assets/.
