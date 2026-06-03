@@ -3,6 +3,7 @@ import type { Entry } from '../entry/entry.js';
 import type { RedactOptions } from '../redaction/redact.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
+import type { TraceContextProvider } from '../trace/trace-context-provider.js';
 
 export type Duration = number | string;
 
@@ -36,6 +37,10 @@ export interface TelescopeCoreOptions {
   taggers?: Tagger[];
   instanceId?: string;
   filter?: (entry: Entry) => boolean;
+  /** Optional ambient trace-context source (e.g. OtelTraceContextProvider). */
+  traceContext?: TraceContextProvider;
+  /** UI trace-link URL template with {traceId}/{spanId} placeholders. */
+  traceLink?: string;
 }
 
 export interface ResolvedCoreConfig {
@@ -47,4 +52,6 @@ export interface ResolvedCoreConfig {
   taggers: Tagger[];
   instanceId: string;
   filter?: (entry: Entry) => boolean;
+  traceContext?: TraceContextProvider;
+  traceLink?: string;
 }

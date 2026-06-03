@@ -43,6 +43,8 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
     recorder: parsed.recorder,
     taggers: [...BUILTIN_TAGGERS, ...(options.taggers ?? [])],
     instanceId: parsed.instanceId ?? hostname(),
+    ...(options.traceContext ? { traceContext: options.traceContext } : {}),
+    ...(options.traceLink ? { traceLink: options.traceLink } : {}),
   };
   if (parsed.prune) {
     const pruneEntry: ResolvedCoreConfig['prune'] = {

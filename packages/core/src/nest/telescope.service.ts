@@ -25,6 +25,7 @@ export interface TelescopeMeta {
   enabled: boolean;
   droppedCount: number;
   watchers: string[];
+  traceLink: string | null;
 }
 
 @Injectable()
@@ -50,6 +51,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       bufferSize: config.recorder.bufferSize,
       idFactory: () => v7(),
       ...(config.filter ? { filter: config.filter } : {}),
+      ...(config.traceContext ? { traceContext: config.traceContext } : {}),
     });
   }
 
@@ -116,6 +118,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       enabled: this.config.enabled,
       droppedCount: this.recorder.droppedCount,
       watchers: [...this.watcherTypes],
+      traceLink: this.config.traceLink ?? null,
     };
   }
 }

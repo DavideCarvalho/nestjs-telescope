@@ -51,6 +51,24 @@ describe('TelescopeService', () => {
     expect(Array.isArray(meta.watchers)).toBe(true);
   });
 
+  it('getMeta returns the configured traceLink', async () => {
+    const config = resolveConfig({
+      recorder: { flushIntervalMs: 5 },
+      traceLink: 'https://traces.example/{traceId}/{spanId}',
+    });
+    const service = new TelescopeService(config, new InMemoryStorageProvider(), {});
+    active = service;
+    expect((await service.getMeta()).traceLink).toBe(
+      'https://traces.example/{traceId}/{spanId}',
+    );
+  });
+
+  it('getMeta returns null traceLink when unset', async () => {
+    const { service } = makeService();
+    active = service;
+    expect((await service.getMeta()).traceLink).toBeNull();
+  });
+
   it('getMeta returns a copy of watcher types (no internal-state leak)', async () => {
     const { service } = makeService();
     active = service;

@@ -1,5 +1,6 @@
 // packages/core/src/config/resolve-config.spec.ts
 import { describe, expect, it } from 'vitest';
+import type { TraceContextProvider } from '../trace/trace-context-provider.js';
 import { resolveConfig } from './resolve-config.js';
 
 describe('resolveConfig', () => {
@@ -31,5 +32,21 @@ describe('resolveConfig', () => {
 
   it('rejects prune.after of -1 (negative)', () => {
     expect(() => resolveConfig({ prune: { after: -1 } })).toThrow();
+  });
+
+  it('passes traceLink and traceContext through unchanged', () => {
+    const traceContext: TraceContextProvider = { current: () => null };
+    const config = resolveConfig({
+      traceLink: 'https://traces.example/{traceId}/{spanId}',
+      traceContext,
+    });
+    expect(config.traceLink).toBe('https://traces.example/{traceId}/{spanId}');
+    expect(config.traceContext).toBe(traceContext);
+  });
+
+  it('defaults traceLink and traceContext to undefined when not given', () => {
+    const config = resolveConfig({});
+    expect(config.traceLink).toBeUndefined();
+    expect(config.traceContext).toBeUndefined();
   });
 });
