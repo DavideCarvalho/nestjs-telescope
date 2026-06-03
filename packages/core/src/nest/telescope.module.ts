@@ -1,6 +1,7 @@
 // packages/core/src/nest/telescope.module.ts
 import {
   type DynamicModule,
+  Inject,
   type InjectionToken,
   type MiddlewareConsumer,
   Module,
@@ -61,7 +62,18 @@ const SHARED_PROVIDERS: Provider[] = [
 
 @Module({})
 export class TelescopeModule implements NestModule {
+  constructor(@Inject(TELESCOPE_OPTIONS) private readonly moduleOptions: TelescopeModuleOptions) {}
+
   configure(consumer: MiddlewareConsumer): void {
+    // Hosts that call `setGlobalPrefix(...)` should set
+    // `registerRequestMiddleware: false` and instead register the capture
+    // globally in their bootstrap via `app.use(telescopeRequestCapture(app.get(TelescopeService)))`.
+    // Reason: NestJS scopes module middleware (even a `{*splat}` catch-all) to
+    // the global-prefix's route table, so only `/` ends up captured. A raw
+    // `app.use` runs before all route handlers regardless of prefix.
+    if (this.moduleOptions.registerRequestMiddleware === false) {
+      return;
+    }
     // NestJS 11 / path-to-regexp v8 route syntax: {*splat} is the optional catch-all (the '*' and '(.*)' forms throw). Requires @nestjs/common >= 11 for the middleware path matching.
     // No .exclude(): under a global prefix .exclude() doesn't work with the catch-all route — it
     // forces NestJS into route-by-route matching so only '/' is captured. Telescope's own routes

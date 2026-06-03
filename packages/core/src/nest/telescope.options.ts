@@ -31,6 +31,15 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
     ctx: AuthorizerContext,
     action: QueueActionRequest,
   ) => boolean | Promise<boolean>;
+  /**
+   * Whether TelescopeModule auto-registers the request-capture middleware via
+   * NestJS `configure()`. Default `true`. Set `false` when the host app uses
+   * `setGlobalPrefix(...)`: NestJS scopes module middleware to the prefixed
+   * route table, so the catch-all only captures `/`. In that case register the
+   * capture globally in bootstrap instead —
+   * `app.use(telescopeRequestCapture(app.get(TelescopeService)))`.
+   */
+  registerRequestMiddleware?: boolean;
 }
 
 export interface TelescopeOptionsFactory {

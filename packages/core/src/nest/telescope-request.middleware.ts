@@ -62,3 +62,21 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     next();
   }
 }
+
+/**
+ * Builds a framework-agnostic `(req, res, next)` request-capture handler for
+ * hosts that register it globally via `app.use(...)` in their bootstrap —
+ * required when the app uses `setGlobalPrefix(...)`, which scopes NestJS module
+ * middleware so the built-in capture would only see `/`. Pair with
+ * `TelescopeModule.forRoot({ registerRequestMiddleware: false })`.
+ *
+ * @example
+ *   const app = await NestFactory.create(AppModule);
+ *   app.use(telescopeRequestCapture(app.get(TelescopeService)));
+ */
+export function telescopeRequestCapture(
+  service: TelescopeService,
+): (req: unknown, res: unknown, next: (error?: unknown) => void) => void {
+  const middleware = new TelescopeRequestMiddleware(service);
+  return (req, res, next) => middleware.use(req, res, next);
+}
