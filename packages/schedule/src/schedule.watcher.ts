@@ -207,7 +207,7 @@ export class ScheduleWatcher implements Watcher {
     try {
       const failureReason =
         status === 'failed' ? (error instanceof Error ? error.message : String(error)) : null;
-      const tags = [`schedule:${label}`, `task:${name}`];
+      const tags = ['schedule', `schedule:${label}`, `task:${name}`];
       if (status === 'failed') tags.push('failed');
       if (durationMs >= this.slowMs) tags.push('slow');
 

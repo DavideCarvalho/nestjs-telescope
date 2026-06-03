@@ -88,6 +88,7 @@ describe('ScheduleWatcher', () => {
       queue: 'schedule',
       status: 'completed',
     });
+    expect(jobEntry!.tags).toContain('schedule');
     expect(jobEntry!.tags).toContain('schedule:cron');
     expect(jobEntry!.tags).toContain('task:heartbeat');
     expect(jobEntry!.batch).not.toBeNull();
