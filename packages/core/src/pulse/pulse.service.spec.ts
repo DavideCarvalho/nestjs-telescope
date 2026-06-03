@@ -79,14 +79,24 @@ describe('PulseService', () => {
     const service = new PulseService(storage, { topN: 5 });
     const report = await service.getHealth(60_000);
 
-    // Every primary scan page is content-less.
-    expect(getSpy).toHaveBeenCalled();
-    for (const call of getSpy.mock.calls) {
-      const query = call[0] as EntryQuery;
-      expect(query.omitContent).toBe(true);
-    }
-    // Hydration touches only the few displayed ids (topN slowest here), not all 50.
-    expect(findSpy.mock.calls.length).toBeLessThanOrEqual(5);
+    // The primary content-less scan pages all carry omitContent; hydration is a
+    // SINGLE batched get carrying the displayed ids (NOT omitContent, so it pulls
+    // content). Partition the calls by that flag.
+    const scanCalls = getSpy.mock.calls.filter((call) => (call[0] as EntryQuery).omitContent);
+    const hydrateCalls = getSpy.mock.calls.filter((call) => !(call[0] as EntryQuery).omitContent);
+    expect(scanCalls.length).toBeGreaterThan(0);
+
+    // Exactly ONE batched hydration query (not N per-id reads).
+    expect(hydrateCalls).toHaveLength(1);
+    const hydrateQuery = hydrateCalls[0]![0] as EntryQuery;
+    expect(hydrateQuery.ids).toBeDefined();
+    // It carries the union of displayed ids (the 5 slowest here), deduped.
+    expect(hydrateQuery.ids!.length).toBe(5);
+    expect(new Set(hydrateQuery.ids).size).toBe(5);
+
+    // No per-id find() round-trips at all.
+    expect(findSpy).not.toHaveBeenCalled();
+
     // Labels still resolve from hydrated content.
     expect(report.slowest).toHaveLength(5);
     expect(report.slowest[0]!.label).toBe('select 1');

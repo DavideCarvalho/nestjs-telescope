@@ -121,6 +121,13 @@ export class RedisStorageProvider implements StorageProvider {
    * limit is filled or the index is exhausted.
    */
   async get(query: EntryQuery): Promise<Page<Entry>> {
+    // Batched hydration fast path: when explicit ids are requested we fetch them
+    // directly by key in ONE MGET rather than scanning an index. This is the big
+    // win for pulse hydration — N per-id reads collapse into a single round-trip.
+    if (query.ids !== undefined) {
+      return this.getByIds(query);
+    }
+
     const limit =
       query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
         ? query.limit
@@ -179,6 +186,64 @@ export class RedisStorageProvider implements StorageProvider {
       data,
       nextCursor: hasMore && last ? last.member : null,
     };
+  }
+
+  /**
+   * Fetch a specific set of ids by key in ONE `MGET`, then AND any remaining
+   * filters in app code. Missing ids (and unparseable blobs) are simply absent.
+   * Empty ids ⇒ no rows. Results are sorted newest-first and capped at `limit`,
+   * mirroring the index-scan path's ordering and projection (omitContent).
+   */
+  private async getByIds(query: EntryQuery): Promise<Page<Entry>> {
+    const ids = query.ids ?? [];
+    if (ids.length === 0) {
+      return { data: [], nextCursor: null };
+    }
+
+    const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
+    const entries: Entry[] = [];
+    for (const raw of raws) {
+      if (raw === null) continue;
+      const entry = this.parseEntry(raw);
+      if (entry !== null && this.matchesIdPathFilters(entry, query)) {
+        entries.push(entry);
+      }
+    }
+
+    entries.sort((a, b) => {
+      const delta = b.createdAt.getTime() - a.createdAt.getTime();
+      return delta !== 0 ? delta : b.id.localeCompare(a.id);
+    });
+
+    const limit =
+      query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
+        ? query.limit
+        : DEFAULT_LIMIT;
+    const page = entries.slice(0, limit);
+    const data = query.omitContent ? page.map((entry) => ({ ...entry, content: null })) : page;
+    return { data, nextCursor: null };
+  }
+
+  /** AND the non-id predicates for the ids fast path (no index to lean on here). */
+  private matchesIdPathFilters(entry: Entry, query: EntryQuery): boolean {
+    if (query.type !== undefined && entry.type !== query.type) return false;
+    if (query.tag !== undefined && !entry.tags.includes(query.tag)) return false;
+    if (query.familyHash !== undefined && entry.familyHash !== query.familyHash) return false;
+    if (query.batchId !== undefined && entry.batchId !== query.batchId) return false;
+    if (query.traceId !== undefined && entry.traceId !== query.traceId) return false;
+    if (query.before !== undefined && entry.createdAt.getTime() >= query.before.getTime()) {
+      return false;
+    }
+    if (query.after !== undefined && entry.createdAt.getTime() <= query.after.getTime()) {
+      return false;
+    }
+    if (
+      query.search !== undefined &&
+      !JSON.stringify(entry.content).toLowerCase().includes(query.search.toLowerCase())
+    ) {
+      return false;
+    }
+    return true;
   }
 
   /** Mirror in-memory `update`: merge patch, keep `id` immutable; missing → no-op.

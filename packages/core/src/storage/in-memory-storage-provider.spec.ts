@@ -93,6 +93,31 @@ describe('InMemoryStorageProvider', () => {
     expect(data[0]!.durationMs).toBe(12);
   });
 
+  it('filters by an ids set for batched hydration (AND with type; empty/absent ids)', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([
+      entry({ id: 'a', type: 'query', content: { sql: 'select a' } }),
+      entry({ id: 'b', type: 'request', content: { uri: '/b' } }),
+      entry({ id: 'c', type: 'query', content: { sql: 'select c' } }),
+    ]);
+
+    // Exactly the requested ids, with content, in normal newest-first order.
+    const byIds = await store.get({ ids: ['a', 'c'] });
+    expect(byIds.data.map((e) => e.id).sort()).toEqual(['a', 'c']);
+    expect(byIds.data.every((e) => e.content !== null)).toBe(true);
+
+    // ANDs with another filter.
+    const byIdsAndType = await store.get({ ids: ['a', 'b', 'c'], type: 'query' });
+    expect(byIdsAndType.data.map((e) => e.id).sort()).toEqual(['a', 'c']);
+
+    // An id not present is simply absent.
+    const withMissing = await store.get({ ids: ['a', 'missing'] });
+    expect(withMissing.data.map((e) => e.id)).toEqual(['a']);
+
+    // Empty array returns no entries.
+    expect((await store.get({ ids: [] })).data).toEqual([]);
+  });
+
   it('filters by traceId, excluding other traces and null', async () => {
     const store = new InMemoryStorageProvider();
     await store.store([

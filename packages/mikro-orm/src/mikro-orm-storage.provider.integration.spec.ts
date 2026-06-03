@@ -239,6 +239,27 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(beforeT2.data.map((e) => e.id).sort()).toEqual(['q1', 'r1']);
   });
 
+  it('fetches an ids set for batched hydration (AND with type; empty/absent ids)', async () => {
+    await provider.init();
+    await provider.store([
+      makeEntry({ id: 'a', type: 'query', content: { sql: 'select a' } }),
+      makeEntry({ id: 'b', type: 'request', content: { uri: '/b' } }),
+      makeEntry({ id: 'c', type: 'query', content: { sql: 'select c' } }),
+    ]);
+
+    const byIds = await provider.get({ ids: ['a', 'c'] });
+    expect(byIds.data.map((e) => e.id).sort()).toEqual(['a', 'c']);
+    expect(byIds.data.every((e) => e.content !== null)).toBe(true);
+
+    const byIdsAndType = await provider.get({ ids: ['a', 'b', 'c'], type: 'query' });
+    expect(byIdsAndType.data.map((e) => e.id).sort()).toEqual(['a', 'c']);
+
+    const withMissing = await provider.get({ ids: ['a', 'missing'] });
+    expect(withMissing.data.map((e) => e.id)).toEqual(['a']);
+
+    expect((await provider.get({ ids: [] })).data).toEqual([]);
+  });
+
   it('free-text searches content via $like (substring), ANDing with type', async () => {
     await provider.init();
     await provider.store([

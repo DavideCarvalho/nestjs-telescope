@@ -90,6 +90,26 @@ describe('SqliteStorageProvider', () => {
     expect(data[0]!.durationMs).toBe(42);
   });
 
+  it('filters by an ids set for batched hydration (AND with type; empty/absent ids)', async () => {
+    await store.store([
+      entry({ id: 'a', type: 'query', content: { sql: 'select a' } }),
+      entry({ id: 'b', type: 'request', content: { uri: '/b' } }),
+      entry({ id: 'c', type: 'query', content: { sql: 'select c' } }),
+    ]);
+
+    const byIds = await store.get({ ids: ['a', 'c'] });
+    expect(byIds.data.map((e) => e.id).sort()).toEqual(['a', 'c']);
+    expect(byIds.data.every((e) => e.content !== null)).toBe(true);
+
+    const byIdsAndType = await store.get({ ids: ['a', 'b', 'c'], type: 'query' });
+    expect(byIdsAndType.data.map((e) => e.id).sort()).toEqual(['a', 'c']);
+
+    const withMissing = await store.get({ ids: ['a', 'missing'] });
+    expect(withMissing.data.map((e) => e.id)).toEqual(['a']);
+
+    expect((await store.get({ ids: [] })).data).toEqual([]);
+  });
+
   it('filters by traceId, excluding other traces and null', async () => {
     await store.store([
       entry({ id: 'a1', traceId: 'trace-A' }),

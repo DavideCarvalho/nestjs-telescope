@@ -148,6 +148,17 @@ export class SqliteStorageProvider implements StorageProvider {
     const where: string[] = [];
     const params: Record<string, unknown> = {};
 
+    if (query.ids !== undefined) {
+      // Empty id set ⇒ no rows. A bare `id in ()` is invalid SQLite, so return early.
+      if (query.ids.length === 0) {
+        return { data: [], nextCursor: null };
+      }
+      const placeholders = query.ids.map((_, index) => `@id${index}`);
+      where.push(`id in (${placeholders.join(', ')})`);
+      query.ids.forEach((id, index) => {
+        params[`id${index}`] = id;
+      });
+    }
     if (query.type !== undefined) {
       where.push('type = @type');
       params.type = query.type;

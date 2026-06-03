@@ -40,8 +40,10 @@ export class InMemoryStorageProvider implements StorageProvider {
   }
 
   async get(query: EntryQuery): Promise<Page<Entry>> {
+    // Build the ids membership set once (not per entry) when an ids filter is set.
+    const idSet = query.ids !== undefined ? new Set(query.ids) : null;
     const filtered = [...this.entries]
-      .filter((entry) => this.matches(entry, query))
+      .filter((entry) => this.matches(entry, query, idSet))
       .sort(this.newestFirst);
 
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
@@ -106,7 +108,8 @@ export class InMemoryStorageProvider implements StorageProvider {
     this.entries = [];
   }
 
-  private matches(entry: Entry, query: EntryQuery): boolean {
+  private matches(entry: Entry, query: EntryQuery, idSet: Set<string> | null): boolean {
+    if (idSet !== null && !idSet.has(entry.id)) return false;
     if (query.type !== undefined && entry.type !== query.type) return false;
     if (query.tag !== undefined && !entry.tags.includes(query.tag)) return false;
     if (query.familyHash !== undefined && entry.familyHash !== query.familyHash) return false;

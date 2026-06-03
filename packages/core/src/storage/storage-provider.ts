@@ -18,6 +18,14 @@ export interface EntryQuery {
    * acceptable.
    */
   search?: string;
+  /**
+   * When set, only entries whose `id` is in this set are returned, combined with
+   * every other filter via AND. Intended for batched hydration: callers that have
+   * already determined a handful of ids (e.g. pulse's displayed rows) fetch all of
+   * their content in ONE query instead of N per-id `find()` round-trips. An empty
+   * array returns no entries.
+   */
+  ids?: string[];
   before?: Date;
   after?: Date;
   /**

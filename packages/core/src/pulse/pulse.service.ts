@@ -90,12 +90,17 @@ export class PulseService {
     const uniqueIds = new Set<string>([...ids.slowest, ...ids.exceptions, ...ids.nPlusOne]);
     uniqueIds.delete('');
     const contentById = new Map<string, unknown>();
-    await Promise.all(
-      [...uniqueIds].map(async (id) => {
-        const found = await this.storage.find(id);
-        if (found !== null) contentById.set(id, found.content);
-      }),
-    );
+    if (uniqueIds.size === 0) return contentById;
+
+    // ONE batched query for every displayed id, instead of N per-id find() round-
+    // trips. Each find() hit the remote DB separately; this collapses them into a
+    // single fetch (e.g. `id IN (...)` / MGET) — the pulse latency win on a remote
+    // store. `limit` is sized to the id count so the page can hold all of them.
+    const idList = [...uniqueIds];
+    const page = await this.storage.get({ ids: idList, limit: idList.length });
+    for (const entry of page.data) {
+      contentById.set(entry.id, entry.content);
+    }
     return contentById;
   }
 }

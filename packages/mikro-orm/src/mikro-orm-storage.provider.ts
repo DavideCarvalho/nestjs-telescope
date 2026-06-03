@@ -265,6 +265,14 @@ export class MikroOrmStorageProvider implements StorageProvider {
     const em = this.forkEm();
     const where: FilterQuery<TelescopeEntryRow> = {};
 
+    if (query.ids !== undefined) {
+      // Empty id set ⇒ no rows (an `id IN ()` would match nothing anyway, but we
+      // skip the round-trip entirely).
+      if (query.ids.length === 0) {
+        return { data: [], nextCursor: null };
+      }
+      where.id = { $in: query.ids };
+    }
     if (query.type) where.type = query.type;
     if (query.familyHash) where.familyHash = query.familyHash;
     if (query.batchId) where.batchId = query.batchId;

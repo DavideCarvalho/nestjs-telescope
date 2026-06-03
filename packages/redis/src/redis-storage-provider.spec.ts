@@ -177,6 +177,31 @@ describe('RedisStorageProvider', () => {
     expect(page.data.every((e) => e.type === 'query')).toBe(true);
   });
 
+  it('fetches an ids set in one MGET (AND with type; empty/absent ids)', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    await store.store([
+      entry({ id: 'a', batchId: 'ba', type: 'query', createdAt: new Date(base + 1000) }),
+      entry({ id: 'b', batchId: 'bb', type: 'request', createdAt: new Date(base + 2000) }),
+      entry({ id: 'c', batchId: 'bc', type: 'query', createdAt: new Date(base + 3000) }),
+    ]);
+
+    // Exactly the requested ids, with content, newest-first.
+    const byIds = await store.get({ ids: ['a', 'c'] });
+    expect(byIds.data.map((e) => e.id)).toEqual(['c', 'a']);
+    expect(byIds.data.every((e) => e.content !== null)).toBe(true);
+
+    // ANDs with another filter.
+    const byIdsAndType = await store.get({ ids: ['a', 'b', 'c'], type: 'query' });
+    expect(byIdsAndType.data.map((e) => e.id)).toEqual(['c', 'a']);
+
+    // An id not present is simply absent.
+    const withMissing = await store.get({ ids: ['a', 'missing'] });
+    expect(withMissing.data.map((e) => e.id)).toEqual(['a']);
+
+    // Empty array returns no entries.
+    expect((await store.get({ ids: [] })).data).toEqual([]);
+  });
+
   it('free-text searches content (case-insensitive substring), ANDing with type', async () => {
     const base = Date.parse('2026-01-01T00:00:00Z');
     await store.store([
