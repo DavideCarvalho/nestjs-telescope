@@ -17,6 +17,7 @@ import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
@@ -45,6 +46,7 @@ const SHARED_PROVIDERS: Provider[] = [
   },
   TelescopeService,
   TelescopeGuard,
+  TelescopeActionGuard,
   TelescopePruner,
   QueueMetricsService,
   TimeseriesService,

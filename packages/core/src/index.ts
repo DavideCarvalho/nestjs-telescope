@@ -19,6 +19,7 @@ export * from './nest/watcher.js';
 export * from './nest/telescope.options.js';
 export * from './nest/telescope.service.js';
 export * from './nest/telescope.guard.js';
+export * from './nest/telescope-action.guard.js';
 export * from './nest/telescope.controller.js';
 export * from './nest/telescope-pruner.service.js';
 export * from './nest/telescope.module.js';
