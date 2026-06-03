@@ -20,7 +20,7 @@ function mockClient(): TelescopeClient {
     timeseries: async () => {
       throw new Error('not used');
     },
-    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [] }),
+    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
     liveQueues: async () => ({
       queues: [],
       capabilities: { mutationsEnabled: false, actionsByDriver: {} },

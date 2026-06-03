@@ -1,10 +1,13 @@
 import type { EntryWithBatch } from '../../client/index.js';
+import { useMeta } from '../use-telescope-queries.js';
 import { BatchTimeline } from './batch-timeline.js';
+import { buildTraceHref } from './trace-link.js';
 
 export function EntryDetail({
   entry,
   onSelect,
 }: { entry: EntryWithBatch; onSelect?: (id: string) => void }): JSX.Element {
+  const { data: meta } = useMeta();
   return (
     <div className="grid grid-cols-3 gap-6">
       <section className="col-span-2">
@@ -14,11 +17,46 @@ export function EntryDetail({
         </pre>
       </section>
       <aside>
+        {entry.traceId ? (
+          <div className="mb-4">
+            <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Trace</h3>
+            <TraceRow
+              traceId={entry.traceId}
+              spanId={entry.spanId}
+              traceLink={meta?.traceLink ?? null}
+            />
+          </div>
+        ) : null}
         <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
           Batch ({entry.batch.length})
         </h3>
         <BatchTimeline batch={entry.batch} currentId={entry.id} onSelect={onSelect} />
       </aside>
+    </div>
+  );
+}
+
+function TraceRow({
+  traceId,
+  spanId,
+  traceLink,
+}: { traceId: string; spanId: string | null; traceLink: string | null }): JSX.Element {
+  const href = buildTraceHref(traceLink, traceId, spanId ?? '');
+  return (
+    <div>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-[11px] text-emerald-400 hover:underline"
+        >
+          {traceId}
+        </a>
+      ) : (
+        <div className="font-mono text-[11px] text-zinc-300">{traceId}</div>
+      )}
+      {spanId ? <div className="font-mono text-[10px] text-zinc-500">{spanId}</div> : null}
     </div>
   );
 }

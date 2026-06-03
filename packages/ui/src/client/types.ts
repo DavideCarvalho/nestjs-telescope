@@ -26,6 +26,8 @@ export interface Entry {
   durationMs: number | null;
   origin: string;
   instanceId: string;
+  traceId: string | null;
+  spanId: string | null;
   createdAt: string;
 }
 export interface Page<T> {
@@ -47,6 +49,7 @@ export interface TelescopeMeta {
   enabled: boolean;
   droppedCount: number;
   watchers: string[];
+  traceLink: string | null;
 }
 export interface DurationStats {
   avg: number;

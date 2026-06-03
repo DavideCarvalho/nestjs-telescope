@@ -54,7 +54,7 @@ function mockClient(): TelescopeClient {
       scanned: 0,
       truncated: false,
     }),
-    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [] }),
+    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
   };
 }
 

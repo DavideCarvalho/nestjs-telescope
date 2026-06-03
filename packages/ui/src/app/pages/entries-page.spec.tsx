@@ -17,6 +17,8 @@ function entry(over: Partial<Entry> & { type: string }): Entry {
     durationMs: 12,
     origin: 'http',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt: '2026-06-03T12:00:00Z',
     ...over,
   };
@@ -41,7 +43,7 @@ function mockClient(rows: Entry[]) {
     timeseries: async () => {
       throw new Error('not used');
     },
-    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [] }),
+    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
     liveQueues: async () => {
       throw new Error('not used');
     },

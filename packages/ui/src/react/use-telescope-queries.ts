@@ -21,6 +21,13 @@ export function entriesQuery(client: TelescopeClient, query: EntriesQuery = {}) 
 export function entryQuery(client: TelescopeClient, id: string) {
   return queryOptions({ queryKey: ['telescope', 'entry', id], queryFn: () => client.entry(id) });
 }
+export function metaQuery(client: TelescopeClient) {
+  return queryOptions({
+    queryKey: ['telescope', 'meta'],
+    queryFn: () => client.meta(),
+    refetchInterval: REFETCH_MS,
+  });
+}
 export function pulseQuery(client: TelescopeClient, window: string) {
   return queryOptions({
     queryKey: ['telescope', 'pulse', window],
@@ -161,6 +168,9 @@ export function useEntries(query: EntriesQuery = {}) {
 }
 export function useEntry(id: string) {
   return useQuery(entryQuery(useTelescopeClient(), id));
+}
+export function useMeta() {
+  return useQuery(metaQuery(useTelescopeClient()));
 }
 export function usePulse(window: string) {
   return useQuery(pulseQuery(useTelescopeClient(), window));
