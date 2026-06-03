@@ -5,6 +5,7 @@ export { JobDetailDrawer } from './JobDetailDrawer.js';
 export {
   JobActions,
   RetryAllFailedButton,
+  RedriveDlqButton,
   supportsAction,
   jobActionAllowedForState,
 } from './JobActions.js';

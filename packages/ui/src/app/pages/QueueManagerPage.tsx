@@ -5,6 +5,7 @@ import {
   JobTable,
   QueueList,
   QueueStateTabs,
+  RedriveDlqButton,
   RetryAllFailedButton,
   useLiveQueues,
 } from '../../react/index.js';
@@ -62,11 +63,18 @@ export function QueueManagerPage(): JSX.Element {
                 </span>
               </h2>
               {state === 'failed' && (
-                <RetryAllFailedButton
-                  capabilities={capabilities}
-                  driver={selected.driver}
-                  queue={selected.queue}
-                />
+                <div className="flex items-center gap-2">
+                  <RetryAllFailedButton
+                    capabilities={capabilities}
+                    driver={selected.driver}
+                    queue={selected.queue}
+                  />
+                  <RedriveDlqButton
+                    capabilities={capabilities}
+                    driver={selected.driver}
+                    queue={selected.queue}
+                  />
+                </div>
               )}
             </div>
 

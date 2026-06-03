@@ -184,3 +184,70 @@ export function RetryAllFailedButton({
     </span>
   );
 }
+
+/**
+ * "Redrive DLQ" action for SQS-style drivers (moves dead-lettered messages back
+ * to the source queue via the native message-move task). Shown on the failed tab,
+ * gated by capabilities — only when the driver advertises `'redrive'` and
+ * mutations are enabled. Confirms before firing (it moves messages); a 403
+ * surfaces inline as "Not authorized".
+ */
+export function RedriveDlqButton({
+  capabilities,
+  driver,
+  queue,
+}: {
+  capabilities: QueueCapabilities | undefined;
+  driver: string;
+  queue: string;
+}): JSX.Element | null {
+  const mutation = useQueueAction();
+  const [confirming, setConfirming] = useState(false);
+  if (!supportsAction(capabilities, driver, 'redrive')) return null;
+  const forbidden = isForbidden(mutation.error);
+
+  async function fire(): Promise<void> {
+    setConfirming(false);
+    try {
+      await mutation.mutateAsync({ driver, queue, action: 'redrive' });
+    } catch {
+      // surfaced inline via mutation.error
+    }
+  }
+
+  if (confirming) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          disabled={mutation.isPending}
+          onClick={fire}
+          className="rounded border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-200 disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Redriving…' : 'Confirm redrive'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-200"
+        >
+          Cancel
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        disabled={mutation.isPending}
+        onClick={() => setConfirming(true)}
+        className="rounded border border-amber-500/40 px-2.5 py-1 text-[11px] text-amber-300 transition-colors hover:bg-amber-500/10 disabled:opacity-50"
+      >
+        Redrive DLQ
+      </button>
+      {forbidden && <span className="text-[10px] text-red-400">Not authorized</span>}
+    </span>
+  );
+}
