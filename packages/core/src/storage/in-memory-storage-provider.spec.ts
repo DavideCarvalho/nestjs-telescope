@@ -34,6 +34,22 @@ describe('InMemoryStorageProvider', () => {
     expect(found?.batch.map((event) => event.id)).toEqual(['1', '2']);
   });
 
+  it('round-trips traceId/spanId through store → find', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([
+      entry({ id: 'traced', traceId: 't', spanId: 's' }),
+      entry({ id: 'untraced', traceId: null, spanId: null }),
+    ]);
+
+    const traced = await store.find('traced');
+    expect(traced?.traceId).toBe('t');
+    expect(traced?.spanId).toBe('s');
+
+    const untraced = await store.find('untraced');
+    expect(untraced?.traceId).toBeNull();
+    expect(untraced?.spanId).toBeNull();
+  });
+
   it('filters by type and tag', async () => {
     const store = new InMemoryStorageProvider();
     await store.store([

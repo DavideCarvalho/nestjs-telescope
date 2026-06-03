@@ -15,6 +15,8 @@ function entry(over: Partial<Entry>): Entry {
     durationMs: null,
     origin: 'http',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     ...over,
   };
@@ -51,6 +53,21 @@ describe.skipIf(!process.env.REDIS_URL)('RedisStorageProvider (real Redis)', () 
     expect(found?.id).toBe('1');
     expect(found?.createdAt).toBeInstanceOf(Date);
     expect(found?.batch.map((event) => event.id)).toEqual(['1', '2']);
+  });
+
+  it('round-trips traceId/spanId through store → find', async () => {
+    await store.store([
+      entry({ id: 'traced', batchId: 'tb', traceId: 't', spanId: 's' }),
+      entry({ id: 'untraced', batchId: 'ub', traceId: null, spanId: null }),
+    ]);
+
+    const traced = await store.find('traced');
+    expect(traced?.traceId).toBe('t');
+    expect(traced?.spanId).toBe('s');
+
+    const untraced = await store.find('untraced');
+    expect(untraced?.traceId).toBeNull();
+    expect(untraced?.spanId).toBeNull();
   });
 
   it('returns entries newest-first via get', async () => {

@@ -267,6 +267,8 @@ export class RedisStorageProvider implements StorageProvider {
       durationMs: typeof candidate.durationMs === 'number' ? candidate.durationMs : null,
       origin: isBatchOrigin(candidate.origin) ? candidate.origin : 'manual',
       instanceId: typeof candidate.instanceId === 'string' ? candidate.instanceId : '',
+      traceId: typeof candidate.traceId === 'string' ? candidate.traceId : null,
+      spanId: typeof candidate.spanId === 'string' ? candidate.spanId : null,
       createdAt,
     };
   }
