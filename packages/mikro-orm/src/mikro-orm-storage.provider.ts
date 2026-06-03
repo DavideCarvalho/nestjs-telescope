@@ -99,6 +99,8 @@ function rowToEntry(row: TelescopeEntryRow): Entry {
     durationMs: row.durationMs,
     origin: isBatchOrigin(row.origin) ? row.origin : 'manual',
     instanceId: row.instanceId,
+    traceId: row.traceId ?? null,
+    spanId: row.spanId ?? null,
     createdAt: row.createdAt,
   };
 }

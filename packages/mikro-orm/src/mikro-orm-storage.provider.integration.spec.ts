@@ -40,6 +40,8 @@ function makeEntry(overrides: Partial<Entry> = {}): Entry {
     durationMs: null,
     origin: 'http',
     instanceId: 'i1',
+    traceId: null,
+    spanId: null,
     createdAt: new Date(),
     ...overrides,
   };
@@ -121,6 +123,24 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
 
     const batch = await provider.batch('bx');
     expect(batch.map((e) => e.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('round-trips traceId/spanId, preserving values and null', async () => {
+    await provider.init();
+    const traceId = 'a'.repeat(32);
+    const spanId = 'b'.repeat(16);
+    await provider.store([
+      makeEntry({ id: 'traced', traceId, spanId }),
+      makeEntry({ id: 'untraced', traceId: null, spanId: null }),
+    ]);
+
+    const traced = await provider.find('traced');
+    expect(traced?.traceId).toBe(traceId);
+    expect(traced?.spanId).toBe(spanId);
+
+    const untraced = await provider.find('untraced');
+    expect(untraced?.traceId).toBeNull();
+    expect(untraced?.spanId).toBeNull();
   });
 
   it('paginates 120 entries newest-first with zero duplicates (keyset guard)', async () => {
@@ -317,6 +337,55 @@ describe('MikroOrmStorageProvider schema self-heal (file sqlite)', () => {
       await provider.store([makeEntry({ id: 'post', durationMs: 777 })]);
       const post = await provider.find('post');
       expect(post?.durationMs).toBe(777);
+    } finally {
+      await provider?.close();
+      rmSync(dbFile, { force: true });
+    }
+  });
+
+  it('adds missing trace columns additively, without dropping pre-existing rows', async () => {
+    const dbFile = join(tmpdir(), `telescope-trace-additive-${process.pid}.sqlite`);
+    rmSync(dbFile, { force: true });
+    let provider: MikroOrmStorageProvider | null = null;
+
+    try {
+      // Step A: pre-create `telescope_entries` MISSING the `trace_id`/`span_id`
+      // columns, and seed a row, using a bare connection (no TelescopeEntry
+      // metadata).
+      const seedOrm = await MikroORM.init({
+        driver: SqliteDriver,
+        dbName: dbFile,
+        entities: [],
+        allowGlobalContext: true,
+        discovery: { warnWhenNoEntities: false },
+      });
+      const conn = seedOrm.em.getConnection();
+      await conn.execute(
+        'create table `telescope_entries` (`id` text not null primary key, `batch_id` text not null, `type` text not null, `family_hash` text null, `content` json not null, `tags` json not null, `tags_text` text not null, `sequence` integer not null, `duration_ms` integer null, `origin` text not null, `instance_id` text not null, `created_at` datetime not null)',
+      );
+      await conn.execute(
+        "insert into `telescope_entries` (`id`, `batch_id`, `type`, `family_hash`, `content`, `tags`, `tags_text`, `sequence`, `duration_ms`, `origin`, `instance_id`, `created_at`) values ('pre', 'bp', 'request', null, '{}', '[]', ' ', 0, null, 'http', 'i1', '2024-01-01 00:00:00')",
+      );
+      await seedOrm.close(true);
+
+      // Step B: the provider's init() must ADD `trace_id`/`span_id` (additive).
+      provider = new MikroOrmStorageProvider({ driver: SqliteDriver, dbName: dbFile });
+      await provider.init();
+
+      // The pre-existing row survived (no drop); its trace fields read as null.
+      const pre = await provider.find('pre');
+      expect(pre).not.toBeNull();
+      expect(pre?.id).toBe('pre');
+      expect(pre?.traceId).toBeNull();
+      expect(pre?.spanId).toBeNull();
+
+      // The new columns exist and round-trip values: proves they were added.
+      await provider.store([
+        makeEntry({ id: 'post', traceId: 'a'.repeat(32), spanId: 'b'.repeat(16) }),
+      ]);
+      const post = await provider.find('post');
+      expect(post?.traceId).toBe('a'.repeat(32));
+      expect(post?.spanId).toBe('b'.repeat(16));
     } finally {
       await provider?.close();
       rmSync(dbFile, { force: true });

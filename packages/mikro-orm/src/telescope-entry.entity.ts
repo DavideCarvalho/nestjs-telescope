@@ -23,6 +23,8 @@ export interface TelescopeEntryRow {
   durationMs: number | null;
   origin: string;
   instanceId: string;
+  traceId: string | null;
+  spanId: string | null;
   createdAt: Date;
 }
 
@@ -41,6 +43,8 @@ export const TelescopeEntry = new EntitySchema<TelescopeEntryRow>({
     durationMs: { type: 'integer', nullable: true },
     origin: { type: 'string', length: 16 },
     instanceId: { type: 'string', length: 128 },
+    traceId: { type: 'string', nullable: true, length: 32 },
+    spanId: { type: 'string', nullable: true, length: 16 },
     createdAt: { type: 'datetime', index: true },
   },
 });
