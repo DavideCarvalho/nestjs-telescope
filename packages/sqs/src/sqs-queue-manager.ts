@@ -1,6 +1,7 @@
 // packages/sqs/src/sqs-queue-manager.ts
 import type {
   JobPage,
+  QueueActionName,
   QueueCounts,
   QueueJob,
   QueueJobDetail,
@@ -46,20 +47,29 @@ function parseBody(body: string): unknown {
 const EMPTY_PAGE: JobPage = { jobs: [], nextCursor: null, total: null };
 
 /**
- * Read-and-redrive manager for SQS dead-letter queues.
+ * Live-depth (and optional DLQ) manager for SQS queues.
+ *
+ * The PRIMARY value is live queue **depth** — pending/in-flight/delayed —
+ * which needs no DLQ. DLQs are optional in AWS (many real queues have none),
+ * so DLQ inspection + redrive are a BONUS, available only for queues whose
+ * config provides a `dlqUrl`.
  *
  * SQS has no "list all messages" primitive — you can only ReceiveMessage (which
- * temporarily hides messages) and read queue-depth approximations. So this
- * manager is **DLQ-only**:
+ * temporarily hides messages) and read queue-depth approximations. So:
  *
- * - `listQueues`/`counts` report approximate depths (source visible→waiting,
- *   source in-flight→active, DLQ visible→failed).
- * - `listJobs` is meaningful only for `state === 'failed'`: it snapshots the DLQ
- *   via `receiveDlq` (never deleting — messages reappear after the visibility
- *   timeout) and caches each received message so `getJob` can return its body
- *   (received SQS messages aren't refetchable by id). Every other state is empty.
- * - The single mutation is `redrive` (native `StartMessageMoveTask`). There is no
- *   `retry`/`remove`/`promote`/`retryAll`.
+ * - `listQueues`/`counts` always report the MAIN queue's approximate depths
+ *   (visible→waiting, in-flight→active, delayed→delayed). `failed` comes from
+ *   the DLQ's visible count when `dlqUrl` is set, otherwise `0`.
+ * - `listJobs` is meaningful only for `state === 'failed'` AND only when the
+ *   queue has a `dlqUrl`: it snapshots the DLQ via `receiveDlq` (never deleting —
+ *   messages reappear after the visibility timeout) and caches each received
+ *   message so `getJob` can return its body (received SQS messages aren't
+ *   refetchable by id). Without a DLQ, `failed` listing is empty; every other
+ *   state is empty regardless.
+ * - The single mutation is `redrive` (native `StartMessageMoveTask`), available
+ *   only when the queue has a `dlqUrl`. There is no `retry`/`remove`/`promote`/
+ *   `retryAll`. Each queue summary advertises its `actions` (`['redrive']` when a
+ *   DLQ is configured, otherwise `[]`).
  *
  * DLQ bodies pass through `ctx.redact` before they leave the server, matching the
  * BullMQ manager's security property.
@@ -89,18 +99,26 @@ export class SqsQueueManager implements QueueManager {
   }
 
   private async countsFor(config: SqsQueueConfig): Promise<QueueCounts> {
-    const [source, dlq] = await Promise.all([
+    // The main queue is always readable (live depth). The DLQ is optional.
+    const [source, dlqVisible] = await Promise.all([
       this.ops.approximateCounts(config.url),
-      this.ops.approximateCounts(config.dlqUrl),
+      config.dlqUrl
+        ? this.ops.approximateCounts(config.dlqUrl).then((dlq) => dlq.visible)
+        : Promise.resolve(0),
     ]);
     return {
       waiting: source.visible,
       active: source.notVisible,
-      delayed: 0,
-      failed: dlq.visible,
+      delayed: source.delayed,
+      failed: dlqVisible,
       completed: 0,
       paused: 0,
     };
+  }
+
+  /** A queue advertises `redrive` only when it has a DLQ configured. */
+  private actionsFor(config: SqsQueueConfig): QueueActionName[] {
+    return config.dlqUrl ? ['redrive'] : [];
   }
 
   async listQueues(): Promise<QueueSummary[]> {
@@ -110,6 +128,7 @@ export class SqsQueueManager implements QueueManager {
         queue: config.name,
         counts: await this.countsFor(config),
         isPaused: false,
+        actions: this.actionsFor(config),
       })),
     );
   }
@@ -126,10 +145,13 @@ export class SqsQueueManager implements QueueManager {
     const config = this.requireQueue(queue);
     // SQS can only browse the DLQ (failed). Every other state is empty.
     if (state !== 'failed') return EMPTY_PAGE;
+    // No DLQ → nothing to list (can't enumerate the main queue's messages).
+    if (!config.dlqUrl) return EMPTY_PAGE;
+    const dlqUrl = config.dlqUrl;
 
     const limit =
       page.limit && page.limit > 0 ? Math.min(page.limit, DEFAULT_DLQ_LIMIT) : DEFAULT_DLQ_LIMIT;
-    const messages = await this.ops.receiveDlq(config.dlqUrl, limit);
+    const messages = await this.ops.receiveDlq(dlqUrl, limit);
 
     const cache = new Map<string, CachedDlqMessage>();
     const jobs: QueueJob[] = messages.map((message) => {
@@ -187,10 +209,14 @@ export class SqsQueueManager implements QueueManager {
    */
   async redrive(queue: string): Promise<number> {
     const config = this.requireQueue(queue);
+    if (!config.dlqUrl) {
+      throw new Error(`Queue "${queue}" has no DLQ configured; redrive unavailable`);
+    }
+    const dlqUrl = config.dlqUrl;
     const [dlqArn, sourceArn, dlqCounts] = await Promise.all([
-      this.ops.queueArn(config.dlqUrl),
+      this.ops.queueArn(dlqUrl),
       this.ops.queueArn(config.url),
-      this.ops.approximateCounts(config.dlqUrl),
+      this.ops.approximateCounts(dlqUrl),
     ]);
     await this.ops.redrive(dlqArn, sourceArn);
     return dlqCounts.visible;

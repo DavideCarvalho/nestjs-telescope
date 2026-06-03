@@ -22,12 +22,17 @@ describe('createAwsSqsOps', () => {
       expect(command).toBeInstanceOf(GetQueueAttributesCommand);
       expect((command as GetQueueAttributesCommand).input).toEqual({
         QueueUrl: 'https://sqs/q',
-        AttributeNames: ['ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible'],
+        AttributeNames: [
+          'ApproximateNumberOfMessages',
+          'ApproximateNumberOfMessagesNotVisible',
+          'ApproximateNumberOfMessagesDelayed',
+        ],
       });
       return {
         Attributes: {
           ApproximateNumberOfMessages: '12',
           ApproximateNumberOfMessagesNotVisible: '3',
+          ApproximateNumberOfMessagesDelayed: '5',
         },
       };
     });
@@ -36,6 +41,7 @@ describe('createAwsSqsOps', () => {
     await expect(ops.approximateCounts('https://sqs/q')).resolves.toEqual({
       visible: 12,
       notVisible: 3,
+      delayed: 5,
     });
     expect(send).toHaveBeenCalledOnce();
   });

@@ -25,6 +25,8 @@ export interface SqsApproximateCounts {
   visible: number;
   /** `ApproximateNumberOfMessagesNotVisible` — in-flight messages. */
   notVisible: number;
+  /** `ApproximateNumberOfMessagesDelayed` — delayed (not yet deliverable) messages. */
+  delayed: number;
 }
 
 /**
@@ -49,12 +51,19 @@ export interface SqsOps {
   queueArn(queueUrl: string): Promise<string>;
 }
 
-/** A queue the manager exposes: its name plus its source + DLQ URLs. */
+/**
+ * A queue the manager exposes: its name plus its source URL, and an OPTIONAL
+ * DLQ URL.
+ *
+ * DLQs are optional in AWS — many real queues have none. Without `dlqUrl` the
+ * manager still reports live depth (waiting/active/delayed) from the main queue;
+ * `dlqUrl` only adds DLQ inspection (`listJobs('failed')`) and `redrive`.
+ */
 export interface SqsQueueConfig {
   /** Display name used as the queue identifier in the dashboard. */
   name: string;
   /** Source queue URL. */
   url: string;
-  /** Dead-letter queue URL. */
-  dlqUrl: string;
+  /** Dead-letter queue URL. Optional — omit for queues that have no DLQ. */
+  dlqUrl?: string;
 }

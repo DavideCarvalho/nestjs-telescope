@@ -14,7 +14,11 @@ import { SqsQueueManager } from './sqs-queue-manager.js';
 
 function makeOps(overrides: Partial<SqsOps> = {}): SqsOps {
   return {
-    approximateCounts: async (): Promise<SqsApproximateCounts> => ({ visible: 0, notVisible: 0 }),
+    approximateCounts: async (): Promise<SqsApproximateCounts> => ({
+      visible: 0,
+      notVisible: 0,
+      delayed: 0,
+    }),
     receiveDlq: async (): Promise<SqsDlqMessage[]> => [],
     redrive: async (): Promise<void> => {},
     queueArn: async (url: string): Promise<string> => `arn:${url}`,
@@ -32,6 +36,9 @@ function makeContext(redact: (value: unknown) => unknown = (value) => value): Qu
 
 const QUEUES = [{ name: 'mail', url: 'https://sqs/mail', dlqUrl: 'https://sqs/mail-dlq' }];
 
+/** A queue with no DLQ — only live main-queue depth is observable. */
+const QUEUES_NO_DLQ = [{ name: 'events', url: 'https://sqs/events' }];
+
 describe('SqsQueueManager', () => {
   it('has driver "sqs"', () => {
     const manager = new SqsQueueManager({ ops: makeOps(), queues: QUEUES });
@@ -40,9 +47,9 @@ describe('SqsQueueManager', () => {
 
   it('maps source visible/in-flight + DLQ visible into counts in listQueues()', async () => {
     const approximateCounts = vi.fn(async (url: string): Promise<SqsApproximateCounts> => {
-      if (url === 'https://sqs/mail') return { visible: 4, notVisible: 2 };
-      if (url === 'https://sqs/mail-dlq') return { visible: 7, notVisible: 1 };
-      return { visible: 0, notVisible: 0 };
+      if (url === 'https://sqs/mail') return { visible: 4, notVisible: 2, delayed: 6 };
+      if (url === 'https://sqs/mail-dlq') return { visible: 7, notVisible: 1, delayed: 0 };
+      return { visible: 0, notVisible: 0, delayed: 0 };
     });
     const manager = new SqsQueueManager({ ops: makeOps({ approximateCounts }), queues: QUEUES });
     manager.init(makeContext());
@@ -54,7 +61,8 @@ describe('SqsQueueManager', () => {
       driver: 'sqs',
       queue: 'mail',
       isPaused: false,
-      counts: { waiting: 4, active: 2, delayed: 0, failed: 7, completed: 0, paused: 0 },
+      counts: { waiting: 4, active: 2, delayed: 6, failed: 7, completed: 0, paused: 0 },
+      actions: ['redrive'],
     });
   });
 
@@ -62,8 +70,8 @@ describe('SqsQueueManager', () => {
     const approximateCounts = vi.fn(
       async (url: string): Promise<SqsApproximateCounts> =>
         url === 'https://sqs/mail-dlq'
-          ? { visible: 3, notVisible: 0 }
-          : { visible: 9, notVisible: 0 },
+          ? { visible: 3, notVisible: 0, delayed: 0 }
+          : { visible: 9, notVisible: 0, delayed: 2 },
     );
     const manager = new SqsQueueManager({ ops: makeOps({ approximateCounts }), queues: QUEUES });
     manager.init(makeContext());
@@ -72,6 +80,7 @@ describe('SqsQueueManager', () => {
       waiting: 9,
       failed: 3,
       active: 0,
+      delayed: 2,
     });
   });
 
@@ -105,7 +114,10 @@ describe('SqsQueueManager', () => {
       return value;
     };
     const manager = new SqsQueueManager({
-      ops: makeOps({ receiveDlq, approximateCounts: async () => ({ visible: 2, notVisible: 0 }) }),
+      ops: makeOps({
+        receiveDlq,
+        approximateCounts: async () => ({ visible: 2, notVisible: 0, delayed: 0 }),
+      }),
       queues: QUEUES,
     });
     manager.init(makeContext(redact));
@@ -164,6 +176,7 @@ describe('SqsQueueManager', () => {
       async (): Promise<SqsApproximateCounts> => ({
         visible: 5,
         notVisible: 0,
+        delayed: 0,
       }),
     );
     const manager = new SqsQueueManager({
@@ -176,6 +189,68 @@ describe('SqsQueueManager', () => {
 
     expect(redrive).toHaveBeenCalledWith('arn:dlq', 'arn:source');
     expect(count).toBe(5);
+  });
+
+  describe('queue without a DLQ', () => {
+    it('reports live main-queue depth with failed:0 and empty actions', async () => {
+      const approximateCounts = vi.fn(async (url: string): Promise<SqsApproximateCounts> => {
+        if (url === 'https://sqs/events') return { visible: 11, notVisible: 4, delayed: 8 };
+        return { visible: 0, notVisible: 0, delayed: 0 };
+      });
+      const manager = new SqsQueueManager({
+        ops: makeOps({ approximateCounts }),
+        queues: QUEUES_NO_DLQ,
+      });
+      manager.init(makeContext());
+
+      const summaries = await manager.listQueues();
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0]).toMatchObject({
+        driver: 'sqs',
+        queue: 'events',
+        isPaused: false,
+        counts: { waiting: 11, active: 4, delayed: 8, failed: 0, completed: 0, paused: 0 },
+        actions: [],
+      });
+
+      // The DLQ URL is never queried — there isn't one.
+      expect(approximateCounts).toHaveBeenCalledTimes(1);
+      expect(approximateCounts).toHaveBeenCalledWith('https://sqs/events');
+
+      await expect(manager.counts('events')).resolves.toMatchObject({
+        waiting: 11,
+        active: 4,
+        delayed: 8,
+        failed: 0,
+      });
+    });
+
+    it('listJobs("failed") is empty (no DLQ to snapshot)', async () => {
+      const receiveDlq = vi.fn(async (): Promise<SqsDlqMessage[]> => []);
+      const manager = new SqsQueueManager({
+        ops: makeOps({ receiveDlq }),
+        queues: QUEUES_NO_DLQ,
+      });
+      manager.init(makeContext());
+
+      const page = await manager.listJobs('events', 'failed', { limit: 10 });
+      expect(page).toEqual({ jobs: [], nextCursor: null, total: null });
+      expect(receiveDlq).not.toHaveBeenCalled();
+    });
+
+    it('redrive throws "no DLQ configured"', async () => {
+      const redrive = vi.fn(async (): Promise<void> => {});
+      const manager = new SqsQueueManager({
+        ops: makeOps({ redrive }),
+        queues: QUEUES_NO_DLQ,
+      });
+      manager.init(makeContext());
+
+      await expect(manager.redrive('events')).rejects.toThrow(
+        'Queue "events" has no DLQ configured; redrive unavailable',
+      );
+      expect(redrive).not.toHaveBeenCalled();
+    });
   });
 
   it('throws for an unknown queue', async () => {

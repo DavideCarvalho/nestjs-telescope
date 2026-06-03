@@ -86,10 +86,12 @@ export function createAwsSqsOps(client: SqsClientLike): SqsOps {
       const attributes = await readAttributes(queueUrl, [
         'ApproximateNumberOfMessages',
         'ApproximateNumberOfMessagesNotVisible',
+        'ApproximateNumberOfMessagesDelayed',
       ]);
       return {
         visible: readNumberAttribute(attributes, 'ApproximateNumberOfMessages'),
         notVisible: readNumberAttribute(attributes, 'ApproximateNumberOfMessagesNotVisible'),
+        delayed: readNumberAttribute(attributes, 'ApproximateNumberOfMessagesDelayed'),
       };
     },
 

@@ -30,6 +30,13 @@ export interface QueueSummary {
   queue: string;
   counts: QueueCounts;
   isPaused: boolean;
+  /**
+   * Optional per-queue capability hint: the mutating actions this specific
+   * queue supports. Lets the UI show action buttons (e.g. Redrive) only for
+   * queues that actually support them — for SQS, only queues with a configured
+   * DLQ advertise `'redrive'`. Omitted by managers that don't vary per queue.
+   */
+  actions?: QueueActionName[];
 }
 export interface QueueJob {
   id: string;
