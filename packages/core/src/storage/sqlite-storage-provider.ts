@@ -155,6 +155,10 @@ export class SqliteStorageProvider implements StorageProvider {
       where.push('batch_id = @batchId');
       params.batchId = query.batchId;
     }
+    if (query.traceId !== undefined) {
+      where.push('trace_id = @traceId');
+      params.traceId = query.traceId;
+    }
     if (query.before !== undefined) {
       where.push('created_at < @before');
       params.before = query.before.getTime();

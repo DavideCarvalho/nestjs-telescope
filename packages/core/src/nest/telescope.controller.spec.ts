@@ -40,6 +40,17 @@ describe('TelescopeController', () => {
     expect(page.data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('lists entries filtered by traceId', async () => {
+    const { storage, controller } = setup();
+    await storage.store([
+      entry({ id: 'a1', traceId: 'trace-A' }),
+      entry({ id: 'b1', traceId: 'trace-B' }),
+      entry({ id: 'none', traceId: null }),
+    ]);
+    const page = await controller.list({ traceId: 'trace-A' });
+    expect(page.data.map((e) => e.id)).toEqual(['a1']);
+  });
+
   it('falls back to provider default when limit is a non-numeric string', async () => {
     const { storage, controller } = setup();
     await storage.store([entry({ id: '1' }), entry({ id: '2' })]);

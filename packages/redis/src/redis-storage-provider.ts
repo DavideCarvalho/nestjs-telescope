@@ -320,6 +320,7 @@ export class RedisStorageProvider implements StorageProvider {
     if (query.tag !== undefined && !primaryHandlesTag) return true;
     if (query.familyHash !== undefined && !primaryHandlesFamily) return true;
     if (query.batchId !== undefined) return true;
+    if (query.traceId !== undefined) return true;
     return false;
   }
 
@@ -347,6 +348,7 @@ export class RedisStorageProvider implements StorageProvider {
       return false;
     }
     if (query.batchId !== undefined && entry.batchId !== query.batchId) return false;
+    if (query.traceId !== undefined && entry.traceId !== query.traceId) return false;
     return true;
   }
 

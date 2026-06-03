@@ -166,6 +166,19 @@ describe('RedisStorageProvider', () => {
     expect(page.data.every((e) => e.type === 'query')).toBe(true);
   });
 
+  it('filters by traceId, excluding other traces and null', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    await store.store([
+      entry({ id: 'a1', batchId: 'ba1', traceId: 'trace-A', createdAt: new Date(base + 1000) }),
+      entry({ id: 'a2', batchId: 'ba2', traceId: 'trace-A', createdAt: new Date(base + 2000) }),
+      entry({ id: 'b1', batchId: 'bb1', traceId: 'trace-B', createdAt: new Date(base + 3000) }),
+      entry({ id: 'none', batchId: 'bn', traceId: null, createdAt: new Date(base + 4000) }),
+    ]);
+
+    const page = await store.get({ traceId: 'trace-A' });
+    expect(page.data.map((e) => e.id).sort()).toEqual(['a1', 'a2']);
+  });
+
   it('windows by before/after', async () => {
     const base = Date.parse('2026-01-01T00:00:00Z');
     // ids 0..9 at base + i*1000

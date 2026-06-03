@@ -47,6 +47,7 @@ interface ListQuery {
   tag?: string;
   familyHash?: string;
   batchId?: string;
+  traceId?: string;
   cursor?: string;
   limit?: string;
 }
@@ -85,6 +86,7 @@ export class TelescopeController {
       ...(query.tag !== undefined ? { tag: query.tag } : {}),
       ...(query.familyHash !== undefined ? { familyHash: query.familyHash } : {}),
       ...(query.batchId !== undefined ? { batchId: query.batchId } : {}),
+      ...(query.traceId !== undefined ? { traceId: query.traceId } : {}),
       ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
       ...(query.limit !== undefined && Number.isFinite(Number(query.limit))
         ? { limit: Number(query.limit) }

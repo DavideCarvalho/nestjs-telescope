@@ -55,6 +55,17 @@ describe('SqliteStorageProvider', () => {
     expect((await store.get({ tag: 'slow' })).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('filters by traceId, excluding other traces and null', async () => {
+    await store.store([
+      entry({ id: 'a1', traceId: 'trace-A' }),
+      entry({ id: 'a2', traceId: 'trace-A' }),
+      entry({ id: 'b1', traceId: 'trace-B' }),
+      entry({ id: 'none', traceId: null }),
+    ]);
+    const result = await store.get({ traceId: 'trace-A' });
+    expect(result.data.map((e) => e.id).sort()).toEqual(['a1', 'a2']);
+  });
+
   it('paginates newest-first with an opaque cursor', async () => {
     await store.store([
       entry({ id: '1', createdAt: new Date('2026-01-01T00:00:01Z') }),

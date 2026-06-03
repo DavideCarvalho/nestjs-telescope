@@ -6,6 +6,8 @@ export interface EntryQuery {
   tag?: string;
   familyHash?: string;
   batchId?: string;
+  /** When set, only entries whose traceId matches are returned. */
+  traceId?: string;
   before?: Date;
   after?: Date;
   /**

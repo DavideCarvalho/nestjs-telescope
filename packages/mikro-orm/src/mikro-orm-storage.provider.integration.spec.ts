@@ -219,6 +219,18 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(beforeT2.data.map((e) => e.id).sort()).toEqual(['q1', 'r1']);
   });
 
+  it('filters by traceId, excluding other traces and null', async () => {
+    await provider.init();
+    await provider.store([
+      makeEntry({ id: 'a1', traceId: 'trace-A' }),
+      makeEntry({ id: 'a2', traceId: 'trace-A' }),
+      makeEntry({ id: 'b1', traceId: 'trace-B' }),
+      makeEntry({ id: 'none', traceId: null }),
+    ]);
+    const result = await provider.get({ traceId: 'trace-A' });
+    expect(result.data.map((e) => e.id).sort()).toEqual(['a1', 'a2']);
+  });
+
   it('update patches fields, keeps id immutable, and reindexes tags', async () => {
     await provider.init();
     await provider.store([makeEntry({ id: 'u1', durationMs: null, tags: ['old'] })]);

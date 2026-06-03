@@ -243,6 +243,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
     if (query.type) where.type = query.type;
     if (query.familyHash) where.familyHash = query.familyHash;
     if (query.batchId) where.batchId = query.batchId;
+    if (query.traceId !== undefined) where.traceId = query.traceId;
     if (query.tag) where.tagsText = { $like: `% ${query.tag} %` };
 
     if (query.before || query.after) {

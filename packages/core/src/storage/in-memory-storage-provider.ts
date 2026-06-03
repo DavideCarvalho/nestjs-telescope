@@ -108,6 +108,7 @@ export class InMemoryStorageProvider implements StorageProvider {
     if (query.tag !== undefined && !entry.tags.includes(query.tag)) return false;
     if (query.familyHash !== undefined && entry.familyHash !== query.familyHash) return false;
     if (query.batchId !== undefined && entry.batchId !== query.batchId) return false;
+    if (query.traceId !== undefined && entry.traceId !== query.traceId) return false;
     if (query.before !== undefined && entry.createdAt >= query.before) return false;
     if (query.after !== undefined && entry.createdAt <= query.after) return false;
     return true;
