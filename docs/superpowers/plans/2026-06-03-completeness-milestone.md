@@ -4,13 +4,18 @@
 
 Driven by Davi "queremos tudo bora" + the perf diagnosis (analytics scans read full `content` JSON over the whole window → slow at volume; Laravel Pulse samples + pre-aggregates).
 
-## STATUS (2026-06-03)
+## STATUS (2026-06-03) — repo green: build 13/13, test 15/15, lint clean, 37 changesets
 - ✅ A1 projection scans (`c4222b1`) — pulse/timeseries ~5x faster, two-pass hydration
 - ✅ A2 prune/retention boot warning (`affd07e`)
 - ✅ B4 request-detail waterfall (`e995e26`)
 - ✅ B5 traces list page + `/traces` endpoint (`4892ef6`)
-- ⬜ B6 slow-request hotspots · ⬜ B7 free-text search · ⬜ B8 exception grouping detail · ⬜ B9 polish/watchers · ⬜ A3 rollups (the big one)
-- Pending: dogfood redeploy of all the above to flip `telescope-local` (blocked while another agent branch-switches flip).
+- ✅ B6 slow-request hotspots by route family (`c8596c8`) — requests now carry a normalized-route familyHash
+- ✅ B7 free-text search over content (`bfc0e26`) — `EntryQuery.search`, all storages
+- ✅ B8 exception grouping detail (`6817fe6`) — `/stats` exceptions groups + UI list/sparkline
+- ✅ B9 live-tail pause/resume toggle (`c0804b9`)
+- ⬜ **A3 rollups (the big one)** — ingest-time pre-aggregated period buckets (Pulse model); own design+build effort, NOT half-built. A1+A2 made the read-scan path fast enough for now; A3 is for true production scale.
+- ⬜ B9 leftovers: retention controls surfaced in the UI (small; needs `meta` to expose prune); extra watchers (Redis commands / events / model changes) — each a NEW package like mail/cache/schedule.
+- Pending: dogfood redeploy of A1/A2/B4–B9 to flip `telescope-local` (do when flip is stable on that branch — another agent has been branch-switching it). Repack core+ui, point flip deps, reboot.
 
 ## A. PERFORMANCE (foundational — do first)
 1. **Projection-only analytics scans** — pulse/timeseries (and stats where possible) must NOT read the `content` JSON blob. Add an `omitContent`/projection path to the window scan + storage `get` so aggregates read only type/family_hash/duration_ms/created_at/sequence/batch_id/status. Benchmark before/after. (core + storages: mikro-orm, sqlite, redis, in-memory)
