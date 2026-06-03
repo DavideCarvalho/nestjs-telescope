@@ -170,8 +170,7 @@ function computeFamilies(entries: Entry[], topFamilies: number): FamilyLatency[]
   }
 
   families.sort(
-    (a, b) =>
-      b.p99 - a.p99 || b.count - a.count || a.familyHash.localeCompare(b.familyHash),
+    (a, b) => b.p99 - a.p99 || b.count - a.count || a.familyHash.localeCompare(b.familyHash),
   );
   return families.slice(0, topFamilies);
 }

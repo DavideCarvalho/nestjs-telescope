@@ -7,8 +7,8 @@ import type {
   StatusBreakdown,
   TimeseriesReport,
 } from '../index.js';
-import { AreaChartCard, BarChartCard } from './charts/index.js';
 import { useStats } from '../use-telescope-queries.js';
+import { AreaChartCard, BarChartCard } from './charts/index.js';
 
 const DEFAULT_WINDOW = '1h';
 
@@ -97,7 +97,11 @@ function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
             data={familyBars(stats.families)}
           />
         ) : null}
-        <AreaChartCard title="Queries over time" valueLabel="queries" data={toAreaSeries(stats.overTime)} />
+        <AreaChartCard
+          title="Queries over time"
+          valueLabel="queries"
+          data={toAreaSeries(stats.overTime)}
+        />
       </ChartRow>
     </>
   );
@@ -128,7 +132,11 @@ function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
             ]}
           />
         ) : null}
-        <AreaChartCard title="Cache over time" valueLabel="ops" data={toAreaSeries(stats.overTime)} />
+        <AreaChartCard
+          title="Cache over time"
+          valueLabel="ops"
+          data={toAreaSeries(stats.overTime)}
+        />
       </ChartRow>
       {cache ? (
         <BarChartCard title="Top keys" valueLabel="count" data={cacheKeyBars(cache)} />
@@ -161,7 +169,11 @@ function RequestInsights({ stats }: { stats: StatsResult }): JSX.Element {
         {status ? (
           <BarChartCard title="Status codes" valueLabel="count" data={statusBars(status)} />
         ) : null}
-        <AreaChartCard title="Throughput" valueLabel="requests" data={toAreaSeries(stats.overTime)} />
+        <AreaChartCard
+          title="Throughput"
+          valueLabel="requests"
+          data={toAreaSeries(stats.overTime)}
+        />
       </ChartRow>
     </>
   );
@@ -189,14 +201,14 @@ function InsightsBody({ stats }: { stats: StatsResult }): JSX.Element {
 export function EntryInsights({ type }: { type: string }): JSX.Element | null {
   const { data } = useStats(type, DEFAULT_WINDOW);
   if (!data) {
-    return <div className="mb-4 h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900/20" />;
+    return (
+      <div className="mb-4 h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900/20" />
+    );
   }
   return (
     <div className="mb-4 space-y-4">
       <InsightsBody stats={data} />
-      {data.truncated ? (
-        <p className="text-[10px] text-zinc-600">sampled (window capped)</p>
-      ) : null}
+      {data.truncated ? <p className="text-[10px] text-zinc-600">sampled (window capped)</p> : null}
     </div>
   );
 }
