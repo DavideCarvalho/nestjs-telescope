@@ -21,7 +21,8 @@ export function App(): JSX.Element {
             <Routes>
               <Route path="/" element={<OverviewPage />} />
               <Route path="/entries" element={<EntriesPage />} />
-              <Route path="/entries/:id" element={<EntryPage />} />
+              <Route path="/entries/view/:id" element={<EntryPage />} />
+              <Route path="/entries/:type" element={<EntriesPage />} />
               <Route path="/pulse" element={<PulsePage />} />
               <Route path="/queues" element={<QueuesShell />}>
                 <Route index element={<QueueManagerPage />} />

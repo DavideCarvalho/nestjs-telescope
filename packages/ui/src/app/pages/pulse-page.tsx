@@ -30,7 +30,7 @@ export function PulsePage(): JSX.Element {
       {isLoading || !data ? (
         <p className="text-zinc-600">Loading…</p>
       ) : (
-        <PulsePanel report={data} onSelectEntry={(id) => navigate(`/entries/${id}`)} />
+        <PulsePanel report={data} onSelectEntry={(id) => navigate(`/entries/view/${id}`)} />
       )}
     </div>
   );

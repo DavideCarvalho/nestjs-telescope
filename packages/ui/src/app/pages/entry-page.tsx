@@ -17,7 +17,7 @@ export function EntryPage(): JSX.Element {
       {isLoading || !data ? (
         <p className="text-zinc-600">Loading…</p>
       ) : (
-        <EntryDetail entry={data} onSelect={(entryId) => navigate(`/entries/${entryId}`)} />
+        <EntryDetail entry={data} onSelect={(entryId) => navigate(`/entries/view/${entryId}`)} />
       )}
     </div>
   );

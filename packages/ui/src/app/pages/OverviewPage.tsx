@@ -171,7 +171,7 @@ export function OverviewPage(): JSX.Element {
             <li key={slow.id}>
               <button
                 type="button"
-                onClick={() => navigate(`/entries/${slow.id}`)}
+                onClick={() => navigate(`/entries/view/${slow.id}`)}
                 className="flex w-full items-center justify-between gap-3 border-t border-zinc-900 pt-1 text-left hover:text-zinc-100 first:border-0 first:pt-0"
               >
                 <span className="min-w-0 truncate">

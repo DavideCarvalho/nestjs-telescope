@@ -1,21 +1,21 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { EntriesTable, TypeTabs, useEntries } from '../../react/index.js';
+import { useNavigate, useParams } from 'react-router-dom';
+import { EntriesTable, isKnownType, useEntries } from '../../react/index.js';
 
 export function EntriesPage(): JSX.Element {
-  const [type, setType] = useState('all');
+  const { type: routeType } = useParams();
   const navigate = useNavigate();
-  const { data, isLoading } = useEntries(type === 'all' ? {} : { type });
+  const activeType = routeType && isKnownType(routeType) ? routeType : undefined;
+  const { data, isLoading } = useEntries(activeType ? { type: activeType } : {});
   return (
-    <div>
-      <TypeTabs active={type} onChange={setType} />
-      <div className="p-4">
-        {isLoading ? (
-          <p className="text-zinc-600">Loading…</p>
-        ) : (
-          <EntriesTable entries={data?.data ?? []} onSelect={(id) => navigate(`/entries/${id}`)} />
-        )}
-      </div>
+    <div className="p-4">
+      {isLoading ? (
+        <p className="text-zinc-600">Loading…</p>
+      ) : (
+        <EntriesTable
+          entries={data?.data ?? []}
+          onSelect={(id) => navigate(`/entries/view/${id}`)}
+        />
+      )}
     </div>
   );
 }
