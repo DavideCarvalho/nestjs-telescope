@@ -31,6 +31,10 @@ export interface Entry<TContent = unknown> {
   durationMs: number | null;
   origin: BatchOrigin;
   instanceId: string;
+  /** Active OTel trace id at record time, or null when no span / no provider. */
+  traceId: string | null;
+  /** Active OTel span id at record time, or null when no span / no provider. */
+  spanId: string | null;
   createdAt: Date;
 }
 

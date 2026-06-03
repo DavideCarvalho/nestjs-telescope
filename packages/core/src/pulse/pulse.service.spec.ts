@@ -17,6 +17,8 @@ function entry(type: string, content: unknown, durationMs: number | null, create
     durationMs,
     origin: 'http',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt,
   };
 }

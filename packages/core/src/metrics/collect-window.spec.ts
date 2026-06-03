@@ -18,6 +18,8 @@ function entry(type: string, createdAt: Date): Entry {
     durationMs: null,
     origin: 'http',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt,
   };
 }

@@ -15,6 +15,8 @@ function entry(partial: Partial<Entry> & { type: string }): Entry {
     durationMs: partial.durationMs ?? null,
     origin: 'http',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt: partial.createdAt ?? new Date('2026-06-02T12:00:00Z'),
   };
 }

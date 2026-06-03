@@ -253,6 +253,8 @@ export class SqliteStorageProvider implements StorageProvider {
       durationMs: row.duration_ms,
       origin: isBatchOrigin(row.origin) ? row.origin : 'manual',
       instanceId: row.instance_id,
+      traceId: null,
+      spanId: null,
       createdAt: new Date(row.created_at),
     };
   }

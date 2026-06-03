@@ -1,6 +1,7 @@
 // packages/core/src/index.ts
 export * from './entry/entry.js';
 export * from './entry/content.js';
+export * from './trace/trace-context-provider.js';
 export * from './redaction/redact.js';
 export * from './context/batch.js';
 export * from './context/telescope-context.js';

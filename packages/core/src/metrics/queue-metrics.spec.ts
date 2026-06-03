@@ -20,6 +20,8 @@ function jobEntry(
     durationMs,
     origin: 'queue',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt: new Date('2026-06-02T12:00:00Z'),
   };
 }

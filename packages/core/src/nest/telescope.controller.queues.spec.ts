@@ -20,6 +20,8 @@ function jobEntry(queue: string): Entry {
     durationMs: 100,
     origin: 'queue',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt: new Date(),
   };
 }

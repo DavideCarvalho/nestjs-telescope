@@ -20,6 +20,8 @@ function entry(type: string, content: unknown, durationMs: number | null): Entry
     durationMs,
     origin: 'http',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt: new Date(),
   };
 }

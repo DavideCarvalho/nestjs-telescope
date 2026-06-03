@@ -18,6 +18,8 @@ function jobEntry(queue: string, status: 'completed' | 'failed', createdAt: Date
     durationMs: 100,
     origin: 'queue',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt,
   };
 }

@@ -15,6 +15,8 @@ function entry(over: Partial<Entry>): Entry {
     durationMs: null,
     origin: 'http',
     instanceId: 'i',
+    traceId: null,
+    spanId: null,
     createdAt: new Date(),
     ...over,
   };

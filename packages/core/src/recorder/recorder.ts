@@ -173,6 +173,8 @@ export class Recorder {
       durationMs: input.durationMs ?? null,
       origin: batch?.origin ?? 'manual',
       instanceId: this.options.instanceId,
+      traceId: null,
+      spanId: null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
     return { ...base, tags: runTaggers(base, this.options.taggers) };
