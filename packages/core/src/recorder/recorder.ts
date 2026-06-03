@@ -6,6 +6,10 @@ import { redact } from '../redaction/redact.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
 import { runTaggers } from '../tagging/tagger.js';
+import type {
+  TraceContext,
+  TraceContextProvider,
+} from '../trace/trace-context-provider.js';
 
 export type DropReason = 'overflow' | 'store-failed' | 'record-error';
 
@@ -36,6 +40,8 @@ export interface RecorderOptions {
    * excludes it (an intentional exclusion, not counted as a drop).
    */
   filter?: (entry: Entry) => boolean;
+  /** Optional ambient trace-context source; read once per recorded entry. */
+  traceContext?: TraceContextProvider;
 }
 
 /**
@@ -162,6 +168,15 @@ export class Recorder {
     // Resolve batchId FIRST: an out-of-batch entry's synthetic batch id uses
     // id-0, and the entry id uses id-1, keeping allocation order predictable.
     const batchId = batch?.id ?? this.options.idFactory();
+    // Read the ambient trace context defensively: the provider contract says
+    // current() must not throw, but a misbehaving provider should degrade to
+    // null rather than drop the entry.
+    let trace: TraceContext | null = null;
+    try {
+      trace = this.options.traceContext?.current() ?? null;
+    } catch {
+      trace = null;
+    }
     const base: Entry = {
       id: this.options.idFactory(),
       batchId,
@@ -173,8 +188,8 @@ export class Recorder {
       durationMs: input.durationMs ?? null,
       origin: batch?.origin ?? 'manual',
       instanceId: this.options.instanceId,
-      traceId: null,
-      spanId: null,
+      traceId: trace?.traceId ?? null,
+      spanId: trace?.spanId ?? null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
     return { ...base, tags: runTaggers(base, this.options.taggers) };

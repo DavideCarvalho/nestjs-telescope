@@ -273,4 +273,58 @@ describe('Recorder', () => {
     // Intentional exclusion must NOT increment any drop counter.
     expect(recorder.droppedCount).toBe(0);
   });
+
+  // ── Trace context enrichment ──────────────────────────────────────────────
+
+  describe('trace context enrichment', () => {
+    it('stamps traceId/spanId from the provider when current() returns a context', async () => {
+      const traceId = 'a'.repeat(32);
+      const spanId = 'b'.repeat(16);
+      const { recorder, storage } = makeRecorder({
+        traceContext: { current: () => ({ traceId, spanId }) },
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBe(traceId);
+      expect(entry.spanId).toBe(spanId);
+    });
+
+    it('stamps null/null when no provider is configured', async () => {
+      const { recorder, storage } = makeRecorder();
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBeNull();
+      expect(entry.spanId).toBeNull();
+    });
+
+    it('stamps null/null when current() returns null', async () => {
+      const { recorder, storage } = makeRecorder({
+        traceContext: { current: () => null },
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBeNull();
+      expect(entry.spanId).toBeNull();
+    });
+
+    it('records the entry with null ids when current() throws (defensive read)', async () => {
+      const { recorder, storage } = makeRecorder({
+        traceContext: {
+          current: () => {
+            throw new Error('provider exploded');
+          },
+        },
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const stored = (await storage.get({})).data;
+      // The enrich-level try/catch keeps the entry instead of dropping it.
+      expect(stored).toHaveLength(1);
+      expect(stored[0]!.traceId).toBeNull();
+      expect(stored[0]!.spanId).toBeNull();
+    });
+  });
 });
