@@ -1,6 +1,6 @@
 // packages/core/src/nest/telescope.options.ts
 import type { TelescopeCoreOptions } from '../config/options.js';
-import type { QueueManager } from '../queue/queue-manager.js';
+import type { QueueActionRequest, QueueManager } from '../queue/queue-manager.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Watcher } from './watcher.js';
 
@@ -22,6 +22,15 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * deny otherwise (until the host supplies one).
    */
   authorizer?: (ctx: AuthorizerContext) => boolean | Promise<boolean>;
+  /**
+   * Authorizes a queue MUTATION (retry/remove/promote/retry-all/redrive).
+   * Separate from `authorizer` (reads). DEFAULT: deny — every mutation is 403
+   * until the host supplies this. Throwing denies (fails closed).
+   */
+  authorizeAction?: (
+    ctx: AuthorizerContext,
+    action: QueueActionRequest,
+  ) => boolean | Promise<boolean>;
 }
 
 export interface TelescopeOptionsFactory {

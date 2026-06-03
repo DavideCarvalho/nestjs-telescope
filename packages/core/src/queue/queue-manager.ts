@@ -81,3 +81,26 @@ export interface QueueManager {
   retryAll?(queue: string, state: QueueState): Promise<number>;
   redrive?(queue: string): Promise<number>;
 }
+
+export type QueueActionName = 'retry' | 'remove' | 'promote' | 'retry-all' | 'redrive';
+
+export const QUEUE_ACTIONS: readonly QueueActionName[] = [
+  'retry',
+  'remove',
+  'promote',
+  'retry-all',
+  'redrive',
+];
+
+export function isQueueAction(value: unknown): value is QueueActionName {
+  return typeof value === 'string' && (QUEUE_ACTIONS as readonly string[]).includes(value);
+}
+
+/** What the action authorizer is told about a requested mutation. */
+export interface QueueActionRequest {
+  driver: string;
+  queue: string;
+  action: QueueActionName;
+  jobId?: string;
+  state?: QueueState; // for retry-all
+}
