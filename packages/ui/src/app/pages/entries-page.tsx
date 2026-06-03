@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   EntriesTable,
   EntryInsights,
+  TagAutocomplete,
   dotForType,
   isKnownType,
   labelForType,
@@ -80,14 +81,19 @@ export function EntriesPage(): JSX.Element {
         ) : (
           <span className="rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-400">All types</span>
         )}
-        <input
-          type="text"
-          value={tag}
-          onChange={(event) => setTag(event.target.value)}
-          placeholder="Filter by tag…"
-          aria-label="Filter by tag"
-          className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
-        />
+        <TagAutocomplete onSelect={setTag} />
+        {trimmedTag !== '' ? (
+          <button
+            type="button"
+            onClick={() => setTag('')}
+            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+          >
+            <span>{`tag:${trimmedTag}`}</span>
+            <span className="text-zinc-500" aria-hidden="true">
+              ×
+            </span>
+          </button>
+        ) : null}
         <input
           type="text"
           value={searchDraft}

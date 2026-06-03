@@ -26,6 +26,15 @@ export function entriesQuery(client: TelescopeClient, query: EntriesQuery = {}, 
 export function entryQuery(client: TelescopeClient, id: string) {
   return queryOptions({ queryKey: ['telescope', 'entry', id], queryFn: () => client.entry(id) });
 }
+// Tags are reference data for the filter autocomplete — no live-tail polling;
+// React Query caches per prefix so repeated keystrokes don't refetch.
+export function tagsQuery(client: TelescopeClient, prefix = '') {
+  return queryOptions({
+    queryKey: ['telescope', 'tags', prefix],
+    queryFn: () => client.tags(prefix === '' ? undefined : prefix),
+    staleTime: REFETCH_MS,
+  });
+}
 export function metaQuery(client: TelescopeClient, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'meta'],
@@ -198,6 +207,9 @@ export function useEntry(id: string) {
 }
 export function useMeta() {
   return useQuery(metaQuery(useTelescopeClient(), usePaused()));
+}
+export function useTags(prefix = '') {
+  return useQuery(tagsQuery(useTelescopeClient(), prefix));
 }
 export function useStats(type: string, window: string) {
   return useQuery(statsQuery(useTelescopeClient(), type, window, usePaused()));

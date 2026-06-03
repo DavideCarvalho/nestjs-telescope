@@ -12,6 +12,7 @@ import type {
   QueueState,
   QueueSummary,
   StatsResult,
+  TagCount,
   TelescopeMeta,
   TimeseriesQuery,
   TimeseriesReport,
@@ -54,6 +55,7 @@ export interface TelescopeClient {
   timeseries(query?: TimeseriesQuery): Promise<TimeseriesReport>;
   traces(window?: string, limit?: number): Promise<TracesResult>;
   stats(type: string, window: string): Promise<StatsResult>;
+  tags(prefix?: string): Promise<TagCount[]>;
   meta(): Promise<TelescopeMeta>;
   liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>;
   queueCounts(driver: string, queue: string): Promise<QueueCounts>;
@@ -147,6 +149,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
       }),
     traces: (window, limit) => get<TracesResult>('/traces', { window, limit }),
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
+    tags: (prefix) => get<TagCount[]>('/tags', { prefix }),
     meta: () => get<TelescopeMeta>('/meta'),
     liveQueues: () =>
       get<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>('/queues/live'),

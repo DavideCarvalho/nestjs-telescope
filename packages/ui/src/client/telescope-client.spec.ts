@@ -107,6 +107,20 @@ describe('createTelescopeClient', () => {
     expect(url).toContain('window=1h');
   });
 
+  it('lists tags with an optional prefix', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse([{ tag: 'slow', count: 42 }]));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.tags('sl');
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/tags?prefix=sl');
+  });
+
+  it('omits the prefix param when listing all tags', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse([]));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.tags();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/tags');
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchMock = vi.fn(
       async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,

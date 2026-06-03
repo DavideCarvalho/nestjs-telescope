@@ -48,6 +48,11 @@ export interface EntriesQuery {
   cursor?: string;
   limit?: number;
 }
+/** A distinct tag and how many entries carry it. Returned by `GET /tags`. */
+export interface TagCount {
+  tag: string;
+  count: number;
+}
 export interface TelescopeMeta {
   enabled: boolean;
   droppedCount: number;

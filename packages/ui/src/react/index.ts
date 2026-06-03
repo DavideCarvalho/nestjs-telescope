@@ -8,6 +8,7 @@ export * from './components/entry-detail.js';
 export * from './components/cache-badge.js';
 export * from './components/entry-insights.js';
 export * from './components/window-select.js';
+export * from './components/tag-autocomplete.js';
 export * from './components/pulse-panel.js';
 export * from './components/queues-panel.js';
 export * from './components/sparkline.js';

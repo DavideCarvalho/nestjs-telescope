@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import type { EntriesQuery, Entry, Page, TelescopeClient } from '../../client/index.js';
+import type { EntriesQuery, Entry, Page, TagCount, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { EntriesPage } from './entries-page.js';
 
@@ -24,6 +24,11 @@ function entry(over: Partial<Entry> & { type: string }): Entry {
   };
 }
 
+const TAGS: TagCount[] = [
+  { tag: 'slow', count: 42 },
+  { tag: 'slow-query', count: 19 },
+];
+
 function mockClient(rows: Entry[]) {
   const entries = vi.fn<(query?: EntriesQuery) => Promise<Page<Entry>>>(async () => ({
     data: rows,
@@ -31,6 +36,10 @@ function mockClient(rows: Entry[]) {
   }));
   const client: TelescopeClient = {
     entries,
+    tags: async (prefix) =>
+      prefix
+        ? TAGS.filter((entry) => entry.tag.toLowerCase().includes(prefix.toLowerCase()))
+        : TAGS,
     entry: async () => {
       throw new Error('not used');
     },
@@ -105,7 +114,7 @@ describe('EntriesPage', () => {
     });
   });
 
-  it('passes the tag filter input through to the entries query', async () => {
+  it('applies a tag picked from the autocomplete and shows a clearable chip', async () => {
     const { client, entries } = mockClient([]);
     renderAt('/entries', client);
 
@@ -113,10 +122,22 @@ describe('EntriesPage', () => {
       expect(entries).toHaveBeenCalledWith({});
     });
 
+    // typing surfaces suggestions but does not yet filter
     fireEvent.change(screen.getByLabelText('Filter by tag'), { target: { value: 'slow' } });
+    const option = await screen.findByText('slow-query');
 
+    // picking a suggestion applies it as the tag filter
+    fireEvent.mouseDown(option);
     await waitFor(() => {
-      expect(entries).toHaveBeenCalledWith({ tag: 'slow' });
+      expect(entries).toHaveBeenCalledWith({ tag: 'slow-query' });
+    });
+
+    // active-tag chip is shown and clears the filter when clicked
+    const chip = await screen.findByText('tag:slow-query');
+    expect(chip).toBeTruthy();
+    fireEvent.click(chip);
+    await waitFor(() => {
+      expect(entries).toHaveBeenLastCalledWith({});
     });
   });
 
