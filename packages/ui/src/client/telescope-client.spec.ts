@@ -187,4 +187,23 @@ describe('createTelescopeClient', () => {
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect(init.method).toBe('POST');
   });
+
+  it('POSTs an enqueue with a JSON body (name + payload)', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: '7' }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.queueEnqueue('bullmq', 'q1', {
+      name: 'send-email',
+      payload: { to: 'a@b.c' },
+    });
+    expect(fetchMock.mock.calls[0]![0] as string).toBe(
+      '/telescope/api/queues/live/bullmq/q1/enqueue',
+    );
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: 'send-email',
+      payload: { to: 'a@b.c' },
+    });
+    expect(result).toEqual({ id: '7' });
+  });
 });

@@ -78,6 +78,11 @@ export interface TelescopeClient {
     action: BulkActionName,
     opts?: { state?: QueueState },
   ): Promise<{ ok: true; count?: number }>;
+  queueEnqueue(
+    driver: string,
+    queue: string,
+    body: { name?: string; payload: unknown },
+  ): Promise<{ id: string | null }>;
 }
 
 export function createTelescopeClient(options: TelescopeClientOptions = {}): TelescopeClient {
@@ -175,6 +180,12 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
       post<{ ok: true; count?: number }>(
         `/queues/live/${encodeURIComponent(driver)}/${encodeURIComponent(queue)}/actions/${encodeURIComponent(action)}`,
         { state: opts.state },
+      ),
+    queueEnqueue: (driver, queue, body) =>
+      post<{ id: string | null }>(
+        `/queues/live/${encodeURIComponent(driver)}/${encodeURIComponent(queue)}/enqueue`,
+        undefined,
+        body,
       ),
   };
 }

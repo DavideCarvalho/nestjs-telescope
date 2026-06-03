@@ -40,6 +40,7 @@ function mockClient(queueAction: TelescopeClient['queueAction']): TelescopeClien
     queueJob: async () => null,
     queueJobAction: async () => ({ ok: true }),
     queueAction,
+    queueEnqueue: async () => ({ id: null }),
   };
 }
 

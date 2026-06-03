@@ -225,6 +225,30 @@ describe('BullMqQueueManager', () => {
     expect(count).toBe(7);
   });
 
+  it('enqueue() adds a job with the given name + payload and returns its id', async () => {
+    const add = vi.fn(async (_name: string, _data: unknown) => ({ id: '99' }));
+    const q1: QueueLike = { ...makeQueueStub('q1'), add };
+    const manager = new BullMqQueueManager();
+    manager.init(makeContext([q1]));
+
+    const result = await manager.enqueue('q1', { to: 'a@b.c' }, { name: 'send-email' });
+
+    expect(add).toHaveBeenCalledWith('send-email', { to: 'a@b.c' });
+    expect(result).toEqual({ id: '99' });
+  });
+
+  it('enqueue() defaults the job name to "manual" and null-coalesces a missing id', async () => {
+    const add = vi.fn(async (_name: string, _data: unknown) => ({}));
+    const q1: QueueLike = { ...makeQueueStub('q1'), add };
+    const manager = new BullMqQueueManager();
+    manager.init(makeContext([q1]));
+
+    const result = await manager.enqueue('q1', { x: 1 }, {});
+
+    expect(add).toHaveBeenCalledWith('manual', { x: 1 });
+    expect(result).toEqual({ id: null });
+  });
+
   it('throws when a job action targets a missing job', async () => {
     const q1: QueueLike = {
       ...makeQueueStub('q1'),

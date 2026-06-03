@@ -21,6 +21,7 @@ export interface QueueLike {
   // Mutation (present on the real bullmq Queue; optional in the structural type
   // so discovery — which only needs the read methods — stays unchanged).
   retryJobs?(opts: { state?: string; count?: number }): Promise<void>;
+  add?(name: string, data: unknown, opts?: unknown): Promise<{ id?: string | null }>;
 }
 
 /**

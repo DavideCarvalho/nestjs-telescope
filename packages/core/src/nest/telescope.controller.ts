@@ -1,6 +1,7 @@
 // packages/core/src/nest/telescope.controller.ts
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -68,7 +69,13 @@ const ACTION_METHOD: Record<QueueActionName, keyof QueueManager> = {
   promote: 'promote',
   'retry-all': 'retryAll',
   redrive: 'redrive',
+  enqueue: 'enqueue',
 };
+
+interface EnqueueBody {
+  name?: string;
+  payload?: unknown;
+}
 
 @UseGuards(TelescopeGuard)
 @Controller('telescope/api')
@@ -308,6 +315,25 @@ export class TelescopeController {
       return { ok: true, count: await manager.redrive(queue) };
     }
     throw new BadRequestException(`Invalid queue action: ${action}`);
+  }
+
+  // Enqueue carries a JSON body (name + payload), so it lives on its own route
+  // rather than under `:action`. Still gated by the same default-deny guard.
+  @Post('queues/live/:driver/:queue/enqueue')
+  @HttpCode(200)
+  @UseGuards(TelescopeActionGuard)
+  async enqueue(
+    @Param('driver') driver: string,
+    @Param('queue') queue: string,
+    @Body() body: EnqueueBody,
+  ): Promise<{ id: string | null }> {
+    if (body === undefined || body === null || !('payload' in body)) {
+      throw new BadRequestException('Body must include a "payload".');
+    }
+    const manager = this.requireManager(driver);
+    if (!manager.enqueue) throw new NotFoundException(`Driver ${driver} cannot enqueue`);
+    const opts = body.name !== undefined ? { name: body.name } : {};
+    return manager.enqueue(queue, body.payload, opts, this.queueManagers.context());
   }
 
   private async callAction(

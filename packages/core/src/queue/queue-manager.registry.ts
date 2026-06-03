@@ -25,13 +25,18 @@ export class QueueManagerRegistry implements OnApplicationBootstrap {
     private readonly moduleRef: ModuleRef,
   ) {}
 
-  async onApplicationBootstrap(): Promise<void> {
-    if (!this.config.enabled) return;
-    const ctx: QueueManagerContext = {
+  /** Build the shared context handed to managers (init + on-demand actions). */
+  context(): QueueManagerContext {
+    return {
       moduleRef: this.moduleRef,
       config: this.config,
       redact: (value: unknown) => redact(value, this.config.redact),
     };
+  }
+
+  async onApplicationBootstrap(): Promise<void> {
+    if (!this.config.enabled) return;
+    const ctx = this.context();
     for (const manager of this.options.queueManagers ?? []) {
       try {
         await manager.init(ctx);

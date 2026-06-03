@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { QueueState } from '../../react/index.js';
 import {
+  EnqueueJobForm,
   JobDetailDrawer,
   JobTable,
   QueueList,
@@ -85,6 +86,12 @@ export function QueueManagerPage(): JSX.Element {
               queue={selected.queue}
               state={state}
               onOpen={setOpenJobId}
+            />
+
+            <EnqueueJobForm
+              capabilities={capabilities}
+              driver={selected.driver}
+              queue={selected.queue}
             />
           </>
         )}

@@ -142,8 +142,9 @@ const bullmqManager: QueueManager = {
   counts: (): Promise<QueueCounts> => Promise.resolve(COUNTS),
   listJobs: (): Promise<JobPage> => Promise.resolve(FAILED_PAGE),
   getJob: (): Promise<QueueJobDetail | null> => Promise.resolve(JOB_DETAIL),
-  // implements retry but NOT redrive:
+  // implements retry + enqueue but NOT redrive:
   retry: (): Promise<void> => Promise.resolve(),
+  enqueue: (): Promise<{ id: string | null }> => Promise.resolve({ id: '1' }),
 };
 
 describe('GET /telescope/api/queues/live capabilities', () => {
@@ -162,6 +163,7 @@ describe('GET /telescope/api/queues/live capabilities', () => {
     try {
       const res = await request(app.getHttpServer()).get('/telescope/api/queues/live').expect(200);
       expect(res.body.capabilities.actionsByDriver.bullmq).toContain('retry');
+      expect(res.body.capabilities.actionsByDriver.bullmq).toContain('enqueue');
       expect(res.body.capabilities.actionsByDriver.bullmq).not.toContain('redrive');
     } finally {
       await app.close();

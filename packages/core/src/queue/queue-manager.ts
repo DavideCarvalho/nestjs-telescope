@@ -87,9 +87,20 @@ export interface QueueManager {
   promote?(queue: string, id: string): Promise<void>;
   retryAll?(queue: string, state: QueueState): Promise<number>;
   redrive?(queue: string): Promise<number>;
+  /**
+   * Enqueue (send) a new job/message onto the queue. Optional (like redrive);
+   * presence advertises the `'enqueue'` capability. Returns the new job's id
+   * when the driver assigns one (BullMQ does; some drivers may not), else null.
+   */
+  enqueue?(
+    queue: string,
+    payload: unknown,
+    opts: { name?: string },
+    ctx: QueueManagerContext,
+  ): Promise<{ id: string | null }>;
 }
 
-export type QueueActionName = 'retry' | 'remove' | 'promote' | 'retry-all' | 'redrive';
+export type QueueActionName = 'retry' | 'remove' | 'promote' | 'retry-all' | 'redrive' | 'enqueue';
 
 export const QUEUE_ACTIONS: readonly QueueActionName[] = [
   'retry',
@@ -97,6 +108,7 @@ export const QUEUE_ACTIONS: readonly QueueActionName[] = [
   'promote',
   'retry-all',
   'redrive',
+  'enqueue',
 ];
 
 export function isQueueAction(value: unknown): value is QueueActionName {

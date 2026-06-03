@@ -31,9 +31,11 @@ interface ActionSpies {
   remove: ReturnType<typeof vi.fn>;
   promote: ReturnType<typeof vi.fn>;
   retryAll: ReturnType<typeof vi.fn>;
+  enqueue?: ReturnType<typeof vi.fn>;
 }
 
 // Fake manager implements retry/remove/promote/retryAll and OMITS redrive (405 path).
+// `enqueue` is only wired when a spy is supplied (lets a test exercise the 404 path).
 function makeManager(spies: ActionSpies): QueueManager {
   return {
     driver: 'bullmq',
@@ -46,6 +48,20 @@ function makeManager(spies: ActionSpies): QueueManager {
     remove: spies.remove as unknown as (queue: string, id: string) => Promise<void>,
     promote: spies.promote as unknown as (queue: string, id: string) => Promise<void>,
     retryAll: spies.retryAll as unknown as (queue: string, state: QueueState) => Promise<number>,
+    ...(spies.enqueue
+      ? {
+          enqueue: spies.enqueue as unknown as QueueManager['enqueue'],
+        }
+      : {}),
+  };
+}
+
+function baseSpies(): ActionSpies {
+  return {
+    retry: vi.fn(() => Promise.resolve()),
+    remove: vi.fn(() => Promise.resolve()),
+    promote: vi.fn(() => Promise.resolve()),
+    retryAll: vi.fn(() => Promise.resolve(0)),
   };
 }
 
@@ -197,5 +213,85 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
       .post('/telescope/api/queues/live/bullmq/q1/jobs/5/retry')
       .expect(403);
     expect(spies.retry).not.toHaveBeenCalled();
+  });
+
+  it('enqueues a job (200) and calls manager.enqueue with name + payload', async () => {
+    const spies = baseSpies();
+    spies.enqueue = vi.fn(() => Promise.resolve({ id: '42' }));
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      authorizeAction: () => true,
+      queueManagers: [makeManager(spies)],
+    });
+    const res = await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bullmq/q1/enqueue')
+      .send({ name: 'send-email', payload: { to: 'a@b.c' } })
+      .expect(200);
+    expect(res.body).toEqual({ id: '42' });
+    expect(spies.enqueue).toHaveBeenCalledTimes(1);
+    expect(spies.enqueue.mock.calls[0]![0]).toBe('q1');
+    expect(spies.enqueue.mock.calls[0]![1]).toEqual({ to: 'a@b.c' });
+    expect(spies.enqueue.mock.calls[0]![2]).toEqual({ name: 'send-email' });
+  });
+
+  it('is 403 for enqueue when no authorizeAction is configured', async () => {
+    const spies = baseSpies();
+    spies.enqueue = vi.fn(() => Promise.resolve({ id: '1' }));
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      queueManagers: [makeManager(spies)],
+    });
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bullmq/q1/enqueue')
+      .send({ payload: { ok: true } })
+      .expect(403);
+    expect(spies.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('is 400 for enqueue when the payload is absent', async () => {
+    const spies = baseSpies();
+    spies.enqueue = vi.fn(() => Promise.resolve({ id: '1' }));
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      authorizeAction: () => true,
+      queueManagers: [makeManager(spies)],
+    });
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bullmq/q1/enqueue')
+      .send({ name: 'x' })
+      .expect(400);
+    expect(spies.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('is 404 for enqueue against an unknown driver', async () => {
+    const spies = baseSpies();
+    spies.enqueue = vi.fn(() => Promise.resolve({ id: '1' }));
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      authorizeAction: () => true,
+      queueManagers: [makeManager(spies)],
+    });
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/nope/q1/enqueue')
+      .send({ payload: {} })
+      .expect(404);
+  });
+
+  it('is 404 for enqueue when the driver does not implement it', async () => {
+    const spies = baseSpies(); // no enqueue spy → manager omits enqueue
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      authorizeAction: () => true,
+      queueManagers: [makeManager(spies)],
+    });
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bullmq/q1/enqueue')
+      .send({ payload: {} })
+      .expect(404);
   });
 });

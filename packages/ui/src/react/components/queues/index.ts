@@ -9,6 +9,7 @@ export {
   supportsAction,
   jobActionAllowedForState,
 } from './JobActions.js';
+export { EnqueueJobForm } from './EnqueueJobForm.js';
 export {
   QUEUE_STATE_ORDER,
   STATE_ACCENT,

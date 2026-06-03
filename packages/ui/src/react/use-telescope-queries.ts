@@ -199,6 +199,32 @@ export function useQueueAction() {
   });
 }
 
+interface EnqueueVars {
+  driver: string;
+  queue: string;
+  name?: string;
+  payload: unknown;
+}
+
+export function useQueueEnqueue() {
+  const client = useTelescopeClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: EnqueueVars) =>
+      client.queueEnqueue(vars.driver, vars.queue, {
+        ...(vars.name !== undefined ? { name: vars.name } : {}),
+        payload: vars.payload,
+      }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: liveQueuesKey() });
+      queryClient.invalidateQueries({ queryKey: queueCountsKey(vars.driver, vars.queue) });
+      queryClient.invalidateQueries({
+        queryKey: ['telescope', 'queue-jobs', vars.driver, vars.queue],
+      });
+    },
+  });
+}
+
 export function useEntries(query: EntriesQuery = {}) {
   return useQuery(entriesQuery(useTelescopeClient(), query, usePaused()));
 }

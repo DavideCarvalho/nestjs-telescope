@@ -168,6 +168,19 @@ export class BullMqQueueManager implements QueueManager {
     await job.promote();
   }
 
+  async enqueue(
+    queue: string,
+    payload: unknown,
+    opts: { name?: string },
+  ): Promise<{ id: string | null }> {
+    const target = this.requireQueue(queue);
+    if (typeof target.add !== 'function') {
+      throw new Error(`bullmq queue ${queue} cannot enqueue`);
+    }
+    const job = await target.add(opts.name ?? 'manual', payload);
+    return { id: job.id ?? null };
+  }
+
   async retryAll(queue: string, state: QueueState): Promise<number> {
     const target = this.requireQueue(queue);
     const before = (await this.countsFor(target))[state] ?? 0;

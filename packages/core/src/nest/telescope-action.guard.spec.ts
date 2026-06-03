@@ -63,6 +63,23 @@ describe('TelescopeActionGuard', () => {
     expect(authorizeAction).not.toHaveBeenCalled();
   });
 
+  it('resolves the enqueue action from the URL path (no :action param)', async () => {
+    const authorizeAction = vi.fn(() => true);
+    const guard = new TelescopeActionGuard({ authorizeAction } as TelescopeModuleOptions);
+    const enqueue = {
+      params: { driver: 'bullmq', queue: 'q1' },
+      query: {},
+      url: '/telescope/api/queues/live/bullmq/q1/enqueue',
+    };
+    expect(await guard.canActivate(ctx(enqueue))).toBe(true);
+    const expectedAction: QueueActionRequest = {
+      driver: 'bullmq',
+      queue: 'q1',
+      action: 'enqueue',
+    };
+    expect(authorizeAction).toHaveBeenCalledWith({ request: enqueue }, expectedAction);
+  });
+
   it('carries query.state into the action for retry-all', async () => {
     const authorizeAction = vi.fn(() => true);
     const guard = new TelescopeActionGuard({ authorizeAction } as TelescopeModuleOptions);
