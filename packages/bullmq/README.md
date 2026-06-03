@@ -42,6 +42,52 @@ With these entries captured, the core endpoint
 `GET /telescope/api/queues?window=1h` reports per-queue throughput, runtime and
 wait-time percentiles, and failure rate (wait time = `processedOn − enqueue`).
 
+## Live queue reads (`BullMqQueueManager`)
+
+The watcher above records *what jobs did*. `BullMqQueueManager` is the
+complementary read side: it browses your queues' **current** state directly via
+the BullMQ `Queue` API (counts, paused flag, and the jobs sitting in each list),
+so the dashboard can show live queue depth and inspect individual jobs.
+
+It is a `QueueManager`, passed via the `queueManagers` option (not `watchers`).
+At bootstrap it discovers every `@nestjs/bullmq` `Queue` instance in the Nest
+container through `DiscoveryService` (duck-typed — no extra wiring):
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { BullMqQueueManager } from '@dudousxd/nestjs-telescope-bullmq';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      queueManagers: [new BullMqQueueManager()],
+    }),
+    BullModule.forRoot({ connection }),
+    BullModule.registerQueue({ name: 'mail' }),
+  ],
+})
+export class AppModule {}
+```
+
+Pass an explicit allow-list to expose only some queues:
+`new BullMqQueueManager(['mail', 'reports'])`.
+
+This surfaces these read endpoints on the core controller, under the **existing
+Telescope authorizer** (same gate as the rest of the dashboard):
+
+| Method & path | Returns |
+|---------------|---------|
+| `GET /telescope/api/queues/live` | `{ queues: QueueSummary[] }` across all drivers — name, per-state counts, `isPaused`. |
+| `GET /telescope/api/queues/live/bullmq/:queue/counts` | `QueueCounts` for one queue. |
+| `GET /telescope/api/queues/live/bullmq/:queue/jobs?state=&cursor=&limit=` | A `JobPage` of jobs in `state` (`waiting`/`active`/`delayed`/`failed`/`completed`/`paused`); `nextCursor` paginates. |
+| `GET /telescope/api/queues/live/bullmq/:queue/jobs/:id` | A `QueueJobDetail` (adds redacted `data`, `opts`, `stacktrace`, `returnValue`). |
+
+Job payloads (`data`) are passed through core redaction before they leave the
+server, so secret-keyed fields (e.g. `password`, `token`) are masked.
+
+> **Reads only (this phase).** Queue actions (retry / remove / promote / redrive)
+> land in Phase 2; `BullMqQueueManager` exposes no mutating methods yet.
+
 ## Options
 
 | Option | Default | Description |
