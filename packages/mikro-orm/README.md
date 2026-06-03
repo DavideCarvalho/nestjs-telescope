@@ -85,30 +85,25 @@ that ran at least `threshold` times.
 ## MySQL / SQLite storage
 
 `MikroOrmStorageProvider` persists Telescope entries to your application's own
-database through MikroORM, so you can reuse your primary MySQL (or SQLite) for
-Telescope instead of standing up Redis. Register the shipped `TelescopeEntry`
-schema in MikroORM's `entities`, create its table (a migration in production, or
-`orm.schema.create()` in dev), then hand the provider your `EntityManager`:
+database through MikroORM, so you can use your existing MySQL (or SQLite) for
+Telescope instead of standing up Redis. **No migration and no manual table
+setup** — the provider owns a dedicated MikroORM scoped to a single
+`TelescopeEntry` and self-heals its schema at boot. Just hand it your existing
+`MikroORM`:
 
 ```ts
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
-import {
-  MikroOrmStorageProvider,
-  TelescopeEntry,
-} from '@dudousxd/nestjs-telescope-mikro-orm';
-import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { MikroOrmStorageProvider } from '@dudousxd/nestjs-telescope-mikro-orm';
 import { MikroORM } from '@mikro-orm/core';
 
 @Module({
   imports: [
-    MikroOrmModule.forRoot({
-      // ...your driver/dbName/etc.
-      entities: [/* your entities */ TelescopeEntry],
-    }),
+    // your normal MikroOrmModule.forRoot({ ... }) — nothing to add here
     TelescopeModule.forRootAsync({
       inject: [MikroORM],
       useFactory: (orm: MikroORM) => ({
-        storage: new MikroOrmStorageProvider(orm.em),
+        // borrows the host's connection config; opens its own scoped connection
+        storage: new MikroOrmStorageProvider(orm),
       }),
     }),
   ],
@@ -116,19 +111,41 @@ import { MikroORM } from '@mikro-orm/core';
 export class AppModule {}
 ```
 
-Notes:
+Want Telescope on a **separate database** (recommended for high write volume)?
+Pass explicit MikroORM connection options instead of the host `MikroORM`:
 
-- **Every method forks the `EntityManager`** (`orm.em.fork()`), so the provider
-  is safe to use outside a request scope (background flush, scheduled prune).
+```ts
+import { MySqlDriver } from '@mikro-orm/mysql';
+
+new MikroOrmStorageProvider({
+  driver: MySqlDriver,
+  clientUrl: process.env.TELESCOPE_DATABASE_URL,
+  // ensureSchema: false,  // opt out of boot-time schema sync (e.g. you manage it via migration)
+});
+```
+
+How it works:
+
+- **Dedicated, scoped connection.** The provider opens its OWN MikroORM that
+  knows *only* `TelescopeEntry`. Two reasons this matters: (1) the schema diff
+  can only ever touch `telescope_entries` — it is structurally incapable of
+  altering your other tables; (2) it avoids a self-capture loop — if storage
+  writes ran on the host connection (which has the query watcher's
+  `loggerFactory` wired), every `INSERT INTO telescope_entries` would be captured
+  as a query entry, recorded, flushed, and re-captured.
+- **Self-healing schema at boot.** On `init()` the provider runs
+  `schema.ensureDatabase()` + `schema.update({ safe: true })` — additive only:
+  it creates `telescope_entries` if missing and adds any missing columns, and
+  **never drops** a table or column. Set `ensureSchema: false` to disable (e.g.
+  when you provision the table via your own migration).
+- **Lifecycle.** `init()` is awaited by `TelescopeModule` at startup; `close()`
+  closes the owned connection at shutdown. You don't call either yourself.
 - **Keyset pagination** is newest-first (`createdAt DESC, id DESC`); the cursor
   encodes a `(createdAt, id)` position via `$or`, so paging resumes correctly
   even after older entries are pruned.
 - **Tag filtering** runs against a space-padded `tagsText` column with
   `LIKE '% <tag> %'` (JSON-array predicates are not portable across MySQL and
   SQLite). The `tags` JSON column remains the source of truth for retrieval.
-- **Operational caveat:** observability is write-heavy. On a busy primary this
-  adds non-trivial load — point the provider at a separate connection/database
-  if that matters for you.
 
 ## Exports
 
@@ -137,8 +154,8 @@ Notes:
 | `MikroOrmQueryWatcher` | Watcher marker — add to `TelescopeModule.forRoot({ watchers })` |
 | `telescopeMikroOrmLogger(record, opts?)` | `loggerFactory`-compatible factory; `opts.slowMs` defaults to `100` |
 | `TelescopeMikroOrmLogger` | `DefaultLogger` subclass (advanced: extend or instantiate directly) |
-| `MikroOrmStorageProvider` | `StorageProvider` persisting entries to MySQL/SQLite via the host `EntityManager` |
-| `TelescopeEntry` | `EntitySchema` for table `telescope_entries`; register in MikroORM `entities` |
+| `MikroOrmStorageProvider` | `StorageProvider` persisting entries to MySQL/SQLite; owns a dedicated scoped connection and self-heals its schema at boot |
+| `TelescopeEntry` | `EntitySchema` for table `telescope_entries` (owned internally by the provider; exported for advanced use — you don't register it) |
 | `detectNPlusOne(entries, threshold)` | Pure N+1 detector |
 | `queryFamilyHash(sql)` | SQL template normalizer + FNV-1a hash (used internally) |
 
