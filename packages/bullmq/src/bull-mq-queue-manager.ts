@@ -10,7 +10,7 @@ import type {
   QueueSummary,
 } from '@dudousxd/nestjs-telescope';
 import { DiscoveryService } from '@nestjs/core';
-import { type QueueLike, discoverQueues } from './queue-discovery.js';
+import { type QueueLike, discoverQueues, hasJobOps } from './queue-discovery.js';
 
 // BullMQ list names accepted by Queue.getJobs()/getJobCounts(). 'waiting' maps
 // to the internal 'wait' list (BullMQ also accepts 'waiting' as an alias, but
@@ -148,6 +148,33 @@ export class BullMqQueueManager implements QueueManager {
       stacktrace: Array.isArray(raw.stacktrace) ? raw.stacktrace : null,
       returnValue: raw.returnvalue ?? null,
     };
+  }
+
+  async retry(queue: string, id: string): Promise<void> {
+    const job = await this.requireQueue(queue).getJob(id);
+    if (!hasJobOps(job)) throw new Error(`Job ${id} not found in ${queue}`);
+    await job.retry();
+  }
+
+  async remove(queue: string, id: string): Promise<void> {
+    const job = await this.requireQueue(queue).getJob(id);
+    if (!hasJobOps(job)) throw new Error(`Job ${id} not found in ${queue}`);
+    await job.remove();
+  }
+
+  async promote(queue: string, id: string): Promise<void> {
+    const job = await this.requireQueue(queue).getJob(id);
+    if (!hasJobOps(job)) throw new Error(`Job ${id} not found in ${queue}`);
+    await job.promote();
+  }
+
+  async retryAll(queue: string, state: QueueState): Promise<number> {
+    const target = this.requireQueue(queue);
+    const before = (await this.countsFor(target))[state] ?? 0;
+    if (typeof target.retryJobs === 'function') {
+      await target.retryJobs({ state: STATE_TO_BULL[state] });
+    }
+    return before;
   }
 
   private toJob(job: BullJobLike, state: QueueState): QueueJob {

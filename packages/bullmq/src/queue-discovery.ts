@@ -18,6 +18,30 @@ export interface QueueLike {
   ): Promise<unknown[]>;
   getJob(id: string): Promise<unknown>;
   isPaused(): Promise<boolean>;
+  // Mutation (present on the real bullmq Queue; optional in the structural type
+  // so discovery — which only needs the read methods — stays unchanged).
+  retryJobs?(opts: { state?: string; count?: number }): Promise<void>;
+}
+
+/**
+ * Structural shape of the bullmq `Job` mutation API we drive. We never import
+ * `Job` from bullmq; a single structural guard keeps the manager honest about
+ * what a fetched job must expose before we mutate it.
+ */
+export interface JobOps {
+  retry(state?: string): Promise<void>;
+  remove(): Promise<void>;
+  promote(): Promise<void>;
+}
+
+export function hasJobOps(value: unknown): value is JobOps {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.retry === 'function' &&
+    typeof candidate.remove === 'function' &&
+    typeof candidate.promote === 'function'
+  );
 }
 
 export function isQueueLike(value: unknown): value is QueueLike {

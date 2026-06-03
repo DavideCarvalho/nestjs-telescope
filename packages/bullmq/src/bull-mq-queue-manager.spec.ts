@@ -8,7 +8,7 @@
 import 'reflect-metadata';
 import type { QueueManagerContext } from '@dudousxd/nestjs-telescope';
 import type { DiscoveryService, ModuleRef } from '@nestjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BullMqQueueManager } from './bull-mq-queue-manager.js';
 import type { QueueLike } from './queue-discovery.js';
 
@@ -187,6 +187,55 @@ describe('BullMqQueueManager', () => {
     manager.init(makeContext([q1]));
 
     await expect(manager.getJob('q1', 'nope')).resolves.toBeNull();
+  });
+
+  it('retry/remove/promote resolve the job and call the matching bullmq op', async () => {
+    const retry = vi.fn(async () => {});
+    const remove = vi.fn(async () => {});
+    const promote = vi.fn(async () => {});
+    const job = { id: '5', retry, remove, promote };
+    const q1: QueueLike = {
+      ...makeQueueStub('q1'),
+      getJob: async (id: string) => (id === '5' ? job : null),
+    };
+    const manager = new BullMqQueueManager();
+    manager.init(makeContext([q1]));
+
+    await manager.retry('q1', '5');
+    await manager.remove('q1', '5');
+    await manager.promote('q1', '5');
+
+    expect(retry).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(promote).toHaveBeenCalledOnce();
+  });
+
+  it('retryAll calls retryJobs with the bull state and returns the pre-count', async () => {
+    const retryJobs = vi.fn(async () => {});
+    const q1: QueueLike = {
+      ...makeQueueStub('q1', { counts: { failed: 7 } }),
+      retryJobs,
+    };
+    const manager = new BullMqQueueManager();
+    manager.init(makeContext([q1]));
+
+    const count = await manager.retryAll('q1', 'failed');
+
+    expect(retryJobs).toHaveBeenCalledWith({ state: 'failed' });
+    expect(count).toBe(7);
+  });
+
+  it('throws when a job action targets a missing job', async () => {
+    const q1: QueueLike = {
+      ...makeQueueStub('q1'),
+      getJob: async () => null,
+    };
+    const manager = new BullMqQueueManager();
+    manager.init(makeContext([q1]));
+
+    await expect(manager.retry('q1', 'nope')).rejects.toThrow('Job nope not found in q1');
+    await expect(manager.remove('q1', 'nope')).rejects.toThrow('Job nope not found in q1');
+    await expect(manager.promote('q1', 'nope')).rejects.toThrow('Job nope not found in q1');
   });
 
   it('throws for an unknown queue', async () => {
