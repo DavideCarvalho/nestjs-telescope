@@ -108,3 +108,67 @@ describe('EntryDetail trace row', () => {
     expect(screen.queryByText('Trace')).toBeNull();
   });
 });
+
+function child(over: Partial<EntryWithBatch>): EntryWithBatch {
+  return entry({ type: 'query', batch: [], ...over });
+}
+
+// Like renderDetail, but waits on the always-present Batch aside heading — the
+// entry `type` text is ambiguous once the batch list renders it per child.
+async function renderDetailWithBatch(entryValue: EntryWithBatch) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const meta: TelescopeMeta = { enabled: true, droppedCount: 0, watchers: [], traceLink: null };
+  render(
+    <TelescopeProvider client={mockClient(meta)}>
+      <QueryClientProvider client={queryClient}>
+        <EntryDetail entry={entryValue} />
+      </QueryClientProvider>
+    </TelescopeProvider>,
+  );
+  await screen.findByText(`Batch (${entryValue.batch.length})`);
+}
+
+describe('EntryDetail request timeline', () => {
+  it('renders the timeline for a request with batch children beyond itself', async () => {
+    const self = child({
+      id: 'req',
+      type: 'request',
+      sequence: 0,
+      durationMs: 40,
+      content: { method: 'GET', uri: '/users' },
+    });
+    const query = child({
+      id: 'q1',
+      type: 'query',
+      sequence: 1,
+      durationMs: 10,
+      content: { sql: 'select 1' },
+    });
+    await renderDetailWithBatch(
+      entry({
+        id: 'req',
+        type: 'request',
+        durationMs: 40,
+        content: { method: 'GET', uri: '/users' },
+        batch: [self, query],
+      }),
+    );
+    expect(screen.getByText('Timeline')).toBeTruthy();
+    // the child query's label renders inside the timeline (also echoed in the Batch aside)
+    expect(screen.getAllByText('select 1').length).toBeGreaterThan(0);
+  });
+
+  it('does not render the timeline for a non-request entry', async () => {
+    await renderDetailWithBatch(
+      entry({ type: 'query', batch: [child({ id: 'a' }), child({ id: 'b' })] }),
+    );
+    expect(screen.queryByText('Timeline')).toBeNull();
+  });
+
+  it('does not render the timeline for a request with no children beyond itself', async () => {
+    await renderDetailWithBatch(
+      entry({ id: 'solo', type: 'request', batch: [child({ id: 'solo', type: 'request' })] }),
+    );
+    expect(screen.queryByText('Timeline')).toBeNull();
+  });
+});

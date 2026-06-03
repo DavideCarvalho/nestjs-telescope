@@ -2,6 +2,7 @@ import type { EntryWithBatch } from '../../client/index.js';
 import { useMeta } from '../use-telescope-queries.js';
 import { BatchTimeline } from './batch-timeline.js';
 import { CacheBadge } from './cache-badge.js';
+import { RequestTimeline } from './request-timeline.js';
 import { buildTraceHref } from './trace-link.js';
 
 export function EntryDetail({
@@ -9,6 +10,7 @@ export function EntryDetail({
   onSelect,
 }: { entry: EntryWithBatch; onSelect?: (id: string) => void }): JSX.Element {
   const { data: meta } = useMeta();
+  const showTimeline = entry.type === 'request' && entry.batch.length > 1;
   return (
     <div className="grid grid-cols-3 gap-6">
       <section className="col-span-2">
@@ -16,6 +18,12 @@ export function EntryDetail({
           {entry.type}
           {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
         </h2>
+        {showTimeline ? (
+          <div className="mb-4">
+            <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Timeline</h3>
+            <RequestTimeline batch={entry.batch} requestId={entry.id} onSelect={onSelect} />
+          </div>
+        ) : null}
         <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
           {JSON.stringify(entry.content, null, 2)}
         </pre>
