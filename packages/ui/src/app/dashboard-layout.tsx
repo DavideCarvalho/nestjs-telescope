@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { ENTRY_TYPES } from '../react/index.js';
+import { ENTRY_TYPES, useLiveTail } from '../react/index.js';
 
 const NAV = [
   { to: '/', label: 'Overview', end: true },
@@ -21,6 +21,26 @@ function watcherLinkClass({ isActive }: { isActive: boolean }): string {
   return `flex items-center gap-2 rounded px-3 py-1.5 text-xs ${
     isActive ? 'bg-zinc-900 text-zinc-100' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
   }`;
+}
+
+function LiveTailToggle(): JSX.Element {
+  const { paused, setPaused } = useLiveTail();
+  return (
+    <button
+      type="button"
+      onClick={() => setPaused(!paused)}
+      aria-pressed={paused}
+      title={paused ? 'Resume live tail' : 'Pause live tail'}
+      className={`flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition-colors ${
+        paused
+          ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+      }`}
+    >
+      <span aria-hidden="true">{paused ? '⏸' : '●'}</span>
+      {paused ? 'Paused' : 'Live'}
+    </button>
+  );
 }
 
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
@@ -47,7 +67,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
           ))}
         </nav>
       </aside>
-      <main className="min-w-0 flex-1">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-end border-b border-zinc-800 px-4 py-2">
+          <LiveTailToggle />
+        </header>
+        <main className="min-w-0 flex-1">{children}</main>
+      </div>
     </div>
   );
 }

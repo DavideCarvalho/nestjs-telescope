@@ -6,65 +6,76 @@ import type {
   QueueState,
   TelescopeClient,
 } from '../client/index.js';
-import { useTelescopeClient } from './telescope-context.js';
+import { usePaused, useTelescopeClient } from './telescope-context.js';
 
-const REFETCH_MS = 3000;
-const LIVE_REFETCH_MS = 2500;
+export const REFETCH_MS = 3000;
+export const LIVE_REFETCH_MS = 2500;
 
-export function entriesQuery(client: TelescopeClient, query: EntriesQuery = {}) {
+// Live-tail gate: when paused, the dashboard freezes by disabling every interval.
+function intervalWhenLive(ms: number, paused: boolean): number | false {
+  return paused ? false : ms;
+}
+
+export function entriesQuery(client: TelescopeClient, query: EntriesQuery = {}, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'entries', query],
     queryFn: () => client.entries(query),
-    refetchInterval: REFETCH_MS,
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
 export function entryQuery(client: TelescopeClient, id: string) {
   return queryOptions({ queryKey: ['telescope', 'entry', id], queryFn: () => client.entry(id) });
 }
-export function metaQuery(client: TelescopeClient) {
+export function metaQuery(client: TelescopeClient, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'meta'],
     queryFn: () => client.meta(),
-    refetchInterval: REFETCH_MS,
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
-export function pulseQuery(client: TelescopeClient, window: string) {
+export function pulseQuery(client: TelescopeClient, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'pulse', window],
     queryFn: () => client.pulse(window),
-    refetchInterval: REFETCH_MS,
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
-export function statsQuery(client: TelescopeClient, type: string, window: string) {
+export function statsQuery(client: TelescopeClient, type: string, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'stats', type, window],
     queryFn: () => client.stats(type, window),
-    refetchInterval: REFETCH_MS,
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
-export function queuesQuery(client: TelescopeClient, window: string) {
+export function queuesQuery(client: TelescopeClient, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'queues', window],
     queryFn: () => client.queues(window),
-    refetchInterval: REFETCH_MS,
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
 export function timeseriesQuery(
   client: TelescopeClient,
   query: { window: string; buckets?: number; type?: string; tag?: string },
+  paused = false,
 ) {
   return queryOptions({
     queryKey: ['telescope', 'timeseries', query],
     queryFn: () => client.timeseries(query),
-    refetchInterval: REFETCH_MS,
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
 
-export function tracesQuery(client: TelescopeClient, window: string, limit?: number) {
+export function tracesQuery(
+  client: TelescopeClient,
+  window: string,
+  limit?: number,
+  paused = false,
+) {
   return queryOptions({
     queryKey: ['telescope', 'traces', window, limit],
     queryFn: () => client.traces(window, limit),
-    refetchInterval: REFETCH_MS,
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
 
@@ -87,11 +98,11 @@ export function queueJobKey(driver: string, queue: string, id: string) {
   return ['telescope', 'queue-job', driver, queue, id] as const;
 }
 
-export function liveQueuesQuery(client: TelescopeClient) {
+export function liveQueuesQuery(client: TelescopeClient, paused = false) {
   return queryOptions({
     queryKey: liveQueuesKey(),
     queryFn: () => client.liveQueues(),
-    refetchInterval: LIVE_REFETCH_MS,
+    refetchInterval: intervalWhenLive(LIVE_REFETCH_MS, paused),
   });
 }
 export function queueJobsQuery(
@@ -100,11 +111,12 @@ export function queueJobsQuery(
   queue: string,
   state: QueueState,
   page: { cursor?: string; limit?: number } = {},
+  paused = false,
 ) {
   return queryOptions({
     queryKey: queueJobsKey(driver, queue, state, page),
     queryFn: () => client.queueJobs(driver, queue, state, page),
-    refetchInterval: LIVE_REFETCH_MS,
+    refetchInterval: intervalWhenLive(LIVE_REFETCH_MS, paused),
   });
 }
 export function queueJobQuery(client: TelescopeClient, driver: string, queue: string, id: string) {
@@ -115,7 +127,7 @@ export function queueJobQuery(client: TelescopeClient, driver: string, queue: st
 }
 
 export function useLiveQueues() {
-  return useQuery(liveQueuesQuery(useTelescopeClient()));
+  return useQuery(liveQueuesQuery(useTelescopeClient(), usePaused()));
 }
 export function useQueueJobs(
   driver: string,
@@ -123,7 +135,7 @@ export function useQueueJobs(
   state: QueueState,
   page: { cursor?: string; limit?: number } = {},
 ) {
-  return useQuery(queueJobsQuery(useTelescopeClient(), driver, queue, state, page));
+  return useQuery(queueJobsQuery(useTelescopeClient(), driver, queue, state, page, usePaused()));
 }
 export function useQueueJob(driver: string, queue: string, id: string) {
   return useQuery(queueJobQuery(useTelescopeClient(), driver, queue, id));
@@ -179,22 +191,22 @@ export function useQueueAction() {
 }
 
 export function useEntries(query: EntriesQuery = {}) {
-  return useQuery(entriesQuery(useTelescopeClient(), query));
+  return useQuery(entriesQuery(useTelescopeClient(), query, usePaused()));
 }
 export function useEntry(id: string) {
   return useQuery(entryQuery(useTelescopeClient(), id));
 }
 export function useMeta() {
-  return useQuery(metaQuery(useTelescopeClient()));
+  return useQuery(metaQuery(useTelescopeClient(), usePaused()));
 }
 export function useStats(type: string, window: string) {
-  return useQuery(statsQuery(useTelescopeClient(), type, window));
+  return useQuery(statsQuery(useTelescopeClient(), type, window, usePaused()));
 }
 export function usePulse(window: string) {
-  return useQuery(pulseQuery(useTelescopeClient(), window));
+  return useQuery(pulseQuery(useTelescopeClient(), window, usePaused()));
 }
 export function useQueues(window: string) {
-  return useQuery(queuesQuery(useTelescopeClient(), window));
+  return useQuery(queuesQuery(useTelescopeClient(), window, usePaused()));
 }
 export function useTimeseries(query: {
   window: string;
@@ -202,8 +214,8 @@ export function useTimeseries(query: {
   type?: string;
   tag?: string;
 }) {
-  return useQuery(timeseriesQuery(useTelescopeClient(), query));
+  return useQuery(timeseriesQuery(useTelescopeClient(), query, usePaused()));
 }
 export function useTraces(window: string, limit?: number) {
-  return useQuery(tracesQuery(useTelescopeClient(), window, limit));
+  return useQuery(tracesQuery(useTelescopeClient(), window, limit, usePaused()));
 }
