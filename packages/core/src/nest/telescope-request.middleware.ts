@@ -1,6 +1,7 @@
 // packages/core/src/nest/telescope-request.middleware.ts
 import { Inject, Injectable, type NestMiddleware } from '@nestjs/common';
 import { EntryType } from '../entry/entry.js';
+import { normalizeRoute } from '../query/normalize-route.js';
 import { normalizeRequest } from './platform-request.js';
 import { TelescopeService } from './telescope.service.js';
 
@@ -48,6 +49,10 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
       response.once('finish', () => {
         this.service.record({
           type: EntryType.Request,
+          // A readable normalized route (e.g. "GET /api/base/:id/mel") groups
+          // request entries by endpoint via the indexed family_hash column and
+          // doubles as the human label — no content hydration needed.
+          familyHash: normalizeRoute(request.method, request.url),
           content: {
             method: request.method,
             uri: request.url,

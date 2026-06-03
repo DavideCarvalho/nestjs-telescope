@@ -1,5 +1,6 @@
 // packages/core/src/pulse/pulse-summary.ts
 import { type Entry, EntryType } from '../entry/entry.js';
+import { percentile } from '../metrics/stats.js';
 import { detectNPlusOne } from '../query/n-plus-one.js';
 
 export interface SlowEntry {
@@ -31,6 +32,19 @@ export interface NPlusOneHotspot {
   sampleBatchId: string;
 }
 
+/**
+ * A consistently-slow endpoint, aggregated by route family. The `route` IS the
+ * normalized `familyHash` (e.g. "GET /api/base/:id/mel"), so it doubles as the
+ * label — fully derived from content-less columns, no hydration.
+ */
+export interface SlowRouteHotspot {
+  /** The normalized route family — equals the request entry's `familyHash`. */
+  route: string;
+  count: number;
+  p99: number;
+  p50: number;
+}
+
 export interface PulseSummary {
   windowStart: string;
   windowEnd: string;
@@ -39,11 +53,14 @@ export interface PulseSummary {
   slowest: SlowEntry[];
   topExceptions: ExceptionGroup[];
   nPlusOne: NPlusOneHotspot[];
+  slowRoutes: SlowRouteHotspot[];
 }
 
 export interface PulseOptions {
   topN: number;
   nPlusOneThreshold: number;
+  /** Minimum request count for a route to qualify as a slow-route hotspot. */
+  slowRouteMinCount: number;
 }
 
 /**
@@ -133,6 +150,11 @@ export interface PulseAggregates {
   slowest: SlowCandidate[];
   exceptions: ExceptionGroupAggregate[];
   nPlusOne: NPlusOneAccumulator[];
+  /**
+   * Slow-route hotspots, already final: the route IS the familyHash and the
+   * stats come from content-less columns, so no hydration is required.
+   */
+  slowRoutes: SlowRouteHotspot[];
   hydrationIds: PulseHydrationIds;
 }
 
@@ -152,9 +174,21 @@ export function aggregatePulse(
   const slowCandidates: SlowCandidate[] = [];
   const exceptionGroups = new Map<string, ExceptionAccumulator>();
   const batches = new Map<string, Entry[]>();
+  // Request durations grouped by route family — the slow-route hotspot source.
+  const routeDurations = new Map<string, number[]>();
 
   for (const entry of entries) {
     counts[entry.type] = (counts[entry.type] ?? 0) + 1;
+
+    if (
+      entry.type === EntryType.Request &&
+      entry.familyHash !== null &&
+      typeof entry.durationMs === 'number'
+    ) {
+      const existing = routeDurations.get(entry.familyHash);
+      if (existing) existing.push(entry.durationMs);
+      else routeDurations.set(entry.familyHash, [entry.durationMs]);
+    }
 
     if (typeof entry.durationMs === 'number') {
       slowCandidates.push({
@@ -239,6 +273,22 @@ export function aggregatePulse(
     )
     .slice(0, options.topN);
 
+  // Slow-route hotspots: aggregate request durations per route family entirely
+  // from content-less columns. The route IS the familyHash (also the label).
+  const slowRoutes: SlowRouteHotspot[] = [...routeDurations.entries()]
+    .map(([route, durations]) => {
+      const sorted = [...durations].sort((a, b) => a - b);
+      return {
+        route,
+        count: sorted.length,
+        p99: percentile(sorted, 0.99),
+        p50: percentile(sorted, 0.5),
+      };
+    })
+    .filter((hotspot) => hotspot.count >= options.slowRouteMinCount)
+    .sort((a, b) => b.p99 - a.p99 || b.count - a.count || a.route.localeCompare(b.route))
+    .slice(0, options.topN);
+
   return {
     windowStart,
     windowEnd,
@@ -247,6 +297,7 @@ export function aggregatePulse(
     slowest,
     exceptions,
     nPlusOne,
+    slowRoutes,
     hydrationIds: {
       slowest: slowest.map((candidate) => candidate.id),
       exceptions: exceptions.map((group) => group.representativeId),
@@ -313,6 +364,8 @@ export function finalizePulse(aggregates: PulseAggregates, hydrate: HydrateConte
     slowest,
     topExceptions,
     nPlusOne,
+    // Slow routes are already final (familyHash is the label) — pass through.
+    slowRoutes: aggregates.slowRoutes,
   };
 }
 

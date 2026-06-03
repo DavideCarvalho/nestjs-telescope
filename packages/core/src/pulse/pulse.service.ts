@@ -7,6 +7,7 @@ import { type PulseSummary, aggregatePulse, finalizePulse } from './pulse-summar
 
 const DEFAULT_TOP_N = 5;
 const DEFAULT_N_PLUS_ONE_THRESHOLD = 5;
+const DEFAULT_SLOW_ROUTE_MIN_COUNT = 1;
 
 export interface PulseServiceOptions {
   pageSize?: number;
@@ -15,6 +16,8 @@ export interface PulseServiceOptions {
   topN?: number;
   /** Min repetitions of one query template in a batch to flag N+1. Default 5. */
   nPlusOneThreshold?: number;
+  /** Min request count for a route to qualify as a slow-route hotspot. Default 1. */
+  slowRouteMinCount?: number;
 }
 
 export interface PulseResult extends PulseSummary {
@@ -30,6 +33,7 @@ export class PulseService {
   private readonly scanCap: number | undefined;
   private readonly topN: number;
   private readonly nPlusOneThreshold: number;
+  private readonly slowRouteMinCount: number;
 
   constructor(
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
@@ -39,6 +43,7 @@ export class PulseService {
     this.scanCap = options?.scanCap;
     this.topN = options?.topN ?? DEFAULT_TOP_N;
     this.nPlusOneThreshold = options?.nPlusOneThreshold ?? DEFAULT_N_PLUS_ONE_THRESHOLD;
+    this.slowRouteMinCount = options?.slowRouteMinCount ?? DEFAULT_SLOW_ROUTE_MIN_COUNT;
   }
 
   async getHealth(windowMs: number): Promise<PulseResult> {
@@ -63,6 +68,7 @@ export class PulseService {
     const aggregates = aggregatePulse(entries, windowStart, windowEnd, {
       topN: this.topN,
       nPlusOneThreshold: this.nPlusOneThreshold,
+      slowRouteMinCount: this.slowRouteMinCount,
     });
 
     // Pass 2: hydrate content for ONLY the handful of displayed rows — the top-N

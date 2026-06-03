@@ -137,4 +137,31 @@ describe('PulseService', () => {
       store.close();
     }
   });
+
+  it('ranks slow-route hotspots by p99 from content-less columns only', async () => {
+    const storage = new InMemoryStorageProvider();
+    const now = Date.now();
+    const slowRoute: Entry[] = [10, 20, 30, 240].map((durationMs) => ({
+      ...entry('request', { uri: '/api/slow/1', method: 'GET' }, durationMs, new Date(now - 1_000)),
+      familyHash: 'GET /api/slow/:id',
+    }));
+    const fastRoute: Entry[] = [5, 6, 7, 8].map((durationMs) => ({
+      ...entry('request', { uri: '/api/fast', method: 'GET' }, durationMs, new Date(now - 1_000)),
+      familyHash: 'GET /api/fast',
+    }));
+    await storage.store([...slowRoute, ...fastRoute]);
+
+    const findSpy = vi.spyOn(storage, 'find');
+    const report = await new PulseService(storage, { topN: 5 }).getHealth(60_000);
+
+    expect(report.slowRoutes).toHaveLength(2);
+    expect(report.slowRoutes[0]).toMatchObject({
+      route: 'GET /api/slow/:id',
+      count: 4,
+      p99: 240,
+    });
+    expect(report.slowRoutes[1]!.route).toBe('GET /api/fast');
+    // No hydration is needed for slow routes — the route family IS the label.
+    expect(findSpy.mock.calls.length).toBeLessThanOrEqual(5);
+  });
 });

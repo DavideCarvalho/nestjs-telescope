@@ -36,6 +36,8 @@ describe('TelescopeRequestMiddleware', () => {
     expect((request?.content as { method: string }).method).toBe('GET');
     expect((request?.content as { statusCode: number }).statusCode).toBe(200);
     expect(request?.batchId).toBe(query?.batchId); // correlated
+    // The request entry groups by its normalized route family (id segment → :id).
+    expect(request?.familyHash).toBe('GET /orders/:id');
   });
 
   it('records a non-root, prefixed-style path (regression for global-prefix capture)', async () => {

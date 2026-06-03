@@ -24,6 +24,7 @@ const report: PulseReport = {
       sampleBatchId: 'b',
     },
   ],
+  slowRoutes: [{ route: 'GET /api/base/:id/mel', count: 42, p99: 1200, p50: 80 }],
 };
 
 describe('PulsePanel', () => {
@@ -54,5 +55,32 @@ describe('PulsePanel', () => {
     render(<PulsePanel report={report} onSelectFamily={onSelectFamily} />);
     fireEvent.click(screen.getByText('select * from t'));
     expect(onSelectFamily).toHaveBeenCalledWith('q:x');
+  });
+
+  it('renders slow request hotspots with p99 and count', () => {
+    render(<PulsePanel report={report} />);
+    const section = screen.getByText('Slow request hotspots').closest('section');
+    expect(section).toBeInstanceOf(HTMLElement);
+    if (section instanceof HTMLElement) {
+      expect(within(section).getByText('GET /api/base/:id/mel')).toBeTruthy();
+      expect(within(section).getByText(/1200ms/)).toBeTruthy();
+      expect(within(section).getByText('×42')).toBeTruthy();
+    }
+  });
+
+  it('links a slow route to its request family', () => {
+    const onSelectRoute = vi.fn();
+    render(<PulsePanel report={report} onSelectRoute={onSelectRoute} />);
+    fireEvent.click(screen.getByText('GET /api/base/:id/mel'));
+    expect(onSelectRoute).toHaveBeenCalledWith('GET /api/base/:id/mel');
+  });
+
+  it('shows an empty state when there are no slow routes', () => {
+    render(<PulsePanel report={{ ...report, slowRoutes: [] }} />);
+    const section = screen.getByText('Slow request hotspots').closest('section');
+    expect(section).toBeInstanceOf(HTMLElement);
+    if (section instanceof HTMLElement) {
+      expect(within(section).getByText('None detected')).toBeTruthy();
+    }
   });
 });

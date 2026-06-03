@@ -23,7 +23,7 @@ function entry(partial: Partial<Entry> & { type: string }): Entry {
 
 const start = new Date('2026-06-02T11:00:00Z');
 const end = new Date('2026-06-02T12:00:00Z');
-const opts = { topN: 5, nPlusOneThreshold: 5 };
+const opts = { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 1 };
 
 describe('summarizePulse', () => {
   it('counts entries per type', () => {
@@ -144,7 +144,11 @@ describe('summarizePulse', () => {
     const slow = Array.from({ length: 8 }, (_, i) =>
       entry({ type: 'query', durationMs: i + 1, content: { sql: `q${i}` } }),
     );
-    const summary = summarizePulse(slow, start, end, { topN: 3, nPlusOneThreshold: 5 });
+    const summary = summarizePulse(slow, start, end, {
+      topN: 3,
+      nPlusOneThreshold: 5,
+      slowRouteMinCount: 1,
+    });
     expect(summary.slowest).toHaveLength(3);
     expect(summary.slowest.map((s) => s.durationMs)).toEqual([8, 7, 6]);
   });
@@ -189,7 +193,11 @@ describe('summarizePulse', () => {
     const exceptions = Array.from({ length: 8 }, (_, i) =>
       entry({ type: 'exception', familyHash: `E${i}:m`, content: { class: 'E', message: 'm' } }),
     );
-    const byTopN = summarizePulse(exceptions, start, end, { topN: 3, nPlusOneThreshold: 5 });
+    const byTopN = summarizePulse(exceptions, start, end, {
+      topN: 3,
+      nPlusOneThreshold: 5,
+      slowRouteMinCount: 1,
+    });
     expect(byTopN.topExceptions).toHaveLength(3);
 
     const longSql = 'x'.repeat(1000);
@@ -211,5 +219,54 @@ describe('summarizePulse', () => {
     expect(summary.slowest).toEqual([]);
     expect(summary.topExceptions).toEqual([]);
     expect(summary.nPlusOne).toEqual([]);
+    expect(summary.slowRoutes).toEqual([]);
+  });
+
+  it('ranks slow-route hotspots by p99 with per-route count and percentiles', () => {
+    // Two routes: "GET /api/slow/:id" is consistently slower than "GET /api/fast".
+    const slowRoute = [10, 20, 30, 200].map((durationMs) =>
+      entry({ type: 'request', familyHash: 'GET /api/slow/:id', durationMs }),
+    );
+    const fastRoute = [5, 6, 7, 8].map((durationMs) =>
+      entry({ type: 'request', familyHash: 'GET /api/fast', durationMs }),
+    );
+    const summary = summarizePulse([...slowRoute, ...fastRoute], start, end, opts);
+
+    expect(summary.slowRoutes).toHaveLength(2);
+    expect(summary.slowRoutes[0]).toMatchObject({
+      route: 'GET /api/slow/:id',
+      count: 4,
+      p99: 200,
+      p50: 20,
+    });
+    expect(summary.slowRoutes[1]!.route).toBe('GET /api/fast');
+    expect(summary.slowRoutes[1]!.p99).toBe(8);
+  });
+
+  it('ignores request entries with a null familyHash for slow routes', () => {
+    const summary = summarizePulse(
+      [
+        entry({ type: 'request', familyHash: null, durationMs: 999 }),
+        entry({ type: 'request', familyHash: 'GET /api/ok', durationMs: 10 }),
+      ],
+      start,
+      end,
+      opts,
+    );
+    expect(summary.slowRoutes.map((route) => route.route)).toEqual(['GET /api/ok']);
+  });
+
+  it('drops routes below slowRouteMinCount', () => {
+    const summary = summarizePulse(
+      [
+        entry({ type: 'request', familyHash: 'GET /api/one', durationMs: 500 }),
+        entry({ type: 'request', familyHash: 'GET /api/two', durationMs: 10 }),
+        entry({ type: 'request', familyHash: 'GET /api/two', durationMs: 20 }),
+      ],
+      start,
+      end,
+      { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 2 },
+    );
+    expect(summary.slowRoutes.map((route) => route.route)).toEqual(['GET /api/two']);
   });
 });

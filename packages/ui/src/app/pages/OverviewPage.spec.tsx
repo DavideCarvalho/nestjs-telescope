@@ -31,6 +31,7 @@ const pulse: PulseReport = {
     },
   ],
   nPlusOne: [],
+  slowRoutes: [],
 };
 
 const queues: QueueMetricsReport = {

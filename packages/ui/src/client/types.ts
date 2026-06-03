@@ -81,6 +81,13 @@ export interface NPlusOneHotspot {
   total: number;
   sampleBatchId: string;
 }
+export interface SlowRouteHotspot {
+  /** The normalized route family (e.g. "GET /api/base/:id/mel") — also the label. */
+  route: string;
+  count: number;
+  p99: number;
+  p50: number;
+}
 
 export interface PulseReport {
   windowStart: string;
@@ -90,6 +97,7 @@ export interface PulseReport {
   slowest: SlowEntry[];
   topExceptions: ExceptionGroup[];
   nPlusOne: NPlusOneHotspot[];
+  slowRoutes: SlowRouteHotspot[];
   scanned: number;
   truncated: boolean;
 }
