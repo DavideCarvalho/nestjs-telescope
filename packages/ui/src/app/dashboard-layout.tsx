@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom';
 
 const NAV = [
-  { to: '/entries', label: 'Entries' },
-  { to: '/pulse', label: 'Pulse' },
-  { to: '/queues', label: 'Queues' },
+  { to: '/', label: 'Overview', end: true },
+  { to: '/entries', label: 'Entries', end: false },
+  { to: '/pulse', label: 'Pulse', end: false },
+  { to: '/queues', label: 'Queues', end: false },
 ];
 
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
@@ -16,6 +17,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
             <NavLink
               key={item.to}
               to={item.to}
+              end={item.end}
               className={({ isActive }) =>
                 `text-xs uppercase tracking-wide ${isActive ? 'text-emerald-300' : 'text-zinc-500 hover:text-zinc-300'}`
               }

@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { HashRouter, Route, Routes } from 'react-router-dom';
 import { TelescopeProvider } from '../react/index.js';
 import { DashboardLayout } from './dashboard-layout.js';
+import { OverviewPage } from './pages/OverviewPage.js';
 import { EntriesPage } from './pages/entries-page.js';
 import { EntryPage } from './pages/entry-page.js';
 import { PulsePage } from './pages/pulse-page.js';
@@ -16,7 +17,7 @@ export function App(): JSX.Element {
         <HashRouter>
           <DashboardLayout>
             <Routes>
-              <Route path="/" element={<Navigate to="/entries" replace />} />
+              <Route path="/" element={<OverviewPage />} />
               <Route path="/entries" element={<EntriesPage />} />
               <Route path="/entries/:id" element={<EntryPage />} />
               <Route path="/pulse" element={<PulsePage />} />
