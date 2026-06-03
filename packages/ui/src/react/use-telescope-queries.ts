@@ -35,6 +35,13 @@ export function pulseQuery(client: TelescopeClient, window: string) {
     refetchInterval: REFETCH_MS,
   });
 }
+export function statsQuery(client: TelescopeClient, type: string, window: string) {
+  return queryOptions({
+    queryKey: ['telescope', 'stats', type, window],
+    queryFn: () => client.stats(type, window),
+    refetchInterval: REFETCH_MS,
+  });
+}
 export function queuesQuery(client: TelescopeClient, window: string) {
   return queryOptions({
     queryKey: ['telescope', 'queues', window],
@@ -171,6 +178,9 @@ export function useEntry(id: string) {
 }
 export function useMeta() {
   return useQuery(metaQuery(useTelescopeClient()));
+}
+export function useStats(type: string, window: string) {
+  return useQuery(statsQuery(useTelescopeClient(), type, window));
 }
 export function usePulse(window: string) {
   return useQuery(pulseQuery(useTelescopeClient(), window));

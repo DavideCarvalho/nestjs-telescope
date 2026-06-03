@@ -65,6 +65,18 @@ describe('createTelescopeClient', () => {
     expect(url).toContain('buckets=60');
   });
 
+  it('fetches stats with type + window', async () => {
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 200, json: async () => ({ overTime: {} }) }) as Response,
+    );
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.stats('query', '1h');
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('/stats?');
+    expect(url).toContain('type=query');
+    expect(url).toContain('window=1h');
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchMock = vi.fn(
       async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,

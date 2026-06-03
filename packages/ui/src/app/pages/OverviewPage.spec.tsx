@@ -74,6 +74,9 @@ function mockClient(): TelescopeClient {
     pulse: async () => pulse,
     queues: async () => queues,
     timeseries: async () => timeseries,
+    stats: async () => {
+      throw new Error('not used');
+    },
     meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
   };
 }

@@ -129,3 +129,45 @@ export interface TimeseriesQuery {
   type?: string;
   tag?: string;
 }
+
+export interface LatencyStats {
+  count: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  max: number;
+  slow: number;
+}
+export interface FamilyLatency {
+  familyHash: string;
+  label: string;
+  count: number;
+  p50: number;
+  p99: number;
+}
+export interface CacheStats {
+  hits: number;
+  misses: number;
+  sets: number;
+  hitRatio: number;
+  topKeys: { key: string; count: number }[];
+}
+export interface StatusBreakdown {
+  '2xx': number;
+  '3xx': number;
+  '4xx': number;
+  '5xx': number;
+  other: number;
+}
+export interface StatsResult {
+  type: string;
+  windowMs: number;
+  total: number;
+  /** Throughput over the window — same shape the overview area chart consumes. */
+  overTime: TimeseriesReport;
+  latency?: LatencyStats;
+  families?: FamilyLatency[];
+  cache?: CacheStats;
+  status?: StatusBreakdown;
+  truncated: boolean;
+}

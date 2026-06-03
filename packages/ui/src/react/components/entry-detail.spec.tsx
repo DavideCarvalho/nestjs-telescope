@@ -20,6 +20,9 @@ function mockClient(meta: TelescopeMeta): TelescopeClient {
     timeseries: async () => {
       throw new Error('not used');
     },
+    stats: async () => {
+      throw new Error('not used');
+    },
     meta: async () => meta,
     liveQueues: async () => ({
       queues: [],

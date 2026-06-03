@@ -20,6 +20,9 @@ function mockClient(queueAction: TelescopeClient['queueAction']): TelescopeClien
     timeseries: async () => {
       throw new Error('not used');
     },
+    stats: async () => {
+      throw new Error('not used');
+    },
     meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
     liveQueues: async () => ({
       queues: [],

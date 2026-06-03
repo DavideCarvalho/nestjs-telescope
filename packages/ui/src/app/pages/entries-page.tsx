@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   EntriesTable,
+  EntryInsights,
   dotForType,
   isKnownType,
   labelForType,
@@ -36,6 +37,7 @@ export function EntriesPage(): JSX.Element {
 
   return (
     <div className="p-4">
+      {activeType ? <EntryInsights type={activeType} /> : null}
       <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-zinc-800 pb-3">
         {activeType ? (
           <button
