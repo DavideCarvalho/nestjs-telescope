@@ -69,7 +69,11 @@ describe('TelescopeRequestMiddleware', () => {
     const beginBatch = vi.spyOn(service, 'beginBatch');
     const mw = new TelescopeRequestMiddleware(service);
 
-    for (const url of ['/telescope', '/telescope/api/entries', '/telescope/api/entries?type=request']) {
+    for (const url of [
+      '/telescope',
+      '/telescope/api/entries',
+      '/telescope/api/entries?type=request',
+    ]) {
       const req = {
         method: 'GET',
         url,
