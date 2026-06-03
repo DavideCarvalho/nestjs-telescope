@@ -14,6 +14,36 @@ export interface CacheLike {
   set(key: string, value: unknown, ttl?: number): Promise<unknown>;
 }
 
+/** An event a custom cache emits into Telescope. `hit` is `true`/`false` for
+ *  reads and `null` (or omitted) for writes. */
+export interface CacheEventInput {
+  operation: 'get' | 'set';
+  key: string;
+  hit?: boolean | null;
+}
+
+/**
+ * Custom cache source. Instead of auto-patching `get`/`set`, the host wires its
+ * own cache's native events into Telescope.
+ *
+ * `instrument` is called exactly once at `register()` with:
+ * - `emit`: records a cache entry, correlated to the active request/job batch
+ *   (same family-hash / tags / error-swallowing as the auto-patch path).
+ * - `ctx`: the {@link WatcherContext}, so the host can resolve its cache from
+ *   `ctx.moduleRef` and subscribe to its native events.
+ *
+ * The host owns the subscription; the watcher patches nothing on this path.
+ */
+export interface CustomCacheSource {
+  instrument(emit: (event: CacheEventInput) => void, ctx: WatcherContext): void;
+}
+
+/** Narrows a constructor argument to a {@link CustomCacheSource} (custom path)
+ *  vs a {@link CacheLike} (auto-patch path) by the presence of `instrument`. */
+function isCustomCacheSource(source: CacheLike | CustomCacheSource): source is CustomCacheSource {
+  return 'instrument' in source && typeof source.instrument === 'function';
+}
+
 /** Marks a cache instance whose `get`/`set` we've already wrapped, so repeated
  *  registration (or two watchers sharing it) never double-wraps. */
 const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:cachePatched');
@@ -36,19 +66,36 @@ const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:cachePatched');
  * Errors from the underlying cache are always re-thrown; recording failures are
  * swallowed so a telescope error can never alter the cache's outcome.
  *
+ * ## Custom caches
+ * A cache that isn't a `cache-manager`-style `Cache` (e.g. BentoCache) can be
+ * instrumented by passing a {@link CustomCacheSource} instead: its `instrument`
+ * hook wires the cache's native events into Telescope via an `emit` callback.
+ * Nothing is auto-patched on this path — the host owns the subscription.
+ *
  * @remarks
  * Patching is per-instance and idempotent (a `Symbol.for` marker).
  */
 export class CacheWatcher implements Watcher {
   readonly type = EntryType.Cache;
-  private readonly cache: CacheLike;
+  private readonly source: CacheLike | CustomCacheSource;
 
-  constructor(cache: CacheLike) {
-    this.cache = cache;
+  constructor(source: CacheLike | CustomCacheSource) {
+    this.source = source;
   }
 
   register(ctx: WatcherContext): void {
-    const cache = this.cache as CacheLike & { [PATCHED]?: boolean };
+    if (isCustomCacheSource(this.source)) {
+      this.source.instrument((event) => {
+        this.safeRecord(ctx, {
+          operation: event.operation,
+          key: event.key,
+          hit: event.hit ?? null,
+        });
+      }, ctx);
+      return;
+    }
+
+    const cache = this.source as CacheLike & { [PATCHED]?: boolean };
     if (cache[PATCHED]) return;
     cache[PATCHED] = true;
 

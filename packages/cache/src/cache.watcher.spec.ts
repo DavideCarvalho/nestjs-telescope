@@ -7,7 +7,12 @@ import {
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
 import { describe, expect, it } from 'vitest';
-import { type CacheLike, CacheWatcher } from './cache.watcher.js';
+import {
+  type CacheEventInput,
+  type CacheLike,
+  CacheWatcher,
+  type CustomCacheSource,
+} from './cache.watcher.js';
 
 interface Harness {
   ctx: WatcherContext;
@@ -125,5 +130,96 @@ describe('CacheWatcher', () => {
     new CacheWatcher(cache).register(ctx);
 
     await expect(cache.get('k')).resolves.toBe('v');
+  });
+
+  describe('custom cache source', () => {
+    it('records events emitted by a custom source with the right content/familyHash/tags', () => {
+      const source: CustomCacheSource = {
+        instrument: (emit) => {
+          emit({ operation: 'get', key: 'k', hit: true });
+          emit({ operation: 'set', key: 'k' });
+        },
+      };
+      const { ctx, recorded } = makeHarness();
+      new CacheWatcher(source).register(ctx);
+
+      expect(recorded).toHaveLength(2);
+
+      expect(recorded[0]!.type).toBe('cache');
+      expect(recorded[0]!.content).toEqual({ operation: 'get', key: 'k', hit: true });
+      expect(recorded[0]!.familyHash).toBe('get:k');
+      expect(recorded[0]!.tags).toEqual(['cache:get']);
+
+      expect(recorded[1]!.content).toEqual({ operation: 'set', key: 'k', hit: null });
+      expect(recorded[1]!.familyHash).toBe('set:k');
+      expect(recorded[1]!.tags).toEqual(['cache:set']);
+    });
+
+    it('normalizes an explicit null hit and a get false hit', () => {
+      const source: CustomCacheSource = {
+        instrument: (emit) => {
+          emit({ operation: 'set', key: 'a', hit: null });
+          emit({ operation: 'get', key: 'b', hit: false });
+        },
+      };
+      const { ctx, recorded } = makeHarness();
+      new CacheWatcher(source).register(ctx);
+
+      expect(recorded[0]!.content).toEqual({ operation: 'set', key: 'a', hit: null });
+      expect(recorded[1]!.content).toEqual({ operation: 'get', key: 'b', hit: false });
+    });
+
+    it('passes the WatcherContext as the second arg to instrument', () => {
+      let receivedCtx: WatcherContext | undefined;
+      const source: CustomCacheSource = {
+        instrument: (_emit, ctx) => {
+          receivedCtx = ctx;
+        },
+      };
+      const { ctx } = makeHarness();
+      new CacheWatcher(source).register(ctx);
+
+      expect(receivedCtx).toBe(ctx);
+    });
+
+    it('swallows a record failure inside the custom path (emit stays safe)', () => {
+      let emit: ((event: CacheEventInput) => void) | undefined;
+      const source: CustomCacheSource = {
+        instrument: (emitFn) => {
+          emit = emitFn;
+        },
+      };
+      const { ctx } = makeHarness({ recordThrows: true });
+      new CacheWatcher(source).register(ctx);
+
+      expect(emit).toBeDefined();
+      expect(() => emit!({ operation: 'get', key: 'k', hit: true })).not.toThrow();
+    });
+
+    it('does not auto-patch anything for a custom source', () => {
+      let getCalls = 0;
+      let setCalls = 0;
+      const source: CustomCacheSource & CacheLike = {
+        instrument: () => {},
+        get: async (key) => {
+          getCalls += 1;
+          return key;
+        },
+        set: async () => {
+          setCalls += 1;
+        },
+      };
+      const { ctx, recorded } = makeHarness();
+      const originalGet = source.get;
+      const originalSet = source.set;
+      new CacheWatcher(source).register(ctx);
+
+      // The custom path takes precedence (instrument present), so get/set stay untouched.
+      expect(source.get).toBe(originalGet);
+      expect(source.set).toBe(originalSet);
+      expect(recorded).toHaveLength(0);
+      expect(getCalls).toBe(0);
+      expect(setCalls).toBe(0);
+    });
   });
 });
