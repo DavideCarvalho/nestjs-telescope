@@ -1,3 +1,20 @@
+export type {
+  JobPage,
+  QueueActionName,
+  QueueCounts,
+  QueueJob,
+  QueueJobDetail,
+  QueueState,
+  QueueSummary,
+} from '@dudousxd/nestjs-telescope';
+import type { QueueActionName } from '@dudousxd/nestjs-telescope';
+
+/** Capability hints returned alongside the live queue list. */
+export interface QueueCapabilities {
+  mutationsEnabled: boolean;
+  actionsByDriver: Record<string, QueueActionName[]>;
+}
+
 export interface Entry {
   id: string;
   batchId: string;

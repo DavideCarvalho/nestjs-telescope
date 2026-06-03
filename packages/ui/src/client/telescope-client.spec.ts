@@ -72,4 +72,63 @@ describe('createTelescopeClient', () => {
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await expect(client.meta()).rejects.toThrow();
   });
+
+  it('GETs live queues', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ queues: [], capabilities: {} }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.liveQueues();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/queues/live');
+    expect(fetchMock.mock.calls[0]![1]).toBeUndefined();
+  });
+
+  it('GETs queue counts with encoded path segments', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.queueCounts('bullmq', 'a/b');
+    expect(fetchMock.mock.calls[0]![0] as string).toBe(
+      '/telescope/api/queues/live/bullmq/a%2Fb/counts',
+    );
+  });
+
+  it('GETs queue jobs with state + cursor + limit', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ jobs: [], nextCursor: null, total: null }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.queueJobs('bullmq', 'q1', 'failed', { cursor: 'c1', limit: 25 });
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('/telescope/api/queues/live/bullmq/q1/jobs?');
+    expect(url).toContain('state=failed');
+    expect(url).toContain('cursor=c1');
+    expect(url).toContain('limit=25');
+  });
+
+  it('GETs a single live job', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(null));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.queueJob('bullmq', 'q1', '99');
+    expect(fetchMock.mock.calls[0]![0] as string).toBe(
+      '/telescope/api/queues/live/bullmq/q1/jobs/99',
+    );
+  });
+
+  it('POSTs a job action', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.queueJobAction('bullmq', 'q1', '99', 'retry');
+    expect(fetchMock.mock.calls[0]![0] as string).toBe(
+      '/telescope/api/queues/live/bullmq/q1/jobs/99/retry',
+    );
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe('POST');
+  });
+
+  it('POSTs a bulk queue action with a state query param', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, count: 4 }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.queueAction('bullmq', 'q1', 'retry-all', { state: 'failed' });
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('/telescope/api/queues/live/bullmq/q1/actions/retry-all?');
+    expect(url).toContain('state=failed');
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe('POST');
+  });
 });
