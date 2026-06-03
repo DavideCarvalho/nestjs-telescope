@@ -91,6 +91,12 @@ describe('EntryDetail trace row', () => {
     expect(screen.getByText('span-1')).toBeTruthy();
   });
 
+  it('links to the internal trace page when traceId is present', async () => {
+    await renderDetail(entry({ traceId: 'trace-9', spanId: null }), null);
+    const link = await screen.findByRole('link', { name: 'View all in this trace' });
+    expect(link.getAttribute('href')).toBe('#/traces/trace-9');
+  });
+
   it('renders plain text when traceLink is null', async () => {
     await renderDetail(entry({ traceId: 'trace-2', spanId: 'span-2' }), null);
     expect(screen.queryByRole('link', { name: 'trace-2' })).toBeNull();

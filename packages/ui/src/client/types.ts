@@ -40,6 +40,7 @@ export interface EntryWithBatch extends Entry {
 export interface EntriesQuery {
   type?: string;
   tag?: string;
+  traceId?: string;
   batchId?: string;
   familyHash?: string;
   cursor?: string;

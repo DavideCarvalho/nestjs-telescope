@@ -108,6 +108,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
       get<Page<Entry>>('/entries', {
         type: query.type,
         tag: query.tag,
+        traceId: query.traceId,
         batchId: query.batchId,
         familyHash: query.familyHash,
         cursor: query.cursor,

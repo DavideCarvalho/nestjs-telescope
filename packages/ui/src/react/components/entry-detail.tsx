@@ -61,6 +61,12 @@ function TraceRow({
         <div className="font-mono text-[11px] text-zinc-300">{traceId}</div>
       )}
       {spanId ? <div className="font-mono text-[10px] text-zinc-500">{spanId}</div> : null}
+      <a
+        href={`#/traces/${traceId}`}
+        className="mt-1 inline-block text-[11px] text-emerald-400 hover:underline"
+      >
+        View all in this trace
+      </a>
     </div>
   );
 }

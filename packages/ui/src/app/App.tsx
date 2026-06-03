@@ -9,6 +9,7 @@ import { EntryPage } from './pages/entry-page.js';
 import { PulsePage } from './pages/pulse-page.js';
 import { QueuesPage } from './pages/queues-page.js';
 import { QueuesShell } from './pages/queues-shell.js';
+import { TracePage } from './pages/trace-page.js';
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ export function App(): JSX.Element {
               <Route path="/entries" element={<EntriesPage />} />
               <Route path="/entries/view/:id" element={<EntryPage />} />
               <Route path="/entries/:type" element={<EntriesPage />} />
+              <Route path="/traces/:traceId" element={<TracePage />} />
               <Route path="/pulse" element={<PulsePage />} />
               <Route path="/queues" element={<QueuesShell />}>
                 <Route index element={<QueueManagerPage />} />
