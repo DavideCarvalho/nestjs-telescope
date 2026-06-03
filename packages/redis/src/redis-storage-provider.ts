@@ -168,8 +168,15 @@ export class RedisStorageProvider implements StorageProvider {
     const hasMore = kept.length > limit;
     const page = kept.slice(0, limit);
     const last = page.at(-1);
+    // omitContent: Redis stores the whole entry as one JSON blob, so there is no
+    // projection benefit here — the entry must be read and parsed anyway. We
+    // still null `content` afterwards so callers can never depend on it during a
+    // content-less scan, keeping behavior identical to the projecting providers.
+    const data = query.omitContent
+      ? page.map((item) => ({ ...item.entry, content: null }))
+      : page.map((item) => item.entry);
     return {
-      data: page.map((item) => item.entry),
+      data,
       nextCursor: hasMore && last ? last.member : null,
     };
   }

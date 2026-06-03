@@ -60,6 +60,19 @@ describe('InMemoryStorageProvider', () => {
     expect((await store.get({ tag: 'slow' })).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('omitContent returns entries with content null and other fields intact', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([
+      entry({ id: '1', type: 'query', durationMs: 12, content: { sql: 'select 1' } }),
+    ]);
+    const { data } = await store.get({ omitContent: true });
+    expect(data).toHaveLength(1);
+    expect(data[0]!.content).toBeNull();
+    expect(data[0]!.id).toBe('1');
+    expect(data[0]!.type).toBe('query');
+    expect(data[0]!.durationMs).toBe(12);
+  });
+
   it('filters by traceId, excluding other traces and null', async () => {
     const store = new InMemoryStorageProvider();
     await store.store([

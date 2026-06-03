@@ -47,6 +47,17 @@ describe('RedisStorageProvider', () => {
     expect(found?.batch.map((event) => event.id)).toEqual(['1', '2']);
   });
 
+  it('omitContent nulls content after parse (no projection benefit on redis)', async () => {
+    await store.store([
+      entry({ id: '1', type: 'query', durationMs: 9, content: { sql: 'select 1' } }),
+    ]);
+    const { data } = await store.get({ omitContent: true });
+    expect(data).toHaveLength(1);
+    expect(data[0]!.content).toBeNull();
+    expect(data[0]!.id).toBe('1');
+    expect(data[0]!.durationMs).toBe(9);
+  });
+
   it('round-trips traceId/spanId through store → find', async () => {
     await store.store([
       entry({ id: 'traced', batchId: 'tb', traceId: 't', spanId: 's' }),

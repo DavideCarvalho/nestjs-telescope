@@ -1,7 +1,8 @@
 import 'reflect-metadata';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Entry } from '../entry/entry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
+import type { EntryQuery } from '../storage/storage-provider.js';
 import { TimeseriesService } from './timeseries.service.js';
 
 function entry(type: string, createdAt: Date): Entry {
@@ -53,6 +54,17 @@ describe('TimeseriesService', () => {
       tag: 'queue:mail',
     });
     expect(report.scanned).toBe(1);
+  });
+
+  it('scans content-less (bucketing needs only createdAt + type)', async () => {
+    const storage = new InMemoryStorageProvider();
+    await storage.store([entry('request', new Date(Date.now() - 1_000))]);
+    const getSpy = vi.spyOn(storage, 'get');
+    await new TimeseriesService(storage).getTimeseries({ windowMs: 300_000, buckets: 5 });
+    expect(getSpy).toHaveBeenCalled();
+    for (const call of getSpy.mock.calls) {
+      expect((call[0] as EntryQuery).omitContent).toBe(true);
+    }
   });
 
   it('rejects a non-positive window', async () => {

@@ -3,7 +3,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
-import { type PulseSummary, summarizePulse } from './pulse-summary.js';
+import { type PulseSummary, aggregatePulse, finalizePulse } from './pulse-summary.js';
 
 const DEFAULT_TOP_N = 5;
 const DEFAULT_N_PLUS_ONE_THRESHOLD = 5;
@@ -48,19 +48,48 @@ export class PulseService {
     const windowEnd = new Date();
     const windowStart = new Date(windowEnd.getTime() - windowMs);
 
+    // Pass 1: scan the whole window over content-less columns only. This is the
+    // heavy loop (every entry in the window), so omitting the content blob is
+    // where the time is saved.
     const { entries, scanned, truncated } = await collectEntriesInWindow(
       this.storage,
-      { after: windowStart },
+      { after: windowStart, omitContent: true },
       {
         ...(this.pageSize !== undefined ? { pageSize: this.pageSize } : {}),
         ...(this.scanCap !== undefined ? { scanCap: this.scanCap } : {}),
       },
     );
 
-    const summary = summarizePulse(entries, windowStart, windowEnd, {
+    const aggregates = aggregatePulse(entries, windowStart, windowEnd, {
       topN: this.topN,
       nPlusOneThreshold: this.nPlusOneThreshold,
     });
+
+    // Pass 2: hydrate content for ONLY the handful of displayed rows — the top-N
+    // slowest, one representative per reported exception family, and one per
+    // reported N+1 family. Bounded by topN, so at most a few dozen reads.
+    const contentById = await this.hydrate(aggregates.hydrationIds);
+    const summary = finalizePulse(aggregates, (id) =>
+      contentById.has(id) ? contentById.get(id) : undefined,
+    );
     return { ...summary, scanned, truncated };
+  }
+
+  /** Fetch content for the deduplicated set of ids the pulse output displays. */
+  private async hydrate(ids: {
+    slowest: string[];
+    exceptions: string[];
+    nPlusOne: string[];
+  }): Promise<Map<string, unknown>> {
+    const uniqueIds = new Set<string>([...ids.slowest, ...ids.exceptions, ...ids.nPlusOne]);
+    uniqueIds.delete('');
+    const contentById = new Map<string, unknown>();
+    await Promise.all(
+      [...uniqueIds].map(async (id) => {
+        const found = await this.storage.find(id);
+        if (found !== null) contentById.set(id, found.content);
+      }),
+    );
+    return contentById;
   }
 }

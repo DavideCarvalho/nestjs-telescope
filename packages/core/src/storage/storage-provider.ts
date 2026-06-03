@@ -19,6 +19,15 @@ export interface EntryQuery {
    */
   cursor?: string;
   limit?: number;
+  /**
+   * When true, the returned entries carry `content: null` and the provider
+   * SHOULD avoid reading/parsing the (potentially large) content column where
+   * its driver supports a projection. This powers content-less aggregate scans
+   * (pulse/timeseries) that only need small columns. Providers that store the
+   * whole entry as one blob (e.g. Redis) cannot project and MUST still null the
+   * content after parse so callers can never depend on it.
+   */
+  omitContent?: boolean;
 }
 
 export interface Page<T> {

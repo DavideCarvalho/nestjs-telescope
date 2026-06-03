@@ -65,6 +65,28 @@ import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity
 const DEFAULT_LIMIT = 50;
 
 /**
+ * Every persisted column EXCEPT `content`, used as the MikroORM `fields`
+ * projection for content-less aggregate scans (omitContent). Selecting these
+ * keeps the heavy `content` JSON blob out of the result set entirely — the main
+ * perf win on MySQL where pulse/timeseries otherwise read every content blob.
+ */
+const CONTENTLESS_FIELDS = [
+  'id',
+  'batchId',
+  'type',
+  'familyHash',
+  'tags',
+  'tagsText',
+  'sequence',
+  'durationMs',
+  'origin',
+  'instanceId',
+  'traceId',
+  'spanId',
+  'createdAt',
+] as const;
+
+/**
  * The owned ORM runs under a dedicated MikroORM `contextName` so it is isolated
  * from the HOST app's `RequestContext`. Without this, a host that wraps requests
  * in its own MikroORM context (e.g. `@mikro-orm/nestjs`'s `MikroOrmMiddleware`,
@@ -87,13 +109,16 @@ function padTags(tags: string[]): string {
   return tags.length ? ` ${tags.join(' ')} ` : ' ';
 }
 
-function rowToEntry(row: TelescopeEntryRow): Entry {
+/** A row that may have had `content` projected away (omitContent scans). */
+type RowMaybeContentless = Omit<TelescopeEntryRow, 'content'> & { content?: unknown };
+
+function rowToEntry(row: RowMaybeContentless, omitContent = false): Entry {
   return {
     id: row.id,
     batchId: row.batchId,
     type: row.type,
     familyHash: row.familyHash,
-    content: row.content,
+    content: omitContent ? null : (row.content ?? null),
     tags: row.tags,
     sequence: row.sequence,
     durationMs: row.durationMs,
@@ -266,6 +291,9 @@ export class MikroOrmStorageProvider implements StorageProvider {
     const rows = await em.find(TelescopeEntry, where, {
       orderBy: { createdAt: 'desc', id: 'desc' },
       limit: limit + 1,
+      // omitContent: project every column except the heavy content blob so the
+      // driver never SELECTs/materializes it.
+      ...(query.omitContent ? { fields: [...CONTENTLESS_FIELDS] } : {}),
     });
 
     const hasMore = rows.length > limit;
@@ -273,13 +301,13 @@ export class MikroOrmStorageProvider implements StorageProvider {
     const last = slice.at(-1);
     const nextCursor = hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null;
 
-    return { data: slice.map(rowToEntry), nextCursor };
+    return { data: slice.map((row) => rowToEntry(row, query.omitContent === true)), nextCursor };
   }
 
   async batch(batchId: string): Promise<Entry[]> {
     const em = this.forkEm();
     const rows = await em.find(TelescopeEntry, { batchId }, { orderBy: { sequence: 'asc' } });
-    return rows.map(rowToEntry);
+    return rows.map((row) => rowToEntry(row));
   }
 
   async tags(prefix?: string): Promise<TagCount[]> {

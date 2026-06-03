@@ -46,6 +46,24 @@ export interface PulseOptions {
   nPlusOneThreshold: number;
 }
 
+/**
+ * The exact set of entry ids whose `content` the final pulse output displays.
+ * Everything else aggregates over content-less columns, so a caller can run a
+ * content-less primary scan and then hydrate only THESE ids:
+ *  - `slowest`: the top-N slowest entries (labels come from content).
+ *  - `exceptions`: one representative per reported exception family (class/message).
+ *  - `nPlusOne`: one representative query entry per reported N+1 family (sql).
+ */
+export interface PulseHydrationIds {
+  slowest: string[];
+  exceptions: string[];
+  nPlusOne: string[];
+}
+
+/** A content lookup for a previously-identified id; returns the hydrated content
+ *  or undefined when the entry could not be re-read (e.g. since pruned). */
+export type HydrateContent = (id: string) => unknown;
+
 const MAX_LABEL_LENGTH = 500;
 
 /** Bound a label/sql string so the health snapshot payload stays small. */
@@ -59,10 +77,10 @@ function asRecord(content: unknown): Record<string, unknown> | null {
     : null;
 }
 
-/** A human label for a slow entry, derived from its content by type. */
-function labelFor(entry: Entry): string {
-  const record = asRecord(entry.content);
-  if (record === null) return entry.type;
+/** A human label for a slow entry, derived from hydrated content by type. */
+function labelFrom(type: string, content: unknown): string {
+  const record = asRecord(content);
+  if (record === null) return type;
   if (typeof record.uri === 'string') {
     return typeof record.method === 'string' ? `${record.method} ${record.uri}` : record.uri;
   }
@@ -70,27 +88,68 @@ function labelFor(entry: Entry): string {
   if (typeof record.queue === 'string' && typeof record.name === 'string') {
     return `${record.queue}:${record.name}`;
   }
-  return entry.type;
+  return type;
+}
+
+interface SlowCandidate {
+  id: string;
+  type: string;
+  durationMs: number;
+  batchId: string;
 }
 
 interface ExceptionAccumulator {
-  class: string;
-  message: string;
+  /** A representative entry id to hydrate class/message from. */
+  representativeId: string;
   count: number;
   lastSeen: Date;
 }
 
-/** Summarize stored entries into a health snapshot: per-type counts, slowest
- *  entries, top exceptions, and N+1 hotspots aggregated by query family. Pure: callers fetch
- *  the windowed entries (createdAt is not re-checked here). */
-export function summarizePulse(
+interface ExceptionGroupAggregate extends ExceptionAccumulator {
+  familyHash: string;
+}
+
+interface NPlusOneAccumulator {
+  familyHash: string;
+  perRequest: number;
+  requests: number;
+  total: number;
+  sampleBatchId: string;
+  /** A representative query entry id to hydrate the sql from. */
+  representativeId: string;
+}
+
+/**
+ * What `summarizePulse` derives from the content-less columns alone, BEFORE any
+ * content hydration: counts, the ranked slowest candidates, exception groups
+ * (without class/message), and N+1 hotspots (without sql). The pulse service
+ * hydrates the ids in {@link hydrationIds} and calls {@link finalizePulse}.
+ */
+export interface PulseAggregates {
+  windowStart: Date;
+  windowEnd: Date;
+  options: PulseOptions;
+  counts: Record<string, number>;
+  slowest: SlowCandidate[];
+  exceptions: ExceptionGroupAggregate[];
+  nPlusOne: NPlusOneAccumulator[];
+  hydrationIds: PulseHydrationIds;
+}
+
+/**
+ * Pass 1: aggregate the windowed entries over their content-less columns only.
+ * Reads `type`, `durationMs`, `familyHash`, `batchId`, `createdAt`, `sequence`
+ * — never `content`. Produces the ranked/sliced aggregates plus the exact ids
+ * whose content the final output needs.
+ */
+export function aggregatePulse(
   entries: Entry[],
   windowStart: Date,
   windowEnd: Date,
   options: PulseOptions,
-): PulseSummary {
+): PulseAggregates {
   const counts: Record<string, number> = {};
-  const slowCandidates: SlowEntry[] = [];
+  const slowCandidates: SlowCandidate[] = [];
   const exceptionGroups = new Map<string, ExceptionAccumulator>();
   const batches = new Map<string, Entry[]>();
 
@@ -102,21 +161,21 @@ export function summarizePulse(
         id: entry.id,
         type: entry.type,
         durationMs: entry.durationMs,
-        label: truncate(labelFor(entry)),
         batchId: entry.batchId,
       });
     }
 
     if (entry.type === EntryType.Exception && entry.familyHash !== null) {
-      const record = asRecord(entry.content);
       const existing = exceptionGroups.get(entry.familyHash);
       if (existing) {
         existing.count += 1;
-        if (entry.createdAt > existing.lastSeen) existing.lastSeen = entry.createdAt;
+        if (entry.createdAt > existing.lastSeen) {
+          existing.lastSeen = entry.createdAt;
+          existing.representativeId = entry.id;
+        }
       } else {
         exceptionGroups.set(entry.familyHash, {
-          class: typeof record?.class === 'string' ? record.class : 'Error',
-          message: typeof record?.message === 'string' ? record.message : '',
+          representativeId: entry.id,
           count: 1,
           lastSeen: entry.createdAt,
         });
@@ -132,19 +191,26 @@ export function summarizePulse(
     .sort((a, b) => b.durationMs - a.durationMs || a.id.localeCompare(b.id))
     .slice(0, options.topN);
 
-  const topExceptions = [...exceptionGroups.entries()]
-    .map(([familyHash, group]) => ({
-      familyHash,
-      class: group.class,
-      message: group.message,
-      count: group.count,
-      lastSeen: group.lastSeen.toISOString(),
-    }))
-    .sort((a, b) => b.count - a.count || a.familyHash.localeCompare(b.familyHash))
-    .slice(0, options.topN);
+  const exceptions = [...exceptionGroups.entries()]
+    .map(([familyHash, group]) => ({ familyHash, group }))
+    .sort((a, b) => b.group.count - a.group.count || a.familyHash.localeCompare(b.familyHash))
+    .slice(0, options.topN)
+    .map(({ familyHash, group }) => ({ familyHash, ...group }));
 
-  const hotspots = new Map<string, NPlusOneHotspot>();
+  // N+1 detection only needs familyHash counts per batch; sql is hydrated later.
+  // We track one representative query-entry id per family for the sql label.
+  const hotspots = new Map<string, NPlusOneAccumulator>();
+  const familyRepresentative = new Map<string, string>();
   for (const [batchId, batchEntries] of batches) {
+    for (const entry of batchEntries) {
+      if (
+        entry.type === EntryType.Query &&
+        entry.familyHash !== null &&
+        !familyRepresentative.has(entry.familyHash)
+      ) {
+        familyRepresentative.set(entry.familyHash, entry.id);
+      }
+    }
     for (const insight of detectNPlusOne(batchEntries, options.nPlusOneThreshold)) {
       const existing = hotspots.get(insight.familyHash);
       if (existing) {
@@ -157,27 +223,116 @@ export function summarizePulse(
       } else {
         hotspots.set(insight.familyHash, {
           familyHash: insight.familyHash,
-          sql: truncate(insight.sql),
           perRequest: insight.count,
           requests: 1,
           total: insight.count,
           sampleBatchId: batchId,
+          representativeId: familyRepresentative.get(insight.familyHash) ?? '',
         });
       }
     }
   }
-  const nPlusOne = [...hotspots.values()].sort(
-    (a, b) =>
-      b.total - a.total || b.requests - a.requests || a.familyHash.localeCompare(b.familyHash),
-  );
+  const nPlusOne = [...hotspots.values()]
+    .sort(
+      (a, b) =>
+        b.total - a.total || b.requests - a.requests || a.familyHash.localeCompare(b.familyHash),
+    )
+    .slice(0, options.topN);
 
   return {
-    windowStart: windowStart.toISOString(),
-    windowEnd: windowEnd.toISOString(),
-    windowMs: Math.max(0, windowEnd.getTime() - windowStart.getTime()),
+    windowStart,
+    windowEnd,
+    options,
     counts,
     slowest,
-    topExceptions,
-    nPlusOne: nPlusOne.slice(0, options.topN),
+    exceptions,
+    nPlusOne,
+    hydrationIds: {
+      slowest: slowest.map((candidate) => candidate.id),
+      exceptions: exceptions.map((group) => group.representativeId),
+      nPlusOne: nPlusOne.map((hotspot) => hotspot.representativeId),
+    },
   };
+}
+
+/** detectNPlusOne re-derives sql from a hydrated representative's content. */
+function sqlFromContent(content: unknown): string {
+  const record = asRecord(content);
+  return record !== null && typeof record.sql === 'string' ? record.sql : '';
+}
+
+function exceptionFieldsFromContent(content: unknown): { class: string; message: string } {
+  const record = asRecord(content);
+  return {
+    class: typeof record?.class === 'string' ? record.class : 'Error',
+    message: typeof record?.message === 'string' ? record.message : '',
+  };
+}
+
+/**
+ * Pass 2: build the final {@link PulseSummary}, reading content for ONLY the few
+ * displayed rows via the `hydrate` lookup. `hydrate(id)` returns the entry's
+ * content (or undefined if it could not be re-read).
+ */
+export function finalizePulse(aggregates: PulseAggregates, hydrate: HydrateContent): PulseSummary {
+  const slowest: SlowEntry[] = aggregates.slowest.map((candidate) => ({
+    id: candidate.id,
+    type: candidate.type,
+    durationMs: candidate.durationMs,
+    label: truncate(labelFrom(candidate.type, hydrate(candidate.id))),
+    batchId: candidate.batchId,
+  }));
+
+  const topExceptions: ExceptionGroup[] = aggregates.exceptions.map((group) => {
+    const { class: className, message } = exceptionFieldsFromContent(
+      hydrate(group.representativeId),
+    );
+    return {
+      familyHash: group.familyHash,
+      class: className,
+      message,
+      count: group.count,
+      lastSeen: group.lastSeen.toISOString(),
+    };
+  });
+
+  const nPlusOne: NPlusOneHotspot[] = aggregates.nPlusOne.map((hotspot) => ({
+    familyHash: hotspot.familyHash,
+    sql: truncate(sqlFromContent(hydrate(hotspot.representativeId))),
+    perRequest: hotspot.perRequest,
+    requests: hotspot.requests,
+    total: hotspot.total,
+    sampleBatchId: hotspot.sampleBatchId,
+  }));
+
+  return {
+    windowStart: aggregates.windowStart.toISOString(),
+    windowEnd: aggregates.windowEnd.toISOString(),
+    windowMs: Math.max(0, aggregates.windowEnd.getTime() - aggregates.windowStart.getTime()),
+    counts: aggregates.counts,
+    slowest,
+    topExceptions,
+    nPlusOne,
+  };
+}
+
+/**
+ * Summarize stored entries into a health snapshot: per-type counts, slowest
+ * entries, top exceptions, and N+1 hotspots aggregated by query family. Pure:
+ * callers fetch the windowed entries (createdAt is not re-checked here).
+ *
+ * When the entries carry their `content` (the in-process / single-pass path),
+ * labels/class/message/sql resolve directly from each entry. The two-pass
+ * content-less path uses {@link aggregatePulse} + {@link finalizePulse} instead.
+ */
+export function summarizePulse(
+  entries: Entry[],
+  windowStart: Date,
+  windowEnd: Date,
+  options: PulseOptions,
+): PulseSummary {
+  const aggregates = aggregatePulse(entries, windowStart, windowEnd, options);
+  const byId = new Map<string, unknown>();
+  for (const entry of entries) byId.set(entry.id, entry.content);
+  return finalizePulse(aggregates, (id) => byId.get(id));
 }

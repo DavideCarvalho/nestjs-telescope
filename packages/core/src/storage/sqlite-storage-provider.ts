@@ -19,12 +19,17 @@ export interface SqliteStorageOptions {
 
 const DEFAULT_LIMIT = 50;
 
+/** Every persisted column EXCEPT `content`, for content-less projection scans. */
+const CONTENTLESS_COLUMNS =
+  'id, batch_id, type, family_hash, tags, sequence, duration_ms, origin, instance_id, trace_id, span_id, created_at';
+
 interface Row {
   id: string;
   batch_id: string;
   type: string;
   family_hash: string | null;
-  content: string;
+  /** Undefined on content-less projection scans (omitContent). */
+  content?: string;
   tags: string;
   sequence: number;
   duration_ms: number | null;
@@ -184,14 +189,17 @@ export class SqliteStorageProvider implements StorageProvider {
         ? query.limit
         : DEFAULT_LIMIT;
     const whereClause = where.length > 0 ? `where ${where.join(' and ')}` : '';
-    const sql = `select * from telescope_entries
+    // omitContent: project every column EXCEPT the heavy `content` blob so the
+    // primary aggregate scan never reads/parses it.
+    const columns = query.omitContent ? CONTENTLESS_COLUMNS : '*';
+    const sql = `select ${columns} from telescope_entries
       ${whereClause}
       order by created_at desc, id desc limit @limit`;
     params.limit = limit + 1; // fetch one extra to know if there is a next page
 
     const rows = this.db.prepare(sql).all(params) as Row[];
     const hasMore = rows.length > limit;
-    const page = rows.slice(0, limit).map((row) => this.fromRow(row));
+    const page = rows.slice(0, limit).map((row) => this.fromRow(row, query.omitContent === true));
     const last = page.at(-1);
     return {
       data: page,
@@ -268,8 +276,11 @@ export class SqliteStorageProvider implements StorageProvider {
     };
   }
 
-  private fromRow(row: Row): Entry {
-    const rawContent = safeJsonParse<unknown>(row.content, {});
+  private fromRow(row: Row, omitContent = false): Entry {
+    // When omitContent projected the column away, `row.content` is undefined;
+    // skip parsing entirely and hand back null.
+    const rawContent =
+      omitContent || row.content === undefined ? null : safeJsonParse<unknown>(row.content, {});
     const rawTags = safeJsonParse<unknown>(row.tags, []);
     return {
       id: row.id,

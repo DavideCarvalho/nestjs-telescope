@@ -55,6 +55,25 @@ describe('SqliteStorageProvider', () => {
     expect((await store.get({ tag: 'slow' })).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('omitContent returns entries with content null and other fields intact', async () => {
+    await store.store([
+      entry({
+        id: '1',
+        type: 'query',
+        familyHash: 'q:x',
+        durationMs: 42,
+        content: { sql: 'select * from huge' },
+      }),
+    ]);
+    const { data } = await store.get({ omitContent: true });
+    expect(data).toHaveLength(1);
+    expect(data[0]!.content).toBeNull();
+    expect(data[0]!.id).toBe('1');
+    expect(data[0]!.type).toBe('query');
+    expect(data[0]!.familyHash).toBe('q:x');
+    expect(data[0]!.durationMs).toBe(42);
+  });
+
   it('filters by traceId, excluding other traces and null', async () => {
     await store.store([
       entry({ id: 'a1', traceId: 'trace-A' }),

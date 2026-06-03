@@ -53,6 +53,8 @@ export class TimeseriesService {
 
     const baseQuery: Omit<EntryQuery, 'cursor' | 'limit'> = {
       after: windowStart,
+      // bucketTimeseries only reads createdAt + type, so scan content-less.
+      omitContent: true,
       ...(query.type !== undefined ? { type: query.type } : {}),
       ...(query.tag !== undefined ? { tag: query.tag } : {}),
     };

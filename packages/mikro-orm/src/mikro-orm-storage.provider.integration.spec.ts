@@ -125,6 +125,26 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(batch.map((e) => e.id)).toEqual(['b', 'c', 'a']);
   });
 
+  it('omitContent projects every column except content, returning content null', async () => {
+    await provider.init();
+    await provider.store([
+      makeEntry({
+        id: 'oc',
+        type: 'query',
+        familyHash: 'q:x',
+        durationMs: 77,
+        content: { sql: 'select * from huge_table' },
+      }),
+    ]);
+    const { data } = await provider.get({ omitContent: true });
+    expect(data).toHaveLength(1);
+    expect(data[0]!.content).toBeNull();
+    expect(data[0]!.id).toBe('oc');
+    expect(data[0]!.type).toBe('query');
+    expect(data[0]!.familyHash).toBe('q:x');
+    expect(data[0]!.durationMs).toBe(77);
+  });
+
   it('round-trips traceId/spanId, preserving values and null', async () => {
     await provider.init();
     const traceId = 'a'.repeat(32);

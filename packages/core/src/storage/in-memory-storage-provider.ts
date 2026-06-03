@@ -61,8 +61,11 @@ export class InMemoryStorageProvider implements StorageProvider {
     const slice = afterCursor.slice(0, limit);
     const hasMore = afterCursor.length > limit;
     const last = slice.at(-1);
+    // omitContent: hand back shallow copies with content nulled so callers can
+    // never accidentally depend on content during a content-less aggregate scan.
+    const data = query.omitContent ? slice.map((entry) => ({ ...entry, content: null })) : slice;
     return {
-      data: slice,
+      data,
       nextCursor: hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
     };
   }
