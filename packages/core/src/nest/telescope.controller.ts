@@ -4,9 +4,12 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Inject,
+  MethodNotAllowedException,
   NotFoundException,
   Param,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -31,6 +34,7 @@ import type {
   StorageProvider,
   TagCount,
 } from '../storage/storage-provider.js';
+import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import { TELESCOPE_STORAGE } from './telescope.options.js';
 import { type TelescopeMeta, TelescopeService } from './telescope.service.js';
@@ -175,6 +179,60 @@ export class TelescopeController {
     @Param('id') id: string,
   ): Promise<QueueJobDetail | null> {
     return this.requireManager(driver).getJob(queue, id);
+  }
+
+  @Post('queues/live/:driver/:queue/jobs/:id/:action')
+  @HttpCode(200)
+  @UseGuards(TelescopeActionGuard)
+  async jobAction(
+    @Param('driver') driver: string,
+    @Param('queue') queue: string,
+    @Param('id') id: string,
+    @Param('action') action: string,
+  ): Promise<{ ok: true }> {
+    const manager = this.requireManager(driver);
+    if (action === 'retry') {
+      await this.callAction(manager.retry, manager, queue, id, action);
+    } else if (action === 'remove') {
+      await this.callAction(manager.remove, manager, queue, id, action);
+    } else if (action === 'promote') {
+      await this.callAction(manager.promote, manager, queue, id, action);
+    } else throw new BadRequestException(`Invalid job action: ${action}`);
+    return { ok: true };
+  }
+
+  @Post('queues/live/:driver/:queue/actions/:action')
+  @HttpCode(200)
+  @UseGuards(TelescopeActionGuard)
+  async queueAction(
+    @Param('driver') driver: string,
+    @Param('queue') queue: string,
+    @Param('action') action: string,
+    @Query('state') state?: string,
+  ): Promise<{ ok: true; count?: number }> {
+    const manager = this.requireManager(driver);
+    if (action === 'retry-all') {
+      if (!isQueueState(state)) throw new BadRequestException(`Invalid state: ${state}`);
+      if (!manager.retryAll)
+        throw new MethodNotAllowedException(`Driver ${driver} cannot retry-all`);
+      return { ok: true, count: await manager.retryAll(queue, state) };
+    }
+    if (action === 'redrive') {
+      if (!manager.redrive) throw new MethodNotAllowedException(`Driver ${driver} cannot redrive`);
+      return { ok: true, count: await manager.redrive(queue) };
+    }
+    throw new BadRequestException(`Invalid queue action: ${action}`);
+  }
+
+  private async callAction(
+    fn: ((queue: string, id: string) => Promise<void>) | undefined,
+    manager: QueueManager,
+    queue: string,
+    id: string,
+    action: string,
+  ): Promise<void> {
+    if (!fn) throw new MethodNotAllowedException(`Driver ${manager.driver} cannot ${action}`);
+    await fn.call(manager, queue, id);
   }
 
   private requireManager(driver: string): QueueManager {
