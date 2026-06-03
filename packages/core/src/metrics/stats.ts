@@ -86,15 +86,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+// Only `sql` is required: real-world query content varies by ORM logger (e.g.
+// the MikroORM logger emits `{ sql, bindings, took }` with no `slow`/`connection`),
+// and the family label only needs the SQL text. Missing optional fields degrade
+// gracefully rather than rejecting the whole content.
 function asQueryContent(content: unknown): QueryContent | null {
   if (!isRecord(content)) return null;
   if (typeof content.sql !== 'string') return null;
-  if (typeof content.slow !== 'boolean') return null;
   return {
     sql: content.sql,
     bindings: Array.isArray(content.bindings) ? content.bindings : [],
     connection: typeof content.connection === 'string' ? content.connection : null,
-    slow: content.slow,
+    slow: typeof content.slow === 'boolean' ? content.slow : false,
   };
 }
 

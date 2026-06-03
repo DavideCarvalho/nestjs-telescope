@@ -160,6 +160,21 @@ describe('summarizeStats families', () => {
     expect(result.families?.[0]?.label.length).toBe(60);
   });
 
+  it('extracts the family label from sql even when content omits slow/connection (e.g. MikroORM logger)', () => {
+    // The MikroORM query logger emits { sql, bindings, took } — no `slow`. The
+    // label must still come through (it only needs the sql text).
+    const entries = [
+      entry<{ sql: string; bindings: unknown[] }>({
+        type: EntryType.Query,
+        durationMs: 42,
+        familyHash: 'fam-no-slow',
+        content: { sql: 'select * from chunked_upload where status = ?', bindings: [] },
+      }),
+    ];
+    const result = summarizeStats({ ...baseInput(EntryType.Query), entries });
+    expect(result.families?.[0]?.label).toBe('select * from chunked_upload where status = ?');
+  });
+
   it('tiebreaks equal p99 by count desc then familyHash asc', () => {
     function fam(familyHash: string, durations: number[]) {
       return durations.map((durationMs) =>
