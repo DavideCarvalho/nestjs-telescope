@@ -2,8 +2,15 @@
 import type { Entry } from '../entry/entry.js';
 import type { EntryQuery, StorageProvider } from '../storage/storage-provider.js';
 
-/** Entries fetched per storage page (default). */
-export const DEFAULT_PAGE_SIZE = 500;
+/**
+ * Entries fetched per storage page (default). Large on purpose: the analytics
+ * window scan is the only caller, and paginating in small pages turns one scan
+ * into many sequential round-trips — which dominates latency against a REMOTE
+ * SQL store (e.g. each 500-row page over a remote RDS adds a full RTT). A big
+ * page collapses a typical window into one or two queries. Paired with
+ * `omitContent`, each page stays cheap on the wire regardless of content size.
+ */
+export const DEFAULT_PAGE_SIZE = 5000;
 /** Safety cap on entries scanned per request; surfaced via `truncated` (default). */
 export const DEFAULT_SCAN_CAP = 50_000;
 
