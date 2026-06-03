@@ -9,7 +9,7 @@
 //    config is, by default, DERIVED from a host `MikroORM` the caller passes
 //    (we copy only the connection-relevant keys), or it can be supplied
 //    explicitly as MikroORM options. Either way the provider forces
-//    `entities: [TelescopeEntry]`.
+//    `entities: [TelescopeEntry, TelescopeRollup]`.
 //
 //  - Why a dedicated, single-entity ORM rather than reusing the host's:
 //      (a) Schema self-heal: `schema.update()` has no per-entity filter, so it
@@ -54,6 +54,9 @@ import type {
   EntryQuery,
   EntryWithBatch,
   Page,
+  RollupBucket,
+  RollupDelta,
+  RollupStore,
   StorageProvider,
   TagCount,
 } from '@dudousxd/nestjs-telescope';
@@ -61,6 +64,7 @@ import { decodeCursor, encodeCursor, isBatchOrigin } from '@dudousxd/nestjs-tele
 import type { EntityManager, FilterQuery, Options } from '@mikro-orm/core';
 import { MikroORM, raw } from '@mikro-orm/core';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
+import { TelescopeRollup, type TelescopeRollupRow } from './telescope-rollup.entity.js';
 
 const DEFAULT_LIMIT = 50;
 
@@ -101,7 +105,7 @@ const TELESCOPE_CONTEXT_NAME = 'nestjs-telescope';
  * Options for the dedicated, single-entity ORM the provider owns. These are
  * standard MikroORM `Options` (connection config) plus an optional
  * `ensureSchema` flag. Any `entities` provided here is overridden — the provider
- * always forces `entities: [TelescopeEntry]`.
+ * always forces `entities: [TelescopeEntry, TelescopeRollup]`.
  */
 export type MikroOrmStorageProviderOptions = Options & { ensureSchema?: boolean };
 
@@ -165,7 +169,7 @@ function pickHostConnection(hostConfig: Options): Partial<Options> {
   return connection;
 }
 
-export class MikroOrmStorageProvider implements StorageProvider {
+export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
   private readonly source: MikroORM | MikroOrmStorageProviderOptions;
   private readonly ensureSchema: boolean;
   private orm: MikroORM | null = null;
@@ -189,7 +193,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
       const connection = pickHostConnection(this.source.config.getAll());
       return {
         ...connection,
-        entities: [TelescopeEntry],
+        entities: [TelescopeEntry, TelescopeRollup],
         contextName: TELESCOPE_CONTEXT_NAME,
         allowGlobalContext: true,
       };
@@ -198,7 +202,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
     const { ensureSchema: _ensureSchema, entities: _entities, ...rest } = this.source;
     return {
       ...rest,
-      entities: [TelescopeEntry],
+      entities: [TelescopeEntry, TelescopeRollup],
       contextName: TELESCOPE_CONTEXT_NAME,
       allowGlobalContext: true,
     };
@@ -367,5 +371,70 @@ export class MikroOrmStorageProvider implements StorageProvider {
   async clear(): Promise<void> {
     const em = this.forkEm();
     await em.nativeDelete(TelescopeEntry, {});
+    await em.nativeDelete(TelescopeRollup, {});
+  }
+
+  // ── RollupStore SPI ────────────────────────────────────────────────────────
+
+  /**
+   * Additively merge deltas into `telescope_rollups`, matching the sqlite
+   * provider's `on conflict do update set count = count + excluded.count, ...`
+   * semantics: accumulate count/sum and keep a running max per
+   * (metric, bucketStart).
+   *
+   * Implemented as a read-modify-write inside ONE transaction rather than a
+   * native upsert. MikroORM's `em.upsert` / `qb.onConflict().merge()` REPLACE
+   * conflicting columns; neither expresses a portable `count = count +
+   * excluded.count` self-referential increment across MySQL and SQLite without
+   * driver-specific raw SQL. The transactional read-modify-write is portable,
+   * cast-free, and — because the whole batch commits atomically with row locks
+   * on the touched PKs — safe to call repeatedly and concurrently: concurrent
+   * writers serialize on the same (metric, bucketStart) rows, so no increment is
+   * lost. New buckets are inserted; existing ones accumulate.
+   */
+  async recordRollups(deltas: RollupDelta[]): Promise<void> {
+    if (deltas.length === 0) return;
+    const em = this.forkEm();
+    await em.transactional(async (tx) => {
+      for (const delta of deltas) {
+        const existing = await tx.findOne(TelescopeRollup, {
+          metric: delta.metric,
+          bucketStart: delta.bucketStart,
+        });
+        if (existing) {
+          existing.count += delta.count;
+          existing.sum += delta.sum;
+          existing.max = Math.max(existing.max, delta.max);
+        } else {
+          tx.create(TelescopeRollup, {
+            metric: delta.metric,
+            bucketStart: delta.bucketStart,
+            count: delta.count,
+            sum: delta.sum,
+            max: delta.max,
+          });
+        }
+      }
+    });
+  }
+
+  async queryRollups(
+    metrics: string[],
+    fromBucket: number,
+    toBucket: number,
+  ): Promise<RollupBucket[]> {
+    if (metrics.length === 0) return [];
+    const em = this.forkEm();
+    const rows = await em.find(TelescopeRollup, {
+      metric: { $in: metrics },
+      bucketStart: { $gte: fromBucket, $lte: toBucket },
+    });
+    return rows.map((row: TelescopeRollupRow) => ({
+      metric: row.metric,
+      bucketStart: row.bucketStart,
+      count: row.count,
+      sum: row.sum,
+      max: row.max,
+    }));
   }
 }
