@@ -38,6 +38,59 @@ describe('TelescopeRequestMiddleware', () => {
     expect(request?.batchId).toBe(query?.batchId); // correlated
   });
 
+  it('records a non-root, prefixed-style path (regression for global-prefix capture)', async () => {
+    const storage = new InMemoryStorageProvider();
+    const service = new TelescopeService(resolveConfig({}), storage, {});
+    const mw = new TelescopeRequestMiddleware(service);
+
+    const req = {
+      method: 'GET',
+      url: '/api/user/me',
+      headers: {},
+      socket: { remoteAddress: '10.0.0.1' },
+    };
+    const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+    const next = vi.fn();
+
+    mw.use(req, res, next);
+    expect(next).toHaveBeenCalledOnce();
+    res.emit('finish');
+    await service.flush();
+
+    const all = (await storage.get({})).data;
+    const request = all.find((e) => e.type === 'request');
+    expect(request).toBeDefined();
+    expect((request?.content as { uri: string }).uri).toBe('/api/user/me');
+  });
+
+  it('skips telescope dashboard paths without beginning a batch or recording', async () => {
+    const storage = new InMemoryStorageProvider();
+    const service = new TelescopeService(resolveConfig({}), storage, {});
+    const beginBatch = vi.spyOn(service, 'beginBatch');
+    const mw = new TelescopeRequestMiddleware(service);
+
+    for (const url of ['/telescope', '/telescope/api/entries', '/telescope/api/entries?type=request']) {
+      const req = {
+        method: 'GET',
+        url,
+        headers: {},
+        socket: { remoteAddress: '10.0.0.1' },
+      };
+      const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+      const next = vi.fn();
+
+      mw.use(req, res, next);
+      expect(next).toHaveBeenCalledOnce();
+      res.emit('finish');
+    }
+
+    await service.flush();
+
+    expect(beginBatch).not.toHaveBeenCalled();
+    const all = (await storage.get({})).data;
+    expect(all.find((e) => e.type === 'request')).toBeUndefined();
+  });
+
   it('does nothing recordable when disabled but still calls next', () => {
     const service = new TelescopeService(
       resolveConfig({ enabled: false }),
