@@ -10,6 +10,12 @@ export interface EntryTypeDef {
   label: string;
   /** Tailwind `bg-*` class for the per-type color dot. */
   dot: string;
+  /**
+   * Optional override for the backend fetch filter. When set, the entries
+   * query uses this instead of `{ type: id }` — e.g. `schedule` is recorded
+   * as a tagged `job`, so it fetches `{ type: 'job', tag: 'schedule' }`.
+   */
+  query?: { type?: string; tag?: string };
 }
 
 export const ENTRY_TYPES: EntryTypeDef[] = [
@@ -19,7 +25,12 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
   { id: 'job', label: 'Jobs', dot: 'bg-violet-400' },
   { id: 'mail', label: 'Mail', dot: 'bg-pink-400' },
   { id: 'cache', label: 'Cache', dot: 'bg-teal-400' },
-  { id: 'schedule', label: 'Schedule', dot: 'bg-orange-400' },
+  {
+    id: 'schedule',
+    label: 'Schedule',
+    dot: 'bg-orange-400',
+    query: { type: 'job', tag: 'schedule' },
+  },
   { id: 'http_client', label: 'HTTP Client', dot: 'bg-amber-400' },
 ];
 
@@ -42,4 +53,14 @@ export function labelForType(typeId: string): string {
 /** True when `typeId` is a known, navigable entry type. */
 export function isKnownType(typeId: string): boolean {
   return typeId in BY_ID;
+}
+
+/**
+ * The backend fetch filter for a nav/route type id. Most types fetch
+ * `{ type: id }`, but a few (e.g. `schedule`) override via `query` — scheduled
+ * runs are stored as `job` entries tagged `schedule`, so the route id and the
+ * backend filter diverge. Unknown ids fall back to `{ type: id }`.
+ */
+export function resolveEntryQuery(typeId: string): { type?: string; tag?: string } {
+  return BY_ID[typeId]?.query ?? { type: typeId };
 }

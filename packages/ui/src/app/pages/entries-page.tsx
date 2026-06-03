@@ -6,6 +6,7 @@ import {
   dotForType,
   isKnownType,
   labelForType,
+  resolveEntryQuery,
   useEntries,
 } from '../../react/index.js';
 
@@ -25,7 +26,7 @@ export function EntriesPage(): JSX.Element {
   const hasFilters = activeType !== undefined || trimmedTag !== '';
 
   const { data, isLoading } = useEntries({
-    ...(activeType ? { type: activeType } : {}),
+    ...(activeType ? resolveEntryQuery(activeType) : {}),
     ...(trimmedTag !== '' ? { tag: trimmedTag } : {}),
   });
   const entries = data?.data ?? [];

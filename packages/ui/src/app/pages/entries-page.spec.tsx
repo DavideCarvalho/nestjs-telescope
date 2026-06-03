@@ -96,6 +96,15 @@ describe('EntriesPage', () => {
     expect(screen.getByText('Cache')).toBeTruthy();
   });
 
+  it('resolves the schedule route to the tagged-job query', async () => {
+    const { client, entries } = mockClient([]);
+    renderAt('/entries/schedule', client);
+
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({ type: 'job', tag: 'schedule' });
+    });
+  });
+
   it('passes the tag filter input through to the entries query', async () => {
     const { client, entries } = mockClient([]);
     renderAt('/entries', client);

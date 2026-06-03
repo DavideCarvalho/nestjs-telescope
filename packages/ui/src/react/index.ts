@@ -5,6 +5,7 @@ export * from './components/type-tabs.js';
 export * from './components/entries-table.js';
 export * from './components/batch-timeline.js';
 export * from './components/entry-detail.js';
+export * from './components/cache-badge.js';
 export * from './components/entry-insights.js';
 export * from './components/window-select.js';
 export * from './components/pulse-panel.js';

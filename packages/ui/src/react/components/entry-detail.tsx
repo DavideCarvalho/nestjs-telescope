@@ -1,6 +1,7 @@
 import type { EntryWithBatch } from '../../client/index.js';
 import { useMeta } from '../use-telescope-queries.js';
 import { BatchTimeline } from './batch-timeline.js';
+import { CacheBadge } from './cache-badge.js';
 import { buildTraceHref } from './trace-link.js';
 
 export function EntryDetail({
@@ -11,7 +12,10 @@ export function EntryDetail({
   return (
     <div className="grid grid-cols-3 gap-6">
       <section className="col-span-2">
-        <h2 className="mb-2 text-sm text-emerald-400">{entry.type}</h2>
+        <h2 className="mb-2 flex items-center gap-2 text-sm text-emerald-400">
+          {entry.type}
+          {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
+        </h2>
         <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
           {JSON.stringify(entry.content, null, 2)}
         </pre>

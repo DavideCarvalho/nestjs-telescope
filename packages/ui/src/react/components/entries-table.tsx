@@ -1,4 +1,5 @@
 import type { Entry } from '../../client/index.js';
+import { CacheBadge } from './cache-badge.js';
 
 export function entryLabel(entry: Entry): string {
   const content = entry.content;
@@ -48,7 +49,12 @@ export function EntriesTable({
               {new Date(entry.createdAt).toLocaleTimeString()}
             </td>
             <td className="text-emerald-400">{entry.type}</td>
-            <td className="max-w-md truncate text-zinc-300">{entryLabel(entry)}</td>
+            <td className="max-w-md truncate text-zinc-300">
+              <span className="inline-flex items-center gap-1.5">
+                {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
+                <span className="truncate">{entryLabel(entry)}</span>
+              </span>
+            </td>
             <td className="text-zinc-400">
               {entry.durationMs != null ? `${entry.durationMs}ms` : '—'}
             </td>
