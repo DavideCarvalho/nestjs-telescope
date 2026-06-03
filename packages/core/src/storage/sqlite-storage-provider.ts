@@ -2,6 +2,7 @@
 import Database from 'better-sqlite3';
 import type { Entry } from '../entry/entry.js';
 import { isBatchOrigin } from '../entry/entry.js';
+import type { RollupBucket, RollupDelta, RollupStore } from '../rollup/rollup-store.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import { safeJsonParse } from './safe-json.js';
 import type {
@@ -40,8 +41,16 @@ interface Row {
   created_at: number;
 }
 
+interface RollupRow {
+  metric: string;
+  bucket_start: number;
+  count: number;
+  sum: number;
+  max: number;
+}
+
 /** Default storage provider: embedded SQLite via better-sqlite3, JSON1 for tags. */
-export class SqliteStorageProvider implements StorageProvider {
+export class SqliteStorageProvider implements StorageProvider, RollupStore {
   private readonly db: Database.Database;
   /** Prepared once; reused by store() and update(). */
   private readonly stmtInsert: Database.Statement;
@@ -49,6 +58,8 @@ export class SqliteStorageProvider implements StorageProvider {
   private readonly stmtFindRow: Database.Statement;
   /** Prepared once; reused by batch(). */
   private readonly stmtBatch: Database.Statement;
+  /** Prepared once; reused by recordRollups() — additive upsert. */
+  private readonly stmtUpsertRollup: Database.Statement;
 
   constructor(options: SqliteStorageOptions = {}) {
     const path = options.path ?? ':memory:';
@@ -79,6 +90,16 @@ export class SqliteStorageProvider implements StorageProvider {
       create index if not exists ix_te_type_created on telescope_entries (type, created_at);
       create index if not exists ix_te_batch on telescope_entries (batch_id, sequence);
       create index if not exists ix_te_family on telescope_entries (family_hash) where family_hash is not null;
+
+      create table if not exists telescope_rollups (
+        metric text not null,
+        bucket_start integer not null,
+        count integer not null,
+        sum integer not null,
+        max integer not null,
+        primary key (metric, bucket_start)
+      );
+      create index if not exists ix_tr_bucket on telescope_rollups (bucket_start);
     `);
 
     // Self-heal tables created before trace_id/span_id existed (additive, no migration).
@@ -96,6 +117,15 @@ export class SqliteStorageProvider implements StorageProvider {
     /** Returns all entries in a batch, ordered by sequence ascending. Capped at 1000 rows. */
     this.stmtBatch = this.db.prepare(
       'select * from telescope_entries where batch_id = ? order by sequence asc limit 1000',
+    );
+    // Additive upsert: accumulate count/sum, keep a running max.
+    this.stmtUpsertRollup = this.db.prepare(
+      `insert into telescope_rollups (metric, bucket_start, count, sum, max)
+       values (@metric, @bucket_start, @count, @sum, @max)
+       on conflict(metric, bucket_start) do update set
+         count = count + excluded.count,
+         sum = sum + excluded.sum,
+         max = max(max, excluded.max)`,
     );
   }
 
@@ -273,7 +303,50 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   async clear(): Promise<void> {
-    this.db.exec('delete from telescope_entries');
+    this.db.exec('delete from telescope_entries; delete from telescope_rollups;');
+  }
+
+  // ── RollupStore SPI ────────────────────────────────────────────────────────
+
+  async recordRollups(deltas: RollupDelta[]): Promise<void> {
+    if (deltas.length === 0) return;
+    const tx = this.db.transaction((rows: RollupRow[]) => {
+      for (const row of rows) this.stmtUpsertRollup.run(row);
+    });
+    tx(
+      deltas.map((delta) => ({
+        metric: delta.metric,
+        bucket_start: delta.bucketStart,
+        count: delta.count,
+        sum: delta.sum,
+        max: delta.max,
+      })),
+    );
+  }
+
+  async queryRollups(
+    metrics: string[],
+    fromBucket: number,
+    toBucket: number,
+  ): Promise<RollupBucket[]> {
+    if (metrics.length === 0) return [];
+    const placeholders = metrics.map((_, index) => `@m${index}`);
+    const params: Record<string, unknown> = { from: fromBucket, to: toBucket };
+    metrics.forEach((metric, index) => {
+      params[`m${index}`] = metric;
+    });
+    const sql = `select metric, bucket_start, count, sum, max
+      from telescope_rollups
+      where metric in (${placeholders.join(', ')})
+        and bucket_start between @from and @to`;
+    const rows = this.db.prepare(sql).all(params) as RollupRow[];
+    return rows.map((row) => ({
+      metric: row.metric,
+      bucketStart: row.bucket_start,
+      count: row.count,
+      sum: row.sum,
+      max: row.max,
+    }));
   }
 
   private toRow(entry: Entry): Row {

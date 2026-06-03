@@ -3,6 +3,8 @@ import type { TelescopeContext } from '../context/telescope-context.js';
 import type { Entry, RecordInput } from '../entry/entry.js';
 import type { RedactOptions } from '../redaction/redact.js';
 import { redact } from '../redaction/redact.js';
+import { aggregateDeltas } from '../rollup/aggregate-deltas.js';
+import { isRollupStore } from '../rollup/rollup-store.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
 import { runTaggers } from '../tagging/tagger.js';
@@ -134,8 +136,10 @@ export class Recorder {
     // after this point are buffered for the next flush.
     const drained = this.drain();
 
-    this.flushing = this.options.storage
+    const storage = this.options.storage;
+    this.flushing = storage
       .store(drained)
+      .then(() => this.recordRollupsAfterStore(storage, drained))
       .catch(() => {
         this.storeFailedDrops += drained.length;
         this.notifyDrop(drained.length, 'store-failed');
@@ -148,6 +152,22 @@ export class Recorder {
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * After a successful entry store, pre-aggregate the same batch into the
+   * rollup layer when the storage also implements the {@link RollupStore} SPI.
+   * The entries are already persisted, so a rollup failure must NOT be counted
+   * as a store failure — it is swallowed independently. Never throws into the
+   * flush chain.
+   */
+  private async recordRollupsAfterStore(storage: StorageProvider, drained: Entry[]): Promise<void> {
+    if (!isRollupStore(storage)) return;
+    try {
+      await storage.recordRollups(aggregateDeltas(drained));
+    } catch {
+      // Rollups are best-effort; entries are already stored. Swallow.
+    }
+  }
 
   private passesSampling(type: string): boolean {
     const rate = this.options.sampling[type] ?? this.options.sampling.default;

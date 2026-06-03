@@ -1,5 +1,6 @@
 // packages/core/src/storage/in-memory-storage-provider.ts
 import type { Entry } from '../entry/entry.js';
+import type { RollupBucket, RollupDelta, RollupStore } from '../rollup/rollup-store.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import type {
   EntryQuery,
@@ -16,8 +17,10 @@ const DEFAULT_LIMIT = 50;
  * for single-instance/serverless setups. Newest-first ordering by createdAt
  * then id; cursor is an opaque keyset (createdAt-ms, id) position.
  */
-export class InMemoryStorageProvider implements StorageProvider {
+export class InMemoryStorageProvider implements StorageProvider, RollupStore {
   private entries: Entry[] = [];
+  /** Materialized rollups keyed `${metric}|${bucketStart}`. */
+  private rollups = new Map<string, RollupBucket>();
 
   async store(entries: Entry[]): Promise<void> {
     this.entries.push(...entries);
@@ -106,6 +109,48 @@ export class InMemoryStorageProvider implements StorageProvider {
 
   async clear(): Promise<void> {
     this.entries = [];
+    this.rollups.clear();
+  }
+
+  // ── RollupStore SPI ────────────────────────────────────────────────────────
+
+  async recordRollups(deltas: RollupDelta[]): Promise<void> {
+    for (const delta of deltas) {
+      const key = `${delta.metric}|${delta.bucketStart}`;
+      const existing = this.rollups.get(key);
+      if (existing === undefined) {
+        this.rollups.set(key, {
+          metric: delta.metric,
+          bucketStart: delta.bucketStart,
+          count: delta.count,
+          sum: delta.sum,
+          max: delta.max,
+        });
+      } else {
+        existing.count += delta.count;
+        existing.sum += delta.sum;
+        existing.max = Math.max(existing.max, delta.max);
+      }
+    }
+  }
+
+  async queryRollups(
+    metrics: string[],
+    fromBucket: number,
+    toBucket: number,
+  ): Promise<RollupBucket[]> {
+    const wanted = new Set(metrics);
+    const result: RollupBucket[] = [];
+    for (const bucket of this.rollups.values()) {
+      if (
+        wanted.has(bucket.metric) &&
+        bucket.bucketStart >= fromBucket &&
+        bucket.bucketStart <= toBucket
+      ) {
+        result.push({ ...bucket });
+      }
+    }
+    return result;
   }
 
   private matches(entry: Entry, query: EntryQuery, idSet: Set<string> | null): boolean {

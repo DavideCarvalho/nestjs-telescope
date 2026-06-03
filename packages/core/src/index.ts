@@ -38,7 +38,11 @@ export * from './queue/queue-manager.registry.js';
 export * from './query/query-family-hash.js';
 export * from './query/n-plus-one.js';
 
+export * from './rollup/rollup-store.js';
+export * from './rollup/aggregate-deltas.js';
+
 export * from './metrics/collect-window.js';
+export * from './metrics/timeseries-from-rollups.js';
 export * from './metrics/queue-metrics.js';
 export * from './metrics/queue-metrics.service.js';
 export * from './metrics/timeseries.js';
