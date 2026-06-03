@@ -17,6 +17,13 @@ Driven by Davi "queremos tudo bora" + the perf diagnosis (analytics scans read f
 - ⬜ B9 leftovers: retention controls surfaced in the UI (small; needs `meta` to expose prune); extra watchers (Redis commands / events / model changes) — each a NEW package like mail/cache/schedule.
 - Pending: dogfood redeploy of A1/A2/B4–B9 to flip `telescope-local` (do when flip is stable on that branch — another agent has been branch-switching it). Repack core+ui, point flip deps, reboot.
 
+## PERF FINDINGS (live, against flip's REMOTE dev RDS — 2026-06-03)
+The dominant cost against a remote SQL store is **round-trip count**, not content size (flip's content is only ~819 B avg, so A1's projection win is marginal *there* — it matters when content is large).
+- ✅ **Larger window page** (`80c8f97`, DEFAULT_PAGE_SIZE 500→5000) — the scan paginated in 500-row pages = ~10 sequential RTTs for 4700 rows. One big page → timeseries 4.3s→2.1s.
+- ✅ **Prune is the big lever at volume** — flip's frontend polling floods ~780 rows/min. 15m retention = ~11k rows. Tightened to **5m** (`flip dd…`→5m) → 4700→**204 rows**; timeseries 0.9s, lists/traces **instant** (0.2s), no more "loading forever".
+- ⬜ **NEXT perf win — batch the pulse hydration.** With few rows, pulse is still ~2.2s because its two-pass hydration issues **N individual `storage.find(id)` calls** (top-N slowest + exception reps + N+1 reps) = N remote RTTs. Fix: a single batched fetch (`EntryQuery.ids?: string[]` → `WHERE id IN (...)`, or a `findMany(ids)`), so hydration is ONE round-trip. Then pulse → ~1s.
+- The real production answer remains **A3 rollups** (read pre-aggregated buckets, never scan raw rows).
+
 ## A. PERFORMANCE (foundational — do first)
 1. **Projection-only analytics scans** — pulse/timeseries (and stats where possible) must NOT read the `content` JSON blob. Add an `omitContent`/projection path to the window scan + storage `get` so aggregates read only type/family_hash/duration_ms/created_at/sequence/batch_id/status. Benchmark before/after. (core + storages: mikro-orm, sqlite, redis, in-memory)
 2. **Sampling + prune defaults + warning** — ship a sane default `prune` (or a boot warning when unset), and document/enable per-type `sampling` for noisy request floods (Pulse model). (core options + resolve-config + a startup log)
