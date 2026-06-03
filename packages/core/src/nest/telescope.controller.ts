@@ -20,6 +20,8 @@ import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
 import {
   type JobPage,
+  QUEUE_ACTIONS,
+  type QueueActionName,
   type QueueCounts,
   type QueueJobDetail,
   type QueueManager,
@@ -36,7 +38,8 @@ import type {
 } from '../storage/storage-provider.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeGuard } from './telescope.guard.js';
-import { TELESCOPE_STORAGE } from './telescope.options.js';
+import { TELESCOPE_OPTIONS, TELESCOPE_STORAGE } from './telescope.options.js';
+import type { TelescopeModuleOptions } from './telescope.options.js';
 import { type TelescopeMeta, TelescopeService } from './telescope.service.js';
 
 interface ListQuery {
@@ -48,6 +51,20 @@ interface ListQuery {
   limit?: string;
 }
 
+export interface QueueCapabilities {
+  mutationsEnabled: boolean;
+  actionsByDriver: Record<string, QueueActionName[]>;
+}
+
+/** Maps a queue action to the optional QueueManager method that implements it. */
+const ACTION_METHOD: Record<QueueActionName, keyof QueueManager> = {
+  retry: 'retry',
+  remove: 'remove',
+  promote: 'promote',
+  'retry-all': 'retryAll',
+  redrive: 'redrive',
+};
+
 @UseGuards(TelescopeGuard)
 @Controller('telescope/api')
 export class TelescopeController {
@@ -58,6 +75,7 @@ export class TelescopeController {
     @Inject(TimeseriesService) private readonly timeseriesService: TimeseriesService,
     @Inject(PulseService) private readonly pulse: PulseService,
     @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
+    @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
   ) {}
 
   @Get('entries')
@@ -146,9 +164,22 @@ export class TelescopeController {
   }
 
   @Get('queues/live')
-  async liveQueues(): Promise<{ queues: QueueSummary[] }> {
-    const all = await Promise.all(this.queueManagers.all().map((m) => m.listQueues()));
-    return { queues: all.flat() };
+  async liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }> {
+    const managers = this.queueManagers.all();
+    const all = await Promise.all(managers.map((m) => m.listQueues()));
+    const actionsByDriver: Record<string, QueueActionName[]> = {};
+    for (const manager of managers) {
+      actionsByDriver[manager.driver] = QUEUE_ACTIONS.filter(
+        (action) => typeof manager[ACTION_METHOD[action]] === 'function',
+      );
+    }
+    return {
+      queues: all.flat(),
+      capabilities: {
+        mutationsEnabled: Boolean(this.options.authorizeAction),
+        actionsByDriver,
+      },
+    };
   }
 
   @Get('queues/live/:driver/:queue/counts')

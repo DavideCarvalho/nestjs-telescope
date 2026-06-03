@@ -95,9 +95,12 @@ describe('GET /telescope/api/queues/live/*', () => {
     await app?.close();
   });
 
-  it('lists live queues across drivers', async () => {
+  it('lists live queues across drivers with capabilities', async () => {
     const res = await request(app.getHttpServer()).get('/telescope/api/queues/live').expect(200);
-    expect(res.body).toEqual({ queues: [SUMMARY] });
+    expect(res.body).toEqual({
+      queues: [SUMMARY],
+      capabilities: { mutationsEnabled: false, actionsByDriver: { bull: [] } },
+    });
   });
 
   it('returns counts for a known driver/queue', async () => {
@@ -129,5 +132,80 @@ describe('GET /telescope/api/queues/live/*', () => {
       .get('/telescope/api/queues/live/bull/q1/jobs/123')
       .expect(200);
     expect(res.body).toEqual(JOB_DETAIL);
+  });
+});
+
+const bullmqManager: QueueManager = {
+  driver: 'bullmq',
+  init: () => {},
+  listQueues: (): Promise<QueueSummary[]> => Promise.resolve([{ ...SUMMARY, driver: 'bullmq' }]),
+  counts: (): Promise<QueueCounts> => Promise.resolve(COUNTS),
+  listJobs: (): Promise<JobPage> => Promise.resolve(FAILED_PAGE),
+  getJob: (): Promise<QueueJobDetail | null> => Promise.resolve(JOB_DETAIL),
+  // implements retry but NOT redrive:
+  retry: (): Promise<void> => Promise.resolve(),
+};
+
+describe('GET /telescope/api/queues/live capabilities', () => {
+  it('advertises only implemented actions per driver', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        TelescopeModule.forRoot({
+          enabled: true,
+          authorizer: () => true,
+          queueManagers: [bullmqManager],
+        }),
+      ],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    await app.init();
+    try {
+      const res = await request(app.getHttpServer()).get('/telescope/api/queues/live').expect(200);
+      expect(res.body.capabilities.actionsByDriver.bullmq).toContain('retry');
+      expect(res.body.capabilities.actionsByDriver.bullmq).not.toContain('redrive');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('reports mutationsEnabled=false when authorizeAction is omitted', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        TelescopeModule.forRoot({
+          enabled: true,
+          authorizer: () => true,
+          queueManagers: [bullmqManager],
+        }),
+      ],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    await app.init();
+    try {
+      const res = await request(app.getHttpServer()).get('/telescope/api/queues/live').expect(200);
+      expect(res.body.capabilities.mutationsEnabled).toBe(false);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('reports mutationsEnabled=true when authorizeAction is configured', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        TelescopeModule.forRoot({
+          enabled: true,
+          authorizer: () => true,
+          authorizeAction: () => true,
+          queueManagers: [bullmqManager],
+        }),
+      ],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    await app.init();
+    try {
+      const res = await request(app.getHttpServer()).get('/telescope/api/queues/live').expect(200);
+      expect(res.body.capabilities.mutationsEnabled).toBe(true);
+    } finally {
+      await app.close();
+    }
   });
 });
