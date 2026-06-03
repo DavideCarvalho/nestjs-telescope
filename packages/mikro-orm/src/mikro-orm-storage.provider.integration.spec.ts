@@ -20,7 +20,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Entry } from '@dudousxd/nestjs-telescope';
-import { EntitySchema, MikroORM } from '@mikro-orm/core';
+import { EntitySchema, MikroORM, RequestContext } from '@mikro-orm/core';
 import { SqliteDriver } from '@mikro-orm/sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MikroOrmStorageProvider } from './mikro-orm-storage.provider.js';
@@ -64,6 +64,44 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     await provider.store([makeEntry({ id: 'fresh' })]);
     const page = await provider.get({});
     expect(page.data.map((e) => e.id)).toEqual(['fresh']);
+  });
+
+  it('works while a HOST RequestContext is active (no contextName collision)', async () => {
+    // Regression: hosts like @mikro-orm/nestjs wrap EVERY route in their own
+    // MikroORM RequestContext (MikroOrmMiddleware). Telescope's HTTP routes run
+    // inside it. If the owned ORM shared the default contextName, our em.find()
+    // would resolve to the HOST's EntityManager (which doesn't know
+    // TelescopeEntry) and crash on missing metadata. The owned ORM uses a unique
+    // contextName so it stays isolated. This test FAILS without that isolation.
+    const HostThing = new EntitySchema<{ id: number }>({
+      name: 'HostThing',
+      tableName: 'host_thing',
+      properties: { id: { type: 'integer', primary: true } },
+    });
+    const hostOrm = await MikroORM.init({
+      driver: SqliteDriver,
+      dbName: ':memory:',
+      entities: [HostThing],
+      allowGlobalContext: true,
+    });
+    await hostOrm.schema.create();
+
+    const scoped = new MikroOrmStorageProvider(hostOrm);
+    await scoped.init();
+    await scoped.store([makeEntry({ id: 'ctx-a' }), makeEntry({ id: 'ctx-b' })]);
+
+    // Run reads INSIDE the host's RequestContext — this is what crashed in flip.
+    await RequestContext.create(hostOrm.em, async () => {
+      const page = await scoped.get({});
+      expect(page.data.map((e) => e.id).sort()).toEqual(['ctx-a', 'ctx-b']);
+      const found = await scoped.find('ctx-a');
+      expect(found?.id).toBe('ctx-a');
+      const batch = await scoped.batch('b1');
+      expect(batch.length).toBe(2);
+    });
+
+    await scoped.close();
+    await hostOrm.close(true);
   });
 
   it('store + find + batch returns the whole batch ordered by sequence ASC', async () => {

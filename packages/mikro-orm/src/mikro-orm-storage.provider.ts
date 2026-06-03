@@ -65,6 +65,17 @@ import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity
 const DEFAULT_LIMIT = 50;
 
 /**
+ * The owned ORM runs under a dedicated MikroORM `contextName` so it is isolated
+ * from the HOST app's `RequestContext`. Without this, a host that wraps requests
+ * in its own MikroORM context (e.g. `@mikro-orm/nestjs`'s `MikroOrmMiddleware`,
+ * which runs on every route) would make our `em.find()` resolve against the
+ * HOST's EntityManager — the host ORM doesn't know `TelescopeEntry`, so MikroORM
+ * crashes looking up its (missing) metadata. A unique context name means our em
+ * never collides with the host's entry in the shared `RequestContext` map.
+ */
+const TELESCOPE_CONTEXT_NAME = 'nestjs-telescope';
+
+/**
  * Options for the dedicated, single-entity ORM the provider owns. These are
  * standard MikroORM `Options` (connection config) plus an optional
  * `ensureSchema` flag. Any `entities` provided here is overridden — the provider
@@ -152,6 +163,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
       return {
         ...connection,
         entities: [TelescopeEntry],
+        contextName: TELESCOPE_CONTEXT_NAME,
         allowGlobalContext: true,
       };
     }
@@ -160,6 +172,7 @@ export class MikroOrmStorageProvider implements StorageProvider {
     return {
       ...rest,
       entities: [TelescopeEntry],
+      contextName: TELESCOPE_CONTEXT_NAME,
       allowGlobalContext: true,
     };
   }
