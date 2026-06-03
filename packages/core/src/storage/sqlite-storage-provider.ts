@@ -30,6 +30,8 @@ interface Row {
   duration_ms: number | null;
   origin: string;
   instance_id: string;
+  trace_id: string | null;
+  span_id: string | null;
   created_at: number;
 }
 
@@ -64,6 +66,8 @@ export class SqliteStorageProvider implements StorageProvider {
         duration_ms integer,
         origin text not null,
         instance_id text not null,
+        trace_id text,
+        span_id text,
         created_at integer not null
       );
       create index if not exists ix_te_created on telescope_entries (created_at, id);
@@ -72,11 +76,16 @@ export class SqliteStorageProvider implements StorageProvider {
       create index if not exists ix_te_family on telescope_entries (family_hash) where family_hash is not null;
     `);
 
+    // Self-heal tables created before trace_id/span_id existed (additive, no migration).
+    // On a freshly-created table these columns already exist, so both no-op via the swallow.
+    this.ensureColumn('trace_id text');
+    this.ensureColumn('span_id text');
+
     // Prepare hot-path statements once, after schema is guaranteed to exist.
     this.stmtInsert = this.db.prepare(
       `insert or replace into telescope_entries
-       (id, batch_id, type, family_hash, content, tags, sequence, duration_ms, origin, instance_id, created_at)
-       values (@id, @batch_id, @type, @family_hash, @content, @tags, @sequence, @duration_ms, @origin, @instance_id, @created_at)`,
+       (id, batch_id, type, family_hash, content, tags, sequence, duration_ms, origin, instance_id, trace_id, span_id, created_at)
+       values (@id, @batch_id, @type, @family_hash, @content, @tags, @sequence, @duration_ms, @origin, @instance_id, @trace_id, @span_id, @created_at)`,
     );
     this.stmtFindRow = this.db.prepare('select * from telescope_entries where id = ?');
     /** Returns all entries in a batch, ordered by sequence ascending. Capped at 1000 rows. */
@@ -87,6 +96,20 @@ export class SqliteStorageProvider implements StorageProvider {
 
   close(): void {
     this.db.close();
+  }
+
+  /**
+   * Idempotently adds a column to telescope_entries. SQLite has no
+   * `add column if not exists`, so we attempt the alter and swallow ONLY the
+   * duplicate-column error (the column is already present); anything else re-throws.
+   */
+  private ensureColumn(ddl: string): void {
+    try {
+      this.db.exec(`alter table telescope_entries add column ${ddl}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('duplicate column')) throw error;
+    }
   }
 
   async store(entries: Entry[]): Promise<void> {
@@ -235,6 +258,8 @@ export class SqliteStorageProvider implements StorageProvider {
       duration_ms: entry.durationMs,
       origin: entry.origin,
       instance_id: entry.instanceId,
+      trace_id: entry.traceId,
+      span_id: entry.spanId,
       created_at: entry.createdAt.getTime(),
     };
   }
@@ -253,8 +278,8 @@ export class SqliteStorageProvider implements StorageProvider {
       durationMs: row.duration_ms,
       origin: isBatchOrigin(row.origin) ? row.origin : 'manual',
       instanceId: row.instance_id,
-      traceId: null,
-      spanId: null,
+      traceId: row.trace_id ?? null,
+      spanId: row.span_id ?? null,
       createdAt: new Date(row.created_at),
     };
   }

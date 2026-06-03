@@ -1,4 +1,8 @@
 // packages/core/src/storage/sqlite-storage-provider.spec.ts
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Entry } from '../entry/entry.js';
 import { SqliteStorageProvider } from './sqlite-storage-provider.js';
@@ -98,5 +102,71 @@ describe('SqliteStorageProvider', () => {
     const found = await store.find('rt1');
     expect(found?.tags).toEqual([]);
     expect(found?.content).toEqual({ nested: { value: true } });
+  });
+
+  it('round-trips traceId/spanId and persists null when absent', async () => {
+    await store.store([
+      entry({ id: 'with-trace', traceId: 'a'.repeat(32), spanId: 'b'.repeat(16) }),
+      entry({ id: 'no-trace', traceId: null, spanId: null }),
+    ]);
+    const withTrace = await store.find('with-trace');
+    expect(withTrace?.traceId).toBe('a'.repeat(32));
+    expect(withTrace?.spanId).toBe('b'.repeat(16));
+    const noTrace = await store.find('no-trace');
+    expect(noTrace?.traceId).toBeNull();
+    expect(noTrace?.spanId).toBeNull();
+  });
+});
+
+describe('SqliteStorageProvider additive trace-column guard', () => {
+  let dir: string;
+  let dbPath: string;
+  let provider: SqliteStorageProvider | undefined;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'telescope-sqlite-'));
+    dbPath = join(dir, 'pre-existing.db');
+  });
+
+  afterEach(() => {
+    provider?.close();
+    provider = undefined;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('adds trace_id/span_id to a pre-existing table that predates the columns', async () => {
+    // Seed a file-backed table with the OLD schema: every current column EXCEPT
+    // trace_id and span_id. The provider must self-heal this on construction.
+    const seed = new Database(dbPath);
+    seed.exec(`
+      create table telescope_entries (
+        id text primary key,
+        batch_id text not null,
+        type text not null,
+        family_hash text,
+        content text not null,
+        tags text not null,
+        sequence integer not null,
+        duration_ms integer,
+        origin text not null,
+        instance_id text not null,
+        created_at integer not null
+      );
+    `);
+    const columnsBefore = seed
+      .prepare('select name from pragma_table_info(?)')
+      .all('telescope_entries')
+      .map((row) => (row as { name: string }).name);
+    expect(columnsBefore).not.toContain('trace_id');
+    expect(columnsBefore).not.toContain('span_id');
+    seed.close();
+
+    provider = new SqliteStorageProvider({ path: dbPath });
+    await provider.init?.();
+
+    await provider.store([entry({ id: 'healed', traceId: 'c'.repeat(32), spanId: 'd'.repeat(16) })]);
+    const found = await provider.find('healed');
+    expect(found?.traceId).toBe('c'.repeat(32));
+    expect(found?.spanId).toBe('d'.repeat(16));
   });
 });
