@@ -131,6 +131,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         traceId: query.traceId,
         batchId: query.batchId,
         familyHash: query.familyHash,
+        search: query.search,
         cursor: query.cursor,
         limit: query.limit,
       }),

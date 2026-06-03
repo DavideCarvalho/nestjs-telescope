@@ -176,6 +176,13 @@ export class SqliteStorageProvider implements StorageProvider {
       where.push('exists (select 1 from json_each(telescope_entries.tags) where value = @tag)');
       params.tag = query.tag;
     }
+    if (query.search !== undefined) {
+      // Free-text scan over the stored content JSON. SQLite LIKE is case-insensitive
+      // for ASCII by default. Runs in the WHERE over the `content` column, so it is
+      // independent of the omitContent projection.
+      where.push("content like '%' || @search || '%'");
+      params.search = query.search;
+    }
 
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
     if (cursor) {

@@ -60,6 +60,26 @@ describe('InMemoryStorageProvider', () => {
     expect((await store.get({ tag: 'slow' })).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('free-text searches the entry content (case-insensitive substring), ANDing with type', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([
+      entry({ id: 'req', type: 'request', content: { uri: '/api/orders' } }),
+      entry({ id: 'sql', type: 'query', content: { sql: 'select * from users' } }),
+      entry({ id: 'cache', type: 'cache', content: { key: 'kpi.json' } }),
+    ]);
+
+    expect((await store.get({ search: 'orders' })).data.map((e) => e.id)).toEqual(['req']);
+    // case-insensitive
+    expect((await store.get({ search: 'ORDERS' })).data.map((e) => e.id)).toEqual(['req']);
+    // no match → empty
+    expect((await store.get({ search: 'nope' })).data).toEqual([]);
+    // ANDs with type: only the query whose sql matches
+    expect((await store.get({ type: 'query', search: 'users' })).data.map((e) => e.id)).toEqual([
+      'sql',
+    ]);
+    expect((await store.get({ type: 'request', search: 'users' })).data).toEqual([]);
+  });
+
   it('omitContent returns entries with content null and other fields intact', async () => {
     const store = new InMemoryStorageProvider();
     await store.store([

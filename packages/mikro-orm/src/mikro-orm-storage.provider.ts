@@ -59,7 +59,7 @@ import type {
 } from '@dudousxd/nestjs-telescope';
 import { decodeCursor, encodeCursor, isBatchOrigin } from '@dudousxd/nestjs-telescope';
 import type { EntityManager, FilterQuery, Options } from '@mikro-orm/core';
-import { MikroORM } from '@mikro-orm/core';
+import { MikroORM, raw } from '@mikro-orm/core';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
 
 const DEFAULT_LIMIT = 50;
@@ -287,8 +287,20 @@ export class MikroOrmStorageProvider implements StorageProvider {
       ];
     }
 
+    // Free-text scan over the stored content JSON, ANDed with every other filter
+    // (and the cursor keyset). `content` is a JSON property, so a plain
+    // `{ content: { $like } }` would JSON-encode the operand to `'"%term%"'` and
+    // never match; `raw('content')` references the underlying text column directly,
+    // yielding `content LIKE '%term%'`. The LIKE runs in SQL over the column, so it
+    // is independent of the omitContent field projection. Wrapped in `$and` so it
+    // composes with the cursor's own `$or` clause without clobbering it.
+    const finalWhere: FilterQuery<TelescopeEntryRow> =
+      query.search !== undefined
+        ? { $and: [where, { [raw('content')]: { $like: `%${query.search}%` } }] }
+        : where;
+
     const limit = resolveLimit(query.limit);
-    const rows = await em.find(TelescopeEntry, where, {
+    const rows = await em.find(TelescopeEntry, finalWhere, {
       orderBy: { createdAt: 'desc', id: 'desc' },
       limit: limit + 1,
       // omitContent: project every column except the heavy content blob so the

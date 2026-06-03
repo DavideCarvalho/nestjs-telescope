@@ -21,22 +21,39 @@ export function EntriesPage(): JSX.Element {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [tag, setTag] = useState('');
+  // `searchDraft` tracks the input; `search` is the submitted value that actually
+  // drives the query, so typing never refetches — only Enter commits.
+  const [searchDraft, setSearchDraft] = useState('');
+  const [search, setSearch] = useState('');
 
   const activeType = routeType && isKnownType(routeType) ? routeType : undefined;
   const trimmedTag = tag.trim();
+  const trimmedSearch = search.trim();
   const familyHash = searchParams.get('familyHash') ?? '';
   const hasFamilyHash = familyHash !== '';
-  const hasFilters = activeType !== undefined || trimmedTag !== '' || hasFamilyHash;
+  const hasSearch = trimmedSearch !== '';
+  const hasFilters = activeType !== undefined || trimmedTag !== '' || hasFamilyHash || hasSearch;
 
   const { data, isLoading } = useEntries({
     ...(activeType ? resolveEntryQuery(activeType) : {}),
     ...(trimmedTag !== '' ? { tag: trimmedTag } : {}),
     ...(hasFamilyHash ? { familyHash } : {}),
+    ...(hasSearch ? { search: trimmedSearch } : {}),
   });
   const entries = data?.data ?? [];
 
+  function submitSearch(): void {
+    setSearch(searchDraft);
+  }
+
+  function clearSearch(): void {
+    setSearchDraft('');
+    setSearch('');
+  }
+
   function clearFilters(): void {
     setTag('');
+    clearSearch();
     navigate('/entries');
   }
 
@@ -71,6 +88,30 @@ export function EntriesPage(): JSX.Element {
           aria-label="Filter by tag"
           className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
         />
+        <input
+          type="text"
+          value={searchDraft}
+          onChange={(event) => setSearchDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') submitSearch();
+          }}
+          onBlur={submitSearch}
+          placeholder="Search content…"
+          aria-label="Search content"
+          className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
+        />
+        {hasSearch ? (
+          <button
+            type="button"
+            onClick={clearSearch}
+            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+          >
+            <span>{`search:"${trimmedSearch}"`}</span>
+            <span className="text-zinc-500" aria-hidden="true">
+              ×
+            </span>
+          </button>
+        ) : null}
         {hasFamilyHash ? (
           <button
             type="button"

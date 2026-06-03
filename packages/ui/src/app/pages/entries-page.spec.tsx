@@ -120,6 +120,32 @@ describe('EntriesPage', () => {
     });
   });
 
+  it('passes a submitted free-text search through and shows a clearable chip', async () => {
+    const { client, entries } = mockClient([]);
+    renderAt('/entries', client);
+
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({});
+    });
+
+    const input = screen.getByLabelText('Search content');
+    fireEvent.change(input, { target: { value: 'orders' } });
+    // typing alone must not refetch — only submit (Enter) does
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({ search: 'orders' });
+    });
+
+    const chip = await screen.findByText('search:"orders"');
+    expect(chip).toBeTruthy();
+
+    fireEvent.click(chip);
+    await waitFor(() => {
+      expect(entries).toHaveBeenLastCalledWith({});
+    });
+  });
+
   it('filters by familyHash from the query string and shows a clearable chip', async () => {
     const { client, entries } = mockClient([]);
     renderAt('/entries/query?familyHash=abc123', client);

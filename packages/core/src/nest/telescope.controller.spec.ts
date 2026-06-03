@@ -51,6 +51,23 @@ describe('TelescopeController', () => {
     expect(page.data.map((e) => e.id)).toEqual(['a1']);
   });
 
+  it('lists entries filtered by free-text search over content', async () => {
+    const { storage, controller } = setup();
+    await storage.store([
+      entry({ id: 'req', type: 'request', content: { uri: '/api/orders' } }),
+      entry({ id: 'sql', type: 'query', content: { sql: 'select * from users' } }),
+    ]);
+    const page = await controller.list({ search: 'orders' });
+    expect(page.data.map((e) => e.id)).toEqual(['req']);
+  });
+
+  it('ignores an empty search param', async () => {
+    const { storage, controller } = setup();
+    await storage.store([entry({ id: '1' }), entry({ id: '2' })]);
+    const page = await controller.list({ search: '' });
+    expect(page.data).toHaveLength(2);
+  });
+
   it('falls back to provider default when limit is a non-numeric string', async () => {
     const { storage, controller } = setup();
     await storage.store([entry({ id: '1' }), entry({ id: '2' })]);

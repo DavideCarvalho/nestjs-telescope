@@ -328,6 +328,7 @@ export class RedisStorageProvider implements StorageProvider {
     if (query.familyHash !== undefined && !primaryHandlesFamily) return true;
     if (query.batchId !== undefined) return true;
     if (query.traceId !== undefined) return true;
+    if (query.search !== undefined) return true;
     return false;
   }
 
@@ -356,6 +357,12 @@ export class RedisStorageProvider implements StorageProvider {
     }
     if (query.batchId !== undefined && entry.batchId !== query.batchId) return false;
     if (query.traceId !== undefined && entry.traceId !== query.traceId) return false;
+    if (
+      query.search !== undefined &&
+      !JSON.stringify(entry.content).toLowerCase().includes(query.search.toLowerCase())
+    ) {
+      return false;
+    }
     return true;
   }
 

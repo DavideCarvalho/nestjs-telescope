@@ -177,6 +177,41 @@ describe('RedisStorageProvider', () => {
     expect(page.data.every((e) => e.type === 'query')).toBe(true);
   });
 
+  it('free-text searches content (case-insensitive substring), ANDing with type', async () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    await store.store([
+      entry({
+        id: 'req',
+        batchId: 'br',
+        type: 'request',
+        content: { uri: '/api/orders' },
+        createdAt: new Date(base + 1000),
+      }),
+      entry({
+        id: 'sql',
+        batchId: 'bs',
+        type: 'query',
+        content: { sql: 'select * from users' },
+        createdAt: new Date(base + 2000),
+      }),
+      entry({
+        id: 'cache',
+        batchId: 'bc',
+        type: 'cache',
+        content: { key: 'kpi.json' },
+        createdAt: new Date(base + 3000),
+      }),
+    ]);
+
+    expect((await store.get({ search: 'orders' })).data.map((e) => e.id)).toEqual(['req']);
+    expect((await store.get({ search: 'ORDERS' })).data.map((e) => e.id)).toEqual(['req']);
+    expect((await store.get({ search: 'nope' })).data).toEqual([]);
+    expect((await store.get({ type: 'query', search: 'users' })).data.map((e) => e.id)).toEqual([
+      'sql',
+    ]);
+    expect((await store.get({ type: 'request', search: 'users' })).data).toEqual([]);
+  });
+
   it('filters by traceId, excluding other traces and null', async () => {
     const base = Date.parse('2026-01-01T00:00:00Z');
     await store.store([

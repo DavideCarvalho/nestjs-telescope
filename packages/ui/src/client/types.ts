@@ -43,6 +43,8 @@ export interface EntriesQuery {
   traceId?: string;
   batchId?: string;
   familyHash?: string;
+  /** Case-insensitive substring matched against the entry's content. */
+  search?: string;
   cursor?: string;
   limit?: number;
 }

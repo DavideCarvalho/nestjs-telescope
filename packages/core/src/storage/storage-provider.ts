@@ -8,6 +8,16 @@ export interface EntryQuery {
   batchId?: string;
   /** When set, only entries whose traceId matches are returned. */
   traceId?: string;
+  /**
+   * Free-text filter: a case-insensitive substring matched against the entry's
+   * serialized `content` (so a request matches by uri, a query by sql, a cache op
+   * by key, an exception by message, etc.). Applied as an extra AND predicate, so
+   * it composes with every other filter and with keyset pagination, and it is
+   * independent of `omitContent` (the match runs over the stored content before
+   * the projection nulls it). A deliberate user action; a `content LIKE` scan is
+   * acceptable.
+   */
+  search?: string;
   before?: Date;
   after?: Date;
   /**

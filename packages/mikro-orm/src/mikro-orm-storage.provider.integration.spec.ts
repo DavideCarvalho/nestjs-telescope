@@ -239,6 +239,27 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(beforeT2.data.map((e) => e.id).sort()).toEqual(['q1', 'r1']);
   });
 
+  it('free-text searches content via $like (substring), ANDing with type', async () => {
+    await provider.init();
+    await provider.store([
+      makeEntry({ id: 'req', type: 'request', content: { uri: '/api/orders' } }),
+      makeEntry({ id: 'sql', type: 'query', content: { sql: 'select * from users' } }),
+      makeEntry({ id: 'cache', type: 'cache', content: { key: 'kpi.json' } }),
+    ]);
+
+    const byOrders = await provider.get({ search: 'orders' });
+    expect(byOrders.data.map((e) => e.id)).toEqual(['req']);
+
+    const noMatch = await provider.get({ search: 'nope' });
+    expect(noMatch.data).toEqual([]);
+
+    const typed = await provider.get({ type: 'query', search: 'users' });
+    expect(typed.data.map((e) => e.id)).toEqual(['sql']);
+
+    const typedNoMatch = await provider.get({ type: 'request', search: 'users' });
+    expect(typedNoMatch.data).toEqual([]);
+  });
+
   it('filters by traceId, excluding other traces and null', async () => {
     await provider.init();
     await provider.store([
