@@ -18,7 +18,7 @@ describe('DashboardLayout', () => {
   it('renders the top-level nav and the page children', () => {
     renderLayout();
     expect(screen.getByText('child')).toBeTruthy();
-    for (const label of ['Overview', 'Entries', 'Pulse', 'Queues']) {
+    for (const label of ['Overview', 'Entries', 'Traces', 'Pulse', 'Queues']) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();
     }
   });

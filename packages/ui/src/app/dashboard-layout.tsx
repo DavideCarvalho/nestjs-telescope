@@ -4,6 +4,7 @@ import { ENTRY_TYPES } from '../react/index.js';
 const NAV = [
   { to: '/', label: 'Overview', end: true },
   { to: '/entries', label: 'Entries', end: true },
+  { to: '/traces', label: 'Traces', end: true },
   { to: '/pulse', label: 'Pulse', end: false },
   { to: '/queues', label: 'Queues', end: false },
 ];

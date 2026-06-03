@@ -60,6 +60,14 @@ export function timeseriesQuery(
   });
 }
 
+export function tracesQuery(client: TelescopeClient, window: string, limit?: number) {
+  return queryOptions({
+    queryKey: ['telescope', 'traces', window, limit],
+    queryFn: () => client.traces(window, limit),
+    refetchInterval: REFETCH_MS,
+  });
+}
+
 // --- live queue query keys (stable, shared by queries + mutation invalidation) ---
 export function liveQueuesKey() {
   return ['telescope', 'live-queues'] as const;
@@ -195,4 +203,7 @@ export function useTimeseries(query: {
   tag?: string;
 }) {
   return useQuery(timeseriesQuery(useTelescopeClient(), query));
+}
+export function useTraces(window: string, limit?: number) {
+  return useQuery(tracesQuery(useTelescopeClient(), window, limit));
 }

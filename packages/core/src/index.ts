@@ -43,6 +43,8 @@ export * from './metrics/queue-metrics.js';
 export * from './metrics/queue-metrics.service.js';
 export * from './metrics/timeseries.js';
 export * from './metrics/timeseries.service.js';
+export * from './metrics/traces.js';
+export * from './metrics/traces.service.js';
 export * from './metrics/stats.js';
 export * from './metrics/stats.service.js';
 

@@ -19,6 +19,7 @@ import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-m
 import type { StatsResult } from '../metrics/stats.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
+import { type TracesResult, TracesService } from '../metrics/traces.service.js';
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
 import {
   type JobPage,
@@ -76,6 +77,7 @@ export class TelescopeController {
     @Inject(TelescopeService) private readonly service: TelescopeService,
     @Inject(QueueMetricsService) private readonly queueMetrics: QueueMetricsService,
     @Inject(TimeseriesService) private readonly timeseriesService: TimeseriesService,
+    @Inject(TracesService) private readonly tracesService: TracesService,
     @Inject(StatsService) private readonly statsService: StatsService,
     @Inject(PulseService) private readonly pulse: PulseService,
     @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
@@ -165,6 +167,24 @@ export class TelescopeController {
         : {}),
       ...(type !== undefined ? { type } : {}),
       ...(tag !== undefined ? { tag } : {}),
+    });
+  }
+
+  @Get('traces')
+  traces(@Query('window') window?: string, @Query('limit') limit?: string): Promise<TracesResult> {
+    let windowMs: number;
+    try {
+      windowMs = durationToMs(window ?? '1h');
+    } catch {
+      throw new BadRequestException(`Invalid window: ${window}`);
+    }
+    if (!Number.isFinite(windowMs) || windowMs <= 0) {
+      throw new BadRequestException(`Window must be positive: ${window}`);
+    }
+    const limitCount = limit !== undefined ? Number(limit) : undefined;
+    return this.tracesService.getTraces({
+      windowMs,
+      ...(limitCount !== undefined && Number.isFinite(limitCount) ? { limit: limitCount } : {}),
     });
   }
 

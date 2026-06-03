@@ -16,6 +16,7 @@ import { resolveConfig } from '../config/resolve-config.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { TimeseriesService } from '../metrics/timeseries.service.js';
+import { TracesService } from '../metrics/traces.service.js';
 import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
@@ -54,6 +55,7 @@ const SHARED_PROVIDERS: Provider[] = [
   TelescopePruner,
   QueueMetricsService,
   TimeseriesService,
+  TracesService,
   StatsService,
   PulseService,
   TelescopeRequestMiddleware,
@@ -97,6 +99,7 @@ export class TelescopeModule implements NestModule {
         TELESCOPE_STORAGE,
         QueueMetricsService,
         TimeseriesService,
+        TracesService,
         StatsService,
         PulseService,
       ],
@@ -132,6 +135,7 @@ export class TelescopeModule implements NestModule {
         TELESCOPE_STORAGE,
         QueueMetricsService,
         TimeseriesService,
+        TracesService,
         StatsService,
         PulseService,
       ],

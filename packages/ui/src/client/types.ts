@@ -133,6 +133,23 @@ export interface TimeseriesQuery {
   tag?: string;
 }
 
+export interface TraceSummary {
+  traceId: string;
+  entryCount: number;
+  types: string[];
+  /** ISO timestamp of the trace's earliest entry. */
+  firstAt: string;
+  /** ISO timestamp of the trace's latest entry. */
+  lastAt: string;
+  totalDurationMs: number;
+  rootLabel?: string;
+}
+export interface TracesResult {
+  traces: TraceSummary[];
+  scanned: number;
+  truncated: boolean;
+}
+
 export interface LatencyStats {
   count: number;
   p50: number;

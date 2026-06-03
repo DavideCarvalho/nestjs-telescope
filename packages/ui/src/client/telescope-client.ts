@@ -15,6 +15,7 @@ import type {
   TelescopeMeta,
   TimeseriesQuery,
   TimeseriesReport,
+  TracesResult,
 } from './types.js';
 
 declare global {
@@ -51,6 +52,7 @@ export interface TelescopeClient {
   pulse(window?: string): Promise<PulseReport>;
   queues(window?: string): Promise<QueueMetricsReport>;
   timeseries(query?: TimeseriesQuery): Promise<TimeseriesReport>;
+  traces(window?: string, limit?: number): Promise<TracesResult>;
   stats(type: string, window: string): Promise<StatsResult>;
   meta(): Promise<TelescopeMeta>;
   liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>;
@@ -142,6 +144,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         type: query.type,
         tag: query.tag,
       }),
+    traces: (window, limit) => get<TracesResult>('/traces', { window, limit }),
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
     meta: () => get<TelescopeMeta>('/meta'),
     liveQueues: () =>
