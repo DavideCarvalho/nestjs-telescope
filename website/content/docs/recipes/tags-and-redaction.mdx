@@ -1,0 +1,123 @@
+---
+title: Custom tags & redaction
+description: Tag entries by tenant from a captured header, mask extra fields with redact.keys/paths and a custom mask, drop noisy entries with filter, and sample high-volume types.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Four small hooks shape *what* gets captured and *how* it's labeled: `taggers` add searchable labels, `redact` masks sensitive leaves, `filter` drops entries you never want, and `sampling` keeps a fraction of high-volume types. All are `forRoot` options; this recipe wires each against its real signature.
+
+---
+
+## Custom taggers — tag by tenant
+
+A `Tagger` is `(entry: Entry) => string[]`. It runs *after* capture, so it reads the entry's `content` and returns extra tags (de-duplicated and merged with whatever's already there). To tag a request with the tenant from a header:
+
+```ts
+import { type Tagger, EntryType } from '@dudousxd/nestjs-telescope';
+
+const tenantTagger: Tagger = (entry) => {
+  // Type-gate so a non-request entry that happens to carry `headers` is never
+  // mistaken for an HTTP request.
+  if (entry.type !== EntryType.Request) return [];
+
+  const headers = (entry.content as { headers?: Record<string, string> }).headers;
+  const tenant = headers?.['x-tenant-id'];
+  return typeof tenant === 'string' ? [`tenant:${tenant}`] : [];
+};
+
+TelescopeModule.forRoot({
+  taggers: [tenantTagger],
+});
+```
+
+Now every request carries a `tenant:acme` tag, and the dashboard can filter the whole capture to one tenant. Your taggers run **in addition** to the built-ins (`status:NNN`, `slow`) — passing `taggers` doesn't replace them.
+
+### How it works
+
+- **A tagger sees the finished `Entry`**, not a request object — so it reads from `entry.content`. The request entry's content is `{ method, uri, headers, payload, user, ip, statusCode }`.
+- **Return `[]` for entries you don't tag.** Always type-gate (`entry.type !== EntryType.Request`) before reaching into `content`.
+- **Tags are merged and de-duplicated, order-preserving** — you can't accidentally double-add a tag the built-ins already set.
+
+<Callout type="info">
+  Taggers read `content` *after* redaction has run, so don't rely on a value a redact key would have masked. Tag on a header like `x-tenant-id` (not secret), not on `authorization`.
+</Callout>
+
+---
+
+## Extra redaction — keys, paths, and a custom mask
+
+Capture always redacts a built-in set of sensitive keys (`authorization`, `cookie`, `password`, `token`, ...). Add your own with `redact`:
+
+```ts
+TelescopeModule.forRoot({
+  redact: {
+    // Extra key names masked at ANY depth (case-insensitive), merged with
+    // the built-in DEFAULT_REDACT_KEYS.
+    keys: ['ssn', 'creditCard', 'x-internal-token'],
+
+    // Exact dot-paths from the root of the captured value — masks a field
+    // REGARDLESS of its key name. Use when a non-sensitive key holds sensitive
+    // data only in one place.
+    paths: ['payload.billing.iban', 'user.email'],
+
+    // Replacement string. Defaults to '[REDACTED]'.
+    mask: '***',
+  },
+});
+```
+
+### How it works
+
+- **`keys`** match a field name *anywhere* in the tree — `ssn` masks `body.ssn` and `nested.deep.ssn` alike. They're merged with the built-in list, never replace it.
+- **`paths`** match the *full traversal location* from the root of the captured content — `payload.billing.iban` masks only that exact spot, leaving an `iban` elsewhere untouched. Use this to mask an innocuously-named field that's only sensitive in one context.
+- **Redaction is a deep clone** — it never mutates the captured value, and it's cycle-safe (a genuine cycle becomes `[Circular]`).
+
+---
+
+## Drop noisy entries — `filter`
+
+`filter` is a predicate run per entry: return `true` to keep, `false` to drop. Use it to silence health-check spam or a chatty internal route before it ever hits storage:
+
+```ts
+import { type Entry, EntryType } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  filter: (entry: Entry): boolean => {
+    if (entry.type === EntryType.Request) {
+      const uri = (entry.content as { uri?: string }).uri ?? '';
+      // Drop k8s probes and the metrics scrape — they'd bury real traffic.
+      if (uri.startsWith('/healthz') || uri.startsWith('/metrics')) return false;
+    }
+    return true; // keep everything else
+  },
+});
+```
+
+`filter` runs on the finished entry, so you can branch on `type`, `tags`, `durationMs`, or `content`. It's the blunt instrument — for "keep some, drop some" of a high-volume type, reach for sampling instead.
+
+---
+
+## Sample high-volume types
+
+`sampling` is a per-type keep rate (0–1). A bare number applies to every type; an object sets per-type rates with a `default` fallback:
+
+```ts
+TelescopeModule.forRoot({
+  // Keep all exceptions and requests, but only 10% of queries and 5% of cache ops.
+  sampling: {
+    query: 0.1,
+    cache: 0.05,
+    default: 1, // everything else captured in full
+  },
+});
+
+// Or a single rate for everything:
+TelescopeModule.forRoot({ sampling: 0.25 });
+```
+
+### How it works
+
+- **A bare number is normalized to `{ default: <rate> }`** — it applies to every type without a specific override.
+- **Sampling is the right tool for volume** (keep a representative slice of queries); **`filter` is for noise** (drop probes entirely). Reach for whichever matches intent.
+- Keep exceptions and requests at `1` — they're low-volume and high-signal; you almost never want to sample them out.

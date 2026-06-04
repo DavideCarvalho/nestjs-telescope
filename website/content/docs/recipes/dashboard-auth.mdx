@@ -1,0 +1,166 @@
+---
+title: Dashboard login & sessions
+description: Practical dashboardAuth — login mode validating against your own user table with bcrypt, session mode bridging an existing JWT, and role-gating queue mutations via request.telescopeSession.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`dashboardAuth` gates the Telescope dashboard to your logged-in admins with no extra infra. The [auth reference](/docs/dashboard/auth) explains the signed-cookie mechanism and the endpoint contract — this recipe is the practical wiring for three real setups: login against your user table, bridging an existing JWT session, and role-gating mutations.
+
+Both modes mint the same stateless `telescope_session` cookie; a host hook returns a `TelescopeSessionUser` (`{ id, name?, roles? }`) to mint it, or `null` to deny.
+
+---
+
+## Recipe A — login against your own user table
+
+`login` mode renders Telescope's built-in login screen and calls your hook with the submitted credentials. Validate them against your real users with a proper password compare and a role check — no second auth system:
+
+```ts
+import { Module } from '@nestjs/common';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { compare } from 'bcryptjs';
+import { UsersService } from './users/users.service';
+
+@Module({
+  imports: [
+    TelescopeModule.forRootAsync({
+      inject: [UsersService],
+      useFactory: (users: UsersService) => ({
+        enabled: true,
+        dashboardAuth: {
+          secret: process.env.TELESCOPE_AUTH_SECRET,
+          ttl: '8h',
+          login: async (username, password) => {
+            const user = await users.findByEmail(username); // your repo lookup
+            if (user === null) return null; // unknown user
+
+            const ok = await compare(password, user.passwordHash);
+            if (!ok) return null; // bad password
+
+            if (!user.roles.includes('admin')) return null; // not allowed in
+
+            return { id: user.id, name: user.name, roles: user.roles };
+          },
+        },
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### How it works
+
+- **`login(username, password)`** receives the raw submitted credentials. Return a `TelescopeSessionUser` to mint the cookie, or `null` to deny — Telescope answers a **uniform `401`** on `null` (no user enumeration), so you don't need to distinguish "unknown user" from "bad password" in the response.
+- **Compare hashes, never plaintext.** `bcryptjs.compare` is constant-time against the stored hash.
+- **Gate on role here.** Returning `null` for a non-admin keeps non-admins out of the dashboard entirely. The `roles` you return ride in the session and are readable later for mutation gating (Recipe C).
+- **A hook that throws is treated as a denial** (`null`) with a once-per-kind warn — it never `500`s the endpoint into a stack-trace leak.
+
+<Callout type="warn" title="Throttle the login endpoint">
+  Brute-force throttling on `POST /telescope/api/auth/login` is the host's job — wrap it with Nest's `Throttler` (or your gateway's rate limit). The `/auth/*` endpoints do no heavy work before your hook runs, but the hook itself does a DB lookup and a bcrypt compare.
+</Callout>
+
+---
+
+## Recipe B — bridge an existing JWT/Bearer session
+
+`session` mode is for when your *own* frontend already holds the host's auth (e.g. a Keycloak Bearer JWT). Your frontend mints the Telescope cookie with one authenticated `fetch`, then opens the dashboard — no second login.
+
+<Tabs items={['Backend hook', 'Frontend button']}>
+  <Tab value="Backend hook">
+    The hook receives the **raw request**, verifies your own Bearer token, and returns the user (or `null`):
+
+    ```ts
+    import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+    import { JwtService } from '@nestjs/jwt';
+
+    TelescopeModule.forRootAsync({
+      inject: [JwtService],
+      useFactory: (jwt: JwtService) => ({
+        enabled: true,
+        dashboardAuth: {
+          secret: process.env.TELESCOPE_AUTH_SECRET,
+          session: async (request) => {
+            // request is the raw Express/Fastify request — read your own header.
+            const header = (request as { headers?: Record<string, string> })
+              .headers?.authorization;
+            if (header === undefined || !header.startsWith('Bearer ')) return null;
+
+            try {
+              const claims = await jwt.verifyAsync(header.slice('Bearer '.length));
+              return claims.isAdmin
+                ? { id: claims.sub, name: claims.name, roles: ['admin'] }
+                : null;
+            } catch {
+              return null; // invalid/expired token
+            }
+          },
+        },
+      }),
+    });
+    ```
+  </Tab>
+  <Tab value="Frontend button">
+    An "Open Telescope" button that mints the session, then opens the dashboard. The `POST` sets the cookie; every subsequent SPA call carries it automatically:
+
+    ```tsx
+    async function openTelescope() {
+      const response = await fetch('/telescope/api/auth/session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (response.status === 204) {
+        window.open('/telescope');
+      } else {
+        // 401 — your token didn't pass the hook (not admin / expired).
+        toast.error('Not authorized for Telescope');
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### How it works
+
+- **`session(request)`** runs on `POST /telescope/api/auth/session`. It's the bridge: you verify the host's auth *your* way and hand back a session user. On a user it sets the cookie and returns `204`; on `null` it returns `401`.
+- **The SPA can't attach a Bearer header to its own navigations** — that's why the cookie exists. One authenticated `POST` mints a same-origin, path-scoped cookie that rides along on every later SPA call with zero UI changes.
+
+---
+
+## Recipe C — role-gate queue mutations
+
+Reading the dashboard is gated by the session. **Mutations** (retry / remove / promote / redrive a job) are gated *separately* by `authorizeAction`, which **defaults to deny**. With a session in place it can read the roles you minted:
+
+```ts
+TelescopeModule.forRoot({
+  enabled: true,
+  dashboardAuth: {
+    secret: process.env.TELESCOPE_AUTH_SECRET,
+    login: /* ...Recipe A... */,
+  },
+
+  // Every queue mutation is 403 until this returns true. The verified session
+  // is attached as request.telescopeSession by the guard.
+  authorizeAction: ({ request }, action) => {
+    const session = (request as { telescopeSession?: { roles: string[] } })
+      .telescopeSession;
+    const roles = session?.roles ?? [];
+
+    // Only ops can redrive; admins can do everything; nobody else mutates.
+    if (action.action === 'redrive') return roles.includes('ops');
+    return roles.includes('admin');
+  },
+});
+```
+
+### How it works
+
+- **`authorizeAction(ctx, action)`** is called for every mutation with the requested `action` — `{ driver, queue, action, jobId?, state? }`. The `action.action` field is the operation name (`retry`, `remove`, `promote`, `retry-all`, `redrive`, `enqueue`), so you can grant per-operation.
+- **`request.telescopeSession`** is the verified session the guard attached — `{ sub, name?, roles, iat, exp }`. Read `roles` to branch.
+- **It fails closed.** A throwing hook denies; the default with no hook denies. A reader can browse but not mutate until you opt in.
+- **CSRF is covered** by `SameSite=Lax` — mutations are `POST`s, so the cookie won't ride a cross-site request.
+
+<Callout type="info">
+  `authorizeAction` and `dashboardAuth` are independent. You can run `authorizeAction` with no `dashboardAuth` (it reads whatever your `authorizer` lets through), but pairing them is what lets you say "admins read, ops redrive, nobody else mutates".
+</Callout>

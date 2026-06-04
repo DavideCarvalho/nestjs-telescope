@@ -26,6 +26,8 @@ interface StorageProvider {
 
 Reads are **keyset-paginated newest-first** (`createdAt DESC, id DESC`), so paging resumes correctly even after older entries are pruned out from under the cursor.
 
+Want to write your own? The [custom storage recipe](/docs/recipes/custom-storage) implements every method end to end.
+
 ## The zero-config SQLite default
 
 Out of the box, core persists to an embedded SQLite store (`better-sqlite3`). No connection string, no migration, no table setup — it works on the first boot. It's the right default for local development and single-process apps.

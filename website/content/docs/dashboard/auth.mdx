@@ -64,6 +64,8 @@ When `dashboardAuth` is **not** set, behavior is unchanged — the existing `aut
 
 ## Recipes
 
+For expanded, practical wiring — login against your own user table with bcrypt, bridging an existing JWT session, and role-gating mutations — see the [dashboard login & sessions recipe](/docs/recipes/dashboard-auth).
+
 <Tabs items={['Mode B — login (easiest)', 'Mode A — host hook (flip-style)']}>
   <Tab value="Mode B — login (easiest)">
     Gates the dashboard in 5 lines, works to prod, no host-frontend changes. Telescope renders the login screen; your hook checks the credentials against an env user/pass:

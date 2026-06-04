@@ -1,0 +1,11 @@
+{
+  "title": "Recipes",
+  "pages": [
+    "index",
+    "custom-storage",
+    "custom-watcher",
+    "dashboard-auth",
+    "tags-and-redaction",
+    "request-context"
+  ]
+}

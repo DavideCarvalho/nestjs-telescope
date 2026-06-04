@@ -1,0 +1,113 @@
+---
+title: Request context for your routes
+description: Capture the authenticated user on each request with resolveUser, keep capture working under setGlobalPrefix via telescopeRequestCapture, and drop ad-hoc debug dumps with telescopeDump.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Two host-specific wrinkles and one debugging tool: tell Telescope how to read your authenticated user, register request capture correctly when your app uses a global prefix, and drop ad-hoc values into the dashboard from anywhere with `telescopeDump`.
+
+---
+
+## Record the authenticated user — `resolveUser`
+
+By default each captured request entry reads `request.user` (the Passport/guard convention) for its `user` field. If your app attaches the user somewhere else, point `resolveUser` at it:
+
+```ts
+TelescopeModule.forRoot({
+  // Read the user from wherever your guard puts it. Return null/undefined for
+  // anonymous. The resolved value is redacted by the Recorder like any content.
+  resolveUser: (request) => {
+    const session = (request as { session?: { user?: unknown } }).session;
+    return session?.user ?? null;
+  },
+});
+```
+
+### How it works
+
+- **`resolveUser(request)`** receives the raw platform request (Express or Fastify). Return the user object, or `null`/`undefined` for an anonymous request.
+- **It never crashes capture** — a hook that throws is treated as "no user" (`null`), not an error.
+- **The result is redacted** by the recorder like any other content, so a `password`/`token` field on the user object is masked automatically. Don't pre-strip it.
+
+<Callout type="info">
+  `resolveUser` only sets the `user` field on the **request** entry. It does not gate the dashboard — that's [`dashboardAuth`](/docs/recipes/dashboard-auth). The two are unrelated.
+</Callout>
+
+---
+
+## Capture under a global prefix — `telescopeRequestCapture`
+
+If your app calls `app.setGlobalPrefix('api')`, NestJS scopes module middleware to the prefixed route table — so Telescope's auto-registered capture middleware only ever sees `/`, and **request entries stop appearing**. The fix is two steps: turn off the auto-registration and register capture globally in `bootstrap`.
+
+```ts
+// app.module.ts — opt out of the module-level middleware
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  registerRequestMiddleware: false, // we register it globally in main.ts instead
+});
+```
+
+```ts
+// main.ts — register the capture before listen()
+import { NestFactory } from '@nestjs/core';
+import {
+  TelescopeService,
+  telescopeRequestCapture,
+} from '@dudousxd/nestjs-telescope';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.setGlobalPrefix('api');
+
+  // Global capture sees EVERY route, prefix or not.
+  app.use(telescopeRequestCapture(app.get(TelescopeService)));
+
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+### How it works
+
+- **`telescopeRequestCapture(service)`** returns a framework-agnostic `(req, res, next)` handler — the same capture logic the module would have registered, but mounted globally via `app.use(...)` so the global prefix can't scope it away.
+- **It still skips Telescope's own routes** (the dashboard, its API, its assets) to avoid self-capturing the dashboard's polling — so you can mount it unconditionally.
+- **Order doesn't matter much**, but registering it before other global middleware means the request batch is open for the whole downstream execution, so everything a request causes correlates to it.
+
+<Callout type="warn" title="Only one capture path">
+  Set `registerRequestMiddleware: false` whenever you call `telescopeRequestCapture` yourself — leaving the default `true` would register capture twice and open two batches per request. It's one or the other.
+</Callout>
+
+---
+
+## Ad-hoc debugging — `telescopeDump`
+
+`telescopeDump(value, label?)` is `console.log` for the dashboard: it drops a value into the **Dumps** tab, correlated to the active request batch — so you can inspect exactly what a handler saw, in context, without a debugger.
+
+```ts
+import { telescopeDump } from '@dudousxd/nestjs-telescope';
+
+@Injectable()
+export class PricingService {
+  quote(input: QuoteInput): Quote {
+    const candidates = this.buildCandidates(input);
+
+    telescopeDump(candidates, 'pricing candidates'); // shows up in Dumps, in this request's batch
+
+    return this.pickBest(candidates);
+  }
+}
+```
+
+### How it works
+
+- **No dependency injection at the call site.** `telescopeDump` is a free function — import and call it anywhere, including in shared code.
+- **It's a no-op until Telescope is wired** (and after shutdown), so importing it in a library that's sometimes used outside a Telescope-enabled app never crashes.
+- **The dump correlates to the active batch.** Called inside a request handler or job, the dump appears alongside that request's queries, cache ops, and exceptions — the same correlation view as everything else.
+
+<Callout type="info">
+  Dumps are a dev tool — they capture whatever you hand them (redacted like any content). Leave a few in hot paths during an investigation, then remove them; they're not meant to ship as permanent instrumentation (that's what watchers are for).
+</Callout>
