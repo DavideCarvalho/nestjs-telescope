@@ -10,3 +10,89 @@ html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
+
+/* ---------------------------------------------------------------------------
+   Landing page — "observatory" theme.
+   The dashboard mock is rendered in the product's own dark zinc/emerald
+   palette in BOTH site themes (it's a faithful screenshot of the console),
+   while the surrounding page chrome adapts via fumadocs fd-* tokens.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --animate-tele-rise: tele-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-tele-blink: tele-blink 2s ease-in-out infinite;
+  --animate-tele-sweep: tele-sweep 2.4s ease-in-out infinite;
+  --animate-tele-draw: tele-draw 1.6s ease-out 0.4s both;
+}
+
+@keyframes tele-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tele-blink {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgb(52 211 153 / 0.55);
+  }
+  50% {
+    opacity: 0.65;
+    box-shadow: 0 0 0 4px rgb(52 211 153 / 0);
+  }
+}
+
+@keyframes tele-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  60%,
+  100% {
+    transform: translateX(420%);
+  }
+}
+
+@keyframes tele-draw {
+  from {
+    stroke-dashoffset: 240;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Staggered hero reveal — one orchestrated page-load moment. */
+.tele-stagger > * {
+  animation: var(--animate-tele-rise);
+}
+.tele-stagger > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.tele-stagger > *:nth-child(2) {
+  animation-delay: 0.08s;
+}
+.tele-stagger > *:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.tele-stagger > *:nth-child(4) {
+  animation-delay: 0.26s;
+}
+.tele-stagger > *:nth-child(5) {
+  animation-delay: 0.36s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tele-stagger > *,
+  .animate-tele-rise,
+  .animate-tele-blink,
+  .animate-tele-sweep,
+  .animate-tele-draw {
+    animation: none !important;
+  }
+}
