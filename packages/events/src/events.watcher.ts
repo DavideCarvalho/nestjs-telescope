@@ -19,14 +19,13 @@ export interface EventEmitterLike {
   listenerCount?(event?: unknown): number;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 /** Narrows a resolved provider to something with a usable `onAny`. */
 function hasOnAny(value: unknown): value is EventEmitterLike {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'onAny' in value &&
-    typeof (value as { onAny: unknown }).onAny === 'function'
-  );
+  return isRecord(value) && typeof value.onAny === 'function';
 }
 
 /**

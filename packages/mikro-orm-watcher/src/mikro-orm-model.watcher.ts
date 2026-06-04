@@ -31,16 +31,15 @@ export interface MikroOrmLike {
  *  where persisting an entry triggers another model entry. */
 const TELESCOPE_ENTITY_NAMES = new Set(['TelescopeEntry', 'TelescopeRollup']);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 /** Narrows a resolved provider to a usable `MikroORM`-like instance. */
 function hasEventManager(value: unknown): value is MikroOrmLike {
-  if (typeof value !== 'object' || value === null || !('em' in value)) return false;
-  const em = (value as { em: unknown }).em;
-  return (
-    typeof em === 'object' &&
-    em !== null &&
-    'getEventManager' in em &&
-    typeof (em as { getEventManager: unknown }).getEventManager === 'function'
-  );
+  if (!isRecord(value)) return false;
+  const em = value.em;
+  return isRecord(em) && typeof em.getEventManager === 'function';
 }
 
 /** Resolve the className for an event, preferring `meta.className`. */
