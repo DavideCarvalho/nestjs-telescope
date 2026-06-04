@@ -113,16 +113,24 @@ export class StatsService {
     const rollups = await store.queryRollups([type], fromBucket, toBucket);
 
     const merged = emptyHistogram();
-    for (const rollup of rollups) mergeHistogramInto(merged, rollup.histogram);
+    let mergedMax = 0;
+    for (const rollup of rollups) {
+      mergeHistogramInto(merged, rollup.histogram);
+      mergedMax = Math.max(mergedMax, rollup.max);
+    }
 
     let total = 0;
     for (const count of merged) total += count;
     if (total === 0) return undefined;
 
+    // The histogram estimate returns a bucket's UPPER boundary, which can exceed
+    // the true maximum (e.g. one sample of 410ms lands in the <=500ms bucket and
+    // estimates 500). Clamp to the rollup's exact `max` so a percentile is never
+    // reported above the observed maximum — `p99 > max` reads as a bug to users.
     return {
-      p50: estimatePercentileFromHistogram(merged, 0.5),
-      p95: estimatePercentileFromHistogram(merged, 0.95),
-      p99: estimatePercentileFromHistogram(merged, 0.99),
+      p50: Math.min(estimatePercentileFromHistogram(merged, 0.5), mergedMax),
+      p95: Math.min(estimatePercentileFromHistogram(merged, 0.95), mergedMax),
+      p99: Math.min(estimatePercentileFromHistogram(merged, 0.99), mergedMax),
     };
   }
 }

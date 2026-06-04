@@ -118,6 +118,25 @@ describe('stats percentile rollup/raw-scan equivalence', () => {
     );
   });
 
+  it('never reports a percentile above max (bucket upper-bound is clamped to the exact max)', async () => {
+    const now = Date.now();
+    // All samples land in the <=500ms bucket but the true max is 410, so the raw
+    // bucket-upper-bound estimate (500) would exceed max without the clamp.
+    const entries: Entry[] = [
+      entry('request', new Date(now - 1_000), 300),
+      entry('request', new Date(now - 2_000), 410),
+      entry('request', new Date(now - 3_000), 260),
+    ];
+    const { rollup } = await buildBoth(entries);
+    const stats = await rollup.getStats({ type: 'request', windowMs: 60_000, buckets: 1 });
+    const latency = stats.latency;
+    if (latency === undefined) throw new Error('no latency');
+    expect(latency.max).toBe(410);
+    expect(latency.p50).toBeLessThanOrEqual(latency.max);
+    expect(latency.p95).toBeLessThanOrEqual(latency.max);
+    expect(latency.p99).toBeLessThanOrEqual(latency.max);
+  });
+
   it('leaves latency absent when there are no durationMs samples (shape parity)', async () => {
     const now = Date.now();
     const entries = [
