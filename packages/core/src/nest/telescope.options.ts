@@ -1,6 +1,7 @@
 // packages/core/src/nest/telescope.options.ts
 import type { TelescopeCoreOptions } from '../config/options.js';
 import type { QueueActionRequest, QueueManager } from '../queue/queue-manager.js';
+import type { ScheduleManager } from '../schedule/schedule-manager.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Watcher } from './watcher.js';
 
@@ -17,6 +18,11 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   watchers?: Watcher[];
   /** Live-queue managers (e.g. BullMqQueueManager). Each contributes a driver to /queues/live. */
   queueManagers?: QueueManager[];
+  /**
+   * Schedule managers (e.g. the `@nestjs/schedule` watcher). Each contributes
+   * registered cron/interval/timeout tasks to /schedules/live.
+   */
+  scheduleManagers?: ScheduleManager[];
   /**
    * Authorizes API access. Default: allow when NODE_ENV !== 'production',
    * deny otherwise (until the host supplies one).

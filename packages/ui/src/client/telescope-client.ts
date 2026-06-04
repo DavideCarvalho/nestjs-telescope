@@ -11,6 +11,7 @@ import type {
   QueueMetricsReport,
   QueueState,
   QueueSummary,
+  ScheduledTask,
   StatsResult,
   TagCount,
   TelescopeMeta,
@@ -58,6 +59,7 @@ export interface TelescopeClient {
   tags(prefix?: string): Promise<TagCount[]>;
   meta(): Promise<TelescopeMeta>;
   liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>;
+  schedulesLive(): Promise<{ tasks: ScheduledTask[] }>;
   queueCounts(driver: string, queue: string): Promise<QueueCounts>;
   queueJobs(
     driver: string,
@@ -158,6 +160,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     meta: () => get<TelescopeMeta>('/meta'),
     liveQueues: () =>
       get<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>('/queues/live'),
+    schedulesLive: () => get<{ tasks: ScheduledTask[] }>('/schedules/live'),
     queueCounts: (driver, queue) =>
       get<QueueCounts>(
         `/queues/live/${encodeURIComponent(driver)}/${encodeURIComponent(queue)}/counts`,

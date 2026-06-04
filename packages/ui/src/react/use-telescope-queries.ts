@@ -135,8 +135,23 @@ export function queueJobQuery(client: TelescopeClient, driver: string, queue: st
   });
 }
 
+// --- live schedules ---
+export function schedulesLiveKey() {
+  return ['telescope', 'live-schedules'] as const;
+}
+export function schedulesLiveQuery(client: TelescopeClient, paused = false) {
+  return queryOptions({
+    queryKey: schedulesLiveKey(),
+    queryFn: () => client.schedulesLive(),
+    refetchInterval: intervalWhenLive(LIVE_REFETCH_MS, paused),
+  });
+}
+
 export function useLiveQueues() {
   return useQuery(liveQueuesQuery(useTelescopeClient(), usePaused()));
+}
+export function useSchedulesLive() {
+  return useQuery(schedulesLiveQuery(useTelescopeClient(), usePaused()));
 }
 export function useQueueJobs(
   driver: string,

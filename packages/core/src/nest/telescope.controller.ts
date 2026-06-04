@@ -33,6 +33,8 @@ import {
   isQueueState,
 } from '../queue/queue-manager.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
+import type { ScheduledTask } from '../schedule/schedule-manager.js';
+import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -89,6 +91,7 @@ export class TelescopeController {
     @Inject(StatsService) private readonly statsService: StatsService,
     @Inject(PulseService) private readonly pulse: PulseService,
     @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
+    @Inject(ScheduleManagerRegistry) private readonly scheduleManagers: ScheduleManagerRegistry,
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
   ) {}
 
@@ -242,6 +245,13 @@ export class TelescopeController {
         actionsByDriver,
       },
     };
+  }
+
+  @Get('schedules/live')
+  async liveSchedules(): Promise<{ tasks: ScheduledTask[] }> {
+    const ctx = this.scheduleManagers.context();
+    const all = await Promise.all(this.scheduleManagers.all().map((m) => m.listTasks(ctx)));
+    return { tasks: all.flat() };
   }
 
   @Get('queues/live/:driver/:queue/counts')

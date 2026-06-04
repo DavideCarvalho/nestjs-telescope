@@ -7,8 +7,8 @@ import {
   type WatcherContext,
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
-import type { DiscoveryService } from '@nestjs/core';
-import { Cron, Interval } from '@nestjs/schedule';
+import type { DiscoveryService, ModuleRef } from '@nestjs/core';
+import { Cron, Interval, SchedulerRegistry } from '@nestjs/schedule';
 import { describe, expect, it } from 'vitest';
 import { ScheduleWatcher } from './schedule.watcher.js';
 
@@ -28,13 +28,16 @@ interface Harness {
 
 function makeHarness(
   providers: Array<{ instance: unknown }>,
-  options: { recordThrows?: boolean } = {},
+  options: { recordThrows?: boolean; registry?: unknown } = {},
 ): Harness {
   const recorded: RecordedEntry[] = [];
   const origins: BatchOrigin[] = [];
   let batchSeq = 0;
   let currentBatch: string | null = null;
   const discovery = { getProviders: () => providers } as unknown as DiscoveryService;
+  const moduleRef = {
+    get: (token: unknown) => (token === SchedulerRegistry ? options.registry : discovery),
+  } as unknown as ModuleRef;
 
   const ctx: WatcherContext = {
     record: (input) => {
@@ -53,7 +56,7 @@ function makeHarness(
     },
     beginBatch: (): BatchHandle => ({ id: 'batch', end: () => {} }),
     config: resolveConfig({}),
-    moduleRef: { get: () => discovery } as unknown as WatcherContext['moduleRef'],
+    moduleRef,
   };
   return { ctx, recorded, origins };
 }
@@ -222,5 +225,81 @@ describe('ScheduleWatcher', () => {
     const { ctx, recorded } = makeHarness([{ instance: new NoSchedule() }]);
     expect(() => new ScheduleWatcher().register(ctx)).not.toThrow();
     expect(recorded).toHaveLength(0);
+  });
+});
+
+// A fake SchedulerRegistry exposing a cron + an interval (structurally typed).
+function fakeRegistry(next: Date): {
+  getCronJobs: () => Map<string, { cronTime: { source: string }; nextDate: () => Date }>;
+  getIntervals: () => string[];
+  getTimeouts: () => string[];
+} {
+  return {
+    getCronJobs: () =>
+      new Map([['nightly', { cronTime: { source: '0 0 * * *' }, nextDate: () => next }]]),
+    getIntervals: () => ['heartbeat'],
+    getTimeouts: () => [],
+  };
+}
+
+describe('ScheduleWatcher.listTasks (ScheduleManager)', () => {
+  it('lists cron + interval tasks with schedule and next-run from the registry', async () => {
+    const next = new Date('2026-06-04T00:00:00.000Z');
+    class CronTasks {
+      @Cron('0 0 * * *', { name: 'nightly' })
+      async run(): Promise<void> {}
+    }
+    const { ctx } = makeHarness([{ instance: new CronTasks() }], { registry: fakeRegistry(next) });
+    const watcher = new ScheduleWatcher();
+    watcher.register(ctx);
+
+    const tasks = await watcher.listTasks();
+
+    const cron = tasks.find((t) => t.name === 'nightly');
+    expect(cron).toMatchObject({
+      kind: 'cron',
+      schedule: '0 0 * * *',
+      nextRunAt: next.toISOString(),
+    });
+    const interval = tasks.find((t) => t.name === 'heartbeat');
+    expect(interval).toMatchObject({ kind: 'interval', nextRunAt: null });
+  });
+
+  it('merges last-run info recorded by a simulated run', async () => {
+    const next = new Date('2026-06-04T00:00:00.000Z');
+    let nowMs = 1_000;
+    class CronTasks {
+      @Cron('0 0 * * *', { name: 'nightly' })
+      async run(): Promise<string> {
+        return 'ok';
+      }
+    }
+    const tasks = new CronTasks();
+    const { ctx } = makeHarness([{ instance: tasks }], { registry: fakeRegistry(next) });
+    const watcher = new ScheduleWatcher({ clock: { now: () => nowMs } });
+    watcher.register(ctx);
+
+    nowMs = 5_000; // run finishes "later" so a duration is recorded
+    await tasks.run();
+
+    const listed = await watcher.listTasks();
+    const cron = listed.find((t) => t.name === 'nightly');
+    expect(cron?.lastStatus).toBe('completed');
+    expect(cron?.lastRunAt).toBe(new Date(5_000).toISOString());
+    expect(typeof cron?.lastDurationMs).toBe('number');
+  });
+
+  it('degrades gracefully when registry methods are missing', async () => {
+    const { ctx } = makeHarness([], { registry: {} });
+    const watcher = new ScheduleWatcher();
+    watcher.register(ctx);
+    await expect(watcher.listTasks()).resolves.toEqual([]);
+  });
+
+  it('returns an empty list when no registry is resolvable', async () => {
+    const { ctx } = makeHarness([]);
+    const watcher = new ScheduleWatcher();
+    watcher.register(ctx);
+    await expect(watcher.listTasks()).resolves.toEqual([]);
   });
 });

@@ -19,6 +19,7 @@ import { TimeseriesService } from '../metrics/timeseries.service.js';
 import { TracesService } from '../metrics/traces.service.js';
 import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
+import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { dynamicController } from './dynamic-controller.js';
@@ -61,6 +62,7 @@ const SHARED_PROVIDERS: Provider[] = [
   TelescopeRequestMiddleware,
   TelescopeWatcherRegistrar,
   QueueManagerRegistry,
+  ScheduleManagerRegistry,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 

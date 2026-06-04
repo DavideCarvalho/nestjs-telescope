@@ -6,6 +6,9 @@ export type {
   QueueJobDetail,
   QueueState,
   QueueSummary,
+  ScheduledTask,
+  ScheduleKind,
+  ScheduleRunStatus,
 } from '@dudousxd/nestjs-telescope';
 import type { QueueActionName } from '@dudousxd/nestjs-telescope';
 

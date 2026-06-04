@@ -9,6 +9,7 @@ import { EntryPage } from './pages/entry-page.js';
 import { PulsePage } from './pages/pulse-page.js';
 import { QueuesPage } from './pages/queues-page.js';
 import { QueuesShell } from './pages/queues-shell.js';
+import { SchedulesPage } from './pages/schedules-page.js';
 import { TracePage } from './pages/trace-page.js';
 import { TracesPage } from './pages/traces-page.js';
 
@@ -32,6 +33,7 @@ export function App(): JSX.Element {
                 <Route index element={<QueueManagerPage />} />
                 <Route path="metrics" element={<QueuesPage />} />
               </Route>
+              <Route path="/schedules" element={<SchedulesPage />} />
             </Routes>
           </DashboardLayout>
         </HashRouter>

@@ -7,6 +7,7 @@ const NAV = [
   { to: '/traces', label: 'Traces', end: true },
   { to: '/pulse', label: 'Pulse', end: false },
   { to: '/queues', label: 'Queues', end: false },
+  { to: '/schedules', label: 'Schedules', end: false },
 ];
 
 function topLinkClass({ isActive }: { isActive: boolean }): string {

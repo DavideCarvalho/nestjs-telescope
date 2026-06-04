@@ -3,11 +3,18 @@ import 'reflect-metadata';
 import {
   EntryType,
   type RecordInput,
+  type ScheduleKind,
+  type ScheduleManager,
+  type ScheduleManagerContext,
+  type ScheduleRunStatus,
+  type ScheduledTask,
   type Watcher,
   type WatcherContext,
+  isScheduleKind,
 } from '@dudousxd/nestjs-telescope';
 import { Logger } from '@nestjs/common';
-import { DiscoveryService, MetadataScanner } from '@nestjs/core';
+import { DiscoveryService, MetadataScanner, type ModuleRef } from '@nestjs/core';
+import { SchedulerRegistry } from '@nestjs/schedule';
 
 /** The `@nestjs/schedule` metadata keys its decorators set on each handler.
  *  Read from the installed package's `schedule.constants` (v4); a method
@@ -32,6 +39,58 @@ const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:schedulePatched');
 type AnyFn = (...args: unknown[]) => unknown;
 type ProviderWrapper = { instance?: unknown };
 type DiscoveryLike = { getProviders(): ProviderWrapper[] };
+
+/** What we read off a `@nestjs/schedule` CronJob — structural, never the import. */
+interface CronJobLike {
+  cronTime?: { source?: unknown };
+  nextDate?: () => unknown;
+}
+/** Structural view of `SchedulerRegistry` (resolved via moduleRef). All methods
+ *  optional so a missing/partial registry degrades gracefully (never throws). */
+interface SchedulerRegistryLike {
+  getCronJobs?: () => Map<string, CronJobLike> | undefined;
+  getIntervals?: () => string[] | undefined;
+  getTimeouts?: () => string[] | undefined;
+}
+
+/** Last observed run for a task, by name — fed by the watcher's record path. */
+interface LastRun {
+  at: string;
+  durationMs: number;
+  status: ScheduleRunStatus;
+}
+
+/** Coerce CronJob.cronTime.source (string or a CronTime-ish object) to a string. */
+function cronSource(job: CronJobLike): string {
+  const source = job.cronTime?.source;
+  if (typeof source === 'string') return source;
+  if (source != null) return String(source);
+  return '';
+}
+
+/** Narrow an unknown to something exposing a luxon-style `toJSDate()`. */
+function hasToJsDate(value: unknown): value is { toJSDate: () => unknown } {
+  if (typeof value !== 'object' || value === null || !('toJSDate' in value)) return false;
+  return typeof Reflect.get(value, 'toJSDate') === 'function';
+}
+
+/** Read a CronJob's next fire time as an ISO string, or null if unavailable. */
+function cronNextRunAt(job: CronJobLike): string | null {
+  if (typeof job.nextDate !== 'function') return null;
+  try {
+    const next = job.nextDate();
+    if (next == null) return null;
+    // `@nestjs/schedule`'s CronJob.nextDate() returns a luxon DateTime
+    // (exposes toJSDate()); a plain Date is used directly.
+    const date = hasToJsDate(next) ? next.toJSDate() : next;
+    if (date instanceof Date && !Number.isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export interface ScheduleWatcherOptions {
   /** Runs whose duration is >= this (ms) get a 'slow' tag. Default 1000. */
@@ -91,7 +150,7 @@ function schedulerLabel(methodRef: unknown): string | null {
  * un-wrapped handler and that task won't be captured (surfaced by the
  * "no scheduled methods found" warning only when nothing matched at all).
  */
-export class ScheduleWatcher implements Watcher {
+export class ScheduleWatcher implements Watcher, ScheduleManager {
   /** String `type` (allowed by the SPI) so the watcher shows distinctly in
    *  `/meta`; entries themselves are recorded as `EntryType.Job`. */
   readonly type = 'schedule';
@@ -101,6 +160,10 @@ export class ScheduleWatcher implements Watcher {
   private readonly scanner = new MetadataScanner();
   /** Prototypes already patched, so shared prototypes wrap exactly once. */
   private readonly patched = new WeakSet<object>();
+  /** Last observed run per task name, fed by the record path (Schedule console). */
+  private readonly lastRuns = new Map<string, LastRun>();
+  /** Captured at register() so `listTasks` can resolve `SchedulerRegistry`. */
+  private moduleRef: ModuleRef | undefined;
 
   constructor(options: ScheduleWatcherOptions = {}) {
     this.slowMs = options.slowMs ?? 1000;
@@ -108,6 +171,7 @@ export class ScheduleWatcher implements Watcher {
   }
 
   register(ctx: WatcherContext): void {
+    this.moduleRef = ctx.moduleRef;
     const discovery = ctx.moduleRef.get(DiscoveryService, { strict: false }) as DiscoveryLike;
     let count = 0;
     for (const wrapper of discovery.getProviders()) {
@@ -204,6 +268,12 @@ export class ScheduleWatcher implements Watcher {
     durationMs: number,
     error: unknown,
   ): void {
+    // Track the last run for the Schedule console (additive to recording).
+    this.lastRuns.set(name, {
+      at: new Date(this.clock.now()).toISOString(),
+      durationMs,
+      status,
+    });
     try {
       const failureReason =
         status === 'failed' ? (error instanceof Error ? error.message : String(error)) : null;
@@ -233,5 +303,79 @@ export class ScheduleWatcher implements Watcher {
       const message = recordError instanceof Error ? recordError.message : String(recordError);
       this.logger.error(`ScheduleWatcher: failed to record scheduled run: ${message}`);
     }
+  }
+
+  /**
+   * ScheduleManager: list the registered cron/interval/timeout tasks from
+   * `SchedulerRegistry`, merged with the watcher's recorded last-run info.
+   * Fully defensive — a missing registry or method yields an empty/degraded
+   * list and never throws (this feeds a read-only console).
+   *
+   * `ctx.moduleRef` is preferred (the registry passes it on the live config);
+   * the moduleRef captured at `register()` is the fallback for the watcher path.
+   */
+  async listTasks(ctx?: ScheduleManagerContext): Promise<ScheduledTask[]> {
+    const registry = this.resolveRegistry(ctx?.moduleRef ?? this.moduleRef);
+    if (!registry) return [];
+    const tasks: ScheduledTask[] = [];
+
+    const cronJobs = this.callSafe(() => registry.getCronJobs?.());
+    if (cronJobs && typeof cronJobs.forEach === 'function') {
+      for (const [name, job] of cronJobs) {
+        tasks.push(this.buildTask(name, 'cron', cronSource(job), cronNextRunAt(job)));
+      }
+    }
+
+    const intervals = this.callSafe(() => registry.getIntervals?.());
+    for (const name of Array.isArray(intervals) ? intervals : []) {
+      tasks.push(this.buildTask(name, 'interval', 'interval', null));
+    }
+
+    const timeouts = this.callSafe(() => registry.getTimeouts?.());
+    for (const name of Array.isArray(timeouts) ? timeouts : []) {
+      tasks.push(this.buildTask(name, 'timeout', 'timeout', null));
+    }
+
+    return tasks;
+  }
+
+  /** Resolve `SchedulerRegistry` structurally via the moduleRef; null on failure. */
+  private resolveRegistry(moduleRef: ModuleRef | undefined): SchedulerRegistryLike | null {
+    if (!moduleRef || typeof moduleRef.get !== 'function') return null;
+    try {
+      const found = moduleRef.get(SchedulerRegistry, { strict: false });
+      if (found && typeof found === 'object') return found;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Run a registry accessor, swallowing any throw (degrade to undefined). */
+  private callSafe<T>(fn: () => T): T | undefined {
+    try {
+      return fn();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private buildTask(
+    name: string,
+    kind: ScheduleKind,
+    schedule: string,
+    nextRunAt: string | null,
+  ): ScheduledTask {
+    const last = this.lastRuns.get(name);
+    const safeKind: ScheduleKind = isScheduleKind(kind) ? kind : 'cron';
+    return {
+      name,
+      kind: safeKind,
+      schedule,
+      nextRunAt,
+      lastRunAt: last?.at ?? null,
+      lastDurationMs: last?.durationMs ?? null,
+      lastStatus: last?.status ?? null,
+    };
   }
 }
