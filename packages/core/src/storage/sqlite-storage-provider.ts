@@ -107,6 +107,13 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
     this.ensureColumn('trace_id text');
     this.ensureColumn('span_id text');
 
+    // Index trace_id only AFTER the column is guaranteed to exist (a legacy table
+    // predating the column would otherwise make the index DDL fail). The
+    // #/traces/:id view filters by traceId; without this it's a full scan.
+    this.db.exec(
+      'create index if not exists ix_te_trace on telescope_entries (trace_id) where trace_id is not null;',
+    );
+
     // Prepare hot-path statements once, after schema is guaranteed to exist.
     this.stmtInsert = this.db.prepare(
       `insert or replace into telescope_entries

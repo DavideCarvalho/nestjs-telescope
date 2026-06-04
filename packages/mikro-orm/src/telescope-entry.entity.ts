@@ -43,7 +43,11 @@ export const TelescopeEntry = new EntitySchema<TelescopeEntryRow>({
     durationMs: { type: 'integer', nullable: true },
     origin: { type: 'string', length: 16 },
     instanceId: { type: 'string', length: 128 },
-    traceId: { type: 'string', nullable: true, length: 32 },
+    // Indexed: the #/traces/:id view filters entries by traceId. Without this,
+    // that lookup is a full table scan (every other filterable column — type,
+    // batchId, familyHash, createdAt — is already indexed). `schema.update`
+    // adds the index additively on the next boot (no migration).
+    traceId: { type: 'string', nullable: true, length: 32, index: true },
     spanId: { type: 'string', nullable: true, length: 16 },
     createdAt: { type: 'datetime', index: true },
   },

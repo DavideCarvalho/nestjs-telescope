@@ -237,4 +237,30 @@ describe('SqliteStorageProvider additive trace-column guard', () => {
     expect(found?.traceId).toBe('c'.repeat(32));
     expect(found?.spanId).toBe('d'.repeat(16));
   });
+
+  it('indexes trace_id even on a legacy table (the index DDL runs after the column self-heals)', () => {
+    // OLD schema without trace_id/span_id — same legacy seed as above.
+    const seed = new Database(dbPath);
+    seed.exec(`
+      create table telescope_entries (
+        id text primary key, batch_id text not null, type text not null,
+        family_hash text, content text not null, tags text not null,
+        sequence integer not null, duration_ms integer, origin text not null,
+        instance_id text not null, created_at integer not null
+      );
+    `);
+    seed.close();
+
+    // Construction must add trace_id then create ix_te_trace — never throw on the
+    // missing column (the bug this guards: indexing trace_id before it exists).
+    provider = new SqliteStorageProvider({ path: dbPath });
+
+    const inspect = new Database(dbPath, { readonly: true });
+    const indexes = inspect
+      .prepare('select name from pragma_index_list(?)')
+      .all('telescope_entries')
+      .map((row) => (row as { name: string }).name);
+    inspect.close();
+    expect(indexes).toContain('ix_te_trace');
+  });
 });
