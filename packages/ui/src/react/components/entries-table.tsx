@@ -16,6 +16,11 @@ export function entryLabel(entry: Entry): string {
       if (typeof record.label === 'string' && record.label.length > 0) return record.label;
       return dumpValuePreview(record.value);
     }
+    if (entry.type === 'event' && typeof record.name === 'string') return record.name;
+    if (entry.type === 'log' && typeof record.message === 'string') {
+      const level = typeof record.level === 'string' ? record.level : 'log';
+      return `[${level}] ${record.message}`;
+    }
     if (typeof record.message === 'string') return record.message;
     if (typeof record.url === 'string') {
       return typeof record.method === 'string' ? `${record.method} ${record.url}` : record.url;

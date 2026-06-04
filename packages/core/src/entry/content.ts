@@ -70,3 +70,27 @@ export interface DumpContent {
   label: string | null;
   value: unknown;
 }
+
+/**
+ * An application event emitted through `@nestjs/event-emitter`'s `EventEmitter2`.
+ * `name` is the event name (`String(event)`); `payload` is the emitted value(s)
+ * (a single value when one was emitted, else the array of values), redacted by
+ * the Recorder; `listenerCount` is how many listeners were attached at emit time
+ * (`null` when the emitter can't report it).
+ */
+export interface EventContent {
+  name: string;
+  payload: unknown;
+  listenerCount: number | null;
+}
+
+/**
+ * A Nest `Logger` line captured by the logs watcher. `level` is the log level
+ * (`log`/`error`/`warn`/`debug`/`verbose`); `message` is the stringified message;
+ * `context` is the logger context (`null` when none was supplied).
+ */
+export interface LogContent {
+  level: string;
+  message: string;
+  context: string | null;
+}

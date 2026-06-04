@@ -9,6 +9,8 @@ export const EntryType = {
   Cache: 'cache',
   HttpClient: 'http_client',
   Dump: 'dump',
+  Event: 'event',
+  Log: 'log',
 } as const;
 
 export type BuiltinEntryType = (typeof EntryType)[keyof typeof EntryType];

@@ -26,6 +26,10 @@ export function EntryDetail({
         ) : null}
         {entry.type === 'dump' ? (
           <DumpBody content={entry.content} />
+        ) : entry.type === 'event' ? (
+          <EventBody content={entry.content} />
+        ) : entry.type === 'log' ? (
+          <LogBody content={entry.content} />
         ) : (
           <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
             {JSON.stringify(entry.content, null, 2)}
@@ -71,6 +75,65 @@ function DumpBody({ content }: { content: unknown }): JSX.Element {
       <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
         {prettyJson(record.value)}
       </pre>
+    </div>
+  );
+}
+
+/** Tailwind text color for a log level badge. */
+function logLevelColor(level: string): string {
+  switch (level) {
+    case 'error':
+      return 'text-red-400';
+    case 'warn':
+      return 'text-amber-400';
+    case 'debug':
+    case 'verbose':
+      return 'text-zinc-500';
+    default:
+      return 'text-zinc-300';
+  }
+}
+
+function EventBody({ content }: { content: unknown }): JSX.Element {
+  const record =
+    typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
+  const name = typeof record.name === 'string' ? record.name : String(record.name ?? '');
+  const listenerCount = typeof record.listenerCount === 'number' ? record.listenerCount : null;
+  return (
+    <div>
+      <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-indigo-400">
+        {name}
+        {listenerCount !== null ? (
+          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">
+            {listenerCount} listener{listenerCount === 1 ? '' : 's'}
+          </span>
+        ) : null}
+      </h3>
+      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+        {prettyJson(record.payload)}
+      </pre>
+    </div>
+  );
+}
+
+function LogBody({ content }: { content: unknown }): JSX.Element {
+  const record =
+    typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
+  const level = typeof record.level === 'string' ? record.level : 'log';
+  const message =
+    typeof record.message === 'string' ? record.message : String(record.message ?? '');
+  const context = typeof record.context === 'string' ? record.context : null;
+  return (
+    <div>
+      <h3 className="mb-2 flex items-center gap-2 text-sm">
+        <span
+          className={`rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] uppercase ${logLevelColor(level)}`}
+        >
+          {level}
+        </span>
+        {context ? <span className="font-mono text-xs text-zinc-500">{context}</span> : null}
+      </h3>
+      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">{message}</pre>
     </div>
   );
 }

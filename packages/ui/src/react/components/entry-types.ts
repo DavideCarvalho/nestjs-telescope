@@ -33,6 +33,8 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
   },
   { id: 'http_client', label: 'HTTP Client', dot: 'bg-amber-400' },
   { id: 'dump', label: 'Dumps', dot: 'bg-fuchsia-400' },
+  { id: 'event', label: 'Events', dot: 'bg-indigo-400' },
+  { id: 'log', label: 'Logs', dot: 'bg-zinc-400' },
 ];
 
 const FALLBACK_DOT = 'bg-zinc-500';
