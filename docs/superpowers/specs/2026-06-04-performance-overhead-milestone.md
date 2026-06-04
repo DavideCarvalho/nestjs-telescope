@@ -68,7 +68,7 @@ own impact *visible* — measure and surface what it costs.
 - ✅ **C6 health UI card** (`d3ccf7d`, ui) — Overview card renders /health (µs/capture, buffer, flush, dropped). Live on flip (ui-ins8).
 - ❌ **A1 deferred redaction — REJECTED** (`135d168`→revert `45c466e`): OOM via retained ORM entity graphs (see A.1 above). Lesson: sync redact is load-bearing.
 - ✅ **Measured proof capture ≈ free**: requests off-path (0ms, finish-callback); query capture ~8.7µs; memory flat under load (sync `redact()` deep-clones enumerable props → drops the live EntityManager ref). So "capture must not slow the app" is MET and proven.
-- ⬜ **B3 histogram-percentile rollups** — the ONE remaining read-path scale lever. pulse is 0.42s = 2 sequential remote-RDS RTTs (content-less window scan + 1 batched top-N hydrate; already 2-pass/batched, no cheap parallelization since pass 2 depends on pass 1). Only rollup-backed percentiles remove the raw scan. STORAGE-LAYER change → MUST be load-tested against flip under AUTH traffic before trusting (A1 lesson). Fresh context recommended.
+- ✅ **B3 histogram-percentile rollups** (`1dd4db0` + clamp `3d51a6a`) — stats p50/p95/p99 estimated from fixed-size latency histograms in rollups (O(buckets), raw fallback). Memory-safe (fixed int arrays, no retention). LOAD-TESTED on flip: histogram self-healed on MySQL, RSS flat over 90s under load, p99<=max (clamped to exact rollup max). flip core-ins14/mikro-orm-ins4.
 - ⬜ **C6 done; B4 (fewer round-trips) — N/A**: pulse already 2-pass batched; timeseries already rollup-backed (0.21s flat).
 
 ## Sequencing
