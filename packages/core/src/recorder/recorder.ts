@@ -12,6 +12,39 @@ import type { TraceContext, TraceContextProvider } from '../trace/trace-context-
 
 export type DropReason = 'overflow' | 'store-failed' | 'record-error';
 
+/**
+ * Cheap, hot-path-safe self-observability counters describing the Recorder's
+ * own behaviour. Every field is a plain integer/number snapshot — no per-call
+ * timing is taken on the synchronous `record()` path. Flush timing is measured
+ * off the host path inside `flush()`.
+ */
+export interface RecorderSelfMetrics {
+  /** Total entries that passed sampling+filter and were buffered. */
+  recorded: number;
+  /** Ring-buffer capacity. */
+  bufferSize: number;
+  /** Entries currently held in the ring. */
+  bufferUsed: number;
+  /** Maximum `bufferUsed` ever observed. */
+  bufferHighWater: number;
+  /** Number of flushes that drained at least one entry. */
+  flushes: number;
+  /** Cumulative entries drained across all flushes. */
+  flushedEntries: number;
+  /** Wall-clock duration of the most recent draining flush, or null. */
+  lastFlushMs: number | null;
+  /** Largest flush duration ever observed, or null. */
+  maxFlushMs: number | null;
+  /** Cumulative flush duration across all draining flushes. */
+  totalFlushMs: number;
+  /** Entries evicted because the ring was full. */
+  overflowDropped: number;
+  /** Entries dropped because the storage provider rejected a batch. */
+  storeFailedDropped: number;
+  /** Sum of all drop buckets (overflow + store-failed + record-error). */
+  droppedCount: number;
+}
+
 export interface RecorderOptions {
   storage: StorageProvider;
   context: TelescopeContext;
@@ -68,6 +101,15 @@ export class Recorder {
   private storeFailedDrops = 0;
   private recordErrorDrops = 0;
 
+  // ── Self-metrics counters (cheap, hot-path-safe) ───────────────────────────
+  private recordedCount = 0;
+  private highWaterCount = 0;
+  private flushCount = 0;
+  private flushedEntriesCount = 0;
+  private lastFlushDurationMs: number | null = null;
+  private maxFlushDurationMs: number | null = null;
+  private totalFlushDurationMs = 0;
+
   // ── Concurrency guard ─────────────────────────────────────────────────────
   private flushing: Promise<void> | null = null;
 
@@ -95,6 +137,68 @@ export class Recorder {
   /** Sum of all drop buckets (overflow + store-failed + record-error). */
   get droppedCount(): number {
     return this.overflowDrops + this.storeFailedDrops + this.recordErrorDrops;
+  }
+
+  /**
+   * Snapshot of the Recorder's own behaviour. All fields are cheap integer
+   * counters accumulated on the hot path plus off-path flush timings — no
+   * per-record timing is taken, so reading this never taxes `record()`.
+   */
+  getSelfMetrics(): RecorderSelfMetrics {
+    return {
+      recorded: this.recordedCount,
+      bufferSize: this.options.bufferSize,
+      bufferUsed: this.count,
+      bufferHighWater: this.highWaterCount,
+      flushes: this.flushCount,
+      flushedEntries: this.flushedEntriesCount,
+      lastFlushMs: this.lastFlushDurationMs,
+      maxFlushMs: this.maxFlushDurationMs,
+      totalFlushMs: this.totalFlushDurationMs,
+      overflowDropped: this.overflowDrops,
+      storeFailedDropped: this.storeFailedDrops,
+      droppedCount: this.droppedCount,
+    };
+  }
+
+  /**
+   * On-demand micro-benchmark of the synchronous capture path (sampling check +
+   * enrich + filter) on a representative input, WITHOUT enqueuing into the ring
+   * or touching storage. Returns the mean nanoseconds per call. Lives here so
+   * the "cost per capture" figure is honest yet never instruments live records.
+   */
+  benchmarkRecordCost(iterations: number): number {
+    if (iterations <= 0) {
+      return 0;
+    }
+    const sample: RecordInput = {
+      type: 'query',
+      content: { sql: 'select * from t where id = ?', bindings: [1], took: 1 },
+    };
+    // Warm up so JIT compilation is not charged to the measured window.
+    for (let warmup = 0; warmup < iterations; warmup++) {
+      this.measureCaptureOnce(sample);
+    }
+    const start = process.hrtime.bigint();
+    for (let iteration = 0; iteration < iterations; iteration++) {
+      this.measureCaptureOnce(sample);
+    }
+    const elapsedNanos = process.hrtime.bigint() - start;
+    return Number(elapsedNanos) / iterations;
+  }
+
+  /**
+   * Runs the same sampling+enrich+filter logic as `record()` but discards the
+   * enriched entry instead of buffering it. Used only by the benchmark.
+   */
+  private measureCaptureOnce(input: RecordInput): void {
+    if (!this.passesSampling(input.type)) {
+      return;
+    }
+    const entry = this.enrich(input);
+    if (this.options.filter !== undefined) {
+      this.options.filter(entry);
+    }
   }
 
   // ── Core API ───────────────────────────────────────────────────────────────
@@ -136,6 +240,11 @@ export class Recorder {
     // after this point are buffered for the next flush.
     const drained = this.drain();
 
+    // Off the host path: timing the flush here is safe. Use the `now()` seam so
+    // tests stay deterministic, consistent with how the rest of the Recorder
+    // reads wall time.
+    const flushStartedAt = this.now();
+
     const storage = this.options.storage;
     this.flushing = storage
       .store(drained)
@@ -145,6 +254,7 @@ export class Recorder {
         this.notifyDrop(drained.length, 'store-failed');
       })
       .finally(() => {
+        this.recordFlushMetrics(drained.length, this.now() - flushStartedAt);
         this.flushing = null;
       });
 
@@ -229,6 +339,11 @@ export class Recorder {
     // Tail index: head + (count-1) wraps around the ring.
     const tail = (this.head + this.count - 1) % capacity;
     this.ring[tail] = entry;
+    // Cheap self-metrics: count the buffered record and track the high-water mark.
+    this.recordedCount += 1;
+    if (this.count > this.highWaterCount) {
+      this.highWaterCount = this.count;
+    }
   }
 
   /**
@@ -247,6 +362,21 @@ export class Recorder {
     this.head = 0;
     this.count = 0;
     return result;
+  }
+
+  /**
+   * Records off-path flush self-metrics. Only invoked from `flush()`, which has
+   * already guaranteed `drainedCount >= 1`, so every call here counts a flush
+   * that drained at least one entry.
+   */
+  private recordFlushMetrics(drainedCount: number, durationMs: number): void {
+    this.flushCount += 1;
+    this.flushedEntriesCount += drainedCount;
+    this.lastFlushDurationMs = durationMs;
+    this.totalFlushDurationMs += durationMs;
+    if (this.maxFlushDurationMs === null || durationMs > this.maxFlushDurationMs) {
+      this.maxFlushDurationMs = durationMs;
+    }
   }
 
   /** Calls `onDrop` inside a try/catch so a faulty hook cannot escape. */

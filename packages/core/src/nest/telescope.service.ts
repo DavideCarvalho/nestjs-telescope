@@ -12,7 +12,7 @@ import { createBatch } from '../context/batch.js';
 import { TelescopeContext } from '../context/telescope-context.js';
 import { setTelescopeDump } from '../dump/telescope-dump.js';
 import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js';
-import { Recorder } from '../recorder/recorder.js';
+import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import {
   TELESCOPE_CONFIG,
@@ -32,6 +32,22 @@ export interface TelescopeMeta {
   /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
   sampling: Record<string, number>;
 }
+
+/**
+ * Self-observability snapshot for surfacing Telescope's OWN overhead. Combines
+ * the Recorder's cheap self-metrics with whether capture is enabled and an
+ * on-demand micro-benchmark of the per-capture cost (never measured on the live
+ * `record()` path).
+ */
+export interface TelescopeHealth extends RecorderSelfMetrics {
+  /** Whether capture is currently enabled (from config). */
+  enabled: boolean;
+  /** Mean nanoseconds per capture, from an on-demand micro-benchmark. */
+  captureCostNanos: number;
+}
+
+/** Iterations used by the on-demand capture-cost micro-benchmark. */
+const CAPTURE_COST_BENCHMARK_ITERATIONS = 1000;
 
 @Injectable()
 export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
@@ -170,6 +186,20 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
           }
         : null,
       sampling: { ...this.config.sampling },
+    };
+  }
+
+  /**
+   * Self-observability snapshot: the Recorder's cheap self-metrics plus an
+   * on-demand micro-benchmark of the per-capture cost. The benchmark runs the
+   * synchronous enrich path on a representative input WITHOUT enqueuing, so it
+   * never pollutes the live buffer or taxes real records.
+   */
+  getHealth(): TelescopeHealth {
+    return {
+      ...this.recorder.getSelfMetrics(),
+      enabled: this.config.enabled,
+      captureCostNanos: this.recorder.benchmarkRecordCost(CAPTURE_COST_BENCHMARK_ITERATIONS),
     };
   }
 }

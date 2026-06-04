@@ -274,6 +274,126 @@ describe('Recorder', () => {
     expect(recorder.droppedCount).toBe(0);
   });
 
+  // ── Self-metrics ──────────────────────────────────────────────────────────
+
+  describe('self-metrics', () => {
+    it('reports buffer capacity, used, and high-water as records land and flush', async () => {
+      const { recorder } = makeRecorder({ bufferSize: 8 });
+      const initial = recorder.getSelfMetrics();
+      expect(initial.bufferSize).toBe(8);
+      expect(initial.bufferUsed).toBe(0);
+      expect(initial.bufferHighWater).toBe(0);
+      expect(initial.recorded).toBe(0);
+
+      recorder.record({ type: 'request', content: { n: 1 } });
+      recorder.record({ type: 'request', content: { n: 2 } });
+      recorder.record({ type: 'request', content: { n: 3 } });
+
+      const afterRecords = recorder.getSelfMetrics();
+      expect(afterRecords.recorded).toBe(3);
+      expect(afterRecords.bufferUsed).toBe(3);
+      expect(afterRecords.bufferHighWater).toBe(3);
+
+      await recorder.flush();
+      const afterFlush = recorder.getSelfMetrics();
+      // High-water persists even though the ring is now empty.
+      expect(afterFlush.bufferUsed).toBe(0);
+      expect(afterFlush.bufferHighWater).toBe(3);
+      // recorded is cumulative, not reset by flush.
+      expect(afterFlush.recorded).toBe(3);
+    });
+
+    it('counts a flush and the entries it drained, with deterministic timings', async () => {
+      let clock = 1_000;
+      const { recorder } = makeRecorder({ now: () => clock });
+      recorder.record({ type: 'request', content: {} });
+      recorder.record({ type: 'request', content: {} });
+
+      // Advance the clock by 5ms across the flush window.
+      const flushPromise = recorder.flush();
+      clock = 1_005;
+      await flushPromise;
+
+      const metrics = recorder.getSelfMetrics();
+      expect(metrics.flushes).toBe(1);
+      expect(metrics.flushedEntries).toBe(2);
+      expect(metrics.lastFlushMs).toBe(5);
+      expect(metrics.maxFlushMs).toBe(5);
+      expect(metrics.totalFlushMs).toBe(5);
+    });
+
+    it('does not count an empty flush as a flush', async () => {
+      const { recorder } = makeRecorder();
+      await recorder.flush();
+      const metrics = recorder.getSelfMetrics();
+      expect(metrics.flushes).toBe(0);
+      expect(metrics.flushedEntries).toBe(0);
+      expect(metrics.lastFlushMs).toBeNull();
+      expect(metrics.maxFlushMs).toBeNull();
+      expect(metrics.totalFlushMs).toBe(0);
+    });
+
+    it('tracks max flush duration across multiple flushes', async () => {
+      let clock = 0;
+      const { recorder } = makeRecorder({ now: () => clock });
+
+      recorder.record({ type: 'request', content: {} });
+      let flushPromise = recorder.flush();
+      clock = 3;
+      await flushPromise;
+
+      clock = 100;
+      recorder.record({ type: 'request', content: {} });
+      flushPromise = recorder.flush();
+      clock = 110;
+      await flushPromise;
+
+      const metrics = recorder.getSelfMetrics();
+      expect(metrics.flushes).toBe(2);
+      expect(metrics.lastFlushMs).toBe(10);
+      expect(metrics.maxFlushMs).toBe(10);
+      expect(metrics.totalFlushMs).toBe(13);
+    });
+
+    it('mirrors the drop buckets', async () => {
+      const failingStorage: StorageProvider = {
+        store: () => Promise.reject(new Error('disk full')),
+        update: () => Promise.resolve(),
+        find: () => Promise.resolve(null),
+        get: () => Promise.resolve({ data: [], nextCursor: null }),
+        batch: () => Promise.resolve([]),
+        tags: () => Promise.resolve([]),
+        prune: () => Promise.resolve(0),
+        clear: () => Promise.resolve(),
+      };
+      const { recorder } = makeRecorder({ storage: failingStorage, bufferSize: 2 });
+      recorder.record({ type: 'request', content: {} });
+      recorder.record({ type: 'request', content: {} });
+      recorder.record({ type: 'request', content: {} }); // overflow → 1
+      await recorder.flush(); // store rejects → storeFailedDropped += 2
+
+      const metrics = recorder.getSelfMetrics();
+      expect(metrics.overflowDropped).toBe(1);
+      expect(metrics.storeFailedDropped).toBe(2);
+      expect(metrics.droppedCount).toBe(3);
+    });
+
+    it('benchmarkRecordCost returns a positive mean and does not enqueue', () => {
+      const { recorder } = makeRecorder();
+      const meanNanos = recorder.benchmarkRecordCost(100);
+      expect(meanNanos).toBeGreaterThan(0);
+      // The benchmark must not pollute the live buffer.
+      expect(recorder.getSelfMetrics().recorded).toBe(0);
+      expect(recorder.getSelfMetrics().bufferUsed).toBe(0);
+    });
+
+    it('benchmarkRecordCost returns 0 for non-positive iterations', () => {
+      const { recorder } = makeRecorder();
+      expect(recorder.benchmarkRecordCost(0)).toBe(0);
+      expect(recorder.benchmarkRecordCost(-5)).toBe(0);
+    });
+  });
+
   // ── Trace context enrichment ──────────────────────────────────────────────
 
   describe('trace context enrichment', () => {

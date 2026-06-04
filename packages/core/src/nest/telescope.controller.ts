@@ -47,7 +47,7 @@ import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import { TELESCOPE_OPTIONS, TELESCOPE_STORAGE } from './telescope.options.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
-import { type TelescopeMeta, TelescopeService } from './telescope.service.js';
+import { type TelescopeHealth, type TelescopeMeta, TelescopeService } from './telescope.service.js';
 
 interface ListQuery {
   type?: string;
@@ -373,6 +373,11 @@ export class TelescopeController {
   @Get('server-stats')
   serverStatsSnapshot(): ServerStats {
     return this.serverStats.getStats();
+  }
+
+  @Get('health')
+  health(): TelescopeHealth {
+    return this.service.getHealth();
   }
 
   @Delete('entries')

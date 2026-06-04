@@ -206,6 +206,45 @@ describe('TelescopeService', () => {
     expect((await service.getMeta()).watchers).toEqual(['request']);
   });
 
+  it('getHealth reports recorder self-metrics, enabled flag, and a capture cost', async () => {
+    const { service } = makeService();
+    active = service;
+    await service.runInBatch('http', async () => {
+      service.record({ type: 'request', content: {} });
+      service.record({ type: 'query', content: {} });
+    });
+    const health = service.getHealth();
+    expect(health.enabled).toBe(true);
+    expect(health.recorded).toBe(2);
+    expect(health.bufferUsed).toBe(2);
+    expect(health.bufferHighWater).toBe(2);
+    expect(health.droppedCount).toBe(0);
+    expect(health.captureCostNanos).toBeGreaterThan(0);
+    // The benchmark must not have buffered anything extra.
+    expect(health.recorded).toBe(2);
+  });
+
+  it('getHealth reflects enabled=false when capture is disabled', () => {
+    const service = new TelescopeService(
+      resolveConfig({ enabled: false }),
+      new InMemoryStorageProvider(),
+      {},
+    );
+    active = service;
+    expect(service.getHealth().enabled).toBe(false);
+  });
+
+  it('getHealth surfaces flush metrics after a drain', async () => {
+    const { service } = makeService();
+    active = service;
+    service.record({ type: 'request', content: {} });
+    await service.flush();
+    const health = service.getHealth();
+    expect(health.flushes).toBe(1);
+    expect(health.flushedEntries).toBe(1);
+    expect(health.bufferUsed).toBe(0);
+  });
+
   it('runInBatch still runs fn but opens no batch when disabled', async () => {
     const service = new TelescopeService(
       resolveConfig({ enabled: false }),
