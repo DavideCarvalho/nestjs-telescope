@@ -163,12 +163,9 @@ export class Recorder {
 
   /**
    * On-demand micro-benchmark of the synchronous capture path (sampling check +
-   * cheap enrich) on a representative input, WITHOUT enqueuing into the ring or
-   * touching storage. Redaction, tagging and filtering now happen off the host
-   * path in `flush()`, so they are intentionally NOT measured here — this figure
-   * reflects the true per-capture cost paid by the host app. Returns the mean
-   * nanoseconds per call. Lives here so the "cost per capture" figure is honest
-   * yet never instruments live records.
+   * enrich + filter) on a representative input, WITHOUT enqueuing into the ring
+   * or touching storage. Returns the mean nanoseconds per call. Lives here so
+   * the "cost per capture" figure is honest yet never instruments live records.
    */
   benchmarkRecordCost(iterations: number): number {
     if (iterations <= 0) {
@@ -191,35 +188,33 @@ export class Recorder {
   }
 
   /**
-   * Runs the same sampling + cheap-enrich logic as `record()` but discards the
-   * entry instead of buffering it. Mirrors the real host-path cost: redaction,
-   * tagging and filtering are deferred to `flush()` and so are NOT exercised
-   * here. Used only by the benchmark.
+   * Runs the same sampling+enrich+filter logic as `record()` but discards the
+   * enriched entry instead of buffering it. Used only by the benchmark.
    */
   private measureCaptureOnce(input: RecordInput): void {
     if (!this.passesSampling(input.type)) {
       return;
     }
-    this.enrichCheap(input);
+    const entry = this.enrich(input);
+    if (this.options.filter !== undefined) {
+      this.options.filter(entry);
+    }
   }
 
   // ── Core API ───────────────────────────────────────────────────────────────
 
-  /**
-   * Synchronous, O(1), never throws into the caller. Does ONLY cheap work that
-   * must read the current async context: sampling, async-context/identity
-   * capture (batch id, sequence, trace ids), then buffers the entry with its
-   * RAW, un-redacted content and un-tagged tags. The heavy per-entry work —
-   * redaction, tagging and the user filter — is deferred to `flush()`, off the
-   * host app's critical path. Only `flush()`/`drain()` read buffered entries, so
-   * holding raw content in the ring is safe.
-   */
+  /** Synchronous, O(1), never throws into the caller. */
   record(input: RecordInput): void {
     try {
       if (!this.passesSampling(input.type)) {
         return;
       }
-      this.push(this.enrichCheap(input));
+      const entry = this.enrich(input);
+      if (this.options.filter !== undefined && !this.options.filter(entry)) {
+        // Intentional exclusion — not a drop, no counter increment.
+        return;
+      }
+      this.push(entry);
     } catch {
       // A telescope bug must never break the host. Swallow.
       this.recordErrorDrops += 1;
@@ -245,12 +240,6 @@ export class Recorder {
     // after this point are buffered for the next flush.
     const drained = this.drain();
 
-    // Finalize off the host path: redact + tag each entry, then apply the user
-    // filter. Entries the filter rejects are intentionally excluded from the
-    // stored batch (NOT counted as a drop, matching the old in-record() filter
-    // semantics). This is the heavy per-entry work moved off `record()`.
-    const finalized = this.finalizeAndFilter(drained);
-
     // Off the host path: timing the flush here is safe. Use the `now()` seam so
     // tests stay deterministic, consistent with how the rest of the Recorder
     // reads wall time.
@@ -258,14 +247,14 @@ export class Recorder {
 
     const storage = this.options.storage;
     this.flushing = storage
-      .store(finalized)
-      .then(() => this.recordRollupsAfterStore(storage, finalized))
+      .store(drained)
+      .then(() => this.recordRollupsAfterStore(storage, drained))
       .catch(() => {
-        this.storeFailedDrops += finalized.length;
-        this.notifyDrop(finalized.length, 'store-failed');
+        this.storeFailedDrops += drained.length;
+        this.notifyDrop(drained.length, 'store-failed');
       })
       .finally(() => {
-        this.recordFlushMetrics(finalized.length, this.now() - flushStartedAt);
+        this.recordFlushMetrics(drained.length, this.now() - flushStartedAt);
         this.flushing = null;
       });
 
@@ -290,25 +279,6 @@ export class Recorder {
     }
   }
 
-  /**
-   * Finalizes (redact + tag) every drained entry and then applies the optional
-   * user filter. Runs entirely off the host path inside `flush()`. Filter
-   * rejections are intentional exclusions (not drops, no counter touched),
-   * mirroring the semantics of the old in-`record()` filter.
-   */
-  private finalizeAndFilter(drained: Entry[]): Entry[] {
-    const result: Entry[] = [];
-    const filter = this.options.filter;
-    for (const entry of drained) {
-      const finalized = this.finalize(entry);
-      if (filter !== undefined && !filter(finalized)) {
-        continue;
-      }
-      result.push(finalized);
-    }
-    return result;
-  }
-
   private passesSampling(type: string): boolean {
     const rate = this.options.sampling[type] ?? this.options.sampling.default;
     if (rate === undefined || rate >= 1) {
@@ -320,37 +290,26 @@ export class Recorder {
     return this.random() < rate;
   }
 
-  /**
-   * Cheap, hot-path enrichment. Captures everything that MUST be read in the
-   * caller's synchronous async-context — batch id, monotonic sequence, and the
-   * active trace ids — plus the passthrough identity fields. Crucially it does
-   * NOT redact content or run taggers: it stashes the RAW `input.content` and
-   * the input's own tags. The heavy work is finalized later in `finalize()`
-   * from `flush()`, off the host path.
-   */
-  private enrichCheap(input: RecordInput): Entry {
+  private enrich(input: RecordInput): Entry {
     const batch = this.options.context.current();
     // Resolve batchId FIRST: an out-of-batch entry's synthetic batch id uses
     // id-0, and the entry id uses id-1, keeping allocation order predictable.
     const batchId = batch?.id ?? this.options.idFactory();
     // Read the ambient trace context defensively: the provider contract says
     // current() must not throw, but a misbehaving provider should degrade to
-    // null rather than drop the entry. This MUST happen at record() time — the
-    // active span is only correct synchronously, not later during flush().
+    // null rather than drop the entry.
     let trace: TraceContext | null = null;
     try {
       trace = this.options.traceContext?.current() ?? null;
     } catch {
       trace = null;
     }
-    return {
+    const base: Entry = {
       id: this.options.idFactory(),
       batchId,
       type: input.type,
       familyHash: input.familyHash ?? null,
-      // RAW content — redaction is deferred to finalize() during flush().
-      content: input.content,
-      // RAW tags — taggers are deferred to finalize() during flush().
+      content: redact(input.content, this.options.redact),
       tags: input.tags ?? [],
       sequence: this.options.context.nextSequence(),
       durationMs: input.durationMs ?? null,
@@ -360,18 +319,7 @@ export class Recorder {
       spanId: trace?.spanId ?? null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
-  }
-
-  /**
-   * Finalizes a cheaply-enriched entry off the host path (called from
-   * `flush()`). Applies, in the SAME order the old synchronous `enrich()` did:
-   * (a) redact the raw content, then (b) run taggers over the entry whose
-   * content is already redacted — `statusTagger` reads `content.statusCode`, so
-   * redaction MUST precede tagging to keep behaviour identical.
-   */
-  private finalize(entry: Entry): Entry {
-    const redacted: Entry = { ...entry, content: redact(entry.content, this.options.redact) };
-    return { ...redacted, tags: runTaggers(redacted, this.options.taggers) };
+    return { ...base, tags: runTaggers(base, this.options.taggers) };
   }
 
   /**
