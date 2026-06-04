@@ -10,7 +10,8 @@ import { v7 } from 'uuid';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { createBatch } from '../context/batch.js';
 import { TelescopeContext } from '../context/telescope-context.js';
-import type { BatchOrigin, RecordInput } from '../entry/entry.js';
+import { setTelescopeDump } from '../dump/telescope-dump.js';
+import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js';
 import { Recorder } from '../recorder/recorder.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import {
@@ -53,6 +54,18 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       ...(config.filter ? { filter: config.filter } : {}),
       ...(config.traceContext ? { traceContext: config.traceContext } : {}),
     });
+    // Wire the global dump sink so `telescopeDump(value, label)` can be called
+    // anywhere without injecting this service. Cleared on shutdown.
+    setTelescopeDump((value, label) => this.dump(value, label));
+  }
+
+  /**
+   * Record a developer debug dump into the Dumps tab. The value is redacted by
+   * the Recorder and correlated to the active batch automatically. Prefer the
+   * free `telescopeDump()` at call sites that don't already inject this service.
+   */
+  dump(value: unknown, label?: string): void {
+    this.record({ type: EntryType.Dump, content: { label: label ?? null, value } });
   }
 
   /** Normalized mount segment (no leading/trailing slash). Default `'telescope'`. */
@@ -85,6 +98,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onApplicationShutdown(): Promise<void> {
+    // Detach the global dump sink so stray post-shutdown calls become no-ops.
+    setTelescopeDump(null);
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;

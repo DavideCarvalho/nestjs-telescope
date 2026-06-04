@@ -60,3 +60,13 @@ export interface CacheContent {
   /** `true`/`false` for a get (hit vs miss); `null` for a set (not applicable). */
   hit: boolean | null;
 }
+
+/**
+ * A developer-initiated debug dump (see `telescopeDump`). The `value` is the
+ * arbitrary payload to inspect (redacted by the Recorder like any other
+ * content); `label` is an optional caller-supplied tag, `null` when omitted.
+ */
+export interface DumpContent {
+  label: string | null;
+  value: unknown;
+}

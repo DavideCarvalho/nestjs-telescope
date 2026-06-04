@@ -24,9 +24,13 @@ export function EntryDetail({
             <RequestTimeline batch={entry.batch} requestId={entry.id} onSelect={onSelect} />
           </div>
         ) : null}
-        <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
-          {JSON.stringify(entry.content, null, 2)}
-        </pre>
+        {entry.type === 'dump' ? (
+          <DumpBody content={entry.content} />
+        ) : (
+          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+            {JSON.stringify(entry.content, null, 2)}
+          </pre>
+        )}
       </section>
       <aside>
         {entry.traceId ? (
@@ -44,6 +48,29 @@ export function EntryDetail({
         </h3>
         <BatchTimeline batch={entry.batch} currentId={entry.id} onSelect={onSelect} />
       </aside>
+    </div>
+  );
+}
+
+/** Pretty-print a dump value to JSON, falling back to String() if not serializable. */
+function prettyJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function DumpBody({ content }: { content: unknown }): JSX.Element {
+  const record =
+    typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
+  const label = typeof record.label === 'string' ? record.label : null;
+  return (
+    <div>
+      {label ? <h3 className="mb-2 font-mono text-sm text-fuchsia-400">{label}</h3> : null}
+      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+        {prettyJson(record.value)}
+      </pre>
     </div>
   );
 }

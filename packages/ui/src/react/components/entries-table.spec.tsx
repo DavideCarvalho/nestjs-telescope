@@ -32,6 +32,14 @@ describe('EntriesTable', () => {
     );
     expect(entryLabel(entry({ type: 'exception', content: null }))).toBe('exception');
   });
+  it('summarizes a dump by its label, falling back to a value preview', () => {
+    expect(
+      entryLabel(entry({ type: 'dump', content: { label: 'my-dump', value: { a: 1 } } })),
+    ).toBe('my-dump');
+    expect(entryLabel(entry({ type: 'dump', content: { label: null, value: { a: 1 } } }))).toBe(
+      '{"a":1}',
+    );
+  });
   it('renders rows with type + summary', () => {
     render(<EntriesTable entries={[entry({ type: 'query', content: { sql: 'select 1' } })]} />);
     expect(screen.getByText('query')).toBeTruthy();

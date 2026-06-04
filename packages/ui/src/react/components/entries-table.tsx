@@ -12,12 +12,28 @@ export function entryLabel(entry: Entry): string {
     if (typeof record.queue === 'string' && typeof record.name === 'string') {
       return `${record.queue}:${record.name}`;
     }
+    if (entry.type === 'dump') {
+      if (typeof record.label === 'string' && record.label.length > 0) return record.label;
+      return dumpValuePreview(record.value);
+    }
     if (typeof record.message === 'string') return record.message;
     if (typeof record.url === 'string') {
       return typeof record.method === 'string' ? `${record.method} ${record.url}` : record.url;
     }
   }
   return entry.type;
+}
+
+/** A short, single-line preview of a dump value for table summaries. */
+export function dumpValuePreview(value: unknown): string {
+  if (typeof value === 'string') return value;
+  let text: string;
+  try {
+    text = JSON.stringify(value) ?? String(value);
+  } catch {
+    text = String(value);
+  }
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
 export function EntriesTable({

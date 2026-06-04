@@ -2,6 +2,7 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
+import { telescopeDump } from '../dump/telescope-dump.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
@@ -34,6 +35,75 @@ describe('TelescopeService', () => {
     const all = (await storage.get({})).data;
     expect(all).toHaveLength(2);
     expect(new Set(all.map((e) => e.batchId)).size).toBe(1); // same batch
+  });
+
+  it('dump() records a dump entry with the label and value', async () => {
+    const { service, storage } = makeService();
+    active = service;
+    service.dump({ a: 1 }, 'my-label');
+    await service.flush();
+    const all = (await storage.get({})).data;
+    expect(all).toHaveLength(1);
+    expect(all[0]?.type).toBe('dump');
+    expect(all[0]?.content).toEqual({ label: 'my-label', value: { a: 1 } });
+  });
+
+  it('dump() defaults the label to null when omitted', async () => {
+    const { service, storage } = makeService();
+    active = service;
+    service.dump('hello');
+    await service.flush();
+    const content = (await storage.get({})).data[0]?.content as { label: string | null };
+    expect(content.label).toBeNull();
+  });
+
+  it('dump() redacts sensitive leaves of the value', async () => {
+    const storage = new InMemoryStorageProvider();
+    const config = resolveConfig({ recorder: { flushIntervalMs: 5 } });
+    const service = new TelescopeService(config, storage, {});
+    active = service;
+    service.dump({ password: 'x', keep: 'ok' });
+    await service.flush();
+    const content = (await storage.get({})).data[0]?.content as {
+      value: { password: string; keep: string };
+    };
+    expect(content.value.password).toBe('[REDACTED]');
+    expect(content.value.keep).toBe('ok');
+  });
+
+  it('dump() correlates to the active batch', async () => {
+    const { service, storage } = makeService();
+    active = service;
+    await service.runInBatch('http', async () => {
+      service.record({ type: 'request', content: {} });
+      service.dump({ debug: true }, 'in-batch');
+    });
+    await service.flush();
+    const all = (await storage.get({})).data;
+    expect(all).toHaveLength(2);
+    expect(new Set(all.map((e) => e.batchId)).size).toBe(1);
+  });
+
+  it('wires the global telescopeDump sink (no DI needed at call site)', async () => {
+    const { service, storage } = makeService();
+    active = service;
+    telescopeDump({ via: 'global' }, 'free-fn');
+    await service.flush();
+    const all = (await storage.get({})).data;
+    expect(all).toHaveLength(1);
+    expect(all[0]?.content).toEqual({ label: 'free-fn', value: { via: 'global' } });
+  });
+
+  it('detaches the global telescopeDump sink on shutdown', async () => {
+    const { service, storage } = makeService();
+    service.dump('pre');
+    await service.onApplicationShutdown();
+    // After shutdown the sink is null; this call must be a no-op (not recorded).
+    telescopeDump('post', 'after-shutdown');
+    const all = (await storage.get({})).data;
+    expect(
+      all.some((e) => e.type === 'dump' && JSON.stringify(e.content).includes('after-shutdown')),
+    ).toBe(false);
   });
 
   it('warns at boot when no prune is configured', async () => {

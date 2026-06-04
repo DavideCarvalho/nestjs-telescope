@@ -32,6 +32,7 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
     query: { type: 'job', tag: 'schedule' },
   },
   { id: 'http_client', label: 'HTTP Client', dot: 'bg-amber-400' },
+  { id: 'dump', label: 'Dumps', dot: 'bg-fuchsia-400' },
 ];
 
 const FALLBACK_DOT = 'bg-zinc-500';

@@ -8,6 +8,7 @@ export const EntryType = {
   Mail: 'mail',
   Cache: 'cache',
   HttpClient: 'http_client',
+  Dump: 'dump',
 } as const;
 
 export type BuiltinEntryType = (typeof EntryType)[keyof typeof EntryType];

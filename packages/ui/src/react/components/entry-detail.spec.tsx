@@ -128,6 +128,29 @@ async function renderDetailWithBatch(entryValue: EntryWithBatch) {
   await screen.findByText(`Batch (${entryValue.batch.length})`);
 }
 
+describe('EntryDetail dump', () => {
+  it('renders the dump label and pretty-printed JSON value', async () => {
+    await renderDetailWithBatch(
+      entry({
+        type: 'dump',
+        batch: [],
+        content: { label: 'my-dump', value: { a: 1, nested: { b: 2 } } },
+      }),
+    );
+    expect(screen.getByText('my-dump')).toBeTruthy();
+    // pretty JSON keeps the keys on their own lines
+    expect(screen.getByText(/"nested"/)).toBeTruthy();
+    expect(screen.getByText(/"b": 2/)).toBeTruthy();
+  });
+
+  it('renders the value even when the dump has no label', async () => {
+    await renderDetailWithBatch(
+      entry({ type: 'dump', batch: [], content: { label: null, value: 'hello' } }),
+    );
+    expect(screen.getByText('"hello"')).toBeTruthy();
+  });
+});
+
 describe('EntryDetail request timeline', () => {
   it('renders the timeline for a request with batch children beyond itself', async () => {
     const self = child({
