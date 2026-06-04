@@ -94,3 +94,29 @@ export interface LogContent {
   message: string;
   context: string | null;
 }
+
+/**
+ * An ORM entity lifecycle change captured by a model watcher (e.g. MikroORM).
+ * `action` is the lifecycle kind; `entity` is the entity class name; `id` is the
+ * primary key as a string (`null` when not yet assigned); `changes` is the
+ * change set payload (the changed columns), redacted by the Recorder, or `null`
+ * when the ORM doesn't expose one (e.g. a delete).
+ */
+export interface ModelContent {
+  action: 'create' | 'update' | 'delete';
+  entity: string;
+  id: string | null;
+  changes: Record<string, unknown> | null;
+}
+
+/**
+ * A Redis command issued through a wrapped client (e.g. ioredis). `command` is
+ * the command name (uppercased, e.g. `GET`); `args` are the command arguments,
+ * redacted by the Recorder; `durationMs` is the round-trip time in milliseconds
+ * (`null` when it couldn't be measured).
+ */
+export interface RedisContent {
+  command: string;
+  args: unknown[];
+  durationMs: number | null;
+}

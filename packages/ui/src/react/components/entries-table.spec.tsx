@@ -40,6 +40,22 @@ describe('EntriesTable', () => {
       '{"a":1}',
     );
   });
+  it('summarizes a model entry as "<action> <entity>#<id>"', () => {
+    expect(
+      entryLabel(entry({ type: 'model', content: { action: 'create', entity: 'User', id: '7' } })),
+    ).toBe('create User#7');
+    expect(
+      entryLabel(entry({ type: 'model', content: { action: 'delete', entity: 'User', id: null } })),
+    ).toBe('delete User');
+  });
+  it('summarizes a redis entry as "<COMMAND> <args-preview>"', () => {
+    expect(
+      entryLabel(entry({ type: 'redis', content: { command: 'GET', args: ['user:1'] } })),
+    ).toBe('GET user:1');
+    expect(entryLabel(entry({ type: 'redis', content: { command: 'PING', args: [] } }))).toBe(
+      'PING',
+    );
+  });
   it('renders rows with type + summary', () => {
     render(<EntriesTable entries={[entry({ type: 'query', content: { sql: 'select 1' } })]} />);
     expect(screen.getByText('query')).toBeTruthy();

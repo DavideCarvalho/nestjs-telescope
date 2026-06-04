@@ -17,6 +17,14 @@ export function entryLabel(entry: Entry): string {
       return dumpValuePreview(record.value);
     }
     if (entry.type === 'event' && typeof record.name === 'string') return record.name;
+    if (entry.type === 'model' && typeof record.action === 'string') {
+      const entity = typeof record.entity === 'string' ? record.entity : '';
+      const id = record.id === null || record.id === undefined ? '' : `#${String(record.id)}`;
+      return `${record.action} ${entity}${id}`;
+    }
+    if (entry.type === 'redis' && typeof record.command === 'string') {
+      return `${record.command} ${redisArgsPreview(record.args)}`.trim();
+    }
     if (entry.type === 'log' && typeof record.message === 'string') {
       const level = typeof record.level === 'string' ? record.level : 'log';
       return `[${level}] ${record.message}`;
@@ -27,6 +35,13 @@ export function entryLabel(entry: Entry): string {
     }
   }
   return entry.type;
+}
+
+/** A short, single-line preview of redis command args for table summaries. */
+export function redisArgsPreview(args: unknown): string {
+  if (!Array.isArray(args) || args.length === 0) return '';
+  const text = args.map((arg) => (typeof arg === 'string' ? arg : String(arg))).join(' ');
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text;
 }
 
 /** A short, single-line preview of a dump value for table summaries. */

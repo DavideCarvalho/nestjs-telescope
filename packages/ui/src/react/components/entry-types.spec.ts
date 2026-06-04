@@ -10,6 +10,22 @@ describe('ENTRY_TYPES dump', () => {
   });
 });
 
+describe('ENTRY_TYPES model and redis', () => {
+  it('includes a model type with a label and dot color', () => {
+    const model = ENTRY_TYPES.find((type) => type.id === 'model');
+    expect(model).toEqual({ id: 'model', label: 'Models', dot: 'bg-lime-400' });
+    expect(labelForType('model')).toBe('Models');
+    expect(dotForType('model')).toBe('bg-lime-400');
+  });
+
+  it('includes a redis type with a label and dot color', () => {
+    const redis = ENTRY_TYPES.find((type) => type.id === 'redis');
+    expect(redis).toEqual({ id: 'redis', label: 'Redis', dot: 'bg-rose-400' });
+    expect(labelForType('redis')).toBe('Redis');
+    expect(dotForType('redis')).toBe('bg-rose-400');
+  });
+});
+
 describe('resolveEntryQuery', () => {
   it('maps schedule onto the tagged-job filter', () => {
     expect(resolveEntryQuery('schedule')).toEqual({ type: 'job', tag: 'schedule' });

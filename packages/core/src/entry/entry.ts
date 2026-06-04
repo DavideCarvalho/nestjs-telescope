@@ -11,6 +11,8 @@ export const EntryType = {
   Dump: 'dump',
   Event: 'event',
   Log: 'log',
+  Model: 'model',
+  Redis: 'redis',
 } as const;
 
 export type BuiltinEntryType = (typeof EntryType)[keyof typeof EntryType];
