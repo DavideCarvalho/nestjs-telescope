@@ -39,6 +39,9 @@ export function PulsePage(): JSX.Element {
           onSelectRoute={(route) =>
             navigate(`/entries/request?familyHash=${encodeURIComponent(route)}`)
           }
+          onSelectOutgoing={(route) =>
+            navigate(`/entries/http_client?familyHash=${encodeURIComponent(route)}`)
+          }
         />
       )}
     </div>

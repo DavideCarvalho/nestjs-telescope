@@ -55,7 +55,19 @@ describe('HttpClientWatcher', () => {
       host: 'api.example.com',
       statusCode: 200,
     });
-    expect(entry.familyHash).toBe('GET api.example.com');
+    // familyHash keeps the host AND normalizes the path so the same endpoint
+    // groups regardless of ids — drives the pulse slow-outgoing hotspots.
+    expect(entry.familyHash).toBe('GET api.example.com/users');
+  });
+
+  it('normalizes id-like path segments in the familyHash', async () => {
+    globalThis.fetch = vi.fn(async () => ({ status: 200 }) as Response) as typeof globalThis.fetch;
+    const { ctx, recorded } = makeHarness();
+    new HttpClientWatcher().register(ctx);
+
+    await globalThis.fetch('https://api.stripe.com/v1/charges/123456');
+
+    expect(recorded[0]!.familyHash).toBe('GET api.stripe.com/v1/charges/:id');
   });
 
   it('uses the method from init and tags 5xx + slow', async () => {

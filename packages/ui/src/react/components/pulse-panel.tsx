@@ -14,11 +14,13 @@ export function PulsePanel({
   onSelectEntry,
   onSelectFamily,
   onSelectRoute,
+  onSelectOutgoing,
 }: {
   report: PulseReport;
   onSelectEntry?: (id: string) => void;
   onSelectFamily?: (familyHash: string) => void;
   onSelectRoute?: (route: string) => void;
+  onSelectOutgoing?: (route: string) => void;
 }): JSX.Element {
   return (
     <div className="text-xs">
@@ -143,6 +145,36 @@ export function PulsePanel({
               </tr>
             ))}
             {report.slowRoutes.length === 0 && (
+              <tr>
+                <td className="py-1 text-zinc-600">None detected</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Section>
+
+      <Section title="Slow outgoing HTTP">
+        <table className="w-full text-left">
+          <tbody>
+            {report.slowOutgoing.map((target) => (
+              <tr
+                key={target.route}
+                tabIndex={0}
+                onClick={() => onSelectOutgoing?.(target.route)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') onSelectOutgoing?.(target.route);
+                }}
+                className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
+              >
+                <td className="max-w-md truncate py-1 font-mono text-zinc-300">{target.route}</td>
+                <td className="whitespace-nowrap text-right text-amber-400">
+                  {target.p99}ms
+                  <span className="text-zinc-500"> p99</span>
+                </td>
+                <td className="whitespace-nowrap text-right text-zinc-500">×{target.count}</td>
+              </tr>
+            ))}
+            {report.slowOutgoing.length === 0 && (
               <tr>
                 <td className="py-1 text-zinc-600">None detected</td>
               </tr>

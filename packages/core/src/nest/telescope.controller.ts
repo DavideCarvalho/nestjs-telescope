@@ -17,6 +17,7 @@ import {
 import { durationToMs } from '../config/parse-duration.js';
 import type { Entry } from '../entry/entry.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
+import { type ServerStats, ServerStatsService } from '../metrics/server-stats.service.js';
 import type { StatsResult } from '../metrics/stats.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
@@ -89,6 +90,7 @@ export class TelescopeController {
     @Inject(TimeseriesService) private readonly timeseriesService: TimeseriesService,
     @Inject(TracesService) private readonly tracesService: TracesService,
     @Inject(StatsService) private readonly statsService: StatsService,
+    @Inject(ServerStatsService) private readonly serverStats: ServerStatsService,
     @Inject(PulseService) private readonly pulse: PulseService,
     @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
     @Inject(ScheduleManagerRegistry) private readonly scheduleManagers: ScheduleManagerRegistry,
@@ -366,6 +368,11 @@ export class TelescopeController {
   @Get('meta')
   meta(): Promise<TelescopeMeta> {
     return this.service.getMeta();
+  }
+
+  @Get('server-stats')
+  serverStatsSnapshot(): ServerStats {
+    return this.serverStats.getStats();
   }
 
   @Delete('entries')

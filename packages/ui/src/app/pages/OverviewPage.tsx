@@ -9,9 +9,70 @@ import {
   deriveTypes,
   usePulse,
   useQueues,
+  useServerStats,
   useTimeseries,
 } from '../../react/index.js';
-import type { PulseReport, QueueMetricsReport, TimeseriesReport } from '../../react/index.js';
+import type {
+  PulseReport,
+  QueueMetricsReport,
+  ServerStats,
+  TimeseriesReport,
+} from '../../react/index.js';
+
+function formatUptime(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m ${total % 60}s`;
+}
+
+function ServerStatsCard({ stats }: { stats: ServerStats | undefined }): JSX.Element {
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">Server</h3>
+      {stats ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <StatCard
+            label="Uptime"
+            value={formatUptime(stats.uptimeSec)}
+            accent="text-emerald-400"
+          />
+          <StatCard
+            label="RSS"
+            value={`${stats.memory.rssMb} MB`}
+            hint={`heap ${stats.memory.heapUsedMb}/${stats.memory.heapTotalMb} MB`}
+          />
+          <StatCard
+            label="Heap used"
+            value={`${stats.memory.heapUsedMb} MB`}
+            accent="text-sky-400"
+          />
+          <StatCard
+            label="CPU"
+            value={`${Math.round(stats.cpu.userMs)} ms`}
+            accent="text-violet-400"
+            hint={`sys ${Math.round(stats.cpu.systemMs)} ms`}
+          />
+          <StatCard
+            label="Event loop"
+            value={stats.eventLoopDelayMs === null ? 'n/a' : `${stats.eventLoopDelayMs} ms`}
+            accent={
+              stats.eventLoopDelayMs !== null && stats.eventLoopDelayMs > 100
+                ? 'text-red-400'
+                : 'text-zinc-100'
+            }
+            hint={`instance ${stats.instanceId}`}
+          />
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-600">Loading…</p>
+      )}
+    </section>
+  );
+}
 
 function formatBucketTime(iso: string): string {
   const date = new Date(iso);
@@ -131,6 +192,7 @@ export function OverviewPage(): JSX.Element {
   const pulse = usePulse(window);
   const queues = useQueues(window);
   const series = useTimeseries({ window, buckets: 60 });
+  const serverStats = useServerStats();
 
   const throughput = toThroughputSeries(series.data);
   const byTypeRows = toByTypeRows(series.data);
@@ -144,6 +206,8 @@ export function OverviewPage(): JSX.Element {
       </div>
 
       <StatCards pulse={pulse.data} queues={queues.data} />
+
+      <ServerStatsCard stats={serverStats.data} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <AreaChartCard title="Throughput" valueLabel="entries" data={throughput} />

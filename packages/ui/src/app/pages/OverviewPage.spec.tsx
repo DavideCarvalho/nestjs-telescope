@@ -32,6 +32,15 @@ const pulse: PulseReport = {
   ],
   nPlusOne: [],
   slowRoutes: [],
+  slowOutgoing: [],
+};
+
+const serverStats = {
+  uptimeSec: 7325,
+  memory: { rssMb: 128.5, heapUsedMb: 64.2, heapTotalMb: 96.0 },
+  cpu: { userMs: 1200, systemMs: 300 },
+  eventLoopDelayMs: 1.25,
+  instanceId: 'instance-abc',
 };
 
 const queues: QueueMetricsReport = {
@@ -79,6 +88,7 @@ function mockClient(): TelescopeClient {
       throw new Error('not used');
     },
     meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
+    serverStats: async () => serverStats,
   };
 }
 
@@ -122,5 +132,17 @@ describe('OverviewPage', () => {
     expect(screen.getByText('Slowest')).toBeTruthy();
     expect(screen.getByText('TypeError')).toBeTruthy();
     expect(screen.getByText('select * from big')).toBeTruthy();
+  });
+
+  it('renders the Server card from the server-stats snapshot', async () => {
+    renderOverview();
+    expect(await screen.findByText('Server')).toBeTruthy();
+    await waitFor(() => {
+      // uptime 7325s => 2h 2m
+      expect(screen.getByText('2h 2m')).toBeTruthy();
+    });
+    expect(screen.getByText('128.5 MB')).toBeTruthy();
+    expect(screen.getByText('1.25 ms')).toBeTruthy();
+    expect(screen.getByText('instance instance-abc')).toBeTruthy();
   });
 });

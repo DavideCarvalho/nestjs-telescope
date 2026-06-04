@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import type { HttpClientContent } from '../entry/content.js';
 import { EntryType } from '../entry/entry.js';
 import type { Watcher, WatcherContext } from '../nest/watcher.js';
+import { normalizeHttpTarget } from '../query/normalize-route.js';
 
 export interface HttpClientWatcherOptions {
   /** Outbound calls at/above this many ms get a 'slow' tag. Default 1000. */
@@ -144,7 +145,9 @@ export class HttpClientWatcher implements Watcher {
       ctx.record({
         type: EntryType.HttpClient,
         content,
-        familyHash: `${content.method} ${content.host ?? ''}`.trim() || null,
+        // Group by method + host + normalized path so the same external endpoint
+        // aggregates regardless of ids — the pulse slow-outgoing hotspot key/label.
+        familyHash: normalizeHttpTarget(content.method, content.url),
         durationMs: content.durationMs,
         ...(tags.length > 0 ? { tags } : {}),
       });

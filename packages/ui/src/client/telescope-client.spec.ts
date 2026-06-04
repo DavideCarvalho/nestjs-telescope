@@ -121,6 +121,21 @@ describe('createTelescopeClient', () => {
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/tags');
   });
 
+  it('GETs the server-stats snapshot', async () => {
+    const snapshot = {
+      uptimeSec: 10,
+      memory: { rssMb: 100, heapUsedMb: 50, heapTotalMb: 80 },
+      cpu: { userMs: 1, systemMs: 2 },
+      eventLoopDelayMs: 1.5,
+      instanceId: 'i-1',
+    };
+    const fetchMock = vi.fn(async () => jsonResponse(snapshot));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.serverStats();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/server-stats');
+    expect(result).toEqual(snapshot);
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchMock = vi.fn(
       async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,

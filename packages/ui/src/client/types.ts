@@ -108,8 +108,20 @@ export interface PulseReport {
   topExceptions: ExceptionGroup[];
   nPlusOne: NPlusOneHotspot[];
   slowRoutes: SlowRouteHotspot[];
+  /** Slowest outgoing http_client targets (method + host + normalized path). */
+  slowOutgoing: SlowRouteHotspot[];
   scanned: number;
   truncated: boolean;
+}
+
+/** Point-in-time Node process-health snapshot. Returned by `GET /server-stats`. */
+export interface ServerStats {
+  uptimeSec: number;
+  memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number };
+  cpu: { userMs: number; systemMs: number };
+  /** Mean event-loop delay in ms, or `null` when perf_hooks can't measure it. */
+  eventLoopDelayMs: number | null;
+  instanceId: string;
 }
 
 export interface QueueMetrics {

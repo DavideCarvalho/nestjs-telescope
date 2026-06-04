@@ -269,4 +269,44 @@ describe('summarizePulse', () => {
     );
     expect(summary.slowRoutes.map((route) => route.route)).toEqual(['GET /api/two']);
   });
+
+  it('aggregates slow outgoing http_client calls by family, ranked by p99', () => {
+    const summary = summarizePulse(
+      [
+        entry({
+          type: 'http_client',
+          familyHash: 'GET api.stripe.com/v1/charges/:id',
+          durationMs: 900,
+        }),
+        entry({
+          type: 'http_client',
+          familyHash: 'GET api.stripe.com/v1/charges/:id',
+          durationMs: 700,
+        }),
+        entry({ type: 'http_client', familyHash: 'GET fast.example.com/ping', durationMs: 5 }),
+        // requests must not leak into the outgoing bucket
+        entry({ type: 'request', familyHash: 'GET /api/x', durationMs: 9999 }),
+      ],
+      start,
+      end,
+      opts,
+    );
+    expect(summary.slowOutgoing.map((hotspot) => hotspot.route)).toEqual([
+      'GET api.stripe.com/v1/charges/:id',
+      'GET fast.example.com/ping',
+    ]);
+    const stripe = summary.slowOutgoing[0]!;
+    expect(stripe.count).toBe(2);
+    expect(stripe.p99).toBe(900);
+  });
+
+  it('omits http_client entries without a familyHash from slowOutgoing', () => {
+    const summary = summarizePulse(
+      [entry({ type: 'http_client', familyHash: null, durationMs: 800 })],
+      start,
+      end,
+      opts,
+    );
+    expect(summary.slowOutgoing).toEqual([]);
+  });
 });

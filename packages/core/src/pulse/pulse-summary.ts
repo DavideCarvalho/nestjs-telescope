@@ -54,6 +54,7 @@ export interface PulseSummary {
   topExceptions: ExceptionGroup[];
   nPlusOne: NPlusOneHotspot[];
   slowRoutes: SlowRouteHotspot[];
+  slowOutgoing: SlowRouteHotspot[];
 }
 
 export interface PulseOptions {
@@ -86,6 +87,30 @@ const MAX_LABEL_LENGTH = 500;
 /** Bound a label/sql string so the health snapshot payload stays small. */
 function truncate(value: string): string {
   return value.length > MAX_LABEL_LENGTH ? `${value.slice(0, MAX_LABEL_LENGTH)}…` : value;
+}
+
+/**
+ * Aggregate per-family durations into ranked {@link SlowRouteHotspot}s. The map
+ * key IS the `route` (familyHash, also the label); stats are p99/p50 over the
+ * family's durations. Shared by request slow-routes and outgoing-HTTP hotspots.
+ */
+function toHotspots(
+  durationsByFamily: Map<string, number[]>,
+  options: PulseOptions,
+): SlowRouteHotspot[] {
+  return [...durationsByFamily.entries()]
+    .map(([route, durations]) => {
+      const sorted = [...durations].sort((a, b) => a - b);
+      return {
+        route,
+        count: sorted.length,
+        p99: percentile(sorted, 0.99),
+        p50: percentile(sorted, 0.5),
+      };
+    })
+    .filter((hotspot) => hotspot.count >= options.slowRouteMinCount)
+    .sort((a, b) => b.p99 - a.p99 || b.count - a.count || a.route.localeCompare(b.route))
+    .slice(0, options.topN);
 }
 
 function asRecord(content: unknown): Record<string, unknown> | null {
@@ -155,6 +180,12 @@ export interface PulseAggregates {
    * stats come from content-less columns, so no hydration is required.
    */
   slowRoutes: SlowRouteHotspot[];
+  /**
+   * Slow outgoing-HTTP hotspots, already final: the `route` IS the http_client
+   * familyHash (method + host + normalized path) and the stats come from
+   * content-less columns, so no hydration is required.
+   */
+  slowOutgoing: SlowRouteHotspot[];
   hydrationIds: PulseHydrationIds;
 }
 
@@ -176,6 +207,8 @@ export function aggregatePulse(
   const batches = new Map<string, Entry[]>();
   // Request durations grouped by route family — the slow-route hotspot source.
   const routeDurations = new Map<string, number[]>();
+  // Outgoing http_client durations grouped by target family — slow-outgoing source.
+  const outgoingDurations = new Map<string, number[]>();
 
   for (const entry of entries) {
     counts[entry.type] = (counts[entry.type] ?? 0) + 1;
@@ -188,6 +221,16 @@ export function aggregatePulse(
       const existing = routeDurations.get(entry.familyHash);
       if (existing) existing.push(entry.durationMs);
       else routeDurations.set(entry.familyHash, [entry.durationMs]);
+    }
+
+    if (
+      entry.type === EntryType.HttpClient &&
+      entry.familyHash !== null &&
+      typeof entry.durationMs === 'number'
+    ) {
+      const existing = outgoingDurations.get(entry.familyHash);
+      if (existing) existing.push(entry.durationMs);
+      else outgoingDurations.set(entry.familyHash, [entry.durationMs]);
     }
 
     if (typeof entry.durationMs === 'number') {
@@ -275,19 +318,9 @@ export function aggregatePulse(
 
   // Slow-route hotspots: aggregate request durations per route family entirely
   // from content-less columns. The route IS the familyHash (also the label).
-  const slowRoutes: SlowRouteHotspot[] = [...routeDurations.entries()]
-    .map(([route, durations]) => {
-      const sorted = [...durations].sort((a, b) => a - b);
-      return {
-        route,
-        count: sorted.length,
-        p99: percentile(sorted, 0.99),
-        p50: percentile(sorted, 0.5),
-      };
-    })
-    .filter((hotspot) => hotspot.count >= options.slowRouteMinCount)
-    .sort((a, b) => b.p99 - a.p99 || b.count - a.count || a.route.localeCompare(b.route))
-    .slice(0, options.topN);
+  const slowRoutes = toHotspots(routeDurations, options);
+  // Slow outgoing-HTTP hotspots: same aggregation over http_client durations.
+  const slowOutgoing = toHotspots(outgoingDurations, options);
 
   return {
     windowStart,
@@ -298,6 +331,7 @@ export function aggregatePulse(
     exceptions,
     nPlusOne,
     slowRoutes,
+    slowOutgoing,
     hydrationIds: {
       slowest: slowest.map((candidate) => candidate.id),
       exceptions: exceptions.map((group) => group.representativeId),
@@ -366,6 +400,7 @@ export function finalizePulse(aggregates: PulseAggregates, hydrate: HydrateConte
     nPlusOne,
     // Slow routes are already final (familyHash is the label) — pass through.
     slowRoutes: aggregates.slowRoutes,
+    slowOutgoing: aggregates.slowOutgoing,
   };
 }
 

@@ -1,6 +1,30 @@
 // packages/core/src/query/normalize-route.spec.ts
 import { describe, expect, it } from 'vitest';
-import { normalizeRoute } from './normalize-route.js';
+import { normalizeHttpTarget, normalizeRoute } from './normalize-route.js';
+
+describe('normalizeHttpTarget', () => {
+  it('keeps the host and normalizes id-like path segments', () => {
+    expect(normalizeHttpTarget('GET', 'https://api.stripe.com/v1/charges/123')).toBe(
+      'GET api.stripe.com/v1/charges/:id',
+    );
+  });
+
+  it('treats a long hex / uuid path segment as an id', () => {
+    expect(
+      normalizeHttpTarget('POST', 'https://api.x.com/u/3c07e056-08bf-4dcb-ae21-9d426fb204df/sync'),
+    ).toBe('POST api.x.com/u/:id/sync');
+  });
+
+  it('drops the query string', () => {
+    expect(normalizeHttpTarget('GET', 'https://api.x.com/v1/list?page=2&token=abc')).toBe(
+      'GET api.x.com/v1/list',
+    );
+  });
+
+  it('falls back to normalizeRoute for a relative/unparseable url', () => {
+    expect(normalizeHttpTarget('GET', '/local/path/42')).toBe('GET /local/path/:id');
+  });
+});
 
 describe('normalizeRoute', () => {
   it('replaces a UUID segment with :id', () => {

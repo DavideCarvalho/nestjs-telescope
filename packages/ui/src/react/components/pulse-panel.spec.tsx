@@ -25,6 +25,7 @@ const report: PulseReport = {
     },
   ],
   slowRoutes: [{ route: 'GET /api/base/:id/mel', count: 42, p99: 1200, p50: 80 }],
+  slowOutgoing: [{ route: 'GET api.stripe.com/v1/charges/:id', count: 7, p99: 950, p50: 120 }],
 };
 
 describe('PulsePanel', () => {
@@ -82,5 +83,23 @@ describe('PulsePanel', () => {
     if (section instanceof HTMLElement) {
       expect(within(section).getByText('None detected')).toBeTruthy();
     }
+  });
+
+  it('renders slow outgoing HTTP hotspots with p99 and count', () => {
+    render(<PulsePanel report={report} />);
+    const section = screen.getByText('Slow outgoing HTTP').closest('section');
+    expect(section).toBeInstanceOf(HTMLElement);
+    if (section instanceof HTMLElement) {
+      expect(within(section).getByText('GET api.stripe.com/v1/charges/:id')).toBeTruthy();
+      expect(within(section).getByText(/950ms/)).toBeTruthy();
+      expect(within(section).getByText('×7')).toBeTruthy();
+    }
+  });
+
+  it('links a slow outgoing target to its http_client family', () => {
+    const onSelectOutgoing = vi.fn();
+    render(<PulsePanel report={report} onSelectOutgoing={onSelectOutgoing} />);
+    fireEvent.click(screen.getByText('GET api.stripe.com/v1/charges/:id'));
+    expect(onSelectOutgoing).toHaveBeenCalledWith('GET api.stripe.com/v1/charges/:id');
   });
 });

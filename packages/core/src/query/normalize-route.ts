@@ -29,3 +29,32 @@ export function normalizeRoute(method: string, url: string): string {
     .join('/');
   return `${method} ${normalizedPath}`;
 }
+
+/**
+ * Build a stable family for an OUTGOING HTTP call from a method + (possibly
+ * absolute) url. Keeps the host and normalizes the path's id-like segments, so
+ * calls to the same external endpoint group together regardless of ids:
+ *
+ * @example
+ *   normalizeHttpTarget('GET', 'https://api.stripe.com/v1/charges/ch_123?foo=1')
+ *   // => 'GET api.stripe.com/v1/charges/:id'
+ *
+ * Falls back to {@link normalizeRoute} over the raw url when it can't be parsed
+ * as absolute (e.g. a relative target), so a family is always produced.
+ */
+export function normalizeHttpTarget(method: string, url: string): string {
+  let host = '';
+  let path = url;
+  try {
+    const parsed = new URL(url);
+    host = parsed.host;
+    path = parsed.pathname;
+  } catch {
+    return normalizeRoute(method, url);
+  }
+  const normalizedPath = path
+    .split('/')
+    .map((segment) => (isIdSegment(segment) ? ':id' : segment))
+    .join('/');
+  return `${method} ${host}${normalizedPath}`;
+}
