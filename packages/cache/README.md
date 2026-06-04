@@ -3,18 +3,22 @@
 Cache watcher for [`@dudousxd/nestjs-telescope`](../../README.md). Captures cache
 hits and misses, correlated to the request or job that issued them.
 
-It supports two modes:
+It supports three modes:
 
-- **Official caches (default)** — pass a `cache-manager` (`@nestjs/cache-manager`)
-  `Cache` and the watcher **auto-patches** its `get`/`set`. Zero wiring.
-- **Custom caches** — pass `{ instrument }` and wire your own cache's native
-  events (e.g. [BentoCache](https://bentocache.dev)) into Telescope yourself.
+- **Zero-config (recommended)** — `new CacheWatcher()` (no args) **auto-discovers**
+  the standard `@nestjs/cache-manager` `CACHE_MANAGER` from the Nest container and
+  patches its `get`/`set`. No manual resource wiring.
+- **Explicit cache (override)** — pass a `cache-manager` (`@nestjs/cache-manager`)
+  `Cache` and the watcher auto-patches that instance's `get`/`set`.
+- **Custom caches (escape hatch)** — pass `{ instrument }` and wire your own
+  cache's native events (e.g. [BentoCache](https://bentocache.dev)) into Telescope
+  yourself.
 
 The philosophy: official libraries are auto-instrumented out of the box; any
 other cache is made instrumentable through the `instrument` hook — Telescope
 never has to special-case every cache library to support it.
 
-Both modes record in the caller's async context, so each captured entry lands in
+Every mode records in the caller's async context, so each captured entry lands in
 the active request/job batch automatically. No batch is opened here.
 
 ## Install
@@ -27,10 +31,31 @@ The cache type is structural (`get(key)` / `set(key, value, ttl?)`), so any
 `cache-manager` v5 / `@nestjs/cache-manager` `Cache` satisfies it without a hard
 dependency.
 
-## Usage — official cache (auto-patch)
+## Usage — zero-config (recommended)
 
-Inject the `cache-manager` `Cache` and register the watcher. The watcher patches
-its `get`/`set` for you; patching is per-instance and idempotent.
+Register the watcher with no args. At startup it resolves the standard
+`@nestjs/cache-manager` `CACHE_MANAGER` from the Nest container
+(`ctx.moduleRef.get(CACHE_MANAGER, { strict: false })`) and patches its
+`get`/`set` for you; patching is per-instance and idempotent.
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { CacheWatcher } from '@dudousxd/nestjs-telescope-cache';
+
+TelescopeModule.forRoot({
+  watchers: [new CacheWatcher()], // auto-discovers CACHE_MANAGER
+});
+```
+
+If `CACHE_MANAGER` isn't registered (or isn't a `get`/`set` cache), the watcher
+logs a one-line warning and no-ops — it never throws. In that case, use one of
+the explicit forms below.
+
+## Usage — explicit cache (override)
+
+To instrument a specific cache instance (e.g. a non-default `CACHE_MANAGER`),
+inject the `cache-manager` `Cache` and pass it in. The watcher patches that
+instance's `get`/`set`; auto-discovery is skipped.
 
 ```ts
 import { CACHE_MANAGER } from '@nestjs/cache-manager';

@@ -27,10 +27,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@dudousxd/nestjs-telescope": "workspace:*"
+    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@nestjs/cache-manager": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/cache-manager": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
+    "@nestjs/cache-manager": "3.1.2",
     "@types/node": "^20.0.0",
     "reflect-metadata": "^0.2.2",
     "typescript": "^5.4.0",

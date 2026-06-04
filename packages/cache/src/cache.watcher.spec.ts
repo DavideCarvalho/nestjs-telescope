@@ -6,7 +6,8 @@ import {
   type WatcherContext,
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
-import { describe, expect, it } from 'vitest';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type CacheEventInput,
   type CacheLike,
@@ -19,8 +20,11 @@ interface Harness {
   recorded: RecordInput[];
 }
 
-function makeHarness(options: { recordThrows?: boolean } = {}): Harness {
+function makeHarness(
+  options: { recordThrows?: boolean; moduleRefGet?: (token: unknown) => unknown } = {},
+): Harness {
   const recorded: RecordInput[] = [];
+  const moduleRefGet = options.moduleRefGet ?? (() => undefined);
   const ctx: WatcherContext = {
     record: (input) => {
       if (options.recordThrows) throw new Error('recorder boom');
@@ -29,7 +33,7 @@ function makeHarness(options: { recordThrows?: boolean } = {}): Harness {
     runInBatch: async <T>(_origin: BatchOrigin, fn: () => Promise<T>): Promise<T> => fn(),
     beginBatch: (): BatchHandle => ({ id: 'batch', end: () => {} }),
     config: resolveConfig({}),
-    moduleRef: { get: () => undefined } as unknown as WatcherContext['moduleRef'],
+    moduleRef: { get: moduleRefGet } as unknown as WatcherContext['moduleRef'],
   };
   return { ctx, recorded };
 }
@@ -220,6 +224,73 @@ describe('CacheWatcher', () => {
       expect(recorded).toHaveLength(0);
       expect(getCalls).toBe(0);
       expect(setCalls).toBe(0);
+    });
+  });
+
+  describe('auto-discovery (no-arg)', () => {
+    it('discovers CACHE_MANAGER via moduleRef and instruments it', async () => {
+      const cache = fakeCache({ user: { id: 1 } });
+      const { ctx, recorded } = makeHarness({
+        moduleRefGet: (token) => (token === CACHE_MANAGER ? cache : undefined),
+      });
+      new CacheWatcher().register(ctx);
+
+      const value = await cache.get('user');
+
+      expect(value).toEqual({ id: 1 });
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.content).toEqual({ operation: 'get', key: 'user', hit: true });
+    });
+
+    it('captures a set via the discovered CACHE_MANAGER', async () => {
+      const cache = fakeCache();
+      const { ctx, recorded } = makeHarness({
+        moduleRefGet: (token) => (token === CACHE_MANAGER ? cache : undefined),
+      });
+      new CacheWatcher().register(ctx);
+
+      await cache.set('k', 'v', 60);
+
+      expect(recorded[0]!.content).toEqual({ operation: 'set', key: 'k', hit: null });
+    });
+
+    it('warns and no-ops when CACHE_MANAGER is not found (never throws)', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { ctx, recorded } = makeHarness({ moduleRefGet: () => undefined });
+
+      expect(() => new CacheWatcher().register(ctx)).not.toThrow();
+      expect(recorded).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain('CACHE_MANAGER not found');
+
+      warn.mockRestore();
+    });
+
+    it('warns when the resolved CACHE_MANAGER is not a CacheLike', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { ctx, recorded } = makeHarness({
+        moduleRefGet: (token) => (token === CACHE_MANAGER ? { notACache: true } : undefined),
+      });
+
+      expect(() => new CacheWatcher().register(ctx)).not.toThrow();
+      expect(recorded).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      warn.mockRestore();
+    });
+
+    it('survives a moduleRef.get that throws (no throw, warns)', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { ctx } = makeHarness({
+        moduleRefGet: () => {
+          throw new Error('container boom');
+        },
+      });
+
+      expect(() => new CacheWatcher().register(ctx)).not.toThrow();
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      warn.mockRestore();
     });
   });
 });

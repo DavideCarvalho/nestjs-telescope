@@ -5,6 +5,7 @@ import {
   type Watcher,
   type WatcherContext,
 } from '@dudousxd/nestjs-telescope';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 /** The structural cache surface we wrap — covers `cache-manager` v5 /
  *  `@nestjs/cache-manager` `Cache`. Kept minimal so signature drift between
@@ -44,6 +45,14 @@ function isCustomCacheSource(source: CacheLike | CustomCacheSource): source is C
   return 'instrument' in source && typeof source.instrument === 'function';
 }
 
+/** Narrows an unknown (e.g. a provider resolved from the Nest container) to a
+ *  {@link CacheLike} by the presence of `get`/`set` functions. */
+function isCacheLike(value: unknown): value is CacheLike {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { get?: unknown; set?: unknown };
+  return typeof candidate.get === 'function' && typeof candidate.set === 'function';
+}
+
 /** Marks a cache instance whose `get`/`set` we've already wrapped, so repeated
  *  registration (or two watchers sharing it) never double-wraps. */
 const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:cachePatched');
@@ -77,13 +86,28 @@ const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:cachePatched');
  */
 export class CacheWatcher implements Watcher {
   readonly type = EntryType.Cache;
-  private readonly source: CacheLike | CustomCacheSource;
+  private readonly source: CacheLike | CustomCacheSource | undefined;
 
-  constructor(source: CacheLike | CustomCacheSource) {
+  constructor(source?: CacheLike | CustomCacheSource) {
     this.source = source;
   }
 
   register(ctx: WatcherContext): void {
+    // No-arg form: auto-discover the standard `@nestjs/cache-manager`
+    // CACHE_MANAGER from the Nest container and patch it.
+    if (this.source === undefined) {
+      const discovered = this.resolveStandardCache(ctx);
+      if (!discovered) {
+        console.warn(
+          'CacheWatcher: no cache provided and CACHE_MANAGER not found — ' +
+            'set a cache or use { instrument }',
+        );
+        return;
+      }
+      this.patchCache(discovered, ctx);
+      return;
+    }
+
     if (isCustomCacheSource(this.source)) {
       this.source.instrument((event) => {
         this.safeRecord(ctx, {
@@ -95,7 +119,27 @@ export class CacheWatcher implements Watcher {
       return;
     }
 
-    const cache = this.source as CacheLike & { [PATCHED]?: boolean };
+    this.patchCache(this.source, ctx);
+  }
+
+  /** Resolve the standard `@nestjs/cache-manager` `CACHE_MANAGER` provider from
+   *  the Nest container, narrowed to a {@link CacheLike}. Returns null when the
+   *  provider is absent or isn't a CacheLike. Defensive: a strict-resolution
+   *  throw degrades to null (never propagates). */
+  private resolveStandardCache(ctx: WatcherContext): CacheLike | null {
+    try {
+      const found = ctx.moduleRef.get(CACHE_MANAGER, { strict: false });
+      return isCacheLike(found) ? found : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Patch a {@link CacheLike}'s `get`/`set` to record each operation. Shared by
+   *  the explicit `new CacheWatcher(cache)` form and the no-arg auto-discovery
+   *  form. Per-instance and idempotent via the {@link PATCHED} marker. */
+  private patchCache(target: CacheLike, ctx: WatcherContext): void {
+    const cache = target as CacheLike & { [PATCHED]?: boolean };
     if (cache[PATCHED]) return;
     cache[PATCHED] = true;
 
