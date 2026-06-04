@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-ui",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Bundled dashboard + composable React components for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
@@ -29,7 +29,11 @@
       "default": "./dist/client/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.lib.json && tsc -p tsconfig.server.json",
     "test": "vitest run --passWithNoTests",
@@ -42,9 +46,15 @@
     "@nestjs/core": ">=11.0.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true },
-    "react-dom": { "optional": true },
-    "@tanstack/react-query": { "optional": true }
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
@@ -73,6 +83,15 @@
     "vite": "^5.4.0",
     "vitest": "^3.0.0"
   },
-  "engines": { "node": ">=20" },
-  "keywords": ["nestjs", "telescope", "dashboard", "ui", "observability", "react"]
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "dashboard",
+    "ui",
+    "observability",
+    "react"
+  ]
 }

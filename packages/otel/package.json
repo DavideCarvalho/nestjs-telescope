@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-otel",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "OpenTelemetry trace-context provider for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -31,7 +35,9 @@
     "@opentelemetry/api": ">=1.0.0"
   },
   "peerDependenciesMeta": {
-    "@opentelemetry/api": { "optional": true }
+    "@opentelemetry/api": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
@@ -43,5 +49,12 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["nestjs", "telescope", "opentelemetry", "otel", "tracing", "observability"]
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "opentelemetry",
+    "otel",
+    "tracing",
+    "observability"
+  ]
 }

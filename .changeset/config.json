@@ -15,7 +15,6 @@
       "@dudousxd/nestjs-telescope-cache",
       "@dudousxd/nestjs-telescope-schedule",
       "@dudousxd/nestjs-telescope-otel",
-      "@dudousxd/nestjs-telescope-pulse",
       "@dudousxd/nestjs-telescope-ui",
       "@dudousxd/nestjs-telescope-testing"
     ]

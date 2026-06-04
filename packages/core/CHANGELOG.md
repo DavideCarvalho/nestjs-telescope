@@ -1,0 +1,436 @@
+# @dudousxd/nestjs-telescope
+
+## 1.0.0
+
+### Minor Changes
+
+- [`73b50ad`](https://github.com/DavideCarvalho/nestjs-telescope/commit/73b50ad00193127271fdec36ad080d2858045922) - Add the BullMQ job watcher (`@dudousxd/nestjs-telescope-bullmq`). It discovers
+  `@nestjs/bullmq` `WorkerHost` processors and wraps each job in a `'queue'` batch,
+  capturing job outcome/duration/attempts and correlating the queries and
+  exceptions a job emits to that job. Core now imports `DiscoveryModule` so
+  discovery-based watchers can resolve `DiscoveryService`, and the canonical
+  `JobContent` gains `id` and `maxAttempts`.
+
+- [`9126bb0`](https://github.com/DavideCarvalho/nestjs-telescope/commit/9126bb04777cdaec6af3b0a1c5fe6f91d055ce82) - Add the cache watcher (`@dudousxd/nestjs-telescope-cache`). `CacheWatcher` wraps
+  a `cache-manager` `Cache`'s `get`/`set` (structural type — no hard dependency) to
+  capture hits/misses, correlated to the active request/job batch via the caller's
+  async context. `get` records `hit` (value present vs `undefined`/`null`) and
+  returns the value unchanged; `set` records `hit: null`. Core gains the `cache`
+  entry type (`EntryType.Cache`) and `CacheContent` (additive). Recording is
+  non-throwing and host errors are always re-thrown.
+
+- [`1f00e62`](https://github.com/DavideCarvalho/nestjs-telescope/commit/1f00e62c8e60482b64251813680a5f866ef1619a) - Make the telescope mount path configurable. `TelescopeModule.forRoot({ path:
+'observability' })` and `TelescopeUiModule.forRoot({ path: 'observability' })`
+  now serve the dashboard at `/observability` and the API at `/observability/api`.
+  The `path` option (normalized — leading/trailing slashes stripped) defaults to
+  `'telescope'`, so behavior is byte-identical when unset.
+
+  Core binds the API controller route at module-build time via a per-`forRoot`
+  subclass of `TelescopeController` (`dynamicController(...)`), preserving all
+  route/DI metadata. `forRootAsync` accepts a static `path` field (the route must
+  be known synchronously). The request-capture middleware now skips the configured
+  path instead of a hardcoded `/telescope`, and the resolved core config exposes
+  `path`.
+
+  The UI is **not** rebuilt per-path: the SPA keeps the `/telescope/` Vite base
+  placeholder and the UI controller rewrites the asset base to `/<path>/` at serve
+  time, injecting `window.__TELESCOPE_BASE__` so the client derives its API base
+  (`createTelescopeClient` falls back to `/telescope/api` when the global is
+  absent; an explicit `baseUrl` still wins). Asset traversal safety is unchanged.
+
+- [`090cd1f`](https://github.com/DavideCarvalho/nestjs-telescope/commit/090cd1ff871dbe46c1c877a26f90496550b5304c) - Dashboard insights, charts, and trace grouping. Core gains a `StatsService` +
+  `GET /stats` endpoint with per-type analytics (latency p50/p95/p99, query-family
+  breakdown, cache hit/miss ratio, request status breakdown) and an `EntryQuery.traceId`
+  filter across all storages. The schedule watcher now tags scheduled runs with a stable
+  `schedule` tag. The dashboard adds a per-type insights header with Recharts cards, cache
+  hit/miss badges, a working Schedule view (job entries tagged `schedule`), and a
+  `#/traces/:traceId` page that groups every entry sharing an OpenTelemetry trace.
+
+- [`b7326b3`](https://github.com/DavideCarvalho/nestjs-telescope/commit/b7326b33d8d55b5f1ac5de4256f5e1980278699e) - Add a **Dumps** dev tool. Call `telescopeDump(value, 'label')` anywhere in your
+  code (no dependency injection at the call site) and the value shows up in a new
+  "Dumps" tab in the dashboard — a request-correlated alternative to
+  `console.log`. `telescopeDump` forwards to a module-level sink that
+  `TelescopeService` wires on construction and detaches on shutdown (it is a
+  no-op until wired, so importing it in shared code never crashes outside a
+  Telescope-enabled app). `TelescopeService.dump(value, label?)` records a `dump`
+  entry whose `value` is redacted by the Recorder like any other content and
+  correlated to the active batch. Core exports `telescopeDump`, `setTelescopeDump`,
+  `DumpContent`, and `EntryType.Dump`. The UI gains a `dump` entry type, a detail
+  view that renders the label and pretty-printed JSON value (guarding
+  non-serializable values), and a table summary showing the label or a value
+  preview.
+
+- [`bfc0e26`](https://github.com/DavideCarvalho/nestjs-telescope/commit/bfc0e268388b5563d05c24e4de6ff99c74d1201a) - Add free-text search over entries. `EntryQuery` gains a `search?: string` field —
+  a case-insensitive substring matched against the entry's serialized `content`, so
+  you can find a request by uri, a query by sql, a cache op by key, or an exception
+  by message. It is applied as an extra AND predicate, so it composes with every
+  other filter and with keyset pagination, and it is independent of `omitContent`
+  (the match runs over the stored content before any projection).
+
+  Every storage provider implements it: sqlite (`content LIKE '%term%'`), mikro-orm
+  (`raw('content')` `$like` so the JSON column is matched as text, not JSON-encoded),
+  in-memory and redis (case-insensitive substring over `JSON.stringify(content)` in
+  the predicate / in-scan post-filter). The `GET /entries` endpoint reads a non-empty
+  `search` query param, and the dashboard entries filter bar gains a "Search content"
+  input (commits on Enter/blur, never on keystroke) shown as a clearable
+  `search:"term"` chip that "Clear filters" drops.
+
+- [`7797a2a`](https://github.com/DavideCarvalho/nestjs-telescope/commit/7797a2a1554aff49bb59f5ca1b204974a7e04a41) - Add the `event` and `log` entry types (`EntryType.Event` / `EntryType.Log`) and
+  their content shapes `EventContent { name, payload, listenerCount }` and
+  `LogContent { level, message, context }`, consumed by the new
+  `@dudousxd/nestjs-telescope-events` and `@dudousxd/nestjs-telescope-logs` watchers.
+
+- [`6817fe6`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6817fe62775b1ff847fdb1038d3298e7709569e0) - Add exception grouping to the per-type stats insight. `summarizeStats` now
+  returns `exceptions?: ExceptionGroupStats[]` for the `exception` type: groups
+  the window's exception entries by family key (the entry's `familyHash`, or a
+  `${class}: ${message}` fallback when null) with `count`, `lastAt`, `class`,
+  `message`, and a per-bucket `overTime` series aligned to the report's buckets,
+  sorted by count desc then last-seen desc (top 8). The Exceptions view renders an
+  "Exception groups" list — class (mono), truncated message, count, relative
+  last-seen, and an inline over-time sparkline — each row drilling through to that
+  group's occurrences via `?familyHash=`.
+
+- [`20ceb87`](https://github.com/DavideCarvalho/nestjs-telescope/commit/20ceb878cd4495dfbc7a3c71d882ae216a633757) - Surface JSON export and retention/sampling in the dashboard.
+
+  Core: `TelescopeMeta` (`GET /meta`) now reports the resolved `retention`
+  (`{ afterMs, keepLast }` from `prune`, or `null` when unbounded) and the
+  resolved per-type `sampling` rates, sourced from the resolved config.
+
+  UI: the entry-detail page gains a "Copy JSON" / "Download JSON" toolbar that
+  exports the full `EntryWithBatch` (`telescope-entry-<id>.json`); the trace page
+  gains a "Download JSON" button exporting all trace entries as a JSON array
+  (`telescope-trace-<traceId>.json`). The dashboard header shows a subtle
+  retention indicator (e.g. "retention: 5m", or "none" when unbounded) with a
+  sampling tooltip when any type is down-sampled below 1. New `toPrettyJson`,
+  `copyJson`, and `downloadJson` export utilities back the buttons; clipboard
+  absence degrades gracefully.
+
+- [`1dd4db0`](https://github.com/DavideCarvalho/nestjs-telescope/commit/1dd4db0f3cd46d04b35ac112343cfb424c2d3190) - Estimate latency percentiles (p50/p95/p99 in `/stats`) from a pre-aggregated
+  latency histogram instead of scanning every raw entry in the window. Rollups now
+  carry a fixed-size `histogram` (counts per `LATENCY_BOUNDARIES_MS` cell, plus an
+  overflow cell) aggregated at flush time from `durationMs`. When the store is a
+  `RollupStore`, `StatsService` queries the histogram rollups for the type+window,
+  merges them element-wise, and calls `estimatePercentileFromHistogram`
+  (bucket-resolution nearest-rank, O(buckets)); count/max/slow and the
+  family/cache/status/exception breakdowns still derive from the raw scan, and
+  stores without rollup support keep the exact raw-scan percentile path as a
+  fallback.
+
+  The histogram is persisted and merged additively by every `RollupStore`
+  implementation (in-memory, core SQLite, MikroORM, Redis). Legacy rollup
+  rows/hashes without a histogram are self-healed (new column/field) and read back
+  as an all-zeros array of the canonical length — never NaN, never a crash.
+
+- [`a9f517c`](https://github.com/DavideCarvalho/nestjs-telescope/commit/a9f517c076461aef55cfb90d072ec38427ace91b) - Add gated queue **mutation** endpoints on top of the live-queue reads. The core
+  controller now exposes `POST /telescope/api/queues/live/:driver/:queue/jobs/:id/:action`
+  (`retry` / `remove` / `promote`) and `POST .../actions/:action` (`retry-all`,
+  `redrive`), each carrying `:action` so a single `TelescopeActionGuard` authorizes
+  them uniformly.
+
+  Mutations are **default-deny**: they run behind a new `authorizeAction` option
+  _in addition to_ the read `authorizer`, and the guard fails closed. Without an
+  `authorizeAction` callback every mutation returns `403` — even for callers the
+  read authorizer already trusts. `authorizeAction(ctx, { driver, queue, action,
+jobId?, state? })` opts in; returning falsy or throwing denies.
+
+  `BullMqQueueManager` implements `retry` / `remove` / `promote` / `retryAll`
+  against the real BullMQ `Job.retry()` / `Job.remove()` / `Job.promote()` and
+  `Queue.retryJobs()` APIs (`retryAll` returns the pre-action count for the state).
+  `redrive` remains SQS-only and returns `405` on the bullmq driver.
+
+- [`9d8eb65`](https://github.com/DavideCarvalho/nestjs-telescope/commit/9d8eb6562a7584801d5aa8b74491091f0fade5f9) - Let operators **enqueue (send) a new job/message** onto a queue from the dashboard.
+
+  Core adds an optional `enqueue?(queue, payload, opts, ctx)` method to the
+  `QueueManager` SPI and a new `POST /telescope/api/queues/live/:driver/:queue/enqueue`
+  route. Unlike the other mutations it carries a JSON body (`{ name?, payload }`),
+  so it lives on its own path rather than under `:action` — but it flows through the
+  same default-deny `TelescopeActionGuard` as `retry` / `remove` / `redrive`: the
+  guard recovers the `enqueue` action from the request path, so without an
+  `authorizeAction` callback it returns `403`. The route returns `400` when the
+  payload is absent and `404` when the driver is unknown or doesn't implement
+  `enqueue`. `enqueue` is added to `QUEUE_ACTIONS` and advertised in the
+  `/queues/live` `actionsByDriver` capabilities when a manager implements it.
+
+  `BullMqQueueManager` implements `enqueue` via the real `Queue.add(name, data)`
+  (defaulting the name to `manual`), returning the new job id.
+
+  The UI gains an "Send message" form on the queue console — shown only when the
+  selected driver advertises `enqueue` and mutations are enabled. It parses the
+  payload textarea as JSON (invalid JSON surfaces inline without calling the API),
+  posts via a new `queueEnqueue` client method, and on success confirms and
+  refreshes the queue counts/jobs. A `403` surfaces inline as "Not authorized".
+
+- [`418f1f0`](https://github.com/DavideCarvalho/nestjs-telescope/commit/418f1f0421948b40b25f845441a716fa4c6655c2) - Add a driver-agnostic live-queue read layer. Core gains the `QueueManager` SPI
+  (`QueueManager`, `QueueManagerContext`, `QueueManagerRegistry`) and its DTO types
+  (`QueueState`, `QueueCounts`, `QueueSummary`, `QueueJob`, `QueueJobDetail`,
+  `JobPage`), wired through a `queueManagers` option on `TelescopeModule.forRoot`
+  and surfaced as read endpoints under the existing authorizer:
+  `GET /telescope/api/queues/live`, `…/live/:driver/:queue/counts`,
+  `…/live/:driver/:queue/jobs?state=`, and `…/live/:driver/:queue/jobs/:id`.
+
+  `@dudousxd/nestjs-telescope-bullmq` adds `BullMqQueueManager`, which discovers
+  `@nestjs/bullmq` `Queue` instances via `DiscoveryService` (duck-typed, optional
+  explicit allow-list) and reads them through the BullMQ `Queue` API to report
+  live counts, the jobs in each list, and per-job detail. Job payloads are passed
+  through core redaction before leaving the server. Reads only this phase — queue
+  actions (retry/remove/promote/redrive) land in Phase 2.
+
+- [`e76980d`](https://github.com/DavideCarvalho/nestjs-telescope/commit/e76980ddd7ee740f1b337a422a98ca98d97a007e) - Add `HttpClientWatcher`, a built-in watcher that instruments the global `fetch`
+  to capture outbound HTTP calls (method, URL, host, status, duration) correlated
+  to the request/job that made them. No peer dependency — it uses Node's built-in
+  `fetch`. Captured URLs have credentials and sensitive query params redacted. Adds
+  the `http_client` entry type and `HttpClientContent`.
+
+- [`e14ac60`](https://github.com/DavideCarvalho/nestjs-telescope/commit/e14ac603551372fc3767c63a349c509582b5e6ab) - Add `MikroOrmStorageProvider`: persist Telescope entries to MySQL/SQLite through
+  MikroORM with zero migration and zero manual table setup.
+
+  The provider owns a **dedicated MikroORM scoped to a single `TelescopeEntry`** and
+  **self-heals its schema at boot** (`schema.ensureDatabase()` +
+  `schema.update({ safe: true })` — additive only: creates the table and adds
+  missing columns, never drops). The scoped connection means the schema diff is
+  structurally incapable of touching the host's other tables, and it avoids a
+  self-capture loop with the query watcher's `loggerFactory`. Pass your existing
+  `MikroORM` (its connection config is borrowed) or explicit connection options to
+  run Telescope on a separate database. `ensureSchema: false` opts out.
+
+  Core gains an optional `StorageProvider.init()` boot hook (awaited by
+  `TelescopeModule` at startup) and now always calls `close()` after the final
+  flush at shutdown — providers that borrow a host-owned resource must no-op
+  `close()`. Features newest-first keyset pagination via an `$or` `(createdAt, id)`
+  position and cross-driver tag filtering against a space-padded `tagsText` column.
+
+- [`6fa0946`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6fa0946f5543868704864af2e32793eb448ac827) - Add the `model` and `redis` entry types (`EntryType.Model` / `EntryType.Redis`)
+  and their content shapes `ModelContent { action, entity, id, changes }` and
+  `RedisContent { command, args, durationMs }`, consumed by the new
+  `@dudousxd/nestjs-telescope-mikro-orm-watcher` and
+  `@dudousxd/nestjs-telescope-redis-watcher`. The UI gains Models/Redis nav types,
+  `ModelBody` / `RedisBody` detail renderers, and table summaries
+  (`<action> <entity>#<id>` for model, `<COMMAND> <args-preview>` for redis).
+
+- [`d507547`](https://github.com/DavideCarvalho/nestjs-telescope/commit/d507547df3c13e76e90b8a97c4e3e1d8aef25bd1) - Add OpenTelemetry trace linking. The new `@dudousxd/nestjs-telescope-otel`
+  package implements core's `TraceContextProvider` SPI by reading the active
+  OpenTelemetry span via `@opentelemetry/api` (`OtelTraceContextProvider`,
+  optional peer, read-only — never creates or exports spans, degrades to `null`
+  when no span/API is present). Core gains the `TraceContextProvider` SPI,
+  `traceId`/`spanId` on each `Entry`, and a `meta.traceLink` template so the UI
+  can deep-link entries to a trace backend; the MikroORM storage provider adds the
+  corresponding trace columns so the ids survive persistence. The Redis storage
+  provider now reconstructs `traceId`/`spanId` when reading entries back, and the
+  dashboard shows a Trace row in the entry detail with a clickable deep-link when
+  `traceLink` is configured.
+
+- [`affd07e`](https://github.com/DavideCarvalho/nestjs-telescope/commit/affd07e4cb9ee85cfabaabed424833e8c638d04a) - Warn at boot when no `prune` is configured. Without a retention window the entry
+  table grows unbounded and the windowed analytics scans (pulse/timeseries/stats)
+  slow down over time; the warning points hosts at `prune` (and `sampling` for
+  noisy request volume) before they hit it in production.
+
+- [`6a4d8d5`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6a4d8d56321d3840fe64e646130ccfdafcfb1bdd) - Batch pulse two-pass hydration into ONE query. `EntryQuery` gains an optional
+  `ids?: string[]` filter: when set, only entries whose `id` is in the set are
+  returned (ANDed with every other filter; an empty array returns no rows). Each
+  storage applies it natively — SQLite via `id IN (...)`, MikroORM via
+  `id: { $in }`, in-memory via a membership `Set`, and Redis via a single `MGET`
+  of the entry keys (the big win — it skips the index scan entirely). The pulse
+  service now hydrates the displayed rows (top-N slowest + exception reps + N+1
+  reps) with one batched `get({ ids })` instead of N per-id `find()` round-trips,
+  cutting pulse latency against a remote store. Pulse output shape is unchanged.
+
+- [`c1f1ec9`](https://github.com/DavideCarvalho/nestjs-telescope/commit/c1f1ec903d470d6b884924e2713de305b61b7481) - Add a pulse health endpoint. `GET /telescope/api/pulse?window=1h` returns a
+  health snapshot aggregated from captured entries: per-type counts, slowest
+  entries (by duration), top exceptions (grouped by family), and per-batch N+1
+  query occurrences (`PulseService` + `summarizePulse`). The windowed-read loop is
+  extracted into a shared `collectEntriesInWindow` used by both pulse and queue
+  metrics.
+
+- [`cad6dae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/cad6dae0dba4f22e476d78c23ce2f74f7f6848e4) - Two pulse/dashboard UX improvements.
+
+  N+1 query hotspots are now aggregated by query family instead of listed per
+  request. `summarizePulse` returns `NPlusOneHotspot[]` — one row per family with
+  `perRequest` (worst single-request repetition), `requests` (how many requests
+  tripped the threshold), `total` (sum of repetitions), and `sampleBatchId` (the
+  worst batch). Identical queries that previously appeared as several identical
+  rows now collapse into a single hotspot, sorted by total repetitions. The Pulse
+  panel renders `×{perRequest} per request · {requests} requests · {total} total`
+  and links each hotspot to its query family (`#/entries/query?familyHash=…`).
+
+  The entries table now surfaces a subtle `trace:<id>` chip on any row that
+  belongs to a trace, linking straight to `#/traces/:traceId` so traces are
+  discoverable from the list without opening an entry's detail. Rows without a
+  trace show nothing extra.
+
+- [`c8596c8`](https://github.com/DavideCarvalho/nestjs-telescope/commit/c8596c85712880cb235e8cce059a1d93d339e9bd) - Add slow-request hotspots to the pulse panel — like the N+1 hotspot, but for
+  endpoints: which routes are consistently slow, aggregated by route with `p99`,
+  `p50`, and request `count`.
+
+  Request entries now carry a readable, normalized **route family** as their
+  `familyHash` (e.g. `"GET /api/base/:id/mel"`), via a new pure
+  `normalizeRoute(method, url)` helper that strips the query string and replaces
+  id-like path segments (UUID / all-digits / long hex) with `:id`. The route
+  family doubles as the human label and indexes on the existing `family_hash`
+  column, so the new `slowRoutes` aggregation runs entirely over content-less
+  columns in the existing two-pass pulse scan — no `content` reads, no hydration.
+
+  The pulse panel renders a "Slow request hotspots" section; each row links
+  through to that route's request entries (`familyHash` filter).
+
+- [`c4222b1`](https://github.com/DavideCarvalho/nestjs-telescope/commit/c4222b16ef4c0fc9c61694eb67033f03369ff24e) - Speed up the `/pulse` and `/timeseries` analytics endpoints by aggregating over
+  a content-less projection instead of reading every entry's heavy `content` JSON
+  blob.
+
+  `EntryQuery` gains an `omitContent?: boolean` flag. When set, `get()` returns
+  entries with `content: null` and the provider skips reading/parsing the content
+  column where its driver allows:
+
+  - **mikro-orm**: projects every persisted column EXCEPT `content` via MikroORM's
+    `fields` option, so the blob never leaves the database (the main win on MySQL).
+  - **sqlite**: SELECTs the content-less column list and skips JSON parsing.
+  - **in-memory**: returns shallow copies with `content` nulled.
+  - **redis**: stores the whole entry as one blob, so it must read it anyway —
+    `omitContent` nulls `content` after parse (correct, but no projection benefit).
+
+  `timeseries` now scans content-less (bucketing only needs `createdAt`/`type`).
+  `pulse` runs two passes: pass 1 aggregates the whole window content-less
+  (counts, slowest candidates, exception families, N+1 hotspots); pass 2 hydrates
+  `content` for ONLY the few displayed rows (top-N slowest, one representative per
+  reported exception family, one per reported N+1 family) via targeted `find`s.
+  The pulse output shape is unchanged.
+
+  At ~10k entries with large content blobs this drops pulse and timeseries from
+  several seconds to a fraction of a second.
+
+- [`de29d2f`](https://github.com/DavideCarvalho/nestjs-telescope/commit/de29d2f519b1f25bc702c9dcc737d99b4751c8c9) - Add Horizon-style queue metrics. A new `GET /telescope/api/queues?window=1h`
+  endpoint aggregates captured `job` entries into per-queue throughput, runtime
+  and wait-time percentiles, and failure rate (`QueueMetricsService` +
+  `aggregateQueueMetrics`). The BullMQ watcher now captures `waitMs`
+  (`processedOn − enqueue`) on each job, and the canonical `JobContent` gains a
+  `waitMs` field. `durationToMs` is extracted as a shared, exported util.
+
+- [`10a3bc2`](https://github.com/DavideCarvalho/nestjs-telescope/commit/10a3bc224f6e0b1a237e1e7631acad70493b4c12) - Add Recorder self-metrics + `GET /telescope/api/health`: surface Telescope's own
+  overhead — buffered count, ring high-water, flush count/durations, drop buckets,
+  and an on-demand `captureCostNanos` micro-benchmark of the synchronous capture
+  path. Hot-path-safe: `record()` only does integer counter bumps; the per-capture
+  cost figure comes from a separate benchmark, never from timing live records.
+
+- [`abde392`](https://github.com/DavideCarvalho/nestjs-telescope/commit/abde39264effb31b0524cc4fa89a335276c8dccb) - Capture requests under a global prefix, and make query-shape insights actionable.
+
+  Core: the request-capture middleware no longer relies on NestJS module routing,
+  which silently scoped the catch-all to `/` whenever the host called
+  `setGlobalPrefix(...)`. New `telescopeRequestCapture(service)` factory lets hosts
+  register the capture globally (`app.use(...)` in bootstrap), and a
+  `registerRequestMiddleware: false` option disables the built-in registration.
+  Telescope's own dashboard routes are skipped inside the middleware instead of via
+  `.exclude()` (which breaks with catch-all routes). The query-family label now
+  tolerates content shapes that omit `slow`/`connection` (e.g. the MikroORM logger).
+
+  UI: the "Slowest query shapes" chart uses a horizontal, truncated layout (full
+  SQL on hover) so long labels no longer overlap, and each bar is clickable —
+  drilling into the entries list filtered to that query family.
+
+- [`8ff32a2`](https://github.com/DavideCarvalho/nestjs-telescope/commit/8ff32a2cc95775224eea3377460d91674dfda47f) - Capture richer request detail. The request middleware now records the parsed
+  request body as `payload` and the authenticated user as the new
+  `RequestContent.user` field — read in the `res.on('finish')` callback (after the
+  host body-parser and guards have run). The user defaults to the raw request's
+  `user` (the Passport/guard convention) and is customizable via the new
+  `TelescopeModuleOptions.resolveUser(request)` hook. Both flow through the
+  Recorder's redaction (passwords/tokens masked). The request detail UI gains
+  collapsible Headers (with count), a pretty-printed Payload section, and a User
+  section ("anonymous" when none).
+
+- [`5f2eddd`](https://github.com/DavideCarvalho/nestjs-telescope/commit/5f2eddd0ed5d72bf1de323b45870d7ddcaf64349) - Add a pre-aggregated rollup layer (Pulse-style ingest aggregation) and back the
+  timeseries endpoint with it. A new optional `RollupStore` SPI
+  (`recordRollups`/`queryRollups`, detected via `isRollupStore`) sits ALONGSIDE
+  `StorageProvider` — stores that do not implement it keep working unchanged via
+  the raw entry scan. On every successful flush the `Recorder` folds the drained
+  batch into 1-minute `(type, bucketStart)` rollups (count/sum/max, null durations
+  as 0) and records them best-effort; a rollup failure never affects the entry
+  store. `InMemoryStorageProvider` and `SqliteStorageProvider` implement the SPI
+  (sqlite via an additive `on conflict do update` upsert into `telescope_rollups`).
+  `TimeseriesService` reads rollups when available — re-bucketing the 1-minute
+  rollups into the requested report buckets and producing the SAME
+  `TimeseriesReport` shape as the raw scan — and transparently falls back to the
+  raw scan for tag-filtered queries and non-rollup stores.
+
+- [`b14a201`](https://github.com/DavideCarvalho/nestjs-telescope/commit/b14a20175eae3d3017e8cbc068d367a03f634175) - Add a live Schedule console for `@nestjs/schedule` scheduled tasks, mirroring the
+  Queues console.
+
+  Core gains a `ScheduleManager` SPI (`ScheduledTask` = name, kind, schedule,
+  nextRunAt, lastRunAt, lastDurationMs, lastStatus), a `ScheduleManagerRegistry`
+  that boots the configured managers, a `scheduleManagers?` option, and a
+  read-guarded `GET /telescope/api/schedules/live` returning `{ tasks }`.
+
+  The `@nestjs/schedule` watcher now also implements `ScheduleManager`: its
+  `listTasks()` reads `SchedulerRegistry` (via `moduleRef`) for the registered
+  cron/interval/timeout names, cron expression and next fire time, and merges its
+  own in-memory last-run map (additive to the existing entry-recording path). It
+  degrades gracefully — a missing/partial registry yields a null-filled or empty
+  list and never throws.
+
+  The UI adds a read-only `#/schedules` page (a table of name, kind, schedule,
+  next run, last run, duration, status) that polls like the queues console and
+  honors the live-tail pause, a `schedulesLive()` client method + `useSchedulesLive()`
+  hook, and a "Schedules" sidebar console link (distinct from the per-type
+  Schedule entries tab).
+
+- [`a90ef56`](https://github.com/DavideCarvalho/nestjs-telescope/commit/a90ef569ba12484bece07d8de2045e13ff2ff528) - Two dashboard additions:
+
+  - **Slow outgoing HTTP hotspots.** The `http_client` watcher now records a
+    grouping `familyHash` of `${method} ${host}${normalizedPath}` (via a new
+    `normalizeHttpTarget` helper that keeps the host and `:id`-normalizes the
+    path), so outbound calls to the same external endpoint aggregate regardless of
+    ids. Pulse gains `slowOutgoing: SlowRouteHotspot[]` — top-N external targets by
+    p99 (count + p99/p50 over `durationMs`), computed entirely from content-less
+    columns (no hydration). The UI renders a "Slow outgoing HTTP" section in the
+    Pulse panel, each row deep-linking to `#/entries/http_client?familyHash=…`.
+
+  - **Server stats card.** A read-guarded `GET /telescope/api/server-stats`
+    endpoint returns a point-in-time Node process-health snapshot
+    (`uptimeSec`, `memory` RSS/heap MB, `cpu` user/system ms, `eventLoopDelayMs`,
+    `instanceId`). Event-loop delay is read from a `perf_hooks.monitorEventLoopDelay`
+    histogram started once at service init and degrades to `null` when unavailable.
+    The UI Overview page shows a polled "Server" card (honors pause) via the new
+    `serverStats()` client method and `useServerStats()` hook.
+
+- [`593bcc8`](https://github.com/DavideCarvalho/nestjs-telescope/commit/593bcc85ad6558040c62ba66bd1e5e0cbe5a6ac7) - Make the SQS queue `dlqUrl` **optional**, reflecting real AWS where many queues
+  have no dead-letter queue. The primary value — live queue **depth**
+  (`waiting`/`active`/`delayed`, the latter now read from
+  `ApproximateNumberOfMessagesDelayed`) — is always reported from the main queue,
+  with or without a DLQ. DLQ inspection (`listJobs('failed')`) and `redrive` are now
+  a bonus, available only for queues configured with a `dlqUrl`:
+
+  - Without a `dlqUrl`: `failed` is `0`, `listJobs('failed')` returns an empty page,
+    and `redrive` throws `Queue "<name>" has no DLQ configured; redrive unavailable`.
+  - Each queue's `QueueSummary` now advertises an optional `actions` capability hint
+    (`['redrive']` when a DLQ is configured, otherwise `[]`) so the UI can show the
+    Redrive button only for queues that support it. Adds the optional
+    `actions?: QueueActionName[]` field to `QueueSummary` in core.
+
+- [`7b6636b`](https://github.com/DavideCarvalho/nestjs-telescope/commit/7b6636b54438427cd53ea0cbedd186b77d807169) - Add `@dudousxd/nestjs-telescope-ui`: a bundled React dashboard served by
+  `TelescopeUiModule` (no host frontend deps), with an Entries view (type tabs,
+  polling) and correlated entry detail. The same building blocks are exported at
+  `/react` (components + hooks) and `/client` (typed API client) so consumers can
+  compose their own dashboard. Core's request middleware now also excludes the
+  `/telescope` UI routes from capture.
+
+- [`e64f35a`](https://github.com/DavideCarvalho/nestjs-telescope/commit/e64f35a1bb7cae15b2ef24404888463d04f81eef) - Add throughput time-series. `GET /telescope/api/timeseries?window=1h&buckets=60`
+  returns bucketed entry counts (total + per type) computed from stored entries
+  (`TimeseriesService` + `bucketTimeseries`), with optional `type`/`tag` filters.
+  The dashboard renders it as a zero-dependency SVG `Sparkline` on the Pulse page
+  (also exported at `/react`).
+
+- [`4892ef6`](https://github.com/DavideCarvalho/nestjs-telescope/commit/4892ef61e45e5486d34c7ec82764e6767fe8233d) - Add a **Traces list** — browse recent distinct OTel traces instead of only
+  drilling in from a single entry. Core gains a pure `summarizeTraces` that groups
+  windowed entries by `traceId` (skipping null trace ids) into per-trace summaries
+  (`entryCount`, distinct sorted `types`, `firstAt`/`lastAt`, summed
+  `totalDurationMs`, optional `rootLabel`), a `TracesService` that scans the store
+  content-less over a window, and a `GET /telescope/api/traces?window=&limit=`
+  endpoint (read-guarded, mirrors `/timeseries`). The dashboard adds a **Traces**
+  nav item and a `#/traces` page listing recent traces — each row shows the root
+  label (or traceId), the type dots present, entry count, total duration, and
+  relative time, and links to the existing `#/traces/:traceId` grouping page.
+
+### Patch Changes
+
+- [`80c8f97`](https://github.com/DavideCarvalho/nestjs-telescope/commit/80c8f9769c8ab9ee724635086740910bc4d44ea3) - Scan the analytics window in large pages (5000, was 500). The metrics window
+  scan is the only caller; small pages turned one scan into many sequential
+  round-trips, which dominated latency against a remote SQL store. A big page
+  collapses a typical window into one or two queries — the real win for remote
+  RDS, complementing the content projection.

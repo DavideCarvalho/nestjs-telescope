@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-bullmq",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "BullMQ job watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -53,5 +57,12 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["nestjs", "telescope", "bullmq", "queue", "jobs", "observability"]
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "bullmq",
+    "queue",
+    "jobs",
+    "observability"
+  ]
 }

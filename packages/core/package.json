@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Laravel Telescope-style observability console for NestJS — core: watchers, recorder, correlation, SQLite store, headless API.",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -57,5 +61,12 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["nestjs", "telescope", "observability", "debugging", "apm", "tracing"]
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "observability",
+    "debugging",
+    "apm",
+    "tracing"
+  ]
 }
