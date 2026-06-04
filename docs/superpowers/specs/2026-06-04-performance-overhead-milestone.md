@@ -62,6 +62,15 @@ own impact *visible* — measure and surface what it costs.
    pressure, flush p95, dropped. So a user can SEE Telescope costs ~X µs/query and
    0 ms/request, and that it's keeping up.
 
+## STATUS (2026-06-04)
+- ✅ **trace_id index** (`e707854`) — `#/traces/:id` was the only unindexed filter → full scan (~10s cold). Indexed in mikro-orm (self-heals via schema.update) + sqlite. Live on flip's MySQL.
+- ✅ **C5 self-metrics + `GET /health`** (`10a3bc2`) — buffered count, ring high-water, flush durations, drops, on-demand `captureCostNanos`. Hot-path-safe. Live on flip.
+- ✅ **C6 health UI card** (`d3ccf7d`, ui) — Overview card renders /health (µs/capture, buffer, flush, dropped). Live on flip (ui-ins8).
+- ❌ **A1 deferred redaction — REJECTED** (`135d168`→revert `45c466e`): OOM via retained ORM entity graphs (see A.1 above). Lesson: sync redact is load-bearing.
+- ✅ **Measured proof capture ≈ free**: requests off-path (0ms, finish-callback); query capture ~8.7µs; memory flat under load (sync `redact()` deep-clones enumerable props → drops the live EntityManager ref). So "capture must not slow the app" is MET and proven.
+- ⬜ **B3 histogram-percentile rollups** — the ONE remaining read-path scale lever. pulse is 0.42s = 2 sequential remote-RDS RTTs (content-less window scan + 1 batched top-N hydrate; already 2-pass/batched, no cheap parallelization since pass 2 depends on pass 1). Only rollup-backed percentiles remove the raw scan. STORAGE-LAYER change → MUST be load-tested against flip under AUTH traffic before trusting (A1 lesson). Fresh context recommended.
+- ⬜ **C6 done; B4 (fewer round-trips) — N/A**: pulse already 2-pass batched; timeseries already rollup-backed (0.21s flat).
+
 ## Sequencing
 C (5→6) first — directly answers the explicit ask, fully additive, low risk, gives
 the measurement harness to prove A. Then A1 (biggest host-path win, guarded by C's
