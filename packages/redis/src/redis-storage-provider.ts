@@ -3,6 +3,9 @@ import {
   type EntryQuery,
   type EntryWithBatch,
   type Page,
+  type RollupBucket,
+  type RollupDelta,
+  type RollupStore,
   type StorageProvider,
   type TagCount,
   isBatchOrigin,
@@ -32,10 +35,12 @@ const DEFAULT_LIMIT = 50;
  * - `idx:family:<fh>`      ZSET    — same encoding, one per family hash
  * - `batch:<batchId>`      ZSET    — score = sequence, member = id
  * - `tags`                 HASH    — tag → count
+ * - `r:<metric>:<bucket>`  HASH    — rollup fields `count`/`sum`/`max`
+ * - `rz:<metric>`          ZSET    — score = bucketStart, member = bucketStart
  *
  * The host owns the injected ioredis connection; {@link close} is a no-op.
  */
-export class RedisStorageProvider implements StorageProvider {
+export class RedisStorageProvider implements StorageProvider, RollupStore {
   private readonly redis: Redis;
   private readonly prefix: string;
 
@@ -313,6 +318,80 @@ export class RedisStorageProvider implements StorageProvider {
     // no-op
   }
 
+  // ── RollupStore SPI ────────────────────────────────────────────────────────
+
+  /**
+   * Additively merge deltas into the rollup hashes: `count`/`sum` accumulate via
+   * HINCRBY, and `max` keeps a running max. HINCRBY cannot do max, so we read the
+   * current field and HSET only when the incoming `max` is larger (HGET → compare
+   * → HSET). ioredis-mock has no Lua/EVAL, so this read-then-set is the portable
+   * choice; it accepts a tiny race on `max` under concurrent writers to the same
+   * (metric, bucket), which is acceptable for an observability rollup.
+   */
+  async recordRollups(deltas: RollupDelta[]): Promise<void> {
+    if (deltas.length === 0) return;
+
+    // First, atomically accumulate count/sum and register each bucket in its
+    // per-metric index, in one pipeline.
+    const pipeline = this.redis.multi();
+    for (const delta of deltas) {
+      const key = this.rollupKey(delta.metric, delta.bucketStart);
+      pipeline.hincrby(key, 'count', delta.count);
+      pipeline.hincrby(key, 'sum', delta.sum);
+      pipeline.zadd(
+        this.rollupIndexKey(delta.metric),
+        delta.bucketStart,
+        String(delta.bucketStart),
+      );
+    }
+    await pipeline.exec();
+
+    // Then reconcile the running max per (metric, bucket): read current, HSET up.
+    for (const delta of deltas) {
+      const key = this.rollupKey(delta.metric, delta.bucketStart);
+      const existing = await this.redis.hget(key, 'max');
+      const current = existing === null ? Number.NEGATIVE_INFINITY : Number(existing);
+      if (delta.max > current) {
+        await this.redis.hset(key, 'max', String(delta.max));
+      }
+    }
+  }
+
+  /**
+   * Buckets for the given metrics whose bucketStart is in [fromBucket, toBucket].
+   * Per metric: ZRANGEBYSCORE the index for in-range bucketStarts, then HGETALL
+   * each rollup hash. Empty metrics ⇒ [].
+   */
+  async queryRollups(
+    metrics: string[],
+    fromBucket: number,
+    toBucket: number,
+  ): Promise<RollupBucket[]> {
+    if (metrics.length === 0) return [];
+
+    const result: RollupBucket[] = [];
+    for (const metric of metrics) {
+      const buckets = await this.redis.zrangebyscore(
+        this.rollupIndexKey(metric),
+        fromBucket,
+        toBucket,
+      );
+      for (const bucketStartRaw of buckets) {
+        const bucketStart = Number(bucketStartRaw);
+        const hash = await this.redis.hgetall(this.rollupKey(metric, bucketStart));
+        if (Object.keys(hash).length === 0) continue;
+        result.push({
+          metric,
+          bucketStart,
+          count: Number(hash.count ?? 0),
+          sum: Number(hash.sum ?? 0),
+          max: Number(hash.max ?? 0),
+        });
+      }
+    }
+    return result;
+  }
+
   /**
    * Resiliently parse a stored entry: bad JSON yields null (dropped by callers),
    * and `createdAt` is revived from its ISO string back into a Date.
@@ -457,5 +536,13 @@ export class RedisStorageProvider implements StorageProvider {
 
   private tagsKey(): string {
     return `${this.prefix}tags`;
+  }
+
+  private rollupKey(metric: string, bucketStart: number): string {
+    return `${this.prefix}r:${metric}:${bucketStart}`;
+  }
+
+  private rollupIndexKey(metric: string): string {
+    return `${this.prefix}rz:${metric}`;
   }
 }

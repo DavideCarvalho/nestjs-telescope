@@ -1,4 +1,4 @@
-import type { Entry } from '@dudousxd/nestjs-telescope';
+import { type Entry, isRollupStore } from '@dudousxd/nestjs-telescope';
 import type { Redis } from 'ioredis';
 import RedisMock from 'ioredis-mock';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -333,5 +333,103 @@ describe('RedisStorageProvider', () => {
 
     const page = await store.get({});
     expect(page.data.map((e) => e.id)).toEqual(['fresh', 'o3', 'o2']);
+  });
+
+  describe('RollupStore SPI', () => {
+    it('is detected as a RollupStore (both methods present)', () => {
+      expect(isRollupStore(store)).toBe(true);
+    });
+
+    it('records then queries rollups (round-trip)', async () => {
+      await store.recordRollups([
+        { metric: 'request', bucketStart: 60_000, count: 2, sum: 30, max: 20 },
+        { metric: 'query', bucketStart: 60_000, count: 1, sum: 5, max: 5 },
+      ]);
+
+      const buckets = await store.queryRollups(['request', 'query'], 0, 120_000);
+      const byMetric = new Map(buckets.map((b) => [b.metric, b]));
+      expect(byMetric.get('request')).toEqual({
+        metric: 'request',
+        bucketStart: 60_000,
+        count: 2,
+        sum: 30,
+        max: 20,
+      });
+      expect(byMetric.get('query')).toEqual({
+        metric: 'query',
+        bucketStart: 60_000,
+        count: 1,
+        sum: 5,
+        max: 5,
+      });
+    });
+
+    it('accumulates count/sum and keeps the running max on a second record (additive contract)', async () => {
+      await store.recordRollups([
+        { metric: 'request', bucketStart: 60_000, count: 2, sum: 30, max: 20 },
+      ]);
+      // Second delta for the SAME (metric, bucket): count/sum add, max is the running max.
+      await store.recordRollups([
+        { metric: 'request', bucketStart: 60_000, count: 3, sum: 12, max: 8 },
+      ]);
+
+      const [bucket] = await store.queryRollups(['request'], 0, 120_000);
+      expect(bucket).toEqual({
+        metric: 'request',
+        bucketStart: 60_000,
+        count: 5, // 2 + 3
+        sum: 42, // 30 + 12
+        max: 20, // max(20, 8)
+      });
+    });
+
+    it('raises the running max when a later delta is larger', async () => {
+      await store.recordRollups([
+        { metric: 'request', bucketStart: 60_000, count: 1, sum: 5, max: 5 },
+      ]);
+      await store.recordRollups([
+        { metric: 'request', bucketStart: 60_000, count: 1, sum: 99, max: 99 },
+      ]);
+
+      const [bucket] = await store.queryRollups(['request'], 0, 120_000);
+      expect(bucket?.max).toBe(99);
+    });
+
+    it('filters by metric set and bucket range; empty metrics ⇒ []', async () => {
+      await store.recordRollups([
+        { metric: 'request', bucketStart: 60_000, count: 1, sum: 1, max: 1 },
+        { metric: 'request', bucketStart: 120_000, count: 1, sum: 1, max: 1 },
+        { metric: 'request', bucketStart: 180_000, count: 1, sum: 1, max: 1 },
+        { metric: 'query', bucketStart: 120_000, count: 1, sum: 1, max: 1 },
+      ]);
+
+      // Range excludes 60_000 and 180_000; metric set excludes 'query'.
+      const buckets = await store.queryRollups(['request'], 100_000, 150_000);
+      expect(buckets.map((b) => b.bucketStart)).toEqual([120_000]);
+      expect(buckets.every((b) => b.metric === 'request')).toBe(true);
+
+      // Both metrics in range.
+      const both = await store.queryRollups(['request', 'query'], 100_000, 150_000);
+      expect(new Set(both.map((b) => b.metric))).toEqual(new Set(['request', 'query']));
+
+      // Empty metrics short-circuits.
+      expect(await store.queryRollups([], 0, 1_000_000)).toEqual([]);
+    });
+
+    it('empty deltas is a no-op', async () => {
+      await store.recordRollups([]);
+      expect(await store.queryRollups(['request'], 0, 1_000_000)).toEqual([]);
+    });
+
+    it('clear() empties rollups too', async () => {
+      await store.recordRollups([
+        { metric: 'request', bucketStart: 60_000, count: 1, sum: 1, max: 1 },
+      ]);
+      expect(await store.queryRollups(['request'], 0, 1_000_000)).toHaveLength(1);
+
+      await store.clear();
+
+      expect(await store.queryRollups(['request'], 0, 1_000_000)).toEqual([]);
+    });
   });
 });
