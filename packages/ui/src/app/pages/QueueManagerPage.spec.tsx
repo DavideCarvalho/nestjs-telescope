@@ -57,7 +57,14 @@ function mockClient(capabilities: QueueCapabilities): TelescopeClient {
     stats: async () => {
       throw new Error('not used');
     },
-    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
+    meta: async () => ({
+      enabled: true,
+      droppedCount: 0,
+      watchers: [],
+      traceLink: null,
+      retention: null,
+      sampling: {},
+    }),
     liveQueues: async () => ({ queues: summaries, capabilities }),
     queueCounts: async () => summaries[0]?.counts ?? ({} as never),
     queueJobs: async () => waitingPage,

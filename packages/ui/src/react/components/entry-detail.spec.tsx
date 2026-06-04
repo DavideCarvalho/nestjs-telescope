@@ -65,7 +65,14 @@ function entry(over: Partial<EntryWithBatch>): EntryWithBatch {
 
 async function renderDetail(entryValue: EntryWithBatch, traceLink: string | null) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const meta: TelescopeMeta = { enabled: true, droppedCount: 0, watchers: [], traceLink };
+  const meta: TelescopeMeta = {
+    enabled: true,
+    droppedCount: 0,
+    watchers: [],
+    traceLink,
+    retention: null,
+    sampling: {},
+  };
   const result = render(
     <TelescopeProvider client={mockClient(meta)}>
       <QueryClientProvider client={queryClient}>
@@ -117,7 +124,14 @@ function child(over: Partial<EntryWithBatch>): EntryWithBatch {
 // entry `type` text is ambiguous once the batch list renders it per child.
 async function renderDetailWithBatch(entryValue: EntryWithBatch) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const meta: TelescopeMeta = { enabled: true, droppedCount: 0, watchers: [], traceLink: null };
+  const meta: TelescopeMeta = {
+    enabled: true,
+    droppedCount: 0,
+    watchers: [],
+    traceLink: null,
+    retention: null,
+    sampling: {},
+  };
   render(
     <TelescopeProvider client={mockClient(meta)}>
       <QueryClientProvider client={queryClient}>

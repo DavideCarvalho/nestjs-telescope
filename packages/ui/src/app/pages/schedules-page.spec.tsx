@@ -50,7 +50,14 @@ function mockClient(tasks: ScheduledTask[]): TelescopeClient {
       throw new Error('not used');
     },
     tags: async () => [],
-    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
+    meta: async () => ({
+      enabled: true,
+      droppedCount: 0,
+      watchers: [],
+      traceLink: null,
+      retention: null,
+      sampling: {},
+    }),
     liveQueues: async () => ({
       queues: [],
       capabilities: { mutationsEnabled: false, actionsByDriver: {} },
@@ -105,11 +112,14 @@ describe('SchedulesPage', () => {
 
 describe('dashboard nav', () => {
   it('includes a Schedule console link', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <TelescopeProvider client={mockClient([])}>
-        <MemoryRouter>
-          <DashboardLayout>{null}</DashboardLayout>
-        </MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <DashboardLayout>{null}</DashboardLayout>
+          </MemoryRouter>
+        </QueryClientProvider>
       </TelescopeProvider>,
     );
     const link = screen.getByRole('link', { name: 'Schedules' });

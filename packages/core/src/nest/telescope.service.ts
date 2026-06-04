@@ -27,6 +27,10 @@ export interface TelescopeMeta {
   droppedCount: number;
   watchers: string[];
   traceLink: string | null;
+  /** Resolved retention window from `prune`, or `null` when unbounded. */
+  retention: { afterMs: number; keepLast: number | null } | null;
+  /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
+  sampling: Record<string, number>;
 }
 
 @Injectable()
@@ -159,6 +163,13 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       droppedCount: this.recorder.droppedCount,
       watchers: [...this.watcherTypes],
       traceLink: this.config.traceLink ?? null,
+      retention: this.config.prune
+        ? {
+            afterMs: this.config.prune.afterMs,
+            keepLast: this.config.prune.keepLast ?? null,
+          }
+        : null,
+      sampling: { ...this.config.sampling },
     };
   }
 }

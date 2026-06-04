@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import { downloadJson } from '../../react/components/export-json.js';
 import { EntriesTable, useEntries } from '../../react/index.js';
 
 export function TracePage(): JSX.Element {
@@ -25,6 +26,15 @@ export function TracePage(): JSX.Element {
         <span className="text-xs text-zinc-500">
           {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
         </span>
+        {entries.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => downloadJson(`telescope-trace-${traceId}.json`, entries)}
+            className="ml-auto rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[11px] text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Download JSON
+          </button>
+        ) : null}
       </div>
       {isLoading ? (
         <p className="text-zinc-600">Loading…</p>

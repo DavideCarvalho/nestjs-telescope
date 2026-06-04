@@ -160,6 +160,37 @@ describe('TelescopeService', () => {
     expect((await service.getMeta()).traceLink).toBe('https://traces.example/{traceId}/{spanId}');
   });
 
+  it('getMeta reflects configured retention and sampling', async () => {
+    const config = resolveConfig({
+      recorder: { flushIntervalMs: 5 },
+      prune: { after: '1h', keepLast: 1000 },
+      sampling: { request: 0.25 },
+    });
+    const service = new TelescopeService(config, new InMemoryStorageProvider(), {});
+    active = service;
+    const meta = await service.getMeta();
+    expect(meta.retention).toEqual({ afterMs: 3_600_000, keepLast: 1000 });
+    expect(meta.sampling).toEqual({ request: 0.25 });
+  });
+
+  it('getMeta returns null retention when no prune configured', async () => {
+    const { service } = makeService();
+    active = service;
+    const meta = await service.getMeta();
+    expect(meta.retention).toBeNull();
+    expect(meta.sampling).toEqual({});
+  });
+
+  it('getMeta returns null keepLast when prune omits it', async () => {
+    const config = resolveConfig({
+      recorder: { flushIntervalMs: 5 },
+      prune: { after: '1h' },
+    });
+    const service = new TelescopeService(config, new InMemoryStorageProvider(), {});
+    active = service;
+    expect((await service.getMeta()).retention).toEqual({ afterMs: 3_600_000, keepLast: null });
+  });
+
   it('getMeta returns null traceLink when unset', async () => {
     const { service } = makeService();
     active = service;

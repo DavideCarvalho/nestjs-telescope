@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { ENTRY_TYPES, useLiveTail } from '../react/index.js';
+import { ENTRY_TYPES, RetentionIndicator, useLiveTail } from '../react/index.js';
 
 const NAV = [
   { to: '/', label: 'Overview', end: true },
@@ -69,7 +69,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end border-b border-zinc-800 px-4 py-2">
+        <header className="flex items-center justify-end gap-4 border-b border-zinc-800 px-4 py-2">
+          <RetentionIndicator />
           <LiveTailToggle />
         </header>
         <main className="min-w-0 flex-1">{children}</main>

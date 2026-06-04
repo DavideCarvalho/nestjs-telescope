@@ -61,6 +61,10 @@ export interface TelescopeMeta {
   droppedCount: number;
   watchers: string[];
   traceLink: string | null;
+  /** Resolved retention window from `prune`, or `null` when unbounded. */
+  retention: { afterMs: number; keepLast: number | null } | null;
+  /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
+  sampling: Record<string, number>;
 }
 export interface DurationStats {
   avg: number;

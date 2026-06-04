@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { HashRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
@@ -23,18 +24,28 @@ function mockClient(): TelescopeClient {
     stats: async () => {
       throw new Error('not used');
     },
-    meta: async () => ({ enabled: true, droppedCount: 0, watchers: [], traceLink: null }),
+    meta: async () => ({
+      enabled: true,
+      droppedCount: 0,
+      watchers: [],
+      traceLink: null,
+      retention: null,
+      sampling: {},
+    }),
   };
 }
 
 function renderLayout() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <TelescopeProvider client={mockClient()}>
-      <HashRouter>
-        <DashboardLayout>
-          <div>child</div>
-        </DashboardLayout>
-      </HashRouter>
+      <QueryClientProvider client={queryClient}>
+        <HashRouter>
+          <DashboardLayout>
+            <div>child</div>
+          </DashboardLayout>
+        </HashRouter>
+      </QueryClientProvider>
     </TelescopeProvider>,
   );
 }

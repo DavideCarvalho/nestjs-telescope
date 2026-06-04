@@ -2,6 +2,7 @@ import type { EntryWithBatch } from '../../client/index.js';
 import { useMeta } from '../use-telescope-queries.js';
 import { BatchTimeline } from './batch-timeline.js';
 import { CacheBadge } from './cache-badge.js';
+import { ExportJsonToolbar } from './export-json-toolbar.js';
 import { RequestTimeline } from './request-timeline.js';
 import { buildTraceHref } from './trace-link.js';
 
@@ -14,10 +15,13 @@ export function EntryDetail({
   return (
     <div className="grid grid-cols-3 gap-6">
       <section className="col-span-2">
-        <h2 className="mb-2 flex items-center gap-2 text-sm text-emerald-400">
-          {entry.type}
-          {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
-        </h2>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-sm text-emerald-400">
+            {entry.type}
+            {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
+          </h2>
+          <ExportJsonToolbar value={entry} filename={`telescope-entry-${entry.id}.json`} />
+        </div>
         {showTimeline ? (
           <div className="mb-4">
             <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Timeline</h3>
