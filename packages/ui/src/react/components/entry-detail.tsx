@@ -34,6 +34,8 @@ export function EntryDetail({
           <ModelBody content={entry.content} />
         ) : entry.type === 'redis' ? (
           <RedisBody content={entry.content} />
+        ) : entry.type === 'request' ? (
+          <RequestBody content={entry.content} />
         ) : (
           <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
             {JSON.stringify(entry.content, null, 2)}
@@ -177,6 +179,80 @@ function RedisBody({ content }: { content: unknown }): JSX.Element {
       <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
         {prettyJson(record.args)}
       </pre>
+    </div>
+  );
+}
+
+/** True when a value is a non-null object or non-empty array (worth rendering). */
+function hasContent(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+}
+
+function RequestHeaders({ headers }: { headers: Record<string, unknown> }): JSX.Element {
+  const entries = Object.entries(headers);
+  return (
+    <details className="mb-4">
+      <summary className="cursor-pointer text-xs uppercase tracking-wide text-zinc-500">
+        Headers ({entries.length})
+      </summary>
+      <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded bg-zinc-900 p-3 text-xs">
+        {entries.map(([key, value]) => (
+          <div key={key} className="contents">
+            <dt className="font-mono text-zinc-500">{key}</dt>
+            <dd className="break-all font-mono text-zinc-300">
+              {typeof value === 'string' ? value : prettyJson(value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+function RequestBody({ content }: { content: unknown }): JSX.Element {
+  const record =
+    typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
+  const headers =
+    typeof record.headers === 'object' && record.headers !== null
+      ? (record.headers as Record<string, unknown>)
+      : {};
+  const method = typeof record.method === 'string' ? record.method : String(record.method ?? '');
+  const uri = typeof record.uri === 'string' ? record.uri : String(record.uri ?? '');
+  const statusCode = typeof record.statusCode === 'number' ? record.statusCode : null;
+  const ip = typeof record.ip === 'string' ? record.ip : null;
+  const hasUser = 'user' in record && record.user !== null && record.user !== undefined;
+  return (
+    <div>
+      <h3 className="mb-3 flex items-center gap-2 font-mono text-sm text-emerald-400">
+        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] uppercase">{method}</span>
+        <span className="text-zinc-300">{uri}</span>
+        {statusCode !== null ? (
+          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">
+            {statusCode}
+          </span>
+        ) : null}
+        {ip ? <span className="text-[10px] text-zinc-500">{ip}</span> : null}
+      </h3>
+      <RequestHeaders headers={headers} />
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Payload</h3>
+      {hasContent(record.payload) ? (
+        <pre className="mb-4 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+          {prettyJson(record.payload)}
+        </pre>
+      ) : (
+        <p className="mb-4 text-xs text-zinc-600">No payload</p>
+      )}
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">User</h3>
+      {hasUser ? (
+        <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+          {prettyJson(record.user)}
+        </pre>
+      ) : (
+        <p className="text-xs text-zinc-600">anonymous</p>
+      )}
     </div>
   );
 }

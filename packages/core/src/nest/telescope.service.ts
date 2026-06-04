@@ -73,6 +73,15 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     return this.config.path;
   }
 
+  /**
+   * Host-supplied hook to resolve the authenticated user from a raw request
+   * (used by the request middleware). `undefined` when the host didn't supply
+   * one — the middleware then falls back to reading `request.user`.
+   */
+  get resolveUser(): ((request: unknown) => unknown) | undefined {
+    return this.options.resolveUser;
+  }
+
   async onModuleInit(): Promise<void> {
     if (!this.config.enabled) return;
     // Retention guardrail: without `prune`, the entry table grows unbounded and

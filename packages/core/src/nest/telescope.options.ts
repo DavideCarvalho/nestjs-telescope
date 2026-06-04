@@ -46,6 +46,13 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * `app.use(telescopeRequestCapture(app.get(TelescopeService)))`.
    */
   registerRequestMiddleware?: boolean;
+  /**
+   * Resolves the "authenticated user" recorded on a request entry from the raw
+   * platform request. Defaults to reading `request.user` (the common
+   * Passport/guard convention). Return `null`/`undefined` for anonymous. The
+   * resolved value is redacted by the Recorder like any other content.
+   */
+  resolveUser?: (request: unknown) => unknown;
 }
 
 export interface TelescopeOptionsFactory {

@@ -25,6 +25,31 @@ function asFinishable(res: unknown): FinishableResponse | null {
   return typeof r?.once === 'function' ? (res as FinishableResponse) : null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** The parsed request body (Express/Fastify), or `null` when none is present. */
+function readPayload(request: unknown): unknown {
+  return isRecord(request) && 'body' in request ? request.body : null;
+}
+
+/**
+ * Resolve the authenticated user for a request. Prefers the host's
+ * `resolveUser` hook; otherwise reads `request.user` (the Passport/guard
+ * convention). Never throws — a faulty hook or missing user yields `null`.
+ */
+function readUser(request: unknown, resolveUser?: (request: unknown) => unknown): unknown {
+  if (resolveUser !== undefined) {
+    try {
+      return resolveUser(request) ?? null;
+    } catch {
+      return null;
+    }
+  }
+  return isRecord(request) && 'user' in request ? (request.user ?? null) : null;
+}
+
 @Injectable()
 export class TelescopeRequestMiddleware implements NestMiddleware {
   constructor(@Inject(TelescopeService) private readonly service: TelescopeService) {}
@@ -57,6 +82,11 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
             method: request.method,
             uri: request.url,
             headers: request.headers,
+            // `req.body` is parsed by the host body-parser and `req.user` set by
+            // guards before this finish callback fires. Both are passed raw and
+            // redacted by the Recorder (masking passwords/tokens).
+            payload: readPayload(req),
+            user: readUser(req, this.service.resolveUser),
             ip: request.ip,
             statusCode: response.statusCode,
           },

@@ -5,6 +5,13 @@ export interface RequestContent {
   uri: string;
   headers: Record<string, unknown>;
   payload: unknown;
+  /**
+   * The resolved authenticated user for the request (or `null` when anonymous).
+   * Defaults to the raw request's `user` (the common Passport/guard convention);
+   * a host can customize it via `TelescopeModuleOptions.resolveUser`. Redacted by
+   * the Recorder like any other content.
+   */
+  user: unknown;
   response: unknown;
   statusCode: number | null;
   ip: string | null;

@@ -151,6 +151,48 @@ describe('EntryDetail dump', () => {
   });
 });
 
+describe('EntryDetail request body', () => {
+  it('renders headers count, payload JSON, and the user', async () => {
+    await renderDetailWithBatch(
+      entry({
+        type: 'request',
+        batch: [],
+        content: {
+          method: 'POST',
+          uri: '/login',
+          headers: { 'content-type': 'application/json', accept: '*/*' },
+          payload: { email: 'a@b.com' },
+          user: { id: 'u1' },
+          statusCode: 201,
+        },
+      }),
+    );
+    expect(screen.getByText('Headers (2)')).toBeTruthy();
+    expect(screen.getByText(/"email": "a@b.com"/)).toBeTruthy();
+    expect(screen.getByText(/"id": "u1"/)).toBeTruthy();
+  });
+
+  it('renders "anonymous" when the user is null and "No payload" when empty', async () => {
+    await renderDetailWithBatch(
+      entry({
+        type: 'request',
+        batch: [],
+        content: {
+          method: 'GET',
+          uri: '/ping',
+          headers: {},
+          payload: null,
+          user: null,
+          statusCode: 200,
+        },
+      }),
+    );
+    expect(screen.getByText('anonymous')).toBeTruthy();
+    expect(screen.getByText('No payload')).toBeTruthy();
+    expect(screen.getByText('Headers (0)')).toBeTruthy();
+  });
+});
+
 describe('EntryDetail request timeline', () => {
   it('renders the timeline for a request with batch children beyond itself', async () => {
     const self = child({
