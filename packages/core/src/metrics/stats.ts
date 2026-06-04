@@ -73,6 +73,14 @@ export interface StatsResult {
   truncated: boolean;
 }
 
+/** Pre-estimated p50/p95/p99 (ms), supplied by a rollup-backed caller to replace
+ *  the raw-scan percentiles in {@link LatencyStats}. count/max/slow stay raw. */
+export interface LatencyPercentilesOverride {
+  p50: number;
+  p95: number;
+  p99: number;
+}
+
 export interface SummarizeStatsInput {
   entries: Entry[];
   type: string;
@@ -85,6 +93,10 @@ export interface SummarizeStatsInput {
   topFamilies?: number;
   topKeys?: number;
   topExceptions?: number;
+  /** When provided, p50/p95/p99 in the latency block are taken from these
+   *  rollup-histogram estimates instead of the raw-scan computation. The latency
+   *  block's count/max/slow remain raw-derived. */
+  latencyPercentiles?: LatencyPercentilesOverride;
 }
 
 const DEFAULT_TOP_FAMILIES = 8;
@@ -345,6 +357,7 @@ export function summarizeStats(input: SummarizeStatsInput): StatsResult {
     topFamilies = DEFAULT_TOP_FAMILIES,
     topKeys = DEFAULT_TOP_KEYS,
     topExceptions = DEFAULT_TOP_EXCEPTIONS,
+    latencyPercentiles,
   } = input;
 
   const overTime = bucketTimeseries(entries, windowStart, windowEnd, buckets);
@@ -358,6 +371,15 @@ export function summarizeStats(input: SummarizeStatsInput): StatsResult {
     truncated,
   };
 
+  // When the caller supplied rollup-histogram percentile estimates, substitute
+  // p50/p95/p99 (count/max/slow stay raw-derived). This only fires when the raw
+  // scan also found latency samples, keeping the "no durations ⇒ no latency"
+  // shape identical to the pure raw path.
+  if (latency !== undefined && latencyPercentiles !== undefined) {
+    latency.p50 = latencyPercentiles.p50;
+    latency.p95 = latencyPercentiles.p95;
+    latency.p99 = latencyPercentiles.p99;
+  }
   if (latency !== undefined) result.latency = latency;
   if (type === EntryType.Query) {
     const families = computeFamilies(entries, topFamilies);

@@ -18,6 +18,8 @@ export interface TelescopeRollupRow {
   count: number;
   sum: number;
   max: number;
+  /** Fixed-length latency histogram (JSON column); null on legacy rows. */
+  histogram: number[] | null;
 }
 
 // `bucket_start` is an epoch-ms timestamp and count/sum/max are accumulating
@@ -38,5 +40,9 @@ export const TelescopeRollup = new EntitySchema<TelescopeRollupRow>({
     count: { type: bigintNumber(), fieldName: 'count' },
     sum: { type: bigintNumber(), fieldName: 'sum' },
     max: { type: bigintNumber(), fieldName: 'max' },
+    // JSON-typed fixed-length latency histogram. Nullable so `schema.update({
+    // safe })` can self-heal it additively onto a legacy table whose rows
+    // predate the column (those read back null → normalized to zeros).
+    histogram: { type: 'json', fieldName: 'histogram', nullable: true },
   },
 });

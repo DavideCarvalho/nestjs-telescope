@@ -1,4 +1,29 @@
-import { type Entry, isRollupStore } from '@dudousxd/nestjs-telescope';
+import type { RollupDelta } from '@dudousxd/nestjs-telescope';
+import {
+  type Entry,
+  emptyHistogram,
+  incrementHistogram,
+  isRollupStore,
+} from '@dudousxd/nestjs-telescope';
+
+/** A histogram with a single sample in the cell for `durationMs`. */
+function histogramAt(durationMs: number): number[] {
+  const histogram = emptyHistogram();
+  incrementHistogram(histogram, durationMs);
+  return histogram;
+}
+
+function rollupDelta(overrides: Partial<RollupDelta> = {}): RollupDelta {
+  return {
+    metric: 'request',
+    bucketStart: 60_000,
+    count: 1,
+    sum: 10,
+    max: 10,
+    histogram: histogramAt(10),
+    ...overrides,
+  };
+}
 import type { Redis } from 'ioredis';
 import RedisMock from 'ioredis-mock';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -25,11 +50,12 @@ function entry(over: Partial<Entry>): Entry {
 
 describe('RedisStorageProvider', () => {
   let store: RedisStorageProvider;
+  let redis: Redis;
 
   beforeEach(async () => {
     // ioredis-mock instances share one in-process datastore, so flush before
     // each test to keep them isolated (fresh store per test).
-    const redis = new RedisMock() as unknown as Redis;
+    redis = new RedisMock() as unknown as Redis;
     await redis.flushall();
     store = new RedisStorageProvider(redis);
   });
@@ -340,10 +366,10 @@ describe('RedisStorageProvider', () => {
       expect(isRollupStore(store)).toBe(true);
     });
 
-    it('records then queries rollups (round-trip)', async () => {
+    it('records then queries rollups (round-trip) incl. histogram', async () => {
       await store.recordRollups([
-        { metric: 'request', bucketStart: 60_000, count: 2, sum: 30, max: 20 },
-        { metric: 'query', bucketStart: 60_000, count: 1, sum: 5, max: 5 },
+        rollupDelta({ metric: 'request', count: 2, sum: 30, max: 20, histogram: histogramAt(20) }),
+        rollupDelta({ metric: 'query', count: 1, sum: 5, max: 5, histogram: histogramAt(5) }),
       ]);
 
       const buckets = await store.queryRollups(['request', 'query'], 0, 120_000);
@@ -354,6 +380,7 @@ describe('RedisStorageProvider', () => {
         count: 2,
         sum: 30,
         max: 20,
+        histogram: histogramAt(20),
       });
       expect(byMetric.get('query')).toEqual({
         metric: 'query',
@@ -361,17 +388,23 @@ describe('RedisStorageProvider', () => {
         count: 1,
         sum: 5,
         max: 5,
+        histogram: histogramAt(5),
       });
     });
 
-    it('accumulates count/sum and keeps the running max on a second record (additive contract)', async () => {
+    it('accumulates count/sum, keeps the running max, and merges histograms (additive contract)', async () => {
       await store.recordRollups([
-        { metric: 'request', bucketStart: 60_000, count: 2, sum: 30, max: 20 },
+        rollupDelta({ count: 2, sum: 30, max: 20, histogram: histogramAt(20) }),
       ]);
-      // Second delta for the SAME (metric, bucket): count/sum add, max is the running max.
+      // Second delta for the SAME (metric, bucket): count/sum add, max is the
+      // running max, histograms merge element-wise.
       await store.recordRollups([
-        { metric: 'request', bucketStart: 60_000, count: 3, sum: 12, max: 8 },
+        rollupDelta({ count: 3, sum: 12, max: 8, histogram: histogramAt(8) }),
       ]);
+
+      const expectedHistogram = emptyHistogram();
+      incrementHistogram(expectedHistogram, 20);
+      incrementHistogram(expectedHistogram, 8);
 
       const [bucket] = await store.queryRollups(['request'], 0, 120_000);
       expect(bucket).toEqual({
@@ -380,15 +413,16 @@ describe('RedisStorageProvider', () => {
         count: 5, // 2 + 3
         sum: 42, // 30 + 12
         max: 20, // max(20, 8)
+        histogram: expectedHistogram,
       });
     });
 
     it('raises the running max when a later delta is larger', async () => {
       await store.recordRollups([
-        { metric: 'request', bucketStart: 60_000, count: 1, sum: 5, max: 5 },
+        rollupDelta({ count: 1, sum: 5, max: 5, histogram: histogramAt(5) }),
       ]);
       await store.recordRollups([
-        { metric: 'request', bucketStart: 60_000, count: 1, sum: 99, max: 99 },
+        rollupDelta({ count: 1, sum: 99, max: 99, histogram: histogramAt(99) }),
       ]);
 
       const [bucket] = await store.queryRollups(['request'], 0, 120_000);
@@ -397,10 +431,10 @@ describe('RedisStorageProvider', () => {
 
     it('filters by metric set and bucket range; empty metrics ⇒ []', async () => {
       await store.recordRollups([
-        { metric: 'request', bucketStart: 60_000, count: 1, sum: 1, max: 1 },
-        { metric: 'request', bucketStart: 120_000, count: 1, sum: 1, max: 1 },
-        { metric: 'request', bucketStart: 180_000, count: 1, sum: 1, max: 1 },
-        { metric: 'query', bucketStart: 120_000, count: 1, sum: 1, max: 1 },
+        rollupDelta({ metric: 'request', bucketStart: 60_000, count: 1, sum: 1, max: 1 }),
+        rollupDelta({ metric: 'request', bucketStart: 120_000, count: 1, sum: 1, max: 1 }),
+        rollupDelta({ metric: 'request', bucketStart: 180_000, count: 1, sum: 1, max: 1 }),
+        rollupDelta({ metric: 'query', bucketStart: 120_000, count: 1, sum: 1, max: 1 }),
       ]);
 
       // Range excludes 60_000 and 180_000; metric set excludes 'query'.
@@ -422,14 +456,39 @@ describe('RedisStorageProvider', () => {
     });
 
     it('clear() empties rollups too', async () => {
-      await store.recordRollups([
-        { metric: 'request', bucketStart: 60_000, count: 1, sum: 1, max: 1 },
-      ]);
+      await store.recordRollups([rollupDelta({ count: 1, sum: 1, max: 1 })]);
       expect(await store.queryRollups(['request'], 0, 1_000_000)).toHaveLength(1);
 
       await store.clear();
 
       expect(await store.queryRollups(['request'], 0, 1_000_000)).toEqual([]);
+    });
+
+    it('reads a legacy rollup hash (no histogram field) back as an all-zeros histogram', async () => {
+      // Simulate a pre-histogram rollup hash written directly: only count/sum/max
+      // fields, registered in the per-metric index. The query must hydrate a
+      // zero-array histogram of the canonical length — never NaN, never a crash.
+      const key = 'telescope:r:request:60000';
+      await redis.hset(key, 'count', '4', 'sum', '40', 'max', '10');
+      await redis.zadd('telescope:rz:request', 60_000, '60000');
+
+      const [bucket] = await store.queryRollups(['request'], 0, 120_000);
+      expect(bucket).toEqual({
+        metric: 'request',
+        bucketStart: 60_000,
+        count: 4,
+        sum: 40,
+        max: 10,
+        histogram: emptyHistogram(),
+      });
+
+      // A subsequent record merges a real histogram onto the legacy zero base.
+      await store.recordRollups([
+        rollupDelta({ count: 1, sum: 5, max: 5, histogram: histogramAt(5) }),
+      ]);
+      const [merged] = await store.queryRollups(['request'], 0, 120_000);
+      expect(merged?.count).toBe(5);
+      expect(merged?.histogram).toEqual(histogramAt(5));
     });
   });
 });

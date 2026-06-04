@@ -1,6 +1,7 @@
 // packages/core/src/storage/in-memory-storage-provider.ts
 import type { Entry } from '../entry/entry.js';
 import type { RollupBucket, RollupDelta, RollupStore } from '../rollup/rollup-store.js';
+import { mergeHistograms, normalizeHistogram } from '../rollup/rollup-store.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import type {
   EntryQuery,
@@ -125,11 +126,13 @@ export class InMemoryStorageProvider implements StorageProvider, RollupStore {
           count: delta.count,
           sum: delta.sum,
           max: delta.max,
+          histogram: normalizeHistogram(delta.histogram),
         });
       } else {
         existing.count += delta.count;
         existing.sum += delta.sum;
         existing.max = Math.max(existing.max, delta.max);
+        existing.histogram = mergeHistograms(existing.histogram, delta.histogram);
       }
     }
   }
@@ -147,7 +150,7 @@ export class InMemoryStorageProvider implements StorageProvider, RollupStore {
         bucket.bucketStart >= fromBucket &&
         bucket.bucketStart <= toBucket
       ) {
-        result.push({ ...bucket });
+        result.push({ ...bucket, histogram: normalizeHistogram(bucket.histogram) });
       }
     }
     return result;

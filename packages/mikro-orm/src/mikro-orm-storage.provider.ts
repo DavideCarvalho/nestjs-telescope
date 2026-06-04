@@ -60,7 +60,13 @@ import type {
   StorageProvider,
   TagCount,
 } from '@dudousxd/nestjs-telescope';
-import { decodeCursor, encodeCursor, isBatchOrigin } from '@dudousxd/nestjs-telescope';
+import {
+  decodeCursor,
+  encodeCursor,
+  isBatchOrigin,
+  mergeHistograms,
+  normalizeHistogram,
+} from '@dudousxd/nestjs-telescope';
 import type { EntityManager, FilterQuery, Options } from '@mikro-orm/core';
 import { MikroORM, raw } from '@mikro-orm/core';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
@@ -405,6 +411,11 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
           existing.count += delta.count;
           existing.sum += delta.sum;
           existing.max = Math.max(existing.max, delta.max);
+          // Element-wise histogram merge; legacy null reads back as zeros.
+          existing.histogram = mergeHistograms(
+            normalizeHistogram(existing.histogram),
+            delta.histogram,
+          );
         } else {
           tx.create(TelescopeRollup, {
             metric: delta.metric,
@@ -412,6 +423,7 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
             count: delta.count,
             sum: delta.sum,
             max: delta.max,
+            histogram: normalizeHistogram(delta.histogram),
           });
         }
       }
@@ -435,6 +447,7 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
       count: row.count,
       sum: row.sum,
       max: row.max,
+      histogram: normalizeHistogram(row.histogram),
     }));
   }
 }

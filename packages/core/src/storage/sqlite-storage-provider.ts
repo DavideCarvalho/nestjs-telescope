@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import type { Entry } from '../entry/entry.js';
 import { isBatchOrigin } from '../entry/entry.js';
 import type { RollupBucket, RollupDelta, RollupStore } from '../rollup/rollup-store.js';
+import { mergeHistograms, normalizeHistogram } from '../rollup/rollup-store.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import { safeJsonParse } from './safe-json.js';
 import type {
@@ -47,6 +48,8 @@ interface RollupRow {
   count: number;
   sum: number;
   max: number;
+  /** JSON-encoded fixed-length latency histogram; null on legacy rows. */
+  histogram: string | null;
 }
 
 /** Default storage provider: embedded SQLite via better-sqlite3, JSON1 for tags. */
@@ -58,7 +61,9 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
   private readonly stmtFindRow: Database.Statement;
   /** Prepared once; reused by batch(). */
   private readonly stmtBatch: Database.Statement;
-  /** Prepared once; reused by recordRollups() — additive upsert. */
+  /** Prepared once; reused by recordRollups() to read the existing rollup row. */
+  private readonly stmtSelectRollup: Database.Statement;
+  /** Prepared once; reused by recordRollups() — additive upsert incl. histogram. */
   private readonly stmtUpsertRollup: Database.Statement;
 
   constructor(options: SqliteStorageOptions = {}) {
@@ -97,6 +102,7 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
         count integer not null,
         sum integer not null,
         max integer not null,
+        histogram text,
         primary key (metric, bucket_start)
       );
       create index if not exists ix_tr_bucket on telescope_rollups (bucket_start);
@@ -104,8 +110,12 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
 
     // Self-heal tables created before trace_id/span_id existed (additive, no migration).
     // On a freshly-created table these columns already exist, so both no-op via the swallow.
-    this.ensureColumn('trace_id text');
-    this.ensureColumn('span_id text');
+    this.ensureColumn('telescope_entries', 'trace_id text');
+    this.ensureColumn('telescope_entries', 'span_id text');
+
+    // Self-heal a telescope_rollups table created before the histogram column
+    // existed. Legacy rows have a null histogram; reads normalize that to zeros.
+    this.ensureColumn('telescope_rollups', 'histogram text');
 
     // Index trace_id only AFTER the column is guaranteed to exist (a legacy table
     // predating the column would otherwise make the index DDL fail). The
@@ -125,14 +135,21 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
     this.stmtBatch = this.db.prepare(
       'select * from telescope_entries where batch_id = ? order by sequence asc limit 1000',
     );
-    // Additive upsert: accumulate count/sum, keep a running max.
+    this.stmtSelectRollup = this.db.prepare(
+      'select metric, bucket_start, count, sum, max, histogram from telescope_rollups where metric = @metric and bucket_start = @bucket_start',
+    );
+    // Additive merge happens in JS (recordRollups reads the existing row, folds
+    // the delta in, and writes the merged totals), so the upsert REPLACES every
+    // aggregate column with the already-merged value. Doing the merge in JS keeps
+    // count/sum/max and the element-wise histogram merge on a single code path.
     this.stmtUpsertRollup = this.db.prepare(
-      `insert into telescope_rollups (metric, bucket_start, count, sum, max)
-       values (@metric, @bucket_start, @count, @sum, @max)
+      `insert into telescope_rollups (metric, bucket_start, count, sum, max, histogram)
+       values (@metric, @bucket_start, @count, @sum, @max, @histogram)
        on conflict(metric, bucket_start) do update set
-         count = count + excluded.count,
-         sum = sum + excluded.sum,
-         max = max(max, excluded.max)`,
+         count = excluded.count,
+         sum = excluded.sum,
+         max = excluded.max,
+         histogram = excluded.histogram`,
     );
   }
 
@@ -141,13 +158,13 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
   }
 
   /**
-   * Idempotently adds a column to telescope_entries. SQLite has no
+   * Idempotently adds a column to `table`. SQLite has no
    * `add column if not exists`, so we attempt the alter and swallow ONLY the
    * duplicate-column error (the column is already present); anything else re-throws.
    */
-  private ensureColumn(ddl: string): void {
+  private ensureColumn(table: string, ddl: string): void {
     try {
-      this.db.exec(`alter table telescope_entries add column ${ddl}`);
+      this.db.exec(`alter table ${table} add column ${ddl}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes('duplicate column')) throw error;
@@ -317,18 +334,32 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
 
   async recordRollups(deltas: RollupDelta[]): Promise<void> {
     if (deltas.length === 0) return;
-    const tx = this.db.transaction((rows: RollupRow[]) => {
-      for (const row of rows) this.stmtUpsertRollup.run(row);
+    // Read-modify-write inside ONE transaction: fold each delta onto the current
+    // row (or zeros when absent) and write the merged totals. The histogram is
+    // merged element-wise; count/sum/max accumulate. Deltas in the same batch
+    // hitting the same bucket fold sequentially (each read sees prior writes).
+    const tx = this.db.transaction((batch: RollupDelta[]) => {
+      for (const delta of batch) {
+        const existing = this.stmtSelectRollup.get({
+          metric: delta.metric,
+          bucket_start: delta.bucketStart,
+        }) as RollupRow | undefined;
+        const baseCount = existing?.count ?? 0;
+        const baseSum = existing?.sum ?? 0;
+        const baseMax = existing?.max ?? Number.NEGATIVE_INFINITY;
+        const baseHistogram = normalizeHistogram(this.parseHistogram(existing?.histogram ?? null));
+        const mergedHistogram = mergeHistograms(baseHistogram, delta.histogram);
+        this.stmtUpsertRollup.run({
+          metric: delta.metric,
+          bucket_start: delta.bucketStart,
+          count: baseCount + delta.count,
+          sum: baseSum + delta.sum,
+          max: Math.max(baseMax, delta.max),
+          histogram: JSON.stringify(mergedHistogram),
+        });
+      }
     });
-    tx(
-      deltas.map((delta) => ({
-        metric: delta.metric,
-        bucket_start: delta.bucketStart,
-        count: delta.count,
-        sum: delta.sum,
-        max: delta.max,
-      })),
-    );
+    tx(deltas);
   }
 
   async queryRollups(
@@ -342,7 +373,7 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
     metrics.forEach((metric, index) => {
       params[`m${index}`] = metric;
     });
-    const sql = `select metric, bucket_start, count, sum, max
+    const sql = `select metric, bucket_start, count, sum, max, histogram
       from telescope_rollups
       where metric in (${placeholders.join(', ')})
         and bucket_start between @from and @to`;
@@ -353,7 +384,24 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
       count: row.count,
       sum: row.sum,
       max: row.max,
+      histogram: normalizeHistogram(this.parseHistogram(row.histogram)),
     }));
+  }
+
+  /**
+   * Parses a stored histogram JSON string back into a number[]. Legacy/null rows
+   * and any malformed JSON yield null, which {@link normalizeHistogram} turns
+   * into an all-zeros array of the canonical length.
+   */
+  private parseHistogram(raw: string | null): number[] | null {
+    if (raw === null) return null;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return null;
+      return parsed.map((value) => (typeof value === 'number' ? value : 0));
+    } catch {
+      return null;
+    }
   }
 
   private toRow(entry: Entry): Row {

@@ -1,9 +1,17 @@
 // packages/core/src/metrics/stats.service.ts
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
+import { estimatePercentileFromHistogram } from '../rollup/estimate-percentile.js';
+import {
+  type RollupStore,
+  emptyHistogram,
+  floorToBucket,
+  isRollupStore,
+  mergeHistograms,
+} from '../rollup/rollup-store.js';
 import type { EntryQuery, StorageProvider } from '../storage/storage-provider.js';
 import { collectEntriesInWindow } from './collect-window.js';
-import { type StatsResult, summarizeStats } from './stats.js';
+import { type LatencyPercentilesOverride, type StatsResult, summarizeStats } from './stats.js';
 
 const DEFAULT_BUCKETS = 60;
 const MAX_BUCKETS = 500;
@@ -64,6 +72,17 @@ export class StatsService {
       ...(this.scanCap !== undefined ? { scanCap: this.scanCap } : {}),
     });
 
+    // Fast path for the latency percentiles ONLY: when the store supports
+    // rollups, estimate p50/p95/p99 from the pre-aggregated latency histogram
+    // (O(buckets)) instead of sorting every raw durationMs (O(rows)). Everything
+    // else summarizeStats does — count/max/slow, family/cache/status/exception
+    // breakdowns, throughput — still derives from the raw scan. When the store
+    // is NOT a RollupStore, the override is omitted and percentiles fall back to
+    // the raw-scan computation unchanged.
+    const latencyPercentiles = isRollupStore(this.storage)
+      ? await this.estimatePercentiles(this.storage, query.type, windowStart, windowEnd)
+      : undefined;
+
     return summarizeStats({
       entries,
       type: query.type,
@@ -73,6 +92,45 @@ export class StatsService {
       buckets,
       slowMs: this.slowMs,
       truncated,
+      ...(latencyPercentiles !== undefined ? { latencyPercentiles } : {}),
     });
+  }
+
+  /**
+   * Queries the 1-minute latency-histogram rollups for `type` over the window,
+   * merges them element-wise, and estimates p50/p95/p99. Returns `undefined`
+   * when no histogram samples exist (total 0), so the latency block's shape and
+   * the "no durations ⇒ no latency" behavior match the raw path.
+   */
+  private async estimatePercentiles(
+    store: RollupStore,
+    type: string,
+    windowStart: Date,
+    windowEnd: Date,
+  ): Promise<LatencyPercentilesOverride | undefined> {
+    const fromBucket = floorToBucket(windowStart.getTime());
+    const toBucket = floorToBucket(windowEnd.getTime());
+    const rollups = await store.queryRollups([type], fromBucket, toBucket);
+
+    const merged = emptyHistogram();
+    for (const rollup of rollups) mergeHistogramInto(merged, rollup.histogram);
+
+    let total = 0;
+    for (const count of merged) total += count;
+    if (total === 0) return undefined;
+
+    return {
+      p50: estimatePercentileFromHistogram(merged, 0.5),
+      p95: estimatePercentileFromHistogram(merged, 0.95),
+      p99: estimatePercentileFromHistogram(merged, 0.99),
+    };
+  }
+}
+
+/** Folds `addend` into `target` in place via the canonical element-wise merge. */
+function mergeHistogramInto(target: number[], addend: number[]): void {
+  const merged = mergeHistograms(target, addend);
+  for (let index = 0; index < merged.length; index += 1) {
+    target[index] = merged[index] ?? 0;
   }
 }

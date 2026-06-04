@@ -7,12 +7,19 @@
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isRollupStore } from '@dudousxd/nestjs-telescope';
+import { emptyHistogram, incrementHistogram, isRollupStore } from '@dudousxd/nestjs-telescope';
 import type { RollupDelta } from '@dudousxd/nestjs-telescope';
 import { MikroORM } from '@mikro-orm/core';
 import { SqliteDriver } from '@mikro-orm/sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MikroOrmStorageProvider } from './mikro-orm-storage.provider.js';
+
+/** A histogram with a single sample in the cell for `durationMs`. */
+function histogramAt(durationMs: number): number[] {
+  const histogram = emptyHistogram();
+  incrementHistogram(histogram, durationMs);
+  return histogram;
+}
 
 function delta(overrides: Partial<RollupDelta> = {}): RollupDelta {
   return {
@@ -21,6 +28,7 @@ function delta(overrides: Partial<RollupDelta> = {}): RollupDelta {
     count: 1,
     sum: 10,
     max: 10,
+    histogram: histogramAt(10),
     ...overrides,
   };
 }
@@ -40,35 +48,79 @@ describe('MikroOrmStorageProvider RollupStore (sqlite)', () => {
     expect(isRollupStore(provider)).toBe(true);
   });
 
-  it('record then query round-trips a single bucket', async () => {
-    await provider.init();
-    await provider.recordRollups([delta({ count: 3, sum: 30, max: 20 })]);
-
-    const rows = await provider.queryRollups(['request'], 0, 120_000);
-    expect(rows).toEqual([{ metric: 'request', bucketStart: 60_000, count: 3, sum: 30, max: 20 }]);
-  });
-
-  it('accumulates count+sum and keeps the running max on repeated record (additive contract)', async () => {
-    await provider.init();
-    // Same (metric, bucketStart) recorded three times: count/sum add up, max is
-    // the running maximum (40 wins over 10 and 25).
-    await provider.recordRollups([delta({ count: 1, sum: 10, max: 10 })]);
-    await provider.recordRollups([delta({ count: 2, sum: 50, max: 40 })]);
-    await provider.recordRollups([delta({ count: 4, sum: 8, max: 25 })]);
-
-    const rows = await provider.queryRollups(['request'], 60_000, 60_000);
-    expect(rows).toEqual([{ metric: 'request', bucketStart: 60_000, count: 7, sum: 68, max: 40 }]);
-  });
-
-  it('accumulates within a single multi-delta batch hitting the same bucket', async () => {
+  it('record then query round-trips a single bucket incl. its histogram', async () => {
     await provider.init();
     await provider.recordRollups([
-      delta({ count: 1, sum: 10, max: 10 }),
-      delta({ count: 2, sum: 20, max: 30 }),
+      delta({ count: 3, sum: 30, max: 20, histogram: histogramAt(20) }),
     ]);
 
+    const rows = await provider.queryRollups(['request'], 0, 120_000);
+    expect(rows).toEqual([
+      {
+        metric: 'request',
+        bucketStart: 60_000,
+        count: 3,
+        sum: 30,
+        max: 20,
+        histogram: histogramAt(20),
+      },
+    ]);
+  });
+
+  it('accumulates count+sum, keeps the running max, and merges histograms (additive contract)', async () => {
+    await provider.init();
+    // Same (metric, bucketStart) recorded three times: count/sum add up, max is
+    // the running maximum (40 wins over 10 and 25), histograms merge element-wise.
+    await provider.recordRollups([
+      delta({ count: 1, sum: 10, max: 10, histogram: histogramAt(10) }),
+    ]);
+    await provider.recordRollups([
+      delta({ count: 2, sum: 50, max: 40, histogram: histogramAt(40) }),
+    ]);
+    await provider.recordRollups([
+      delta({ count: 4, sum: 8, max: 25, histogram: histogramAt(25) }),
+    ]);
+
+    const expectedHistogram = emptyHistogram();
+    incrementHistogram(expectedHistogram, 10);
+    incrementHistogram(expectedHistogram, 40);
+    incrementHistogram(expectedHistogram, 25);
+
     const rows = await provider.queryRollups(['request'], 60_000, 60_000);
-    expect(rows).toEqual([{ metric: 'request', bucketStart: 60_000, count: 3, sum: 30, max: 30 }]);
+    expect(rows).toEqual([
+      {
+        metric: 'request',
+        bucketStart: 60_000,
+        count: 7,
+        sum: 68,
+        max: 40,
+        histogram: expectedHistogram,
+      },
+    ]);
+  });
+
+  it('merges histograms within a single multi-delta batch hitting the same bucket', async () => {
+    await provider.init();
+    await provider.recordRollups([
+      delta({ count: 1, sum: 10, max: 10, histogram: histogramAt(10) }),
+      delta({ count: 2, sum: 20, max: 30, histogram: histogramAt(30) }),
+    ]);
+
+    const expectedHistogram = emptyHistogram();
+    incrementHistogram(expectedHistogram, 10);
+    incrementHistogram(expectedHistogram, 30);
+
+    const rows = await provider.queryRollups(['request'], 60_000, 60_000);
+    expect(rows).toEqual([
+      {
+        metric: 'request',
+        bucketStart: 60_000,
+        count: 3,
+        sum: 30,
+        max: 30,
+        histogram: expectedHistogram,
+      },
+    ]);
   });
 
   it('filters by metric set and bucket range; empty metrics ⇒ []', async () => {
@@ -130,10 +182,19 @@ describe('MikroOrmStorageProvider rollup self-heal (file sqlite)', () => {
       provider = new MikroOrmStorageProvider({ driver: SqliteDriver, dbName: dbFile });
       await provider.init();
 
-      await provider.recordRollups([delta({ count: 2, sum: 22, max: 22 })]);
+      await provider.recordRollups([
+        delta({ count: 2, sum: 22, max: 22, histogram: histogramAt(22) }),
+      ]);
       const rows = await provider.queryRollups(['request'], 0, 120_000);
       expect(rows).toEqual([
-        { metric: 'request', bucketStart: 60_000, count: 2, sum: 22, max: 22 },
+        {
+          metric: 'request',
+          bucketStart: 60_000,
+          count: 2,
+          sum: 22,
+          max: 22,
+          histogram: histogramAt(22),
+        },
       ]);
     } finally {
       await provider?.close();
@@ -169,15 +230,35 @@ describe('MikroOrmStorageProvider rollup self-heal (file sqlite)', () => {
       provider = new MikroOrmStorageProvider({ driver: SqliteDriver, dbName: dbFile });
       await provider.init();
 
-      // Pre-existing row survived the additive update.
+      // Pre-existing row (created WITHOUT a histogram column) survived the
+      // additive update and reads back with an all-zeros histogram — never NaN.
       const pre = await provider.queryRollups(['request'], 60_000, 60_000);
-      expect(pre).toEqual([{ metric: 'request', bucketStart: 60_000, count: 3, sum: 30, max: 15 }]);
+      expect(pre).toEqual([
+        {
+          metric: 'request',
+          bucketStart: 60_000,
+          count: 3,
+          sum: 30,
+          max: 15,
+          histogram: emptyHistogram(),
+        },
+      ]);
 
-      // And further records accumulate onto it (running max 25 > 15).
-      await provider.recordRollups([delta({ count: 1, sum: 5, max: 25 })]);
+      // And further records accumulate onto it (running max 25 > 15), merging a
+      // real histogram onto the legacy zero base.
+      await provider.recordRollups([
+        delta({ count: 1, sum: 5, max: 25, histogram: histogramAt(25) }),
+      ]);
       const post = await provider.queryRollups(['request'], 60_000, 60_000);
       expect(post).toEqual([
-        { metric: 'request', bucketStart: 60_000, count: 4, sum: 35, max: 25 },
+        {
+          metric: 'request',
+          bucketStart: 60_000,
+          count: 4,
+          sum: 35,
+          max: 25,
+          histogram: histogramAt(25),
+        },
       ]);
     } finally {
       await provider?.close();

@@ -9,6 +9,8 @@ import {
   type StorageProvider,
   type TagCount,
   isBatchOrigin,
+  mergeHistograms,
+  normalizeHistogram,
   safeJsonParse,
 } from '@dudousxd/nestjs-telescope';
 import type { Redis } from 'ioredis';
@@ -346,14 +348,23 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
     }
     await pipeline.exec();
 
-    // Then reconcile the running max per (metric, bucket): read current, HSET up.
+    // Then reconcile the running max AND the latency histogram per (metric,
+    // bucket): read current, merge, write. HINCRBY can't do max, and a histogram
+    // is a JSON field merged element-wise — both are read-then-set (ioredis-mock
+    // has no Lua/EVAL). This accepts a tiny race under concurrent writers to the
+    // same (metric, bucket), acceptable for an observability rollup.
     for (const delta of deltas) {
       const key = this.rollupKey(delta.metric, delta.bucketStart);
-      const existing = await this.redis.hget(key, 'max');
-      const current = existing === null ? Number.NEGATIVE_INFINITY : Number(existing);
+      const existingMax = await this.redis.hget(key, 'max');
+      const current = existingMax === null ? Number.NEGATIVE_INFINITY : Number(existingMax);
       if (delta.max > current) {
         await this.redis.hset(key, 'max', String(delta.max));
       }
+
+      const existingHistogram = await this.redis.hget(key, 'histogram');
+      const base = normalizeHistogram(this.parseHistogram(existingHistogram));
+      const merged = mergeHistograms(base, delta.histogram);
+      await this.redis.hset(key, 'histogram', JSON.stringify(merged));
     }
   }
 
@@ -386,6 +397,8 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
           count: Number(hash.count ?? 0),
           sum: Number(hash.sum ?? 0),
           max: Number(hash.max ?? 0),
+          // Legacy hashes have no `histogram` field → normalized to zeros.
+          histogram: normalizeHistogram(this.parseHistogram(hash.histogram ?? null)),
         });
       }
     }
@@ -544,5 +557,17 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
 
   private rollupIndexKey(metric: string): string {
     return `${this.prefix}rz:${metric}`;
+  }
+
+  /**
+   * Parses a stored histogram JSON field back into a number[]. Missing field
+   * (legacy hash) and any malformed JSON yield null, which the caller normalizes
+   * into an all-zeros array of the canonical length.
+   */
+  private parseHistogram(raw: string | null): number[] | null {
+    if (raw === null) return null;
+    const parsed = safeJsonParse<number[] | null>(raw, null);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((value) => (typeof value === 'number' ? value : 0));
   }
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TelescopeContext } from '../context/telescope-context.js';
 import type { Entry } from '../entry/entry.js';
 import type { RollupBucket } from '../rollup/rollup-store.js';
-import { floorToBucket } from '../rollup/rollup-store.js';
+import { emptyHistogram, floorToBucket, incrementHistogram } from '../rollup/rollup-store.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { Recorder } from './recorder.js';
@@ -39,19 +39,27 @@ describe('Recorder rollup aggregation', () => {
     const rollups = await storage.queryRollups(['request', 'query'], bucket, bucket);
     const byMetric = new Map(rollups.map((r) => [r.metric, r]));
 
+    const requestHistogram = emptyHistogram();
+    incrementHistogram(requestHistogram, 10);
+    incrementHistogram(requestHistogram, 30);
+    // null duration contributes to count/sum/max but NOT the histogram.
     expect(byMetric.get('request')).toEqual({
       metric: 'request',
       bucketStart: bucket,
       count: 3,
       sum: 40,
       max: 30,
+      histogram: requestHistogram,
     });
+    const queryHistogram = emptyHistogram();
+    incrementHistogram(queryHistogram, 5);
     expect(byMetric.get('query')).toEqual({
       metric: 'query',
       bucketStart: bucket,
       count: 1,
       sum: 5,
       max: 5,
+      histogram: queryHistogram,
     });
   });
 
