@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { createBatch } from '../context/batch.js';
 import { TelescopeContext } from '../context/telescope-context.js';
 import type { Entry } from '../entry/entry.js';
+import * as redactModule from '../redaction/redact.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { BUILTIN_TAGGERS } from '../tagging/tagger.js';
+import type { TraceContext } from '../trace/trace-context-provider.js';
 import { Recorder } from './recorder.js';
 
 function makeRecorder(over: Partial<ConstructorParameters<typeof Recorder>[0]> = {}) {
@@ -445,6 +448,114 @@ describe('Recorder', () => {
       expect(stored).toHaveLength(1);
       expect(stored[0]!.traceId).toBeNull();
       expect(stored[0]!.spanId).toBeNull();
+    });
+  });
+
+  // ── Deferred finalization (redact/tag/filter moved to flush) ───────────────
+
+  describe('deferred finalization', () => {
+    // Gate 1: async context (batch id + monotonic sequence) is captured at
+    // record() time, even though redaction/tagging now happen later at flush.
+    it('captures batch id and a monotonic sequence at record() time despite deferred finalize', async () => {
+      const { recorder, storage, context } = makeRecorder();
+      await context.run(
+        createBatch(
+          'http',
+          () => 'batch-async',
+          () => 1_000,
+        ),
+        async () => {
+          recorder.record({ type: 'request', content: { statusCode: 200 } });
+          recorder.record({ type: 'query', content: { sql: 'SELECT 1' } });
+        },
+      );
+      await recorder.flush();
+
+      const data = (await storage.get({})).data;
+      expect(data).toHaveLength(2);
+      for (const entry of data) {
+        expect(entry.batchId).toBe('batch-async');
+      }
+      const sequences = data.map((entry) => entry.sequence).sort((a, b) => a - b);
+      expect(sequences).toEqual([0, 1]);
+    });
+
+    // Gate 2: stored content is redacted — proving redaction is still applied,
+    // just deferred to flush().
+    it('redacts a sensitive content key by flush time', async () => {
+      const { recorder, storage } = makeRecorder();
+      recorder.record({ type: 'request', content: { password: 'hunter2', user: 'davi' } });
+      await recorder.flush();
+
+      const content = (await storage.get({})).data[0]!.content;
+      expect(content).toMatchObject({ password: '[REDACTED]', user: 'davi' });
+    });
+
+    // Gate 3: taggers run on the redacted content at flush time. statusTagger
+    // reads content.statusCode (so must see redacted content); slowTagger reads
+    // durationMs.
+    it('runs builtin taggers (status + slow) at flush against the finalized entry', async () => {
+      const { recorder, storage } = makeRecorder({
+        taggers: [...BUILTIN_TAGGERS],
+      });
+      recorder.record({ type: 'request', content: { statusCode: 503 }, durationMs: 1500 });
+      await recorder.flush();
+
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.tags).toContain('status:503');
+      expect(entry.tags).toContain('slow');
+    });
+
+    // Gate 4: the filter still excludes at flush, and an excluded entry is NOT
+    // counted as a drop.
+    it('filter excludes an entry at flush without incrementing droppedCount', async () => {
+      const { recorder, storage } = makeRecorder({
+        filter: (entry) => entry.type !== 'query',
+      });
+      recorder.record({ type: 'request', content: { path: '/' } });
+      recorder.record({ type: 'query', content: { sql: 'SELECT 1' } });
+      await recorder.flush();
+
+      const stored = (await storage.get({})).data;
+      expect(stored).toHaveLength(1);
+      expect(stored[0]!.type).toBe('request');
+      expect(recorder.droppedCount).toBe(0);
+    });
+
+    // Gate 5: record() does NO redaction on the hot path — redact() is only
+    // invoked during flush(), proven structurally with a module spy.
+    it('does not call redact() during record(); only during flush()', async () => {
+      const redactSpy = vi.spyOn(redactModule, 'redact');
+      const { recorder } = makeRecorder();
+
+      recorder.record({ type: 'request', content: { password: 'secret' } });
+      // Hot path must not have redacted.
+      expect(redactSpy).not.toHaveBeenCalled();
+
+      await recorder.flush();
+      // Finalization at flush redacts.
+      expect(redactSpy).toHaveBeenCalledTimes(1);
+
+      redactSpy.mockRestore();
+    });
+
+    // Gate 6: trace ids are read synchronously at record() time, not at flush.
+    it('stamps trace ids read at record() time even if current() later returns null', async () => {
+      const traceId = 'c'.repeat(32);
+      const spanId = 'd'.repeat(16);
+      let live: TraceContext | null = { traceId, spanId };
+      const { recorder, storage } = makeRecorder({
+        traceContext: { current: () => live },
+      });
+
+      recorder.record({ type: 'request', content: {} });
+      // Span ends before flush; a flush-time read would now yield null.
+      live = null;
+      await recorder.flush();
+
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBe(traceId);
+      expect(entry.spanId).toBe(spanId);
     });
   });
 });
