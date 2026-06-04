@@ -19,10 +19,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md"
-  ],
+  "files": ["dist/", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -41,10 +38,5 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "testing",
-    "observability"
-  ]
+  "keywords": ["nestjs", "telescope", "testing", "observability"]
 }
