@@ -118,6 +118,41 @@ export interface PulseReport {
   truncated: boolean;
 }
 
+/**
+ * Telescope's own runtime overhead. Returned by `GET /health`. Lets a user see
+ * that capture is cheap (off the response path) and the buffer keeps up.
+ */
+export interface TelescopeHealth {
+  /** Whether capture is currently enabled (from config). */
+  enabled: boolean;
+  /** Total entries that passed sampling+filter and were buffered since boot. */
+  recorded: number;
+  /** Ring-buffer capacity. */
+  bufferSize: number;
+  /** Entries currently held in the ring. */
+  bufferUsed: number;
+  /** Maximum `bufferUsed` ever observed. */
+  bufferHighWater: number;
+  /** Number of flushes that drained at least one entry. */
+  flushes: number;
+  /** Cumulative entries drained across all flushes. */
+  flushedEntries: number;
+  /** Wall-clock duration of the most recent draining flush, or null. */
+  lastFlushMs: number | null;
+  /** Largest flush duration ever observed, or null. */
+  maxFlushMs: number | null;
+  /** Cumulative flush duration across all draining flushes. */
+  totalFlushMs: number;
+  /** Entries evicted because the ring was full. */
+  overflowDropped: number;
+  /** Entries lost because the store rejected the flush. */
+  storeFailedDropped: number;
+  /** Total entries dropped (overflow + store failures). */
+  droppedCount: number;
+  /** Mean nanoseconds per capture, from an on-demand micro-benchmark. */
+  captureCostNanos: number;
+}
+
 /** Point-in-time Node process-health snapshot. Returned by `GET /server-stats`. */
 export interface ServerStats {
   uptimeSec: number;

@@ -6,6 +6,7 @@ import type {
   PulseReport,
   QueueMetricsReport,
   TelescopeClient,
+  TelescopeHealth,
   TimeseriesReport,
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
@@ -43,6 +44,23 @@ const serverStats = {
   instanceId: 'instance-abc',
 };
 
+const health = {
+  enabled: true,
+  recorded: 4200,
+  bufferSize: 500,
+  bufferUsed: 37,
+  bufferHighWater: 210,
+  flushes: 84,
+  flushedEntries: 4163,
+  lastFlushMs: 2.4,
+  maxFlushMs: 11.7,
+  totalFlushMs: 190.3,
+  overflowDropped: 0,
+  storeFailedDropped: 0,
+  droppedCount: 0,
+  captureCostNanos: 8700,
+};
+
 const queues: QueueMetricsReport = {
   windowStart: '',
   windowEnd: '',
@@ -75,7 +93,7 @@ const timeseries: TimeseriesReport = {
   ],
 };
 
-function mockClient(): TelescopeClient {
+function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
   return {
     entries: async () => ({ data: [], nextCursor: null }),
     entry: async () => {
@@ -96,13 +114,14 @@ function mockClient(): TelescopeClient {
       sampling: {},
     }),
     serverStats: async () => serverStats,
+    health: async () => healthOverride,
   };
 }
 
-function renderOverview() {
+function renderOverview(healthOverride: TelescopeHealth = health) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <TelescopeProvider client={mockClient()}>
+    <TelescopeProvider client={mockClient(healthOverride)}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
           <OverviewPage />
@@ -151,5 +170,37 @@ describe('OverviewPage', () => {
     expect(screen.getByText('128.5 MB')).toBeTruthy();
     expect(screen.getByText('1.25 ms')).toBeTruthy();
     expect(screen.getByText('instance instance-abc')).toBeTruthy();
+  });
+
+  it('renders the Telescope health card with capture cost, buffer, flush, and dropped figures', async () => {
+    renderOverview();
+    expect(await screen.findByText('Telescope health')).toBeTruthy();
+    await waitFor(() => {
+      // 8700ns => 8.7 µs/capture
+      expect(screen.getByText('8.7 µs/capture')).toBeTruthy();
+    });
+    expect(screen.getByText('37 / 500')).toBeTruthy();
+    expect(screen.getByText('high-water 210')).toBeTruthy();
+    expect(screen.getByText('2.4 ms')).toBeTruthy();
+    // dropped = 0 is shown as the reassuring "keeping up" state
+    const dropped = screen.getByText('keeping up');
+    expect(dropped).toBeTruthy();
+    expect(dropped.previousElementSibling?.className).toContain('text-emerald-400');
+  });
+
+  it('highlights the dropped figure when Telescope is shedding load', async () => {
+    renderOverview({
+      ...health,
+      overflowDropped: 12,
+      storeFailedDropped: 3,
+      droppedCount: 15,
+    });
+    expect(await screen.findByText('Telescope health')).toBeTruthy();
+    const hint = await screen.findByText('overflow 12 · store 3');
+    expect(hint).toBeTruthy();
+    // the dropped value sits above the hint and turns red when > 0
+    const value = hint.previousElementSibling;
+    expect(value?.textContent).toBe('15');
+    expect(value?.className).toContain('text-red-400');
   });
 });

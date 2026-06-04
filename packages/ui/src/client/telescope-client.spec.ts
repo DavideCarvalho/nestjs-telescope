@@ -136,6 +136,30 @@ describe('createTelescopeClient', () => {
     expect(result).toEqual(snapshot);
   });
 
+  it('GETs the telescope health snapshot', async () => {
+    const snapshot = {
+      enabled: true,
+      recorded: 100,
+      bufferSize: 500,
+      bufferUsed: 12,
+      bufferHighWater: 80,
+      flushes: 9,
+      flushedEntries: 88,
+      lastFlushMs: 1.2,
+      maxFlushMs: 4.5,
+      totalFlushMs: 20,
+      overflowDropped: 0,
+      storeFailedDropped: 0,
+      droppedCount: 0,
+      captureCostNanos: 8700,
+    };
+    const fetchMock = vi.fn(async () => jsonResponse(snapshot));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.health();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/health');
+    expect(result).toEqual(snapshot);
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchMock = vi.fn(
       async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,

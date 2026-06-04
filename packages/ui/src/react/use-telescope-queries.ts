@@ -49,6 +49,13 @@ export function serverStatsQuery(client: TelescopeClient, paused = false) {
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
+export function healthQuery(client: TelescopeClient, paused = false) {
+  return queryOptions({
+    queryKey: ['telescope', 'health'],
+    queryFn: () => client.health(),
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+  });
+}
 export function pulseQuery(client: TelescopeClient, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'pulse', window],
@@ -258,6 +265,9 @@ export function useMeta() {
 }
 export function useServerStats() {
   return useQuery(serverStatsQuery(useTelescopeClient(), usePaused()));
+}
+export function useHealth() {
+  return useQuery(healthQuery(useTelescopeClient(), usePaused()));
 }
 export function useTags(prefix = '') {
   return useQuery(tagsQuery(useTelescopeClient(), prefix));

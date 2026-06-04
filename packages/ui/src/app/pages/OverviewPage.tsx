@@ -7,6 +7,7 @@ import {
   type StackedAreaRow,
   WindowSelect,
   deriveTypes,
+  useHealth,
   usePulse,
   useQueues,
   useServerStats,
@@ -16,6 +17,7 @@ import type {
   PulseReport,
   QueueMetricsReport,
   ServerStats,
+  TelescopeHealth,
   TimeseriesReport,
 } from '../../react/index.js';
 
@@ -65,6 +67,69 @@ function ServerStatsCard({ stats }: { stats: ServerStats | undefined }): JSX.Ele
                 : 'text-zinc-100'
             }
             hint={`instance ${stats.instanceId}`}
+          />
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-600">Loading…</p>
+      )}
+    </section>
+  );
+}
+
+function formatMicros(nanos: number): string {
+  const micros = Math.max(0, nanos) / 1000;
+  return `${micros.toFixed(1)} µs`;
+}
+
+function formatFlushMs(ms: number | null): string {
+  return ms === null ? 'n/a' : `${ms.toFixed(1)} ms`;
+}
+
+function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }): JSX.Element {
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+          Telescope health
+        </h3>
+        <span className="text-[10px] text-zinc-600">
+          Captures run off the response path — your requests don&apos;t wait on Telescope.
+        </span>
+      </div>
+      {health ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <StatCard
+            label="Capture cost"
+            value={`${formatMicros(health.captureCostNanos)}/capture`}
+            accent="text-emerald-400"
+            hint="micro-benchmark"
+          />
+          <StatCard
+            label="Buffer"
+            value={`${health.bufferUsed} / ${health.bufferSize}`}
+            accent="text-sky-400"
+            hint={`high-water ${health.bufferHighWater}`}
+          />
+          <StatCard
+            label="Last flush"
+            value={formatFlushMs(health.lastFlushMs)}
+            hint={`max ${formatFlushMs(health.maxFlushMs)}`}
+          />
+          <StatCard
+            label="Flushes"
+            value={health.flushes.toLocaleString()}
+            accent="text-violet-400"
+            hint={`${health.flushedEntries.toLocaleString()} entries`}
+          />
+          <StatCard
+            label="Dropped"
+            value={health.droppedCount.toLocaleString()}
+            accent={health.droppedCount > 0 ? 'text-red-400' : 'text-emerald-400'}
+            hint={
+              health.droppedCount > 0
+                ? `overflow ${health.overflowDropped} · store ${health.storeFailedDropped}`
+                : 'keeping up'
+            }
           />
         </div>
       ) : (
@@ -193,6 +258,7 @@ export function OverviewPage(): JSX.Element {
   const queues = useQueues(window);
   const series = useTimeseries({ window, buckets: 60 });
   const serverStats = useServerStats();
+  const health = useHealth();
 
   const throughput = toThroughputSeries(series.data);
   const byTypeRows = toByTypeRows(series.data);
@@ -208,6 +274,8 @@ export function OverviewPage(): JSX.Element {
       <StatCards pulse={pulse.data} queues={queues.data} />
 
       <ServerStatsCard stats={serverStats.data} />
+
+      <TelescopeHealthCard health={health.data} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <AreaChartCard title="Throughput" valueLabel="entries" data={throughput} />
