@@ -1,4 +1,6 @@
 // packages/core/src/nest/telescope.options.ts
+import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
+import type { TelescopeSessionUser } from '../auth/session-cookie.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
 import type { QueueActionRequest, QueueManager } from '../queue/queue-manager.js';
 import type { ScheduleManager } from '../schedule/schedule-manager.js';
@@ -53,6 +55,15 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * resolved value is redacted by the Recorder like any other content.
    */
   resolveUser?: (request: unknown) => unknown;
+  /**
+   * Cookie-session gate for the dashboard. When set, every guarded `/api/*`
+   * route (except `/api/auth/*`) requires a valid signed session cookie, AND
+   * the existing `authorizer` still runs (AND semantics). The cookie is minted
+   * by either mode (`session` host-auth bridge / built-in `login`). When unset,
+   * gate behavior is unchanged (`authorizer` / NODE_ENV default). A configured
+   * `dashboardAuth` with a missing/empty `secret` or no hook is a boot error.
+   */
+  dashboardAuth?: DashboardAuthOptions;
 }
 
 export interface TelescopeOptionsFactory {
@@ -62,5 +73,7 @@ export interface TelescopeOptionsFactory {
 export const TELESCOPE_OPTIONS = Symbol('TELESCOPE_OPTIONS');
 export const TELESCOPE_STORAGE = Symbol('TELESCOPE_STORAGE');
 export const TELESCOPE_CONFIG = Symbol('TELESCOPE_CONFIG');
+/** Resolved `dashboardAuth` config (or `null` when unconfigured). Boot-validated. */
+export const TELESCOPE_DASHBOARD_AUTH = Symbol('TELESCOPE_DASHBOARD_AUTH');
 /** Kept for future DI use; the registry reads `options.queueManagers` directly. */
 export const QUEUE_MANAGERS = Symbol('QUEUE_MANAGERS');

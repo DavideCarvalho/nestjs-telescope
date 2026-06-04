@@ -7,6 +7,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { v7 } from 'uuid';
+import type { AuthMode, ResolvedDashboardAuth } from '../auth/dashboard-auth-config.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { createBatch } from '../context/batch.js';
 import { TelescopeContext } from '../context/telescope-context.js';
@@ -16,6 +17,7 @@ import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import {
   TELESCOPE_CONFIG,
+  TELESCOPE_DASHBOARD_AUTH,
   TELESCOPE_OPTIONS,
   TELESCOPE_STORAGE,
   type TelescopeModuleOptions,
@@ -31,6 +33,12 @@ export interface TelescopeMeta {
   retention: { afterMs: number; keepLast: number | null } | null;
   /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
   sampling: Record<string, number>;
+  /**
+   * Dashboard cookie-auth state for the AUTHENTICATED UI (e.g. showing a logout
+   * button + the active modes). The UNauthenticated SPA learns the modes from
+   * the 401 body of `GET /api/auth/me` instead — meta stays behind the gate.
+   */
+  auth: { enabled: boolean; modes: AuthMode[] };
 }
 
 /**
@@ -61,6 +69,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
+    @Inject(TELESCOPE_DASHBOARD_AUTH)
+    private readonly dashboardAuth: ResolvedDashboardAuth | null = null,
   ) {
     this.recorder = new Recorder({
       storage,
@@ -186,6 +196,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
           }
         : null,
       sampling: { ...this.config.sampling },
+      auth: {
+        enabled: this.dashboardAuth !== null,
+        modes: this.dashboardAuth ? [...this.dashboardAuth.modes] : [],
+      },
     };
   }
 

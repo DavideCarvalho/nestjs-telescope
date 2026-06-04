@@ -11,6 +11,7 @@ import {
   RequestMethod,
 } from '@nestjs/common';
 import { APP_INTERCEPTOR, DiscoveryModule } from '@nestjs/core';
+import { resolveDashboardAuth } from '../auth/dashboard-auth-config.js';
 import { normalizeTelescopePath } from '../config/normalize-path.js';
 import { resolveConfig } from '../config/resolve-config.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
@@ -25,6 +26,7 @@ import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { dynamicController } from './dynamic-controller.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
+import { TelescopeAuthController } from './telescope-auth.controller.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
@@ -33,6 +35,7 @@ import { TelescopeController } from './telescope.controller.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import {
   TELESCOPE_CONFIG,
+  TELESCOPE_DASHBOARD_AUTH,
   TELESCOPE_OPTIONS,
   TELESCOPE_STORAGE,
   type TelescopeModuleOptions,
@@ -49,6 +52,13 @@ const SHARED_PROVIDERS: Provider[] = [
     provide: TELESCOPE_STORAGE,
     useFactory: (options: TelescopeModuleOptions): StorageProvider =>
       options.storage ?? new SqliteStorageProvider(),
+    inject: [TELESCOPE_OPTIONS],
+  },
+  {
+    // Boot-validated: a configured dashboardAuth with a missing secret / no hook
+    // throws here at provider instantiation (fail closed). `null` when unset.
+    provide: TELESCOPE_DASHBOARD_AUTH,
+    useFactory: (options: TelescopeModuleOptions) => resolveDashboardAuth(options.dashboardAuth),
     inject: [TELESCOPE_OPTIONS],
   },
   TelescopeService,
@@ -96,7 +106,13 @@ export class TelescopeModule implements NestModule {
     return {
       module: TelescopeModule,
       imports: [DiscoveryModule],
-      controllers: [dynamicController(TelescopeController, `${path}/api`)],
+      controllers: [
+        // The auth controller mounts BEFORE the gated API controller so its
+        // /api/auth/* routes resolve ahead of the catch-all and stay ungated
+        // (it carries no @UseGuards(TelescopeGuard)).
+        dynamicController(TelescopeAuthController, `${path}/api/auth`),
+        dynamicController(TelescopeController, `${path}/api`),
+      ],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
       exports: [
         TelescopeService,
@@ -126,7 +142,10 @@ export class TelescopeModule implements NestModule {
     return {
       module: TelescopeModule,
       imports: [DiscoveryModule, ...(config.imports ?? [])],
-      controllers: [dynamicController(TelescopeController, `${path}/api`)],
+      controllers: [
+        dynamicController(TelescopeAuthController, `${path}/api/auth`),
+        dynamicController(TelescopeController, `${path}/api`),
+      ],
       providers: [
         {
           provide: TELESCOPE_OPTIONS,
