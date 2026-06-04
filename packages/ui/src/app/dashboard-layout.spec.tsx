@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../client/index.js';
 import { ENTRY_TYPES, TelescopeProvider } from '../react/index.js';
 import { DashboardLayout } from './dashboard-layout.js';
+import { ThemeProvider } from './theme-context.js';
 
 function mockClient(): TelescopeClient {
   return {
@@ -38,15 +39,17 @@ function mockClient(): TelescopeClient {
 function renderLayout() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <TelescopeProvider client={mockClient()}>
-      <QueryClientProvider client={queryClient}>
-        <HashRouter>
-          <DashboardLayout>
-            <div>child</div>
-          </DashboardLayout>
-        </HashRouter>
-      </QueryClientProvider>
-    </TelescopeProvider>,
+    <ThemeProvider>
+      <TelescopeProvider client={mockClient()}>
+        <QueryClientProvider client={queryClient}>
+          <HashRouter>
+            <DashboardLayout>
+              <div>child</div>
+            </DashboardLayout>
+          </HashRouter>
+        </QueryClientProvider>
+      </TelescopeProvider>
+    </ThemeProvider>,
   );
 }
 

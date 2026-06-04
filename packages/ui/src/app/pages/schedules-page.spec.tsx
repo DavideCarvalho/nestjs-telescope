@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ScheduledTask, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { DashboardLayout } from '../dashboard-layout.js';
+import { ThemeProvider } from '../theme-context.js';
 import { SchedulesPage } from './schedules-page.js';
 
 const TASKS: ScheduledTask[] = [
@@ -114,13 +115,15 @@ describe('dashboard nav', () => {
   it('includes a Schedule console link', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <TelescopeProvider client={mockClient([])}>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter>
-            <DashboardLayout>{null}</DashboardLayout>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </TelescopeProvider>,
+      <ThemeProvider>
+        <TelescopeProvider client={mockClient([])}>
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter>
+              <DashboardLayout>{null}</DashboardLayout>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </TelescopeProvider>
+      </ThemeProvider>,
     );
     const link = screen.getByRole('link', { name: 'Schedules' });
     expect(link.getAttribute('href')).toBe('/schedules');

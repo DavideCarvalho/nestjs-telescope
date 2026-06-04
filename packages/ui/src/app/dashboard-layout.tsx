@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { ENTRY_TYPES, RetentionIndicator, useLiveTail } from '../react/index.js';
+import { CommandPalette, usePalette } from './command-palette.js';
+import { useTheme } from './theme-context.js';
 
 const NAV = [
   { to: '/', label: 'Overview', end: true },
@@ -44,9 +46,42 @@ function LiveTailToggle(): JSX.Element {
   );
 }
 
+function ThemeToggle(): JSX.Element {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-pressed={!isDark}
+      title={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+      className="flex items-center gap-1.5 rounded border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
+    >
+      <span aria-hidden="true">{isDark ? '☾' : '☀'}</span>
+      {isDark ? 'Dark' : 'Light'}
+    </button>
+  );
+}
+
+function PaletteHint({ onClick }: { onClick: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Open command palette"
+      aria-keyshortcuts="Meta+K Control+K"
+      className="flex items-center gap-1.5 rounded border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+    >
+      <span aria-hidden="true">⌘K</span>
+    </button>
+  );
+}
+
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
+  const { open, setOpen } = usePalette();
   return (
     <div className="flex min-h-screen bg-zinc-950 font-mono text-sm text-zinc-200">
+      <CommandPalette open={open} onClose={() => setOpen(false)} />
       <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-zinc-800 px-3 py-4">
         <span className="px-3 text-base font-semibold text-emerald-400">Telescope</span>
         <nav className="flex flex-col gap-1">
@@ -71,6 +106,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-end gap-4 border-b border-zinc-800 px-4 py-2">
           <RetentionIndicator />
+          <PaletteHint onClick={() => setOpen(true)} />
+          <ThemeToggle />
           <LiveTailToggle />
         </header>
         <main className="min-w-0 flex-1">{children}</main>

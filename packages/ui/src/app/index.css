@@ -1,3 +1,53 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Light theme overrides.
+ *
+ * The dashboard is authored dark-first with hardcoded Tailwind `zinc` tokens.
+ * Rather than re-theming every component, the `.light` root class (applied by
+ * ThemeProvider) flips the most common app-wide dark surfaces/text/borders to
+ * light equivalents so the main surfaces stay legible in light mode.
+ *
+ * Covered: page backgrounds (zinc-950/900/800 surfaces), primary/secondary
+ * text (zinc-100/200/300/400), and borders (zinc-800/700). The accent emerald
+ * is left as-is (legible on light).
+ *
+ * NOT covered (follow-up): per-component bespoke colors, chart palettes, badge
+ * tints, and translucent overlays. Full per-component theming via design
+ * tokens is a follow-up; this is a pragmatic, usable light mode for the main
+ * surfaces only.
+ */
+.light {
+  color-scheme: light;
+}
+
+/* Surfaces: darkest backgrounds become light. */
+.light .bg-zinc-950 {
+  background-color: #ffffff;
+}
+.light .bg-zinc-900 {
+  background-color: #f4f4f5;
+}
+.light .bg-zinc-800 {
+  background-color: #e4e4e7;
+}
+
+/* Primary + secondary text become dark on light. */
+.light .text-zinc-100,
+.light .text-zinc-200,
+.light .text-zinc-300 {
+  color: #18181b;
+}
+.light .text-zinc-400,
+.light .text-zinc-500,
+.light .text-zinc-600 {
+  color: #52525b;
+}
+
+/* Borders become light-mode hairlines. */
+.light .border-zinc-800,
+.light .border-zinc-700 {
+  border-color: #d4d4d8;
+}
