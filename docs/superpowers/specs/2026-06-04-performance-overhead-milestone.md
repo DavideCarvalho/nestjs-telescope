@@ -25,13 +25,22 @@ own impact *visible* — measure and surface what it costs.
 ## Workstreams
 
 ### A. Capture overhead → provably ~zero host impact
-1. **Defer the redaction walk to flush.** Capture context-dependent fields
-   (batchId/sequence/traceId/spanId/timestamp) synchronously at `record()` (O(1)),
-   push the RAW input, and run `redact()` + content-dependent taggers during the
-   async flush. record() becomes a near-pure enqueue. Correctness gate: anything
-   that reads async context (ALS batch, active OTel span) MUST stay at record()
-   time; only the content walk moves. TDD with a test proving redaction still
-   applied before store, and a test proving trace/batch captured at record time.
+1. **❌ REJECTED — defer the redaction walk to flush (caused OOM).** Tried (lib
+   `135d168`, reverted `45c466e`): moved redact+tag+filter to the async flush so
+   `record()` only stashed RAW content. It built/tested green and dropped
+   `captureCostNanos` ~8.7µs→~1µs, BUT crashed flip with a JS heap OOM (~4GB in
+   ~3min under auth load). ROOT CAUSE: watcher content holds **live object graphs**
+   — the request watcher captures `req.user`, a hydrated MikroORM entity that
+   references its EntityManager + identity map + relations. Synchronous `redact()`
+   was **load-bearing**: it snapshots content into a plain, reference-free object
+   at `record()` time, releasing the ORM graph. Deferring it retained up to
+   `bufferSize` live entity graphs until flush → memory blowup. **Lesson: redaction
+   must stay synchronous; it doubles as a detach/snapshot that bounds memory.**
+   The measured overhead is already negligible (requests off-path = 0; query
+   capture ~8.7µs vs ms-scale query I/O; memory flat under load), so this lever
+   wasn't needed. If capture cost ever matters, the safe levers are: capture
+   LIGHTER content (project `req.user`→id/email instead of the entity), or make
+   `redact()` itself faster — NOT deferral.
 2. **Sane sampling default + docs.** Ship guidance (and optionally a default) to
    down-sample high-volume request floods. Requests are already off-path, so this
    is a STORE-volume/read-scale lever, not a latency one — frame it that way.
