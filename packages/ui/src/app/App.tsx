@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { TelescopeProvider } from '../react/index.js';
+import { AuthProvider, useAuth } from './auth-context.js';
+import { AuthScreen } from './auth-screen.js';
 import { DashboardLayout } from './dashboard-layout.js';
 import { OverviewPage } from './pages/OverviewPage.js';
 import { QueueManagerPage } from './pages/QueueManagerPage.js';
@@ -16,29 +18,54 @@ import { ThemeProvider } from './theme-context.js';
 
 const queryClient = new QueryClient();
 
+function Dashboard(): JSX.Element {
+  return (
+    <HashRouter>
+      <DashboardLayout>
+        <Routes>
+          <Route path="/" element={<OverviewPage />} />
+          <Route path="/entries" element={<EntriesPage />} />
+          <Route path="/entries/view/:id" element={<EntryPage />} />
+          <Route path="/entries/:type" element={<EntriesPage />} />
+          <Route path="/traces" element={<TracesPage />} />
+          <Route path="/traces/:traceId" element={<TracePage />} />
+          <Route path="/pulse" element={<PulsePage />} />
+          <Route path="/queues" element={<QueuesShell />}>
+            <Route index element={<QueueManagerPage />} />
+            <Route path="metrics" element={<QueuesPage />} />
+          </Route>
+          <Route path="/schedules" element={<SchedulesPage />} />
+        </Routes>
+      </DashboardLayout>
+    </HashRouter>
+  );
+}
+
+/**
+ * Boot gate: `auth.me()` decides what mounts.
+ * - `loading`: a neutral splash while the first `me()` resolves.
+ * - `disabled` / `app`: the dashboard (authenticated shows the logout button).
+ * - `screen`: the AuthScreen for the offered modes.
+ */
+function AuthGate(): JSX.Element {
+  const { phase, modes } = useAuth();
+  if (phase === 'loading') {
+    return <div className="min-h-screen bg-zinc-950" data-testid="auth-loading" />;
+  }
+  if (phase === 'screen') {
+    return <AuthScreen modes={modes} />;
+  }
+  return <Dashboard />;
+}
+
 export function App(): JSX.Element {
   return (
     <ThemeProvider>
       <TelescopeProvider>
         <QueryClientProvider client={queryClient}>
-          <HashRouter>
-            <DashboardLayout>
-              <Routes>
-                <Route path="/" element={<OverviewPage />} />
-                <Route path="/entries" element={<EntriesPage />} />
-                <Route path="/entries/view/:id" element={<EntryPage />} />
-                <Route path="/entries/:type" element={<EntriesPage />} />
-                <Route path="/traces" element={<TracesPage />} />
-                <Route path="/traces/:traceId" element={<TracePage />} />
-                <Route path="/pulse" element={<PulsePage />} />
-                <Route path="/queues" element={<QueuesShell />}>
-                  <Route index element={<QueueManagerPage />} />
-                  <Route path="metrics" element={<QueuesPage />} />
-                </Route>
-                <Route path="/schedules" element={<SchedulesPage />} />
-              </Routes>
-            </DashboardLayout>
-          </HashRouter>
+          <AuthProvider>
+            <AuthGate />
+          </AuthProvider>
         </QueryClientProvider>
       </TelescopeProvider>
     </ThemeProvider>

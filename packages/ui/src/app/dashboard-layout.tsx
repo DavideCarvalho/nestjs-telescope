@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { ENTRY_TYPES, RetentionIndicator, useLiveTail } from '../react/index.js';
+import { useAuthOptional } from './auth-context.js';
 import { CommandPalette, usePalette } from './command-palette.js';
 import { useTheme } from './theme-context.js';
 
@@ -77,6 +79,40 @@ function PaletteHint({ onClick }: { onClick: () => void }): JSX.Element {
   );
 }
 
+/**
+ * Sign-out affordance, shown only when an AuthProvider has resolved an
+ * authenticated session. Absent in disabled/no-provider contexts so the
+ * no-auth header stays pixel-identical to today.
+ */
+function LogoutButton(): JSX.Element | null {
+  const auth = useAuthOptional();
+  const [busy, setBusy] = useState(false);
+  if (auth === null || auth.phase !== 'app') return null;
+
+  async function onLogout(): Promise<void> {
+    if (auth === null) return;
+    setBusy(true);
+    try {
+      await auth.logout();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onLogout}
+      disabled={busy}
+      title="Sign out"
+      className="flex items-center gap-1.5 rounded border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <span aria-hidden="true">⎋</span>
+      Sign out
+    </button>
+  );
+}
+
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
   const { open, setOpen } = usePalette();
   return (
@@ -109,6 +145,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
           <PaletteHint onClick={() => setOpen(true)} />
           <ThemeToggle />
           <LiveTailToggle />
+          <LogoutButton />
         </header>
         <main className="min-w-0 flex-1">{children}</main>
       </div>

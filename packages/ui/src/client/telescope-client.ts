@@ -1,8 +1,12 @@
 import type {
+  AuthMeResult,
+  AuthMode,
+  AuthUser,
   EntriesQuery,
   Entry,
   EntryWithBatch,
   JobPage,
+  LoginResult,
   Page,
   PulseReport,
   QueueCapabilities,
@@ -39,6 +43,10 @@ export interface TelescopeClientOptions {
   baseUrl?: string;
   /** Fetch implementation (injectable for tests). Default global fetch. */
   fetch?: typeof globalThis.fetch;
+}
+
+function isAuthMode(value: unknown): value is AuthMode {
+  return value === 'session' || value === 'login';
 }
 
 /** Derives the API base from the server-injected mount base, falling back to the default. */
@@ -89,6 +97,15 @@ export interface TelescopeClient {
     queue: string,
     body: { name?: string; payload: unknown },
   ): Promise<{ id: string | null }>;
+  /** Dashboard auth: cookie-backed session, gated behind `dashboardAuth`. */
+  auth: {
+    /** `GET /auth/me`: 200 user / 401-with-modes / 404 (auth disabled). */
+    me(): Promise<AuthMeResult>;
+    /** `POST /auth/login`: 204 ok / 401 invalid credentials. */
+    login(username: string, password: string): Promise<LoginResult>;
+    /** `POST /auth/logout`: clears the session cookie. */
+    logout(): Promise<void>;
+  };
 }
 
 export function createTelescopeClient(options: TelescopeClientOptions = {}): TelescopeClient {
@@ -134,6 +151,80 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     });
     if (!response.ok) throw new Error(`Telescope API ${path} failed: ${response.status}`);
     return (await response.json()) as T;
+  }
+
+  // Status-aware variants for the auth endpoints, where 401/404 are expected
+  // outcomes (which AuthScreen to show / auth disabled) rather than errors —
+  // so they must NOT throw the way `get`/`post` do.
+  async function rawGet(path: string): Promise<Response> {
+    return doFetch(`${baseUrl}${path}`);
+  }
+
+  async function rawPost(path: string, body?: unknown): Promise<Response> {
+    return doFetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  }
+
+  async function authMe(): Promise<AuthMeResult> {
+    const response = await rawGet('/auth/me');
+    if (response.ok) {
+      const body = (await response.json()) as { user: AuthUser };
+      return { status: 'authenticated', user: body.user };
+    }
+    // 404 => dashboardAuth not configured: proceed as today (no auth screens).
+    if (response.status === 404) return { status: 'disabled' };
+    // 401 (or anything else) => unauthenticated; read the offered modes.
+    const body = await readModesBody(response);
+    return { status: 'unauthenticated', modes: body };
+  }
+
+  async function readModesBody(response: Response): Promise<AuthMode[]> {
+    const parsed = await response
+      .json()
+      .then((value: unknown) => value)
+      .catch(() => null);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'auth' in parsed &&
+      parsed.auth !== null &&
+      typeof parsed.auth === 'object' &&
+      'modes' in parsed.auth &&
+      Array.isArray(parsed.auth.modes)
+    ) {
+      return parsed.auth.modes.filter(isAuthMode);
+    }
+    return [];
+  }
+
+  async function authLogin(username: string, password: string): Promise<LoginResult> {
+    const response = await rawPost('/auth/login', { username, password });
+    if (response.ok) return { ok: true };
+    const message = await readLoginMessage(response);
+    return { ok: false, message };
+  }
+
+  async function readLoginMessage(response: Response): Promise<string> {
+    const parsed = await response
+      .json()
+      .then((value: unknown) => value)
+      .catch(() => null);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'message' in parsed &&
+      typeof parsed.message === 'string'
+    ) {
+      return parsed.message;
+    }
+    return 'Invalid credentials';
+  }
+
+  async function authLogout(): Promise<void> {
+    await rawPost('/auth/logout');
   }
 
   return {
@@ -196,5 +287,10 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         undefined,
         body,
       ),
+    auth: {
+      me: authMe,
+      login: authLogin,
+      logout: authLogout,
+    },
   };
 }

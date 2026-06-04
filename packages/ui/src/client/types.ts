@@ -56,6 +56,33 @@ export interface TagCount {
   tag: string;
   count: number;
 }
+/** Which AuthScreen the unauthenticated SPA should render. */
+export type AuthMode = 'session' | 'login';
+
+/** The authenticated dashboard user, as returned by `GET /auth/me`. */
+export interface AuthUser {
+  id: string;
+  name?: string;
+  roles?: string[];
+}
+
+/**
+ * Outcome of `GET /auth/me`, modeled as a discriminated union so the boot gate
+ * can branch exhaustively:
+ * - `authenticated`: a valid session cookie was present (200 + user).
+ * - `unauthenticated`: no/invalid cookie (401); `modes` tells the SPA which
+ *   AuthScreen to show.
+ * - `disabled`: `dashboardAuth` is not configured on the host (404) — the SPA
+ *   proceeds exactly as it does without auth.
+ */
+export type AuthMeResult =
+  | { status: 'authenticated'; user: AuthUser }
+  | { status: 'unauthenticated'; modes: AuthMode[] }
+  | { status: 'disabled' };
+
+/** Outcome of `POST /auth/login`. */
+export type LoginResult = { ok: true } | { ok: false; message: string };
+
 export interface TelescopeMeta {
   enabled: boolean;
   droppedCount: number;
@@ -65,6 +92,11 @@ export interface TelescopeMeta {
   retention: { afterMs: number; keepLast: number | null } | null;
   /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
   sampling: Record<string, number>;
+  /**
+   * Dashboard auth state for the AUTHENTICATED SPA (e.g. show the logout button
+   * when enabled). The unauthenticated SPA learns the modes from `/auth/me`.
+   */
+  auth: { enabled: boolean; modes: AuthMode[] };
 }
 export interface DurationStats {
   avg: number;

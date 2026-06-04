@@ -5,6 +5,10 @@ function jsonResponse(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response;
 }
 
+function statusResponse(status: number, body: unknown): Response {
+  return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
+}
+
 describe('createTelescopeClient default base URL', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -244,5 +248,59 @@ describe('createTelescopeClient', () => {
       payload: { to: 'a@b.c' },
     });
     expect(result).toEqual({ id: '7' });
+  });
+});
+
+describe('createTelescopeClient auth', () => {
+  it('auth.me() returns authenticated with the user on 200', async () => {
+    const user = { id: 'ops', name: 'Ops', roles: ['admin'] };
+    const fetchMock = vi.fn(async () => statusResponse(200, { user }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.auth.me();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/auth/me');
+    expect(result).toEqual({ status: 'authenticated', user });
+  });
+
+  it('auth.me() returns unauthenticated with the offered modes on 401', async () => {
+    const fetchMock = vi.fn(async () =>
+      statusResponse(401, { auth: { modes: ['login', 'session'] } }),
+    );
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.auth.me();
+    expect(result).toEqual({ status: 'unauthenticated', modes: ['login', 'session'] });
+  });
+
+  it('auth.me() returns disabled on 404 (dashboardAuth not configured)', async () => {
+    const fetchMock = vi.fn(async () => statusResponse(404, {}));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.auth.me();
+    expect(result).toEqual({ status: 'disabled' });
+  });
+
+  it('auth.login() returns ok on 204', async () => {
+    const fetchMock = vi.fn(async () => statusResponse(204, undefined));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.auth.login('ops', 'secret');
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/auth/login');
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ username: 'ops', password: 'secret' });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('auth.login() returns the failure message on 401', async () => {
+    const fetchMock = vi.fn(async () => statusResponse(401, { message: 'Invalid credentials' }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    const result = await client.auth.login('ops', 'wrong');
+    expect(result).toEqual({ ok: false, message: 'Invalid credentials' });
+  });
+
+  it('auth.logout() POSTs to /auth/logout', async () => {
+    const fetchMock = vi.fn(async () => statusResponse(204, undefined));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.auth.logout();
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/auth/logout');
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe('POST');
   });
 });
