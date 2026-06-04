@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# Never run two releases concurrently (avoids a double-publish race).
+concurrency: release-${{ github.ref }}
+
+jobs:
+  release:
+    name: Version PR or Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the "Version Packages" commit + git tags
+      pull-requests: write # open/update the "Version Packages" PR
+      id-token: write # npm provenance (OIDC), harmless if unused
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          # Writes ~/.npmrc pointing at npm and reading NODE_AUTH_TOKEN, so
+          # `changeset publish` authenticates without a committed token.
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # When changesets are pending -> opens/updates the "Version Packages" PR.
+      # When that PR is merged (versions bumped, no changesets left) -> runs
+      # `pnpm release` (build all packages + `changeset publish`).
+      - name: Create Release PR or Publish to npm
+        uses: changesets/action@v1
+        with:
+          version: pnpm version-packages
+          publish: pnpm release
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
