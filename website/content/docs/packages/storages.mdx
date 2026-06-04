@@ -1,0 +1,87 @@
+---
+title: Storage adapters
+description: Persist Telescope entries in your own database (MikroORM — MySQL/SQLite) or share one store across replicas (Redis). Same StorageProvider contract everywhere.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The default store is per-process SQLite. Swap it by passing a `storage` provider to `forRoot`. See [Storage](/docs/concepts/storage) for the SPI; this page is the wiring for each adapter.
+
+---
+
+## MikroORM (MySQL / SQLite) — `@dudousxd/nestjs-telescope-mikro-orm`
+
+Persists entries to your application's own database through MikroORM — so you can use your existing MySQL (or SQLite) for Telescope instead of standing up Redis. **No migration, no manual table setup.** Hand it your existing `MikroORM`:
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { MikroOrmStorageProvider } from '@dudousxd/nestjs-telescope-mikro-orm';
+import { MikroORM } from '@mikro-orm/core';
+
+@Module({
+  imports: [
+    // your normal MikroOrmModule.forRoot({ ... }) — nothing to add there
+    TelescopeModule.forRootAsync({
+      inject: [MikroORM],
+      useFactory: (orm: MikroORM) => ({
+        // borrows the host's connection config; opens its OWN scoped connection
+        storage: new MikroOrmStorageProvider(orm),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+For high write volume, put Telescope on a **separate database** by passing explicit connection options instead of the host `MikroORM`:
+
+```ts
+import { MySqlDriver } from '@mikro-orm/mysql';
+
+new MikroOrmStorageProvider({
+  driver: MySqlDriver,
+  clientUrl: process.env.TELESCOPE_DATABASE_URL,
+  // ensureSchema: false,  // opt out of boot-time schema sync (you manage it via migration)
+});
+```
+
+How it works:
+
+- **Dedicated, scoped connection.** The provider opens its own MikroORM that knows *only* `TelescopeEntry`. The schema diff can therefore only ever touch `telescope_entries` (it can't alter your other tables), and it avoids a self-capture loop where every `INSERT INTO telescope_entries` would be recorded as a query.
+- **Self-healing schema at boot.** `init()` runs `ensureDatabase()` + `schema.update({ safe: true })` — additive only: creates the table if missing, adds missing columns, **never drops** anything. `ensureSchema: false` disables it.
+- **Lifecycle.** `init()` is awaited by `TelescopeModule` at startup; `close()` closes the owned connection at shutdown. You call neither.
+- **Keyset pagination** is newest-first; the cursor encodes a `(createdAt, id)` position, so paging resumes even after older entries are pruned.
+
+<Callout type="info">
+  This same package ships the MikroORM query watcher and N+1 detector — see [Watchers](/docs/packages/watchers).
+</Callout>
+
+---
+
+## Redis (shared, multi-instance) — `@dudousxd/nestjs-telescope-redis`
+
+The store to pick when you run multiple replicas: all replicas pointed at the same Redis share one store, so the dashboard aggregates entries across the whole deployment instead of one process. Requires Redis 6+ and `ioredis` v5+.
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-redis ioredis
+```
+
+```ts
+import Redis from 'ioredis';
+import { RedisStorageProvider } from '@dudousxd/nestjs-telescope-redis';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+
+const storage = new RedisStorageProvider(new Redis(process.env.REDIS_URL));
+
+TelescopeModule.forRoot({ storage });
+```
+
+Notes:
+
+- **The host owns the connection.** The provider never closes the `ioredis` client it was given (`close()` is a no-op). Manage the connection's lifecycle and `quit()` yourself.
+- **Pruning is explicit.** There's no per-key TTL — old entries are removed by the core pruner via the `prune` config (e.g. `prune: { after: '24h' }`).
+- **`keyPrefix`.** Every key is namespaced; the default prefix is `telescope:`. Override it to share one Redis across apps:
+
+  ```ts
+  new RedisStorageProvider(redis, { keyPrefix: 'myapp:telescope:' });
+  ```

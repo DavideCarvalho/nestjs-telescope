@@ -1,0 +1,80 @@
+---
+title: "@dudousxd/nestjs-telescope (core)"
+description: The core module — request + exception watchers, the recorder, ALS correlation, the zero-config SQLite store, the headless API, the gate, and the pruner.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+<Tabs items={['pnpm', 'npm']}>
+  <Tab value="pnpm">
+    ```bash
+    pnpm add @dudousxd/nestjs-telescope
+    ```
+  </Tab>
+  <Tab value="npm">
+    ```bash
+    npm install @dudousxd/nestjs-telescope
+    ```
+  </Tab>
+</Tabs>
+
+Core is everything you need to start capturing: it wires request and exception watchers automatically, turns on a zero-config SQLite store and pruner, and exposes the headless API. Import the module and you're recording — no adapter required.
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      enabled: process.env.NODE_ENV !== 'production',
+      authorizer: () => true, // gates the API; defaults to deny in production
+      prune: { after: '24h' },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+Hit `GET /telescope/api/entries` (or `/telescope/api/entries/:id` for a request and everything it caused).
+
+## Built-in watchers
+
+| Export | Captures |
+|---|---|
+| _request watcher_ | Every HTTP request (wired automatically) — opens the batch. |
+| _exception watcher_ | Every thrown exception (wired automatically). |
+| `HttpClientWatcher` | Outbound `fetch` calls, correlated to the request/job. Sanitizes credentials and secret query params; no peer dependency. |
+
+```ts
+import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({ watchers: [new HttpClientWatcher({ slowMs: 1000 })] });
+```
+
+## Headless API
+
+| Method & path | Returns |
+|---|---|
+| `GET /telescope/api/entries` | A page of entries (filter by `type`, `tag`, `batch`, `family`, time). |
+| `GET /telescope/api/entries/:id` | One entry plus its correlated batch. |
+| `GET /telescope/api/pulse?window=1h` | Per-type counts, slowest entries, top exceptions, N+1 occurrences. |
+| `GET /telescope/api/queues?window=1h` | Per-queue throughput, runtime/wait-time percentiles, failure rate. |
+| `GET /telescope/api/timeseries?window=1h&buckets=60` | Bucketed throughput — the sparkline data. |
+| `GET /telescope/api/health` | Telescope's own self-overhead (capture cost, buffer, flush, drops). |
+
+## Key options
+
+| Option | Description |
+|---|---|
+| `enabled` | Master switch. Compute inline (e.g. `NODE_ENV !== 'production'`). |
+| `storage` | `StorageProvider` (or factory). Defaults to the embedded SQLite store. |
+| `watchers` | Built-in + custom watchers; each individually configurable. |
+| `authorizer` | Gates the API. **Denies in production by default** until you supply one. |
+| `authorizeAction` | Separate, **default-deny** gate for queue mutations. |
+| `dashboardAuth` | Signed-cookie login for the dashboard — see [Dashboard auth](/docs/dashboard/auth). |
+| `redact` | Deep-redact configured `headers` / `query` / `body` paths (default sensitive keys always run). |
+| `prune` | Retention window driving the scheduled pruner (e.g. `{ after: '24h' }`). |
+| `traceContext` / `traceLink` | OpenTelemetry trace stamping + deep-link template — see [`-otel`](/docs/packages/otel). |
+| `queueManagers` | Live queue managers — see [queue managers](/docs/packages/queue-managers). |
+
+See [Capture & correlation](/docs/concepts/capture) for the recorder pipeline and the `Entry` / `Watcher` / `StorageProvider` SPIs.

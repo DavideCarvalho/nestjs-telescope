@@ -1,0 +1,110 @@
+---
+title: Queue managers
+description: Horizon-style live queue consoles — BullMQ (browse + retry/remove/promote/retry-all) and SQS (depth + DLQ inspection + redrive), all behind a default-deny mutation gate.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **queue manager** is the live read/write side of the dashboard — it browses your queues' *current* state directly through the driver's API (counts, jobs, payloads) and, behind a second default-deny gate, acts on jobs. Managers are passed via the `queueManagers` option (not `watchers`), and every endpoint they add sits under the existing Telescope `authorizer`.
+
+<Callout type="warn" title="Mutations are default-deny">
+  Queue mutations run behind `TelescopeActionGuard`, **on top of** the read `authorizer`, and that guard fails closed: **without an `authorizeAction` callback, every mutation endpoint returns `403`** — even for callers the read gate trusts. Keep `authorizeAction` strictly narrower than your read gate; browsing a queue shouldn't imply the right to drain it.
+
+  ```ts
+  TelescopeModule.forRoot({
+    authorizer: (ctx) => isAdmin(ctx.request),                 // reads
+    authorizeAction: (ctx, action) => canMutateQueues(ctx.request), // mutations — default-deny
+    queueManagers: [/* ... */],
+  });
+  ```
+</Callout>
+
+---
+
+## BullMQ — `@dudousxd/nestjs-telescope-bullmq`
+
+This package has **two halves**: a *job watcher* (what jobs did) and a *queue manager* (current queue state + actions).
+
+### Job watcher
+
+Captures every processed job (id, name, queue, outcome, duration, attempts) and correlates the queries and exceptions a job emits to that job's batch. No host wiring — it discovers your `@Processor` (`WorkerHost`) classes automatically.
+
+```ts
+import { BullMqJobWatcher } from '@dudousxd/nestjs-telescope-bullmq';
+
+TelescopeModule.forRoot({ watchers: [new BullMqJobWatcher({ slowMs: 1000 })] });
+```
+
+Each job becomes a `job` entry with `origin: 'queue'`; opening it in the dashboard shows everything it caused. With these entries captured, `GET /telescope/api/queues?window=1h` reports per-queue throughput, runtime/wait-time percentiles, and failure rate.
+
+### Queue manager (live reads + actions)
+
+`BullMqQueueManager` browses queues' current state via the BullMQ `Queue` API and implements the action side (`retry`, `remove`, `promote`, `retryAll`). At bootstrap it discovers every `@nestjs/bullmq` `Queue` in the container via `DiscoveryService` — no extra wiring.
+
+```ts
+import { BullMqQueueManager } from '@dudousxd/nestjs-telescope-bullmq';
+
+TelescopeModule.forRoot({ queueManagers: [new BullMqQueueManager()] });
+// allow-list only some queues: new BullMqQueueManager(['mail', 'reports'])
+```
+
+**Read endpoints:**
+
+| Method & path | Returns |
+|---|---|
+| `GET /telescope/api/queues/live` | `QueueSummary[]` across all drivers — name, per-state counts, `isPaused`. |
+| `GET /telescope/api/queues/live/bullmq/:queue/counts` | `QueueCounts` for one queue. |
+| `GET /telescope/api/queues/live/bullmq/:queue/jobs?state=&cursor=&limit=` | A `JobPage` of jobs in a state; `nextCursor` paginates. |
+| `GET /telescope/api/queues/live/bullmq/:queue/jobs/:id` | A `QueueJobDetail` (redacted `data`, `opts`, `stacktrace`, `returnValue`). |
+
+**Mutation endpoints** (default-deny):
+
+| Method & path | Effect |
+|---|---|
+| `POST .../bullmq/:queue/jobs/:id/retry` | Re-queue a failed (or completed) job. |
+| `POST .../bullmq/:queue/jobs/:id/remove` | Delete a job. |
+| `POST .../bullmq/:queue/jobs/:id/promote` | Promote a delayed job to run now. |
+| `POST .../bullmq/:queue/actions/retry-all?state=failed` | Bulk re-queue every job in a state; responds `{ ok, count }`. |
+
+Job payloads pass through core redaction before they leave the server, so secret-keyed fields are masked. `redrive` is **SQS-only** — calling it against the bullmq driver returns `405`.
+
+---
+
+## SQS — `@dudousxd/nestjs-telescope-sqs`
+
+A **live-queue** manager for Amazon SQS: report queue **depth** (pending / in-flight / delayed) for any queue, and — for queues that have a dead-letter queue — snapshot the DLQ (redacted bodies) and **redrive** it back to the source.
+
+The DLQ is **optional**, matching real AWS. Without `dlqUrl` you still get live depth; with it you also get DLQ inspection and redrive. Each summary carries an `actions` hint (`['redrive']` with a DLQ, else `[]`) so the UI shows the Redrive button only where it works.
+
+```ts
+import { SQSClient } from '@aws-sdk/client-sqs';
+import { SqsQueueManager, createAwsSqsOps } from '@dudousxd/nestjs-telescope-sqs';
+
+const client = new SQSClient({ region: 'us-east-1' });
+
+TelescopeModule.forRoot({
+  queueManagers: [
+    new SqsQueueManager({
+      ops: createAwsSqsOps(client),
+      queues: [
+        { name: 'mail', url: '…/mail', dlqUrl: '…/mail-dlq' }, // depth + DLQ + redrive
+        { name: 'events', url: '…/events' },                   // depth only
+      ],
+    }),
+  ],
+});
+```
+
+There's **no hard dependency on `@aws-sdk/client-sqs`** — the SDK is touched only inside `createAwsSqsOps`. Advanced hosts can implement the `SqsOps` port themselves (four methods) and skip the SDK entirely.
+
+### What SQS can and can't do
+
+SQS has no "list all messages" primitive, so:
+
+- **Depth is always reported** (`waiting` / `active` / `delayed`) from `GetQueueAttributes`.
+- **Only `failed` is browsable, and only with a `dlqUrl`.** `listJobs('failed')` is a **snapshot, not a drain** — it `ReceiveMessage`s up to 10 DLQ messages with a short visibility timeout and never deletes them; there's no real pagination.
+- **The one mutation is `redrive`** (`POST .../sqs/:queue/actions/redrive`), which issues a native `StartMessageMoveTask` from the DLQ back to the source — available only for queues with a `dlqUrl`, and gated by `authorizeAction` like every other mutation.
+
+<Callout type="info" title="Native redrive prerequisite">
+  `StartMessageMoveTask` requires the DLQ to have been configured as a redrive *target* (the source queue's redrive policy points at it). This package ships the native command; it does not ship the manual receive→re-send→delete fallback.
+</Callout>

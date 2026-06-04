@@ -1,0 +1,23 @@
+---
+title: Changelog
+description: Per-package changelogs and the release process — versioned with Changesets, published from CI.
+---
+
+nestjs-telescope uses [Changesets](https://github.com/changesets/changesets) for versioned releases. Each package maintains its own `CHANGELOG.md`, and releases are published from CI on merge to `main`.
+
+## Releases
+
+- **GitHub releases:** [github.com/DavideCarvalho/nestjs-telescope/releases](https://github.com/DavideCarvalho/nestjs-telescope/releases)
+- **Per-package changelogs** live alongside each package: `packages/<name>/CHANGELOG.md` in the [repository](https://github.com/DavideCarvalho/nestjs-telescope/tree/main/packages).
+
+## Release process
+
+```bash
+# Add a changeset to your PR:
+pnpm changeset
+
+# Merge to main — CI opens a "Version Packages" PR automatically.
+# Merge that PR — CI publishes to npm in topological order.
+```
+
+All packages publish under the `@dudousxd/nestjs-telescope*` scope.

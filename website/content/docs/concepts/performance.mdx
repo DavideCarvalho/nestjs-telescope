@@ -1,0 +1,47 @@
+---
+title: Performance
+description: Why capture doesn't slow your app — request capture off the response path, ~microsecond query capture, rollup-backed reads, and the /health endpoint that surfaces Telescope's own cost.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A core promise: *you install Telescope, it works, and it does not impact the performance of what already runs.* Capture is robust-or-nothing on the hot path — and Telescope makes its own cost **visible**, so you can see exactly what it spends.
+
+## Request capture is off the response path
+
+The request watcher records inside `response.once('finish', …)` — it fires *after* the response is flushed to the client. Host TTFB impact is effectively zero: nothing the watcher does happens before the user gets their bytes.
+
+## Query capture is the only thing on the hot path — and it's ~microseconds
+
+Query watchers call `record()` synchronously, in the query's async context (that's what enables correlation). `record()` runs `enrich()` — the redaction object-walk plus a trace lookup, taggers, and the sampling filter — then a ring-buffer push. **No I/O**; the flush is an async timer. So the per-query host cost is just `enrich()`, dominated by the redaction walk over the small `{ sql, bindings }` payload.
+
+Measured live against a production app: query capture is **~8.7µs**, against millisecond-scale query I/O. Request capture is **0ms** (it's a finish-callback). Memory stays flat under sustained load.
+
+<Callout type="warn" title="Why redaction stays synchronous">
+  An attempt to defer redaction to the flush (so `record()` only stashed raw content) dropped capture cost to ~1µs but **OOM'd the host** — a JS heap blowup under load. Root cause: watcher content holds *live object graphs*. The request watcher captures `req.user`, a hydrated ORM entity that references its EntityManager, identity map, and relations. Synchronous `redact()` was load-bearing: it snapshots content into a plain, reference-free object at `record()` time, releasing the ORM graph. Deferring it retained up to `bufferSize` live entity graphs until flush. **Lesson: redaction must stay synchronous; it doubles as a detach that bounds memory.** If capture cost ever matters, the safe levers are capturing *lighter* content (project `req.user` → id/email) or making `redact()` itself faster — never deferral.
+</Callout>
+
+## Reads scale on rollups, not raw scans
+
+The read path uses a Pulse-style rollup model. A `telescope_rollups` table holds per-minute count / sum / max per metric, plus fixed-size **latency histograms** for percentile estimation. So:
+
+- **`timeseries`** reads rollups → flat cost regardless of raw row count.
+- **`pulse` / `stats`** estimate p50 / p95 / p99 from the histogram buckets — `O(buckets)`, with a raw-row fallback — instead of scanning every entry. The histograms are fixed-size integer arrays with no retention, so the read path stays memory-safe even at production volume.
+
+Any residual floor on a remote database is network round-trip time (one RTT per query), not payload size — the levers are round-trip *count* and avoiding raw scans, both of which the rollup model already addresses.
+
+## Bounded memory under backpressure
+
+The Recorder's ring buffer has a hard cap. Under a flood it drops the oldest entry and increments a dropped counter — it never grows unboundedly and never blocks the app. Sampling and the `filter()` hook let you down-sample high-volume request floods; because requests are already off the response path, that's a *store-volume* lever, not a latency one.
+
+## The `/health` endpoint — Telescope's own cost, surfaced
+
+Telescope instruments itself with counters only (zero added host cost) and exposes them:
+
+```
+GET /telescope/api/health
+```
+
+It reports the buffered entry count, the ring-buffer high-water mark, flush durations and frequency, the dropped count, and an on-demand `captureCostNanos`. The dashboard's **Overview** renders this as a *Telescope health* card: host-path µs per capture, buffer pressure, flush p95, and drops.
+
+So you can *see*, on your own data, that Telescope costs ~X µs per query and ~0ms per request — and that it's keeping up.

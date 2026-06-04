@@ -1,0 +1,159 @@
+---
+title: Getting Started
+description: Mount the Telescope dashboard in an existing NestJS app — install core + ui, import two modules, and open /telescope. Zero-config SQLite by default; swap the storage adapter when you're ready.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+The fastest way to get Telescope running is two imports: the core module and the UI module. Request and exception capture wire themselves automatically, and a zero-config SQLite store is on by default — so you import, boot, and open `/telescope`. Most apps are done in under five minutes.
+
+---
+
+## Prerequisites
+
+- **Node.js 20+**
+- **NestJS 11+** for the UI module (core works on 10+)
+- Works on **Express** and **Fastify**
+
+---
+
+## Step 1 — Install
+
+Install core and the dashboard:
+
+<Tabs items={['pnpm', 'npm']}>
+  <Tab value="pnpm">
+    ```bash
+    pnpm add @dudousxd/nestjs-telescope @dudousxd/nestjs-telescope-ui
+    ```
+  </Tab>
+  <Tab value="npm">
+    ```bash
+    npm install @dudousxd/nestjs-telescope @dudousxd/nestjs-telescope-ui
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Step 2 — Import the modules
+
+Add both modules to your root module. `TelescopeModule.forRoot()` wires request and exception capture and turns on the default SQLite store and pruner; `TelescopeUiModule.forRoot()` serves the dashboard SPA.
+
+```ts
+import { Module } from '@nestjs/common';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      // dev: rich capture, open gate. prod: flip enabled + supply an authorizer.
+      enabled: process.env.NODE_ENV !== 'production',
+      authorizer: () => true, // gates the API; defaults to deny in production
+      prune: { after: '24h' },
+    }),
+    TelescopeUiModule.forRoot(),
+  ],
+})
+export class AppModule {}
+```
+
+**Done.** Boot the app and open [http://localhost:3000/telescope](http://localhost:3000/telescope). The dashboard polls `/telescope/api/*` and shows captured entries — type tabs plus live polling — and, on an entry, the correlated batch: the request and everything it caused.
+
+<Callout type="warn" title="Production gate">
+  The API gate **denies in production by default**. In prod you must set `enabled: true` and supply an `authorizer` (or wire [dashboard auth](/docs/dashboard/auth)) — otherwise the dashboard returns `403`. This is a default, not an afterthought: capture runs with redaction always on, and the gate is closed until you open it.
+</Callout>
+
+---
+
+## Step 3 — Hit the headless API
+
+The dashboard is optional — everything it shows comes from a plain JSON API you can curl, script, or build your own admin against:
+
+| Method & path | Returns |
+|---|---|
+| `GET /telescope/api/entries` | A page of captured entries (filter by `type`, `tag`, `batch`, `family`, time). |
+| `GET /telescope/api/entries/:id` | One entry plus its correlated batch — the request and everything it caused. |
+| `GET /telescope/api/pulse?window=1h` | Per-type counts, slowest entries, top exceptions, N+1 occurrences. |
+| `GET /telescope/api/queues?window=1h` | Per-queue throughput, runtime/wait-time percentiles, failure rate. |
+| `GET /telescope/api/timeseries?window=1h&buckets=60` | Bucketed throughput — the data behind the sparkline. |
+| `GET /telescope/api/health` | Telescope's own self-overhead: capture cost, buffer pressure, flush stats, drops. |
+
+---
+
+## The zero-config SQLite default
+
+Out of the box Telescope persists entries to a per-process SQLite store. No connection string, no migration, no table setup — it just works on the first boot. That's the right default for local development and single-process apps.
+
+It is **per-process**, though: each replica has its own SQLite, so in a multi-instance deployment the dashboard would only show entries from the pod that served the request. When you scale out, pick a shared storage adapter.
+
+---
+
+## Step 4 — Pick your storage adapter
+
+Swap the default by passing a `storage` provider to `forRoot`. Every adapter implements the same `StorageProvider` SPI, so the API, dashboard, and pruner treat them identically.
+
+| Adapter | Use it when | Package |
+|---|---|---|
+| **SQLite (default)** | Local dev, single process. | _built into core_ |
+| **MikroORM (MySQL / SQLite)** | You already run MikroORM and want Telescope in your own DB — no Redis. | [`-mikro-orm`](/docs/packages/storages) |
+| **Redis** | Multi-instance: every replica reads/writes one shared store, so the dashboard aggregates the whole cluster. | [`-redis`](/docs/packages/storages) |
+| **In-memory** | Tests. | [`-testing`](/docs/packages/testing) |
+
+For example, to share one store across replicas via Redis:
+
+```ts
+import Redis from 'ioredis';
+import { RedisStorageProvider } from '@dudousxd/nestjs-telescope-redis';
+
+TelescopeModule.forRoot({
+  storage: new RedisStorageProvider(new Redis(process.env.REDIS_URL)),
+});
+```
+
+See [Storage](/docs/concepts/storage) for the SPI and the [storage packages](/docs/packages/storages) for each adapter's wiring.
+
+---
+
+## Step 5 — Add watchers
+
+Core captures requests and exceptions on its own. Everything else — queries, jobs, mail, cache, schedules, events, logs, Redis commands — is a watcher you add to the `watchers` array. Each watcher is its own package; install the ones that match your stack.
+
+To capture **outbound HTTP** (no peer dependency — it instruments the global `fetch` and sanitizes secret query params), add the built-in watcher:
+
+```ts
+import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({ watchers: [new HttpClientWatcher({ slowMs: 1000 })] });
+```
+
+To capture **queries** from MikroORM, wire its logger so each query correlates to the request that triggered it:
+
+```ts
+import { TelescopeModule, TelescopeService } from '@dudousxd/nestjs-telescope';
+import { telescopeMikroOrmLogger } from '@dudousxd/nestjs-telescope-mikro-orm';
+
+MikroOrmModule.forRootAsync({
+  inject: [TelescopeService],
+  useFactory: (telescope: TelescopeService) => ({
+    // ...your config
+    debug: ['query'],
+    loggerFactory: telescopeMikroOrmLogger((input) => telescope.record(input)),
+  }),
+});
+```
+
+Browse the [Packages](/docs/packages) section for every watcher, storage, and queue manager — each page is a complete, copy-pasteable setup.
+
+---
+
+## Next steps
+
+- [Capture & correlation](/docs/concepts/capture) — how watchers, batches, and ALS turn scattered events into one navigable flow
+- [Storage](/docs/concepts/storage) — the `StorageProvider` SPI, self-healing schema, and the adapter table
+- [Performance](/docs/concepts/performance) — why capture doesn't slow your app, and the `/health` card that proves it
+- [Dashboard tour](/docs/dashboard) — the full UI: overview, entries, traces, queues console, schedules
+- [Dashboard auth](/docs/dashboard/auth) — gate the dashboard to your logged-in admins, all the way to prod

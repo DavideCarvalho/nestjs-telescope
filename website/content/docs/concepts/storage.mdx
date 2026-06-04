@@ -1,0 +1,65 @@
+---
+title: Storage
+description: The StorageProvider SPI, the zero-config SQLite default, self-healing schema, and the adapter table — your DB, your store, the same contract everywhere.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Storage is pluggable to the core. The default store is a reference implementation of a public contract, not a privileged internal — so swapping it for your own database, Redis, or an in-memory store for tests is a one-line config change, and the API, dashboard, and pruner behave identically against any of them.
+
+## The `StorageProvider` SPI
+
+Every store implements the same interface:
+
+```ts
+interface StorageProvider {
+  store(entries: Entry[]): Promise<void>;          // batch write
+  update(id: string, patch: Partial<Entry>): Promise<void>; // request entry completes
+  find(id: string): Promise<EntryWithBatch | null>;
+  get(query: EntryQuery): Promise<Page<Entry>>;    // filter by type/tag/batch/family/time
+  batch(batchId: string): Promise<Entry[]>;        // the correlation view
+  tags(prefix?: string): Promise<TagCount[]>;
+  prune(olderThan: Date, keepLast?: number): Promise<number>;
+  clear(): Promise<void>;
+}
+```
+
+Reads are **keyset-paginated newest-first** (`createdAt DESC, id DESC`), so paging resumes correctly even after older entries are pruned out from under the cursor.
+
+## The zero-config SQLite default
+
+Out of the box, core persists to an embedded SQLite store (`better-sqlite3`). No connection string, no migration, no table setup — it works on the first boot. It's the right default for local development and single-process apps.
+
+It is **per-process**, though: each replica keeps its own SQLite file, so in a multi-instance deployment the dashboard only sees entries from the pod that served the request. When you scale out, move to a shared store.
+
+## Adapters
+
+| Adapter | Store | Use it when | Package |
+|---|---|---|---|
+| **SQLite** | embedded file | Local dev, single process (the default). | _built into core_ |
+| **MikroORM** | MySQL / SQLite | You already run MikroORM and want Telescope in your own DB — no Redis to stand up. | [`-mikro-orm`](/docs/packages/storages) |
+| **Redis** | shared Redis | Multi-instance / multi-pod: every replica reads and writes one store, so the dashboard aggregates the whole cluster. | [`-redis`](/docs/packages/storages) |
+| **In-memory** | process heap | Tests — `InMemoryStorageProvider`. | [`-testing`](/docs/packages/testing) |
+
+<Callout type="info">
+  The ORM adapter packages also ship the matching **query watcher** — they already sit on the ORM's event stream, so capture and persistence travel together.
+</Callout>
+
+## Self-healing schema (MikroORM adapter)
+
+The `MikroOrmStorageProvider` persists Telescope entries through MikroORM into your existing MySQL or SQLite — with **no migration and no manual table setup**. Two design choices make that safe:
+
+- **A dedicated, scoped connection.** The provider opens its *own* MikroORM that knows *only* `TelescopeEntry`. This matters for two reasons. First, the schema diff can only ever touch `telescope_entries` — it is structurally incapable of altering your other tables. Second, it avoids a self-capture loop: if storage writes ran on the host connection (which has the query watcher's `loggerFactory` wired), every `INSERT INTO telescope_entries` would be captured as a query, recorded, flushed, and re-captured.
+- **Additive schema sync at boot.** On `init()` the provider runs `ensureDatabase()` + `schema.update({ safe: true })` — it creates `telescope_entries` if missing and adds any missing columns, and **never drops** a table or column. Set `ensureSchema: false` to opt out (e.g. when you provision the table via your own migration).
+
+Want Telescope on a **separate database** (recommended for high write volume)? Pass explicit connection options instead of borrowing the host `MikroORM`. See the [storage packages](/docs/packages/storages) for both wirings.
+
+## Retention and pruning
+
+There's no unbounded growth. The core pruner runs on a schedule and calls `prune()` on whatever store you've configured, driven by the `prune` config:
+
+```ts
+TelescopeModule.forRoot({ prune: { after: '24h' } });
+```
+
+The Redis adapter has no per-key TTL — pruning is explicit through this same path, so retention behaves the same regardless of backend.

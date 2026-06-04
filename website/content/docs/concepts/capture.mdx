@@ -1,0 +1,97 @@
+---
+title: Capture & correlation
+description: How watchers, batches, and AsyncLocalStorage turn scattered events into one navigable flow — the request and everything it caused, in capture order.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The unit of value in Telescope is the **batch** — one entry-point (a request, a queue job, a scheduled tick) and *everything it caused*. Correlation is the differentiator: it's the view metrics and logs can't give you, where a single request expands into the exact queries, jobs, exceptions, and mails it produced, in the order they happened.
+
+## Watchers
+
+A **watcher** captures one kind of activity and records it as an `Entry`. Watchers come in two flavours:
+
+- **Entry-point watchers** *open* a batch: the HTTP request watcher, the queue job watcher, the schedule watcher, and manual `Telescope.batch()`.
+- **Sub-watchers** record *into* whatever batch is already active: query, mail, cache, event, log, Redis-command, model, and outbound-HTTP watchers.
+
+Request and exception capture are wired automatically by `TelescopeModule.forRoot()`. Every other watcher is a value you add to the `watchers` array (most live in their own package). The same `Watcher` SPI backs the built-ins and your own watchers — community watchers are first-class, not second-class hooks.
+
+```ts
+interface Watcher {
+  readonly type: string;                                // entry type it produces
+  register(ctx: WatcherContext): void | Promise<void>;  // wire NestJS hooks
+  shouldRecord?(candidate: unknown): boolean;           // cheap pre-filter
+}
+```
+
+Watchers never touch storage and never block. They call `ctx.record(...)`, which returns immediately.
+
+## Batches and AsyncLocalStorage
+
+A `TelescopeContext` lives in `AsyncLocalStorage`. When an entry-point watcher calls `beginBatch(origin)`, it seeds a `Batch { id, origin, startedAt }` into the ALS store for the duration of that async flow. Every `record()` made inside that flow then inherits the batch's `id` and gets a monotonic `sequence` — so entries reassemble in capture order with no manual plumbing.
+
+This is why adapters like MikroORM and TypeORM correlate each query to its request: their loggers run *inside the query's async context*, so the active batch is already there. (Prisma is the exception — its query events fire detached from the caller's context, so Prisma queries are captured but orphaned. See the [Prisma package](/docs/packages/watchers).)
+
+Non-HTTP entry points get their own batch:
+
+- a **queue worker** opens a batch per job,
+- **`@nestjs/schedule`** opens one per cron / interval / timeout tick,
+- **`Telescope.batch(origin, fn)`** wraps an arbitrary script or CLI run.
+
+Entries recorded outside any batch get a synthetic per-entry batch, so nothing is ever lost.
+
+<Callout type="info">
+  `traceId` / `spanId` from an active OpenTelemetry span are stamped onto entries (via the [`-otel`](/docs/packages/watchers) provider), so a Telescope batch maps 1:1 to a trace and the correlation survives across the OTel bridge.
+</Callout>
+
+## The Entry
+
+Every watcher produces the same universal record. Type-specific data lives in `content`; everything else is uniform, so the API, dashboard, pruner, and OTel bridge treat all entry types identically:
+
+```ts
+interface Entry<TContent = unknown> {
+  id: string;            // uuid v7 — time-sortable, globally unique
+  batchId: string;       // correlation key; all entries in one batch share it
+  type: string;          // 'request' | 'query' | 'job' | 'exception' | 'mail' | <custom>
+  familyHash: string | null; // groups "the same thing" (query template, exception class+message)
+  content: TContent;     // redacted, type-specific payload
+  tags: string[];        // cross-cutting filters: 'status:500', 'user:42', 'slow'
+  sequence: number;      // order within the batch (capture order)
+  durationMs: number | null;
+  origin: BatchOrigin;   // 'http' | 'queue' | 'schedule' | 'cli' | 'manual'
+  instanceId: string;    // hostname / pod id — multi-instance aggregation
+  createdAt: Date;
+}
+```
+
+`familyHash` is what powers *"show me every occurrence of this exception"* and the slow-query / duplicate-query views without scanning content. Queries normalize to a SQL template before hashing; exceptions hash on class + message.
+
+## The Recorder pipeline
+
+`ctx.record(input)` hands the entry to the **Recorder** — a bounded, async, backpressure-safe pipe between watchers and storage. The application thread never waits on it:
+
+```
+record(input)
+  → enrich   (attach batchId from ALS, instanceId, sequence, createdAt)
+  → tag      (run registered Taggers; built-in + user-provided)
+  → redact   (deep-redact configured paths + default sensitive keys)
+  → sample   (per-type sampling + filter() hook; drop early)
+  → buffer   (push to a bounded ring buffer)
+  → flush    (drain in batches on a timer / size threshold → StorageProvider.store)
+```
+
+The guarantees that make this safe to run in production:
+
+- **Non-blocking.** `record()` is synchronous and O(1); all I/O is deferred to the flush timer.
+- **Bounded memory.** The ring buffer has a hard cap; on overflow it drops the oldest entry and increments a dropped counter — it never grows unboundedly and never blocks the app.
+- **Batched writes.** Flushes coalesce many entries into one `store()` call.
+- **Graceful shutdown.** `onApplicationShutdown` drains the buffer with a timeout.
+- **Failure isolation.** A storage error is logged and the batch is dropped — a broken telescope never breaks the host app.
+
+<Callout type="warn" title="Redaction is load-bearing">
+  The synchronous `redact()` step is not just for privacy: it snapshots each entry's content into a plain, reference-free object at `record()` time. That releases live object graphs (e.g. a hydrated ORM entity captured off `req.user`, which references its EntityManager and identity map). Keeping redaction synchronous doubles as a detach that bounds memory — deferring it retains those graphs until flush and can OOM the host. See [Performance](/docs/concepts/performance).
+</Callout>
+
+The request flow, end to end:
+
+> **`GET /orders/42`** → 5 queries (1 flagged slow, 2 duplicates) → 1 job dispatched (`SendReceipt`) → 1 outbound HTTP call → 1 exception — all sharing one `batchId`, reassembled in `sequence` order when you open the request in the dashboard.

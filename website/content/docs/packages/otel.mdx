@@ -1,0 +1,33 @@
+---
+title: "@dudousxd/nestjs-telescope-otel"
+description: OpenTelemetry trace-context provider — stamp every captured entry with the active traceId/spanId so a Telescope batch maps 1:1 to a trace.
+---
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-otel
+```
+
+Implements core's `TraceContextProvider` SPI by reading the **active** OpenTelemetry span via `@opentelemetry/api`, so each recorded entry is stamped with the ambient `traceId` / `spanId`.
+
+This package is **read-only**: it reads whatever span is already active in the caller's context. It does **not** create, sample, or export spans — your existing OpenTelemetry SDK owns that. `@opentelemetry/api` is an optional peer; when it (or an active span) is absent, the provider returns `null` and recording proceeds without a trace link — it never throws.
+
+## Usage
+
+Register the provider as `traceContext`, and pair it with a `traceLink` template to deep-link each entry to your trace backend (the `{traceId}` placeholder is substituted at render time):
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { OtelTraceContextProvider } from '@dudousxd/nestjs-telescope-otel';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      traceContext: new OtelTraceContextProvider(),
+      traceLink: 'https://grafana.example.com/explore?traceId={traceId}',
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+Every entry recorded inside an active span then carries `traceId` and `spanId` (lower-case hex). The dashboard uses these to group entries by trace at `#/traces/:traceId` (see the [dashboard tour](/docs/dashboard)) and to render the "view in trace" deep-link.

@@ -1,0 +1,155 @@
+---
+title: Dashboard auth
+description: Gate the Telescope dashboard so only your logged-in admins see it — all the way to prod, no infra required. Two modes, one signed-cookie mechanism, both copy-pasteable.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`dashboardAuth` lets any host app gate the Telescope dashboard so only its logged-in admins can reach it — all the way to production, with **no infra** (no oauth2-proxy, no ingress rules). It's designed to be adoptable by any community user in a few lines.
+
+## The problem it solves
+
+Hosts commonly use **header-Bearer auth** (e.g. a Keycloak JWT). The generic dashboard SPA can't attach that header to browser navigations and fetches, so the `authorizer` hook alone can't gate the dashboard without breaking it — the SPA would 403 itself out.
+
+Cookies, however, ride along automatically. The UI client already uses `fetch` with the default `credentials: same-origin`, so a **same-origin, path-scoped cookie reaches every SPA call with zero UI-client changes**. `dashboardAuth` mints exactly such a cookie.
+
+## The mechanism: a stateless signed cookie
+
+Both modes mint the *same* cookie — there's no session store and no revocation list, just a short TTL with sliding renewal:
+
+- **Name** `telescope_session`; `httpOnly`, `SameSite=Lax`, `Secure` when the request is https (or `x-forwarded-proto: https`), `Path=/<mount path>` (default `/telescope`).
+- **Value** `base64url(JSON payload) . base64url(HMAC-SHA256(payload, secret))`, payload `{ sub, name?, roles, iat, exp }`. Verified with `crypto.timingSafeEqual`. **No JWT dependency — `node:crypto` only.**
+- **Tampered / expired / malformed** cookies are treated as *absent* (`401`), never thrown.
+- **Sliding renewal** is handled centrally in the guard: a valid cookie past 50% of its TTL is transparently re-issued on the response.
+
+## Two modes
+
+Enable either, or both. At least one of `session` / `login` is **required** when `dashboardAuth` is set (boot error otherwise).
+
+- **Mode A — `session` (seamless).** Your *own* frontend — which already holds the host's auth — calls `POST /telescope/api/auth/session` with that auth. A host hook validates it and returns the session user. No second login.
+- **Mode B — `login` (universal).** Telescope ships a built-in login screen; a host hook validates the submitted credentials. Zero host-frontend changes.
+
+## Config surface
+
+```ts
+TelescopeModule.forRoot({
+  dashboardAuth: {
+    /** REQUIRED. HMAC-SHA256 signing key (32+ bytes recommended).
+     *  Missing/empty while dashboardAuth is set => boot error (fail closed). */
+    secret: process.env.TELESCOPE_AUTH_SECRET,
+
+    /** Cookie TTL. Default '8h'. Sliding renewal re-issues past 50% of TTL. */
+    ttl: '8h',
+
+    /** Mode A. Called by POST /auth/session with the RAW request — the host
+     *  validates its own auth and returns the session user, or null to deny. */
+    session: (request) => /* TelescopeSessionUser | null */,
+
+    /** Mode B. Called by POST /auth/login with the submitted credentials. */
+    login: (username, password) => /* TelescopeSessionUser | null */,
+  },
+});
+
+interface TelescopeSessionUser {
+  id: string;
+  name?: string;
+  /** Free-form role strings; the lib does NOT interpret them. Hooks decide who
+   *  gets in; authorizeAction can read them for mutation gating. */
+  roles?: string[];
+}
+```
+
+When `dashboardAuth` is **not** set, behavior is unchanged — the existing `authorizer` / default-deny-in-prod applies.
+
+## Recipes
+
+<Tabs items={['Mode B — login (easiest)', 'Mode A — host hook (flip-style)']}>
+  <Tab value="Mode B — login (easiest)">
+    Gates the dashboard in 5 lines, works to prod, no host-frontend changes. Telescope renders the login screen; your hook checks the credentials against an env user/pass:
+
+    ```ts
+    TelescopeModule.forRoot({
+      dashboardAuth: {
+        secret: process.env.TELESCOPE_AUTH_SECRET,
+        login: (username, password) =>
+          username === process.env.TELESCOPE_USER &&
+          password === process.env.TELESCOPE_PASS
+            ? { id: 'ops' }
+            : null,
+      },
+    });
+    ```
+
+    Open `/telescope`, enter the credentials, and you're in.
+  </Tab>
+  <Tab value="Mode A — host hook (flip-style)">
+    Your app already authenticates the admin with a Bearer token. The hook verifies that token and returns the user; your frontend mints the session with one fetch, then opens the dashboard — no second login.
+
+    **Backend** — verify your own Bearer and gate on role:
+
+    ```ts
+    TelescopeModule.forRoot({
+      dashboardAuth: {
+        secret: process.env.TELESCOPE_AUTH_SECRET,
+        session: async (req) => {
+          const user = await myAuth.verify(req); // verify the Bearer JWT
+          return user?.isAdmin
+            ? { id: user.id, name: user.name, roles: ['admin'] }
+            : null;
+        },
+      },
+    });
+    ```
+
+    **Frontend** — an "Open Telescope" button that mints the session, then opens the dashboard:
+
+    ```ts
+    await fetch('/telescope/api/auth/session', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    window.open('/telescope');
+    ```
+
+    The `POST` sets the cookie; every subsequent SPA call carries it automatically.
+  </Tab>
+</Tabs>
+
+## Endpoints
+
+`/auth/*` endpoints are **not** behind the session gate (they create it).
+
+| Endpoint | Mode | Behavior |
+|---|---|---|
+| `POST /auth/session` | A | Runs `session(request)`. User → set cookie, `204`. Null → `401`. `404` when mode A isn't configured. |
+| `POST /auth/login` | B | Body `{ username, password }`. Runs `login(...)`. User → set cookie, `204`. Null → `401` (uniform message — no user enumeration). `404` when mode B isn't configured. |
+| `POST /auth/logout` | both | Clears the cookie. `204`. |
+| `GET /auth/me` | both | Valid cookie → `200 { user }`. Else `401` with `{ auth: { modes } }` — the unauthenticated SPA learns which screen to render from this body (meta stays gated). |
+
+## Gate behavior
+
+When `dashboardAuth` is configured:
+
+- The guard requires a valid session cookie for every `/api/*` route except `/api/auth/*`. The parsed session is attached as `request.telescopeSession`, so your hooks can read the user and roles.
+- The existing `authorizer` still runs **after** the session check (AND semantics — an optional extra restriction). The default prod-deny is replaced by the session gate.
+- The **UI shell + hashed assets stay public** (they hold no data). The SPA boots, calls `/auth/me`, and on `401` renders the auth screen instead of the app. A `401` from any later call flips it back to the auth screen — so an expired session mid-use is handled gracefully.
+- **Mutations** stay on `authorizeAction` (separate, default-deny). With sessions it can now do role checks:
+
+  ```ts
+  authorizeAction: ({ request }) =>
+    request.telescopeSession?.roles?.includes('admin') ?? false,
+  ```
+
+## Security notes
+
+- **CSRF.** `SameSite=Lax` blocks the cookie from riding cross-site `POST`s. Queue mutations are `POST`s, so they're covered by this alone.
+- **Fail-closed boot.** A missing or too-short `secret` while `dashboardAuth` is set is a **hard boot error** with a clear message — never a silent open door.
+- **401 vs 403.** A missing / tampered / expired session is `401` (not authenticated → show the auth screen). A valid session that your `authorizer` or `authorizeAction` then rejects is `403` (authenticated, not allowed). The login endpoint returns a **uniform `401`** on bad credentials — no user enumeration.
+- **Hook errors don't leak.** A hook that throws is treated as a denial (`null`) with a once-per-kind warn log — it never `500`s the auth endpoint into a stack-trace leak.
+- **Clock skew.** `exp` is checked with a 30-second grace.
+- **Brute-force throttling** on `/auth/login` is documented as the host's job (e.g. Nest's `Throttler`); the `/auth/*` endpoints do no heavy work before the hook runs.
+
+<Callout type="info">
+  Server-side / revocable sessions, OAuth/OIDC flows inside Telescope, and per-view authorization granularity are explicitly out of scope: it's a single all-or-nothing dashboard session plus the existing `authorizeAction` for mutations. The codec is swappable, so revocable sessions can be added later without an API break.
+</Callout>

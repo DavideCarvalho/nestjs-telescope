@@ -1,0 +1,4 @@
+{
+  "title": "Packages",
+  "pages": ["index", "core", "ui", "watchers", "storages", "queue-managers", "otel", "testing"]
+}

@@ -1,0 +1,38 @@
+---
+title: Packages
+description: The full suite — core, the dashboard, watchers, storage adapters, queue managers, the OpenTelemetry bridge, and test utilities. Install only what your stack needs.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Telescope is a monorepo of small, single-purpose packages. You install [core](/docs/packages/core) plus whichever watchers, storage adapter, and queue managers match your stack — every built-in is implemented against the same public SPIs, so a community watcher or store is a first-class citizen, not a second-class hook.
+
+| Package | What it is |
+|---|---|
+| `@dudousxd/nestjs-telescope` | Core — request + exception watchers, recorder, ALS correlation, SQLite store, headless API, guard, pruner. |
+| `@dudousxd/nestjs-telescope-ui` | Bundled dashboard SPA + composable React components / hooks / client. |
+| `@dudousxd/nestjs-telescope-mikro-orm` | MikroORM query watcher + N+1 detector + MySQL/SQLite storage. |
+| `@dudousxd/nestjs-telescope-typeorm` | TypeORM query watcher (host-wired logger). |
+| `@dudousxd/nestjs-telescope-prisma` | Prisma query watcher (`$on('query')`; see correlation caveat). |
+| `@dudousxd/nestjs-telescope-mail` | Mail watcher (nodemailer `sendMail`). |
+| `@dudousxd/nestjs-telescope-cache` | Cache watcher (get/set hit/miss). |
+| `@dudousxd/nestjs-telescope-schedule` | Schedule watcher (`@nestjs/schedule` cron/interval/timeout). |
+| `@dudousxd/nestjs-telescope-events` | Event watcher (`@nestjs/event-emitter`). |
+| `@dudousxd/nestjs-telescope-logs` | Log watcher (Nest `Logger` output). |
+| `@dudousxd/nestjs-telescope-redis-watcher` | Redis command watcher (wrapped `ioredis`). |
+| `@dudousxd/nestjs-telescope-mikro-orm-watcher` | Model watcher (MikroORM entity lifecycle changes). |
+| `@dudousxd/nestjs-telescope-redis` | Redis-backed shared storage (multi-instance). |
+| `@dudousxd/nestjs-telescope-bullmq` | BullMQ job watcher + live queue manager (browse + mutations). |
+| `@dudousxd/nestjs-telescope-sqs` | SQS live-queue manager (depth + DLQ inspection + redrive). |
+| `@dudousxd/nestjs-telescope-otel` | OpenTelemetry trace-context provider. |
+| `@dudousxd/nestjs-telescope-testing` | In-memory store, `FakeClock`, watcher test harness. |
+
+<Cards>
+  <Card title="Core" href="/docs/packages/core" description="The module, recorder, API, guard, and SQLite store." />
+  <Card title="Dashboard (-ui)" href="/docs/packages/ui" description="Turnkey SPA + composable React layers + typed client." />
+  <Card title="Watchers" href="/docs/packages/watchers" description="Query, mail, cache, schedule, events, logs, redis, model." />
+  <Card title="Storages" href="/docs/packages/storages" description="MikroORM (MySQL/SQLite) and Redis adapters." />
+  <Card title="Queue managers" href="/docs/packages/queue-managers" description="BullMQ and SQS live consoles + mutations." />
+  <Card title="OpenTelemetry (-otel)" href="/docs/packages/otel" description="Stamp entries with the active trace/span." />
+  <Card title="Testing" href="/docs/packages/testing" description="FakeClock, watcher harness, in-memory store." />
+</Cards>

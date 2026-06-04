@@ -1,0 +1,98 @@
+---
+title: Dashboard tour
+description: The optional dashboard — overview and pulse health, entries per type, traces, the Horizon-style live queue console with default-deny mutations, and schedules.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`@dudousxd/nestjs-telescope-ui` is a bundled React SPA served by a NestJS module. **No frontend dependency is imposed on your app:** React and Tailwind are bundled into static assets at publish time; your app just serves them. It works on Express and Fastify.
+
+## Mount it
+
+```ts
+import { Module } from '@nestjs/common';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
+
+@Module({
+  imports: [TelescopeModule.forRoot(), TelescopeUiModule.forRoot()],
+})
+export class AppModule {}
+```
+
+Open `/telescope`. The dashboard polls `/telescope/api/*` and renders the views below. It ships a dark theme by default, with a theme toggle in the shell, a window selector (1h / 24h / …) for the aggregate views, and a live / pause toggle for polling.
+
+## Overview & Pulse
+
+The **Overview** is the Horizon-style landing page: top stat cards, a throughput-over-time area chart from `/timeseries`, a per-type stacked area, and recent failures / slowest entries. It also renders the **Telescope health** card — host-path µs per capture, buffer pressure, flush p95, and dropped count, straight from `/health` (see [Performance](/docs/concepts/performance)).
+
+**Pulse** (`#/pulse`) is the at-a-glance health snapshot from `/pulse`: per-type entry counts, the slowest entries, the most frequent exceptions, and N+1 query occurrences — all rolled up from captured entries.
+
+## Entries, per type
+
+The entries view is the heart of the console: type tabs (request / query / job / exception / mail / cache / event / log / model / redis / …) with live polling. Open any entry to see its **correlated batch** — the request and *everything it caused*, in capture order. Each entry shows its type-specific content (the SQL of a query, the recipients of a mail, the stack of an exception), its tags, and its duration. Per-type **insights** surface query-latency percentiles per shape, cache hit/miss/ratio badges, and exception groupings.
+
+## Traces
+
+When you run the [OpenTelemetry provider](/docs/packages/watchers), each entry is stamped with the ambient `traceId` / `spanId`. The dashboard then offers a `#/traces/:traceId` route that lists every entry sharing that trace — the in-app correlation view — alongside a deep-link out to your trace backend (Jaeger / Grafana / …) via the configured `traceLink` template.
+
+## Queues console (Horizon-style)
+
+When you register a [queue manager](/docs/packages/queue-managers), the dashboard gains a live queue console:
+
+- **Queue list** with live per-state counts (waiting / active / delayed / failed / completed / paused) and a paused flag, across every driver (BullMQ, SQS).
+- **State tabs → job table** with redacted payload previews.
+- **Job detail drawer** — `data`, `opts`, attempts, stacktrace, return value (all passed through core redaction first).
+
+### Mutations & `authorizeAction` (default-deny)
+
+The console can also *act* on jobs — retry, remove, promote, retry-all (BullMQ), and redrive (SQS DLQ). These are **denied by default**. They run behind a second guard on top of the read `authorizer`, and that guard **fails closed**: without an `authorizeAction` callback, every mutation endpoint returns `403` — even for callers the read gate already trusts. The action buttons appear only when allowed; queues advertise an `actions` capability hint so, for example, the Redrive button shows only for SQS queues that actually have a DLQ.
+
+```ts
+TelescopeModule.forRoot({
+  authorizer: (ctx) => isAdmin(ctx.request),       // reads — browse queues/jobs
+  authorizeAction: (ctx, action) => canMutate(ctx.request), // mutations — separate, default-deny
+  queueManagers: [/* BullMqQueueManager / SqsQueueManager */],
+});
+```
+
+<Callout type="warn">
+  Keep `authorizeAction` strictly narrower than your read gate: browsing a queue should not imply the right to drain it. See the [queue manager packages](/docs/packages/queue-managers) for the full endpoint and action tables.
+</Callout>
+
+## Schedules
+
+`@nestjs/schedule` runs surface as their own view: each `@Cron` / `@Interval` / `@Timeout` tick opens a `schedule` batch and records a job entry (outcome + duration), so you can see which scheduled tasks ran, how long they took, what they emitted, and which failed. See the [schedule watcher](/docs/packages/watchers).
+
+## Build your own
+
+The same pieces are exported so you can drop them into your own admin instead of using the turnkey app:
+
+<Tabs items={['React components', 'Typed client (no React)']}>
+  <Tab value="React components">
+    ```tsx
+    import { TelescopeProvider, useEntries, EntriesTable } from '@dudousxd/nestjs-telescope-ui/react';
+
+    function MyEntries() {
+      const { data } = useEntries({ type: 'query' });
+      return <EntriesTable entries={data?.data ?? []} />;
+    }
+    // wrap your tree once in <TelescopeProvider> (defaults to the /telescope/api base)
+    ```
+  </Tab>
+  <Tab value="Typed client (no React)">
+    ```ts
+    import { createTelescopeClient } from '@dudousxd/nestjs-telescope-ui/client';
+
+    const telescope = createTelescopeClient({ baseUrl: '/telescope/api' });
+    const page = await telescope.entries({ type: 'job' });
+    ```
+  </Tab>
+</Tabs>
+
+See the [`-ui` package](/docs/packages/ui) for the full exports map and peer dependencies.
+
+## Gating the dashboard
+
+The UI shell and hashed assets are public (they contain no data); the **API** behind them is what's gated. For a production-grade login that works even when your app uses header-Bearer auth, see [Dashboard auth](/docs/dashboard/auth).
