@@ -96,3 +96,235 @@ html > body[data-scroll-locked] {
     animation: none !important;
   }
 }
+
+/* ===========================================================================
+   DOCS — "observatory console" theme.
+   Extends the landing design language to the whole Fumadocs surface by
+   overriding the --color-fd-* tokens (fumadocs reads these everywhere:
+   sidebar, TOC, search, cards, buttons, code blocks) and adding a few
+   minimal, resilient selectors targeting fumadocs' stable class hooks
+   (#nd-sidebar, #nd-toc, data-active, the .shiki figure).
+
+   Readability is king in docs: textures/glows live only at the page chrome
+   (sidebar/TOC rails, code-block top edge) — never behind body text — and
+   there is no motion in the content flow beyond what fumadocs ships.
+=========================================================================== */
+
+/* ---- Emerald accent, shared across themes -------------------------------- */
+:root {
+  /* emerald-500 / emerald-400 — same primary as the landing CTAs */
+  --tele-emerald: 16 185 129;
+  --tele-emerald-bright: 52 211 153;
+}
+
+/* ---- Dark theme: zinc-950/900 surfaces + emerald (matches the console) --- */
+.dark {
+  --color-fd-background: hsl(240 6% 6%); /* ~zinc-950 */
+  --color-fd-foreground: hsl(240 6% 90%); /* zinc-200 */
+  --color-fd-muted: hsl(240 5% 11%); /* ~zinc-900 */
+  --color-fd-muted-foreground: hsl(240 5% 58%); /* zinc-400/500 */
+  --color-fd-popover: hsl(240 6% 8%);
+  --color-fd-popover-foreground: hsl(240 6% 88%);
+  --color-fd-card: hsl(240 6% 8%); /* zinc-950/900 surface */
+  --color-fd-card-foreground: hsl(240 6% 92%);
+  --color-fd-border: hsl(240 5% 19%); /* zinc-800 */
+  --color-fd-primary: hsl(160 84% 39%); /* emerald-500 */
+  --color-fd-primary-foreground: hsl(240 8% 6%); /* zinc-950 ink on emerald */
+  --color-fd-secondary: hsl(240 5% 13%);
+  --color-fd-secondary-foreground: hsl(240 6% 88%);
+  --color-fd-accent: hsl(240 5% 14%); /* zinc-800/900 hover */
+  --color-fd-accent-foreground: hsl(240 6% 95%);
+  --color-fd-ring: hsl(160 70% 42%);
+  --color-fd-overlay: hsla(240 8% 2% / 0.6);
+}
+
+/* fumadocs' neutral.css nudges these three inside #nd-sidebar for dark;
+   re-align them to our zinc/emerald palette so the rail matches. */
+.dark #nd-sidebar {
+  --color-fd-muted: hsl(240 5% 9%);
+  --color-fd-secondary: hsl(240 5% 12%);
+  --color-fd-muted-foreground: hsl(240 5% 62%);
+}
+
+/* ---- Light theme: clean zinc-50/white counterpart, same emerald ---------- */
+:root:not(.dark) {
+  --color-fd-background: hsl(0 0% 100%);
+  --color-fd-foreground: hsl(240 10% 9%); /* zinc-900 */
+  --color-fd-muted: hsl(240 5% 96%); /* zinc-100 */
+  --color-fd-muted-foreground: hsl(240 4% 46%); /* zinc-500 */
+  --color-fd-popover: hsl(0 0% 100%);
+  --color-fd-popover-foreground: hsl(240 10% 12%);
+  --color-fd-card: hsl(240 6% 99%); /* zinc-50ish */
+  --color-fd-card-foreground: hsl(240 10% 9%);
+  --color-fd-border: hsl(240 6% 90%); /* zinc-200 */
+  --color-fd-primary: hsl(161 84% 32%); /* emerald-600, AA on white */
+  --color-fd-primary-foreground: hsl(0 0% 100%);
+  --color-fd-secondary: hsl(240 5% 96%);
+  --color-fd-secondary-foreground: hsl(240 10% 12%);
+  --color-fd-accent: hsl(240 5% 95%); /* zinc-100 hover */
+  --color-fd-accent-foreground: hsl(240 10% 9%);
+  --color-fd-ring: hsl(161 84% 36%);
+  --color-fd-overlay: hsla(240 6% 10% / 0.2);
+}
+
+/* ---- Callout / banner accents tuned to the product palette --------------- */
+@theme {
+  --color-fd-info: hsl(199 89% 56%); /* sky-400, "query" accent */
+  --color-fd-warning: hsl(38 92% 55%); /* amber, "cache" accent */
+  --color-fd-error: hsl(0 84% 63%); /* red, "exception" accent */
+  --color-fd-success: hsl(160 84% 42%); /* emerald, "healthy" */
+  --color-fd-idea: hsl(258 90% 70%); /* violet, "job" accent */
+}
+
+/* ---- Sidebar rail: console feel ------------------------------------------ */
+/* Mono uppercase group/folder labels (the landing's data-label voice). */
+#nd-sidebar p.text-fd-primary.font-medium,
+#nd-sidebar [data-active] + div p.text-fd-primary,
+#nd-sidebar button > p.truncate {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fd-muted-foreground);
+}
+
+/* Emerald active-item indicator + subtle hover. */
+#nd-sidebar a[data-active='true'],
+#nd-sidebar [data-active='true'] {
+  position: relative;
+  color: var(--color-fd-primary);
+  background-color: color-mix(
+    in srgb,
+    rgb(var(--tele-emerald)) 10%,
+    transparent
+  );
+}
+#nd-sidebar a[data-active='true']::before,
+#nd-sidebar button[data-active='true']::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  height: 1.1rem;
+  width: 2px;
+  transform: translateY(-50%);
+  border-radius: 9999px;
+  background: rgb(var(--tele-emerald-bright));
+  box-shadow: 0 0 8px 0 color-mix(in srgb, rgb(var(--tele-emerald)) 60%, transparent);
+}
+#nd-sidebar a[data-active='false']:hover {
+  background-color: var(--color-fd-accent);
+}
+
+/* ---- Table of contents: console feel ------------------------------------- */
+/* Mono uppercase "On this page" heading. */
+#nd-toc h3,
+#nd-toc [class*='font-medium']:first-child {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fd-muted-foreground);
+}
+/* Emerald active anchor (links already flip to text-fd-primary on active). */
+#nd-toc a[data-active='true'] {
+  color: var(--color-fd-primary) !important;
+  font-weight: 500;
+}
+
+/* ---- Code blocks: window-chrome vibe via tokens + a thin accent edge ------ */
+/* Figures already render `bg-fd-card` + border, so they inherit the zinc
+   surface. We add a faint emerald top hairline (the console's "live" rail)
+   and a touch more chrome — without touching shiki tokens, copy buttons,
+   or highlighting. */
+.prose figure.shiki,
+figure.shiki {
+  position: relative;
+  background-color: var(--color-fd-card);
+  border-color: var(--color-fd-border);
+}
+figure.shiki::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, rgb(var(--tele-emerald)) 45%, transparent),
+    transparent
+  );
+  pointer-events: none;
+}
+/* Code-block title bars (figcaption) read as a mono chrome strip. */
+figure.shiki > figcaption {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
+  color: var(--color-fd-muted-foreground);
+  border-bottom: 1px solid var(--color-fd-border);
+}
+/* Inline code keeps the mono + muted-surface look. */
+.prose :not(pre) > code {
+  font-variant-ligatures: none;
+}
+
+/* ---- Tables: zinc borders + mono tabular numerics ------------------------ */
+.prose table {
+  font-size: 0.875rem;
+}
+.prose table th {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-fd-muted-foreground);
+}
+.prose table th,
+.prose table td {
+  border-color: var(--color-fd-border);
+}
+/* Numerics line up like the console's metric grid. */
+.prose table td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Ambient page texture for the docs content rail ---------------------- */
+/* A whisper-faint dot grid behind the page gutters only — masked away from
+   the reading column so it never sits under body text. Edges only. */
+#nd-docs-layout {
+  position: relative;
+}
+#nd-docs-layout::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle at center,
+    var(--color-fd-border) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+  opacity: 0.25;
+  -webkit-mask-image: radial-gradient(
+    ellipse 60% 50% at 50% -10%,
+    black,
+    transparent 70%
+  );
+  mask-image: radial-gradient(
+    ellipse 60% 50% at 50% -10%,
+    black,
+    transparent 70%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* (texture is static; nothing to disable — listed for intent clarity) */
+  #nd-docs-layout::before {
+    /* no animation */
+  }
+}
