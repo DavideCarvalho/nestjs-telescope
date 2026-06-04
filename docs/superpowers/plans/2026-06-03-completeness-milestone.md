@@ -39,3 +39,21 @@ The dominant cost against a remote SQL store is **round-trip count**, not conten
 
 ## Dogfood
 Batch a single core+ui repack/redeploy to flip `telescope-local` after a few items land (not per-item). Keep the 15m prune.
+
+## BACKLOG EXECUTION (goal: "implementa a lista até o final") — 2026-06-03
+DONE this run (all committed, green, build 17/17, lint clean):
+- ✅ Schedule console (`b14a201`) — `#/schedules`, cron-expr + next/last run, ScheduleManager SPI
+- ✅ Dumps (`b7326b3`) — `telescopeDump()` global sink, redacted, Dumps tab
+- ✅ Events + Logs watchers (`7797a2a`) — 2 new pkgs (`-events`, `-logs`); EntryType.Event/Log + UI
+- ✅ Model + Redis watchers (`6fa0946`) — 2 new pkgs (`-mikro-orm-watcher`, `-redis-watcher`); EntryType.Model/Redis + UI
+- (earlier this milestone) A1 projection, A2 prune-warn, B4 waterfall, B5 traces, B6 slow-routes, B7 search, B8 exc-groups, B9 live-tail, batched-hydration, A3.1 rollup foundation, A3.2 mikro-orm rollups, tag-autocomplete, queue-enqueue, no-store cache fix
+
+REMAINING (in priority order):
+1. ⬜ A3 completion — redis RollupStore impl + pulse COUNTS read from rollups (percentiles stay raw two-pass)
+2. ⬜ Zero-config auto-instrumentation — make CacheWatcher (CACHE_MANAGER token) auto-discover with no-arg ctor; `watch: {schedule,queues,events,cache}` toggles auto-add the discovery-based watchers (host passes classes, not resources). Mail/query lack standard tokens → keep explicit. Escape hatch (`instrument`) stays.
+3. ⬜ Request detail rich — capture request payload + response body (body buffering in the request middleware) + auth user (optional host hook); UI detail shows headers/payload/response/user
+4. ⬜ Pulse cards — slow outgoing HTTP hotspots (http_client by host, p99), server stats (cpu/mem/event-loop-lag), usage-by-user (needs a user-resolver hook)
+5. ⬜ Polish — retention/sampling visible in UI (expose via meta), export entry/trace as JSON, light theme, command palette (Cmd+K)
+
+NOTE: watcher SOURCE files picked up a `(v as {x:unknown}).x` narrowing pattern (events/mikro-orm-watcher) — mild drift from the no-`as` rule; clean up to type guards in a polish pass.
+NOTE: flip dogfood is NOT redeployed with these new watchers/features yet (flip's branch was being switched by another agent); redeploy when stable.
