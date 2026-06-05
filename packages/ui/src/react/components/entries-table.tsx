@@ -1,5 +1,6 @@
 import type { Entry } from '../../client/index.js';
 import { CacheBadge } from './cache-badge.js';
+import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
 
 export function entryLabel(entry: Entry): string {
   const content = entry.content;
@@ -72,45 +73,59 @@ export function EntriesTable({
         </tr>
       </thead>
       <tbody>
-        {entries.map((entry) => (
-          <tr
-            key={entry.id}
-            onClick={() => onSelect?.(entry.id)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') onSelect?.(entry.id);
-            }}
-            className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
-          >
-            <td className="py-1.5 text-zinc-500">
-              {new Date(entry.createdAt).toLocaleTimeString()}
-            </td>
-            <td className="text-emerald-400">{entry.type}</td>
-            <td className="max-w-md truncate text-zinc-300">
-              <span className="inline-flex items-center gap-1.5">
-                {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
-                <span className="truncate">{entryLabel(entry)}</span>
-              </span>
-            </td>
-            <td className="text-zinc-400">
-              {entry.durationMs != null ? `${entry.durationMs}ms` : '—'}
-            </td>
-            <td className="text-zinc-600">
-              <span className="inline-flex items-center gap-1.5">
-                {entry.traceId !== null && (
-                  <a
-                    href={`#/traces/${entry.traceId}`}
-                    title={`View trace ${entry.traceId}`}
-                    onClick={(event) => event.stopPropagation()}
-                    className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-sky-400 hover:bg-zinc-800"
-                  >
-                    trace:{entry.traceId.slice(0, 6)}
-                  </a>
-                )}
-                {entry.tags.length > 0 && <span>{entry.tags.join(' ')}</span>}
-              </span>
-            </td>
-          </tr>
-        ))}
+        {entries.map((entry) => {
+          const userTag = findUserTag(entry.tags);
+          const otherTags = entry.tags.filter((tag) => tag !== userTag);
+          return (
+            <tr
+              key={entry.id}
+              onClick={() => onSelect?.(entry.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') onSelect?.(entry.id);
+              }}
+              className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
+            >
+              <td className="py-1.5 text-zinc-500">
+                {new Date(entry.createdAt).toLocaleTimeString()}
+              </td>
+              <td className="text-emerald-400">{entry.type}</td>
+              <td className="max-w-md truncate text-zinc-300">
+                <span className="inline-flex items-center gap-1.5">
+                  {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
+                  <span className="truncate">{entryLabel(entry)}</span>
+                </span>
+              </td>
+              <td className="text-zinc-400">
+                {entry.durationMs != null ? `${entry.durationMs}ms` : '—'}
+              </td>
+              <td className="text-zinc-600">
+                <span className="inline-flex items-center gap-1.5">
+                  {entry.traceId !== null && (
+                    <a
+                      href={`#/traces/${entry.traceId}`}
+                      title={`View trace ${entry.traceId}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-sky-400 hover:bg-zinc-800"
+                    >
+                      trace:{entry.traceId.slice(0, 6)}
+                    </a>
+                  )}
+                  {userTag !== null && (
+                    <a
+                      href={buildUserActivityHref(userTag)}
+                      title={`View all activity for user ${userTagId(userTag)}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-emerald-400 hover:bg-zinc-800"
+                    >
+                      {userTag}
+                    </a>
+                  )}
+                  {otherTags.length > 0 && <span>{otherTags.join(' ')}</span>}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

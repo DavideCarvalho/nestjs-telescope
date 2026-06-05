@@ -90,4 +90,37 @@ describe('EntriesTable', () => {
     fireEvent.click(screen.getByRole('link', { name: /trace/i }));
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it('renders a user pivot chip linking to the tag-filtered entries list', () => {
+    render(
+      <EntriesTable
+        entries={[entry({ type: 'request', tags: ['user:42'], content: { uri: '/a' } })]}
+      />,
+    );
+    const link = screen.getByRole('link', { name: 'user:42' });
+    expect(link.getAttribute('href')).toBe('#/entries?tag=user%3A42');
+  });
+
+  it('does not render a user pivot chip when no user tag is present', () => {
+    render(
+      <EntriesTable
+        entries={[entry({ type: 'request', tags: ['status:200'], content: { uri: '/a' } })]}
+      />,
+    );
+    expect(screen.queryByRole('link', { name: /^user:/ })).toBeNull();
+    // the non-user tag still renders as plain text
+    expect(screen.getByText('status:200')).toBeTruthy();
+  });
+
+  it('does not trigger row select when the user pivot chip is clicked', () => {
+    const onSelect = vi.fn();
+    render(
+      <EntriesTable
+        entries={[entry({ type: 'request', tags: ['user:7'], content: { uri: '/a' } })]}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole('link', { name: 'user:7' }));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

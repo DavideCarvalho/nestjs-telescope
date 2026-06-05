@@ -192,6 +192,19 @@ describe('EntriesPage', () => {
     });
   });
 
+  it('seeds the tag filter from the ?tag= query string (user drill-down pivot)', async () => {
+    const { client, entries } = mockClient([]);
+    renderAt('/entries?tag=user%3A42', client);
+
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({ tag: 'user:42' });
+    });
+
+    // the seeded tag renders as a clearable chip
+    const chip = await screen.findByText('tag:user:42');
+    expect(chip).toBeTruthy();
+  });
+
   it('shows a type-aware empty state when nothing matches', async () => {
     const { client } = mockClient([]);
     renderAt('/entries/cache', client);

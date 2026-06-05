@@ -3,6 +3,7 @@ export * from './use-telescope-queries.js';
 export * from './components/entry-types.js';
 export * from './components/type-tabs.js';
 export * from './components/entries-table.js';
+export * from './components/user-tag.js';
 export * from './components/batch-timeline.js';
 export * from './components/entry-detail.js';
 export * from './components/export-json.js';

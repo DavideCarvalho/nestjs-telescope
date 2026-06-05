@@ -21,7 +21,9 @@ export function EntriesPage(): JSX.Element {
   const { type: routeType } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [tag, setTag] = useState('');
+  // Seed the tag filter from `?tag=` so a deep link (e.g. the "View all activity
+  // for this user" pivot) lands pre-filtered — same approach as `?familyHash=`.
+  const [tag, setTag] = useState(() => searchParams.get('tag') ?? '');
   // `searchDraft` tracks the input; `search` is the submitted value that actually
   // drives the query, so typing never refetches — only Enter commits.
   const [searchDraft, setSearchDraft] = useState('');

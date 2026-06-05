@@ -207,6 +207,31 @@ describe('EntryDetail request body', () => {
   });
 });
 
+describe('EntryDetail user pivot', () => {
+  it('renders a "View all activity for this user" link for a user-tagged entry', async () => {
+    await renderDetailWithBatch(
+      entry({
+        type: 'request',
+        tags: ['user:42'],
+        content: { method: 'GET', uri: '/me', headers: {}, payload: null, user: { id: 42 } },
+      }),
+    );
+    const link = await screen.findByRole('link', { name: 'View all activity for this user' });
+    expect(link.getAttribute('href')).toBe('#/entries?tag=user%3A42');
+  });
+
+  it('omits the user pivot when no user tag is present', async () => {
+    await renderDetailWithBatch(
+      entry({
+        type: 'request',
+        tags: ['status:200'],
+        content: { method: 'GET', uri: '/ping', headers: {}, payload: null, user: null },
+      }),
+    );
+    expect(screen.queryByRole('link', { name: 'View all activity for this user' })).toBeNull();
+  });
+});
+
 describe('EntryDetail request timeline', () => {
   it('renders the timeline for a request with batch children beyond itself', async () => {
     const self = child({

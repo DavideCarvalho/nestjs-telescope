@@ -5,6 +5,7 @@ import { CacheBadge } from './cache-badge.js';
 import { ExportJsonToolbar } from './export-json-toolbar.js';
 import { RequestTimeline } from './request-timeline.js';
 import { buildTraceHref } from './trace-link.js';
+import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
 
 export function EntryDetail({
   entry,
@@ -12,6 +13,7 @@ export function EntryDetail({
 }: { entry: EntryWithBatch; onSelect?: (id: string) => void }): JSX.Element {
   const { data: meta } = useMeta();
   const showTimeline = entry.type === 'request' && entry.batch.length > 1;
+  const userTag = findUserTag(entry.tags);
   return (
     <div className="grid grid-cols-3 gap-6">
       <section className="col-span-2">
@@ -47,6 +49,18 @@ export function EntryDetail({
         )}
       </section>
       <aside>
+        {userTag !== null ? (
+          <div className="mb-4">
+            <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">User</h3>
+            <div className="font-mono text-[11px] text-zinc-300">{userTagId(userTag)}</div>
+            <a
+              href={buildUserActivityHref(userTag)}
+              className="mt-1 inline-block text-[11px] text-emerald-400 hover:underline"
+            >
+              View all activity for this user
+            </a>
+          </div>
+        ) : null}
         {entry.traceId ? (
           <div className="mb-4">
             <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Trace</h3>

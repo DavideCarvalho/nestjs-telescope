@@ -34,6 +34,17 @@ TelescopeModule.forRoot({
   `resolveUser` only sets the `user` field on the **request** entry. It does not gate the dashboard — that's [`dashboardAuth`](/docs/recipes/dashboard-auth). The two are unrelated.
 </Callout>
 
+### Find everything a user did
+
+Once a request carries a user, the built-in **`userTagger`** tags that request entry `user:<id>` automatically — no configuration. It reads `content.user`, preferring `id`, then `_id` (Mongo), then `email`, so whatever your `resolveUser` returns is enough to identify the actor.
+
+Because tags are indexed and filterable end-to-end, this turns into a one-click pivot in the dashboard: every user-tagged entry shows a `user:<id>` chip in the entries table, and the entry detail view offers **"View all activity for this user"**. Clicking either lands you on the entries list pre-filtered to that tag (`#/entries?tag=user:<id>`) — every request that user made, across types, in one view.
+
+```ts
+// The userTagger is in BUILTIN_TAGGERS — nothing to wire up. A request whose
+// resolved user is { id: 42 } is tagged "user:42"; the dashboard does the rest.
+```
+
 ---
 
 ## Capture under a global prefix — `telescopeRequestCapture`
