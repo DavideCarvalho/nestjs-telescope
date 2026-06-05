@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.2.1
+
+### Patch Changes
+
+- [`1f7f206`](https://github.com/DavideCarvalho/nestjs-telescope/commit/1f7f2062c191d76bb4b7c631f0164f4fd0b90649) - Fix `AxiosInterceptorLike` so a real `AxiosInstance` (including `@nestjs/axios`'s `HttpService.axiosRef`) is assignable without casts. The fulfilled interceptor callbacks are now generic identity signatures (`<C extends AxiosRequestConfigLike>(config: C) => C`) instead of returning the structural type, which axios's own `use` rejected (it requires its concrete `InternalAxiosRequestConfig` back). A compile-time regression test against the real axios types guards this.
+
 ## 1.2.0
 
 ### Minor Changes

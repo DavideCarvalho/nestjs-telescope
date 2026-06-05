@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-cache",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Cache (get/set hit/miss) watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
