@@ -1,6 +1,6 @@
 {
   "name": "example-basic-app",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "30-second onboarding demo for @dudousxd/nestjs-telescope — a tiny NestJS app that fills the dashboard by itself.",
   "license": "MIT",

@@ -1,5 +1,33 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 1.4.0
+
+### Minor Changes
+
+- [`7878ccc`](https://github.com/DavideCarvalho/nestjs-telescope/commit/7878ccc8ca912fd5fc4102c22a5b1c26331443d7) - AI-powered exception diagnosis.
+
+  New package **`@dudousxd/nestjs-telescope-ai`**: `createAiSdkDiagnoser({ model })` implements core's `ExceptionDiagnoser` SPI using the Vercel AI SDK (`ai` is a peer dependency; the model is provider-agnostic — Bedrock / OpenAI / Anthropic / any AI-SDK `LanguageModel`). It turns a captured exception (class, message, stack), its sibling request (route/method/status/duration), and the request's recent **redacted** SQL into a markdown triage report — probable cause, where to look, a suggested fix, and a confidence rating — bounded by `maxOutputTokens` (default 1024) and a hard 30s timeout.
+
+  Core gains an `ai` option (`{ diagnoser, mode? }`, shape defined in core so core stays AI-SDK-free):
+
+  - **On-demand** (default): `POST <telescope>/api/exceptions/:id/diagnose` (behind the normal dashboard read guard) returns `{ markdown, cached }`. Results are cached per error family (bounded, 24h TTL); `?force=true` bypasses. 404 when AI is off or the entry isn't an exception; 502 (safe message) when the diagnoser fails.
+  - **Auto** (`mode: 'auto'`): the first time a new exception family is seen, Telescope runs a fire-and-forget diagnosis on the flush path (never blocking capture) and caches it; a firing `new-exception` alert briefly awaits it and attaches it (Slack renders a "Probable cause (AI)" section). `meta.ai` advertises `{ enabled, mode }`.
+
+  The UI adds a **Diagnose with AI** button on exception / client_exception detail pages (visible when `meta.ai.enabled`), rendering the markdown with loading + error states and a **cached** badge with a re-run (force) action.
+
+- [`bc3a0df`](https://github.com/DavideCarvalho/nestjs-telescope/commit/bc3a0df784f31a82753725d9c5e86d75380fee13) - Client error ingestion — Telescope as the frontend error reporter.
+
+  A new **public** endpoint, `POST <telescope>/api/client-errors`, lets browsers report errors directly to Telescope instead of a hand-rolled reporter. Reports are recorded as `client_exception` entries through the normal pipeline, so they compose with everything: the `new-exception` alert, per-type prune/archive, and the dashboard.
+
+  - **Opt-in & ungated.** Configure via `clientErrors: { enabled, maxBodyBytes?, rateLimit?, authorize? }`. Disabled by default (a public surface is opt-in) — while off the endpoint returns 404. It carries no dashboard guard (ordinary users' browsers hit it).
+  - **Untrusted-body validation.** Dependency-free structural validation: `message` required, every other field optional with type checks + length caps (message ≤ 2 KB, stack/componentStack ≤ 16 KB, url/userAgent ≤ 2 KB). Invalid → 400 with no echo of the payload. Over the byte cap → 413.
+  - **Per-IP rate limit.** A bounded in-memory token bucket (default 60/min, ~10k IPs with oldest-IP eviction). Over the limit → 429. Per-pod best-effort (the effective limit is `perMinute × pods` in a multi-replica deployment).
+  - **`authorize` hook.** Runs first; `false` → 403 (a throw is a fail-closed denial). Lets hosts validate a session cookie/header.
+  - **Composes.** Records `type: client_exception` with a family hash from name + message + top stack frame (the server exception interceptor now uses the same scheme, so both sources group identically), the `failed` / `client` / `user:<id>` tags, and the captured client IP. The `new-exception` rule now fires for `client_exception` too, using the browser URL and user-agent in place of a server route.
+  - **Dashboard.** A new watcher-driven **Client errors** tab (shown only when `clientErrors` is enabled) with a detail view rendering message, stack, component stack, URL, and user-agent.
+
+  See the new recipe: _Reporting frontend errors_.
+
 ## 1.3.0
 
 ### Minor Changes
