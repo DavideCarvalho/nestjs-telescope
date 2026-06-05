@@ -1,5 +1,96 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 2.0.0
+
+### Minor Changes
+
+- [`8d91d59`](https://github.com/DavideCarvalho/nestjs-telescope/commit/8d91d59563d731e9125bef65a38651c96ec06e0b) - Gate the dashboard SPA behind `dashboardAuth` when the host enables it.
+
+  On boot the SPA calls `GET /auth/me` and branches three ways:
+
+  - **disabled** (auth not configured → `404`): renders the dashboard exactly as
+    before, with no auth UI.
+  - **authenticated** (`200`): renders the dashboard plus a **Sign out** button in
+    the header (next to the theme/live-tail toggles).
+  - **unauthenticated** (`401`): renders an **AuthScreen** chosen from the modes in
+    the `401` body — a username/password **Sign in** form (`login` mode, inline
+    "Invalid credentials" on failure) or an "Open Telescope from your application"
+    instruction card with a **Retry** button (`session`-only mode).
+
+  A `401` from any API call mid-session (expired cookie) flips the app back to the
+  AuthScreen automatically. The client gains `auth.me()`/`auth.login()`/
+  `auth.logout()`; cookies ride along on the existing same-origin `fetch`, so
+  there are no transport changes. With `dashboardAuth` unset, behavior is
+  unchanged.
+
+- [`4ceb884`](https://github.com/DavideCarvalho/nestjs-telescope/commit/4ceb8846b7307cf522d841c909d7eaf7fcb1aa4e) - Add retention/prune controls and query EXPLAIN.
+
+  **Retention / prune.** A new `GET /api/retention` reports the configured retention
+  window (`entryCount`/`oldestCreatedAt` stay `null` — the storage SPI exposes no
+  cheap count/oldest, and Telescope never scans to derive them). `POST /api/retention/prune`
+  runs an on-demand prune behind the existing default-deny mutation gate
+  (`authorizeAction`); it 403s when mutations are disabled and 400s when no `prune`
+  window is configured. The Overview page gains a Retention card with a confirm-gated
+  "Prune now" button, shown only when `meta.pruneEnabled` (prune window AND mutations).
+
+  **Query EXPLAIN.** A new host hook
+  `explainQuery?: (sql, bindings) => Promise<unknown>` lets the host run an
+  engine `EXPLAIN` (it brings its own connection/dialect — e.g. MySQL
+  `EXPLAIN FORMAT=JSON`). `POST /api/queries/explain` loads the query entry and
+  returns `{ plan }`; a hook throw surfaces as a clean `{ message }`. The query
+  entry detail gains an "Explain" button (only when `meta.explainEnabled`) that
+  renders the plan JSON with loading/error states.
+
+  `TelescopeMeta` gains `pruneEnabled` and `explainEnabled`.
+
+- [`15e3e90`](https://github.com/DavideCarvalho/nestjs-telescope/commit/15e3e903d82616966342feeb966fbd44ad6a2631) - Add user drill-down: pivot from any request entry to all of a user's activity.
+
+  A new built-in **`userTagger`** (in `BUILTIN_TAGGERS`) tags request entries with
+  the authenticated user's identity as `user:<id>`. It reads `content.user`,
+  preferring `id`, then `_id` (Mongo), then `email` — cheap property reads gated to
+  request entries, never throwing on odd content shapes. Whatever `resolveUser`
+  returns becomes a filterable tag.
+
+  The dashboard turns that tag into a one-click pivot, reusing the existing
+  indexed-tag filter (no new query dimension): user-tagged rows show a `user:<id>`
+  chip in the entries table, and the entry detail view offers **"View all activity
+  for this user"**. Both navigate to the all-types entries list pre-filtered by the
+  tag (`#/entries?tag=user:<id>`), which the entries page now seeds from the `?tag=`
+  query string — the same deep-link mechanism as `?familyHash=`.
+
+### Patch Changes
+
+- [`d200d15`](https://github.com/DavideCarvalho/nestjs-telescope/commit/d200d158f927e6a67396e594b32bfd0a0b3424e4) - Bound memory by design at capture time, fixing a production OOM incident.
+
+  A host hit a GC death spiral at its container limit. There was no unbounded leak:
+  the heap was a retained _working set_ — `prune.after × ingest rate × bytes per
+entry` — amplified by `redact()` deep-cloning fat enumerable object graphs (a
+  host's `req.user` ORM entity → tens-of-KB..MB clones per entry), high-cardinality
+  cache capture volume, and the Recorder ring never nulling drained slots (stale fat
+  entries lingered up to capacity). The synchronous `redact()` detach is
+  load-bearing and must stay synchronous, so the fix bounds the clone instead of
+  deferring it.
+
+  - **Bounded redaction (on by default).** `redact()` now applies hard, overridable
+    bounds: `maxDepth` (8), `maxStringLength` (8_192), `maxArrayLength` (200), and a
+    per-call `maxNodes, maxContentBytes (16KB serialized-byte budget — the deterministic bytes-per-entry cap)` (5_000) node budget that caps a mega-graph regardless of its
+    shape. Defaults are generous — a normal request / query / cache entry is cloned
+    byte-identically; bounds only bite on pathological content. Key/path masking,
+    cycle-safety, sync-and-never-throwing behavior, and the public `redact()`
+    signature are unchanged. A new sibling `redactBounded()` also returns whether
+    truncation happened.
+  - **Recorder hardening.** `drain()` nulls drained ring slots so flushed fat
+    entries aren't retained afterward. A new `truncatedCount` self-metric counts
+    entries whose content hit a bound; it surfaces automatically in
+    `GET /telescope/api/health`, and the dashboard Overview adds a _Truncated_ stat
+    card (ui patch).
+  - **High-volume guidance.** When `prune` is set but `sampling` is empty, boot logs
+    a one-line INFO pointing at per-type sampling (e.g. `sampling: { cache: 0.1 }`)
+    to bound store volume on high-cardinality streams.
+
+- Updated dependencies [[`c2423f3`](https://github.com/DavideCarvalho/nestjs-telescope/commit/c2423f330be3f9b92c0dbf2348220bf8740dab86), [`d8173d4`](https://github.com/DavideCarvalho/nestjs-telescope/commit/d8173d4c5d362814aa0fcdb0bfb35fd353b3d1a8), [`d200d15`](https://github.com/DavideCarvalho/nestjs-telescope/commit/d200d158f927e6a67396e594b32bfd0a0b3424e4), [`953ae12`](https://github.com/DavideCarvalho/nestjs-telescope/commit/953ae12fd35e42df3b806d6bbec6b49e3e3c71fb), [`4ceb884`](https://github.com/DavideCarvalho/nestjs-telescope/commit/4ceb8846b7307cf522d841c909d7eaf7fcb1aa4e), [`15e3e90`](https://github.com/DavideCarvalho/nestjs-telescope/commit/15e3e903d82616966342feeb966fbd44ad6a2631)]:
+  - @dudousxd/nestjs-telescope@2.0.0
+
 ## 1.0.0
 
 ### Minor Changes
