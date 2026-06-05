@@ -1,5 +1,13 @@
 # @dudousxd/nestjs-telescope
 
+## 1.2.0
+
+### Minor Changes
+
+- [`5de71fa`](https://github.com/DavideCarvalho/nestjs-telescope/commit/5de71fa930ba1e7efaf1db947d5ef2d728d1a4e1) - `HttpClientWatcher` can now capture outbound axios / `@nestjs/axios` calls, not just the global `fetch`. In Node axios uses the http adapter (not `fetch`), so `HttpService` traffic was previously invisible. Pass an `axios` source to the watcher to capture it via axios's public interceptor API — no monkey-patching: either a bare axios instance (`new HttpClientWatcher({ axios: client })`) or a custom source (`{ instrument(attach, ctx) }`) that resolves `HttpService` from `ctx.moduleRef` and hands over `axiosRef` lazily at register time. Axios entries share the same content shape, tags, and family-hash as fetch entries, so the two are indistinguishable downstream. Request timing is tracked with a `WeakMap` keyed by the axios config object (no mutation of host objects); rejections record `error.response?.status ?? null` and are always re-thrown; instrumentation is idempotent per axios instance.
+
+- [`6ef3cb0`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6ef3cb02c27002571b357c7f0f4dcacad8918933) - LogsWatcher now auto-patches the `@nestjs/common` `Logger` facade by default, so logs are captured with zero host changes — every `new Logger(Ctx)` instance log and `Logger.log(...)` static is recorded, the original is still invoked, and the patch is idempotent process-wide. Instance and static calls are independent paths in Nest 11 (an instance log delegates to a per-logger `ConsoleLogger`, a static log to `Logger.staticInstanceRef`), so both the `Logger.prototype` methods and the static `Logger.*` methods are teed under sibling `Symbol.for` markers; each logical call records exactly once. The explicit `TelescopeConsoleLogger` path remains for hosts that bypass the facade; both coexist without double-recording thanks to a shared re-entrancy guard (opt out with `new LogsWatcher({ autoPatch: false })`). Core's tail-sampling `keepErrors` is now level-aware: `warn` / `error` / `fatal` log entries count as errors, so `sampling: { log: { rate: 0.1, keepErrors: true } }` samples logs hard while never dropping warnings or errors.
+
 ## 1.1.0
 
 ### Minor Changes
