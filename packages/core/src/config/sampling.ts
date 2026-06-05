@@ -2,13 +2,20 @@
 import type { RecordInput } from '../entry/entry.js';
 import type { SamplingConfig, SamplingRule } from './options.js';
 
+/** Log levels that count as an error for tail-sampling's `keepErrors` — a `warn`
+ *  / `error` / `fatal` line is exactly what you never want sampled away. */
+const ERROR_LOG_LEVELS = new Set(['warn', 'error', 'fatal']);
+
 /**
  * Pragmatic, cheap structural error check used by tail-sampling's `keepErrors`.
  * Reads only shallow, already-present fields — no deep walk — so it stays on the
  * hot path. An entry "looks like an error" when:
  *  - its `tags` include `'failed'`, OR
  *  - `content.failed === true`, OR
- *  - `content.statusCode >= 500`.
+ *  - `content.statusCode >= 500`, OR
+ *  - `content.level` is `'warn'`, `'error'`, or `'fatal'` (a Log entry) — so a
+ *    host can sample logs aggressively (`{ log: { rate: 0.1, keepErrors: true } }`)
+ *    yet never drop a warning or error line.
  */
 export function isErrorEntry(input: RecordInput): boolean {
   if (input.tags?.includes('failed')) {
@@ -24,6 +31,12 @@ export function isErrorEntry(input: RecordInput): boolean {
   if ('statusCode' in content) {
     const { statusCode } = content;
     if (typeof statusCode === 'number' && statusCode >= 500) {
+      return true;
+    }
+  }
+  if ('level' in content) {
+    const { level } = content;
+    if (typeof level === 'string' && ERROR_LOG_LEVELS.has(level)) {
       return true;
     }
   }

@@ -142,7 +142,17 @@ TelescopeModule.forRoot({ watchers: [new EventsWatcher()] });
 
 ### Logs — `@dudousxd/nestjs-telescope-logs`
 
-Captures Nest `Logger` output. Install `TelescopeConsoleLogger` as the app logger (it logs to the console *and* forwards each line to Telescope's sink), then add `LogsWatcher` to wire the sink:
+Captures Nest `Logger` output. **Zero-config: just add the watcher.** By default `LogsWatcher` tees the `@nestjs/common` `Logger` facade — every `new Logger(Ctx)` instance log and every `Logger.log(...)` static is recorded, with no host changes:
+
+```ts
+import { LogsWatcher } from '@dudousxd/nestjs-telescope-logs';
+
+TelescopeModule.forRoot({ watchers: [new LogsWatcher()] });
+```
+
+The patch calls the original first, so console output and any custom logger behind the facade are untouched. It's idempotent process-wide and never throws into your log call.
+
+**Fallback — explicit logger.** Hosts that bypass the `Logger` facade (logging straight through their app logger) can install `TelescopeConsoleLogger` instead; it logs to the console *and* forwards each line to Telescope's sink:
 
 ```ts
 import { NestFactory } from '@nestjs/core';
@@ -150,11 +160,19 @@ import { LogsWatcher, TelescopeConsoleLogger } from '@dudousxd/nestjs-telescope-
 
 const app = await NestFactory.create(AppModule, { bufferLogs: true });
 app.useLogger(new TelescopeConsoleLogger());
-// and in the module:
+// auto-patch + explicit coexist; a single log still records exactly once.
 TelescopeModule.forRoot({ watchers: [new LogsWatcher()] });
 ```
 
+Pass `new LogsWatcher({ autoPatch: false })` to capture *only* via `TelescopeConsoleLogger`. Both modes can run together — a shared re-entrancy guard dedupes a facade call that reaches both paths, so one log records once.
+
 Telescope's own log contexts (`Telescope`, `Recorder`, `LogsWatcher`, `EventsWatcher`) are skipped so the watcher never records its own lines or feeds a loop.
+
+**Level-aware sampling.** `warn` / `error` / `fatal` log entries count as errors for tail-sampling, so you can sample logs hard and never lose them:
+
+```ts
+TelescopeModule.forRoot({ sampling: { log: { rate: 0.1, keepErrors: true } } });
+```
 
 ### Redis commands — `@dudousxd/nestjs-telescope-redis-watcher`
 
