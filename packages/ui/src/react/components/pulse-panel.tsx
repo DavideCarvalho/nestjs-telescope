@@ -146,7 +146,7 @@ export function PulsePanel({
             ))}
             {report.slowRoutes.length === 0 && (
               <tr>
-                <td className="py-1 text-zinc-600">None detected</td>
+                <td className="py-1 text-zinc-600">No routes over the slow threshold</td>
               </tr>
             )}
           </tbody>
@@ -176,7 +176,7 @@ export function PulsePanel({
             ))}
             {report.slowOutgoing.length === 0 && (
               <tr>
-                <td className="py-1 text-zinc-600">None detected</td>
+                <td className="py-1 text-zinc-600">No outgoing calls over the slow threshold</td>
               </tr>
             )}
           </tbody>

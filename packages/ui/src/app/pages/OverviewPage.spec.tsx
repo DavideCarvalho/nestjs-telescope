@@ -192,19 +192,23 @@ describe('formatErrorRate', () => {
 });
 
 describe('deriveSlowRequestCount', () => {
-  it('counts the slow-route families pulse flagged', () => {
+  it('counts the over-threshold slow-route families pulse flagged', () => {
+    // `slowRoutes` is already filtered server-side to routes whose p99 is over
+    // the slow threshold, so the stat is simply that list's length.
     expect(
       deriveSlowRequestCount({
         ...pulse,
         slowRoutes: [
-          { route: 'GET /a', count: 3, p99: 900, p50: 100 },
+          { route: 'GET /a', count: 3, p99: 1100, p50: 100 },
           { route: 'GET /b', count: 1, p99: 1200, p50: 200 },
         ],
       }),
     ).toBe(2);
   });
 
-  it('is zero when nothing is slow or pulse is absent', () => {
+  it('is zero when no route is over the slow threshold or pulse is absent', () => {
+    // An empty slowRoutes now means "no route over the slow threshold" — the
+    // honest quiet-host reading, not "no traffic".
     expect(deriveSlowRequestCount({ ...pulse, slowRoutes: [] })).toBe(0);
     expect(deriveSlowRequestCount(undefined)).toBe(0);
   });

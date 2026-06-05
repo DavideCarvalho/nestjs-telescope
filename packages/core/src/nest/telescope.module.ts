@@ -69,7 +69,15 @@ const SHARED_PROVIDERS: Provider[] = [
   TimeseriesService,
   TracesService,
   StatsService,
-  PulseService,
+  {
+    // Factory (not a bare class) so the host's `pulse` config — notably the
+    // `slowRouteMs` slow-route hotspot threshold — reaches PulseService's
+    // @Optional() options param. A bare class provider leaves it undefined.
+    provide: PulseService,
+    useFactory: (options: TelescopeModuleOptions, storage: StorageProvider) =>
+      new PulseService(storage, options.pulse),
+    inject: [TELESCOPE_OPTIONS, TELESCOPE_STORAGE],
+  },
   ServerStatsService,
   TelescopeRequestMiddleware,
   TelescopeWatcherRegistrar,

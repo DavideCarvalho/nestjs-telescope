@@ -3,6 +3,7 @@ import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
 import type { TelescopeSessionUser } from '../auth/session-cookie.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
+import type { PulseServiceOptions } from '../pulse/pulse.service.js';
 import type { QueueActionRequest, QueueManager } from '../queue/queue-manager.js';
 import type { ScheduleManager } from '../schedule/schedule-manager.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -94,6 +95,15 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * {@link AlertsOptions}.
    */
   alerts?: AlertsOptions;
+  /**
+   * Tuning for the Pulse health snapshot (`/api/pulse` + the Overview). Most
+   * hosts never set this. The notable knob is `slowRouteMs`: the p99 (ms) a
+   * route must reach to count as a "Slow request hotspot" (default 1000, matching
+   * the `slow` request-tag threshold). Without it, hotspots are a pure top-N p99
+   * ranking, so a quiet host surfaces fast routes (e.g. `/health`) as false
+   * alarms. See {@link PulseServiceOptions}.
+   */
+  pulse?: PulseServiceOptions;
 }
 
 export interface TelescopeOptionsFactory {

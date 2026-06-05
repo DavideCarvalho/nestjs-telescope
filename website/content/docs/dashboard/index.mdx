@@ -27,10 +27,21 @@ Open `/telescope`. The dashboard polls `/telescope/api/*` and renders the views 
 
 The **Overview** is organized by criticality — "what's wrong right now" above the fold, trends and self-health below.
 
-- **Top — operational triage.** A focused stat row (Requests with the total-entries figure as a hint, **Error rate** = exceptions ÷ requests over the window — red above 5%, Failed jobs, and **Slow requests** = the count of routes over their p99 budget), followed by **Recent failures**, an **N+1 query hotspots** card (the same detection the Pulse view surfaces, mounted here so it's reachable from the landing page), the **Slowest** entries, and a **Queues needing attention** card that lists only queues with failed jobs or a large pending backlog (links to the queue console; shows "All queues healthy" when clean). Every figure is derived from data already served by `/pulse` and `/queues` — no extra endpoints.
+- **Top — operational triage.** A focused stat row (Requests with the total-entries figure as a hint, **Error rate** = exceptions ÷ requests over the window — red above 5%, Failed jobs, and **Slow routes** = the count of route families whose p99 is over the slow threshold — see Pulse below), followed by **Recent failures**, an **N+1 query hotspots** card (the same detection the Pulse view surfaces, mounted here so it's reachable from the landing page), the **Slowest** entries, and a **Queues needing attention** card that lists only queues with failed jobs or a large pending backlog (links to the queue console; shows "All queues healthy" when clean). Every figure is derived from data already served by `/pulse` and `/queues` — no extra endpoints.
 - **Bottom — trends & self-health.** A throughput-over-time area chart from `/timeseries`, a per-type stacked area, then the **Server** vitals and the **Telescope health** card — host-path µs per capture, buffer pressure, flush p95, and dropped count, straight from `/health` (see [Performance](/docs/concepts/performance)).
 
-**Pulse** (`#/pulse`) is the at-a-glance health snapshot from `/pulse`: per-type entry counts, the slowest entries, the most frequent exceptions, and N+1 query occurrences — all rolled up from captured entries.
+**Pulse** (`#/pulse`) is the at-a-glance health snapshot from `/pulse`: per-type entry counts, the slowest entries, the most frequent exceptions, N+1 query occurrences, and slow-request hotspots — all rolled up from captured entries.
+
+**Slow request hotspots** (and the matching slow-outgoing-HTTP card) are route families ranked by p99, but only those whose p99 is **at or over a slowness threshold** — so a quiet host shows "No routes over the slow threshold" instead of flagging a healthy `/health` at 18ms as a hotspot. The threshold defaults to **1000ms** (matching the `slow` tag), and is configurable via `pulse.slowRouteMs` in `TelescopeModule.forRoot(...)`:
+
+```ts
+TelescopeModule.forRoot({
+  // Only routes whose p99 ≥ 250ms count as slow hotspots (default 1000).
+  pulse: { slowRouteMs: 250 },
+});
+```
+
+The **Slowest** entries list is a deliberate top-N ranking with no threshold — it answers "what were the slowest things in the window" regardless of how fast that is.
 
 <Screenshot src="/screenshots/overview.png" alt="Overview page: stat cards, server vitals, the Telescope health card, and the throughput / per-type area charts" />
 

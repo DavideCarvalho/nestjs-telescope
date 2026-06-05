@@ -76,12 +76,21 @@ describe('PulsePanel', () => {
     expect(onSelectRoute).toHaveBeenCalledWith('GET /api/base/:id/mel');
   });
 
-  it('shows an empty state when there are no slow routes', () => {
+  it('shows a threshold-aware empty state when no route is over the slow threshold', () => {
     render(<PulsePanel report={{ ...report, slowRoutes: [] }} />);
     const section = screen.getByText('Slow request hotspots').closest('section');
     expect(section).toBeInstanceOf(HTMLElement);
     if (section instanceof HTMLElement) {
-      expect(within(section).getByText('None detected')).toBeTruthy();
+      expect(within(section).getByText('No routes over the slow threshold')).toBeTruthy();
+    }
+  });
+
+  it('shows a threshold-aware empty state for outgoing HTTP with no slow calls', () => {
+    render(<PulsePanel report={{ ...report, slowOutgoing: [] }} />);
+    const section = screen.getByText('Slow outgoing HTTP').closest('section');
+    expect(section).toBeInstanceOf(HTMLElement);
+    if (section instanceof HTMLElement) {
+      expect(within(section).getByText('No outgoing calls over the slow threshold')).toBeTruthy();
     }
   });
 

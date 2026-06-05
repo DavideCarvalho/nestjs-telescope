@@ -162,7 +162,9 @@ describe('PulseService', () => {
     await storage.store([...slowRoute, ...fastRoute]);
 
     const findSpy = vi.spyOn(storage, 'find');
-    const report = await new PulseService(storage, { topN: 5 }).getHealth(60_000);
+    // slowRouteMs: 0 so the small fixture durations aren't filtered out — this
+    // test is about the p99 RANKING/content-less path, not the threshold.
+    const report = await new PulseService(storage, { topN: 5, slowRouteMs: 0 }).getHealth(60_000);
 
     expect(report.slowRoutes).toHaveLength(2);
     expect(report.slowRoutes[0]).toMatchObject({
@@ -173,5 +175,40 @@ describe('PulseService', () => {
     expect(report.slowRoutes[1]!.route).toBe('GET /api/fast');
     // No hydration is needed for slow routes — the route family IS the label.
     expect(findSpy.mock.calls.length).toBeLessThanOrEqual(5);
+  });
+
+  it('defaults slowRouteMs to 1000, so a quiet fast route is not a hotspot', async () => {
+    const storage = new InMemoryStorageProvider();
+    const now = Date.now();
+    // /health is the slowest route here but only ~18ms — the false-alarm case.
+    const health: Entry[] = [18, 12, 9, 15].map((durationMs) => ({
+      ...entry('request', { uri: '/health', method: 'GET' }, durationMs, new Date(now - 1_000)),
+      familyHash: 'GET /health',
+    }));
+    await storage.store(health);
+
+    // No slowRouteMs override → default 1000.
+    const report = await new PulseService(storage, { topN: 5 }).getHealth(60_000);
+    expect(report.slowRoutes).toEqual([]);
+  });
+
+  it('honors a custom slowRouteMs threshold', async () => {
+    const storage = new InMemoryStorageProvider();
+    const now = Date.now();
+    const route: Entry[] = [200, 220, 260, 300].map((durationMs) => ({
+      ...entry('request', { uri: '/api/x', method: 'GET' }, durationMs, new Date(now - 1_000)),
+      familyHash: 'GET /api/x',
+    }));
+    await storage.store(route);
+
+    // p99 is 300ms: under the 1000 default (excluded) but over a custom 250.
+    const atDefault = await new PulseService(storage, { topN: 5 }).getHealth(60_000);
+    expect(atDefault.slowRoutes).toEqual([]);
+
+    const atCustom = await new PulseService(storage, {
+      topN: 5,
+      slowRouteMs: 250,
+    }).getHealth(60_000);
+    expect(atCustom.slowRoutes.map((route) => route.route)).toEqual(['GET /api/x']);
   });
 });

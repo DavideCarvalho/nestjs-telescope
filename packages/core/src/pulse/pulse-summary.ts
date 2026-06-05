@@ -62,6 +62,19 @@ export interface PulseOptions {
   nPlusOneThreshold: number;
   /** Minimum request count for a route to qualify as a slow-route hotspot. */
   slowRouteMinCount: number;
+  /**
+   * Minimum p99 (ms) for a route family to count as a slow-route hotspot. A
+   * route only surfaces here when its p99 is **>= slowRouteMs** — a hotspot is a
+   * route that is *actually slow*, not merely the slowest of an otherwise-healthy
+   * set. Without this gate, "Slow request hotspots" is a pure top-N p99 ranking,
+   * so on a quiet host it surfaces e.g. `/health` at 18ms and reads as a false
+   * alarm. The default (1000) matches the `slow` request tag threshold
+   * (`SLOW_THRESHOLD_MS` in tagging/tagger.ts) and the HttpClientWatcher's
+   * `slowMs` default, so "hotspot" means the same thing here as the `slow` tag
+   * does everywhere else. Applies to both incoming slow-route and outgoing
+   * slow-HTTP hotspots (both are p99 route rankings).
+   */
+  slowRouteMs: number;
 }
 
 /**
@@ -108,7 +121,9 @@ function toHotspots(
         p50: percentile(sorted, 0.5),
       };
     })
-    .filter((hotspot) => hotspot.count >= options.slowRouteMinCount)
+    .filter(
+      (hotspot) => hotspot.count >= options.slowRouteMinCount && hotspot.p99 >= options.slowRouteMs,
+    )
     .sort((a, b) => b.p99 - a.p99 || b.count - a.count || a.route.localeCompare(b.route))
     .slice(0, options.topN);
 }

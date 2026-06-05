@@ -23,7 +23,10 @@ function entry(partial: Partial<Entry> & { type: string }): Entry {
 
 const start = new Date('2026-06-02T11:00:00Z');
 const end = new Date('2026-06-02T12:00:00Z');
-const opts = { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 1 };
+// The slow-route hotspot p99 threshold is exercised in dedicated tests below;
+// the shared opts disable it (slowRouteMs: 0) so the other assertions keep using
+// small, readable durations without being filtered out.
+const opts = { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 1, slowRouteMs: 0 };
 
 describe('summarizePulse', () => {
   it('counts entries per type', () => {
@@ -148,6 +151,7 @@ describe('summarizePulse', () => {
       topN: 3,
       nPlusOneThreshold: 5,
       slowRouteMinCount: 1,
+      slowRouteMs: 0,
     });
     expect(summary.slowest).toHaveLength(3);
     expect(summary.slowest.map((s) => s.durationMs)).toEqual([8, 7, 6]);
@@ -197,6 +201,7 @@ describe('summarizePulse', () => {
       topN: 3,
       nPlusOneThreshold: 5,
       slowRouteMinCount: 1,
+      slowRouteMs: 0,
     });
     expect(byTopN.topExceptions).toHaveLength(3);
 
@@ -265,9 +270,61 @@ describe('summarizePulse', () => {
       ],
       start,
       end,
-      { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 2 },
+      { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 2, slowRouteMs: 0 },
     );
     expect(summary.slowRoutes.map((route) => route.route)).toEqual(['GET /api/two']);
+  });
+
+  it('excludes routes whose p99 is below slowRouteMs', () => {
+    // Route is the slowest of the set but still well under the threshold — it must
+    // NOT be reported as a "slow hotspot" (the false-alarm /health case).
+    const summary = summarizePulse(
+      [18, 12, 9, 15].map((durationMs) =>
+        entry({ type: 'request', familyHash: 'GET /health', durationMs }),
+      ),
+      start,
+      end,
+      { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 1, slowRouteMs: 1000 },
+    );
+    expect(summary.slowRoutes).toEqual([]);
+  });
+
+  it('includes a route whose p99 is exactly at slowRouteMs (>=, inclusive)', () => {
+    const summary = summarizePulse(
+      [entry({ type: 'request', familyHash: 'GET /api/edge', durationMs: 1000 })],
+      start,
+      end,
+      { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 1, slowRouteMs: 1000 },
+    );
+    expect(summary.slowRoutes.map((route) => route.route)).toEqual(['GET /api/edge']);
+  });
+
+  it('keeps only routes over the threshold and drops the rest', () => {
+    const summary = summarizePulse(
+      [
+        entry({ type: 'request', familyHash: 'GET /api/slow', durationMs: 1500 }),
+        entry({ type: 'request', familyHash: 'GET /health', durationMs: 12 }),
+      ],
+      start,
+      end,
+      { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 1, slowRouteMs: 1000 },
+    );
+    expect(summary.slowRoutes.map((route) => route.route)).toEqual(['GET /api/slow']);
+  });
+
+  it('applies slowRouteMs to outgoing HTTP hotspots too', () => {
+    const summary = summarizePulse(
+      [
+        entry({ type: 'http_client', familyHash: 'GET slow.example.com/x', durationMs: 1200 }),
+        entry({ type: 'http_client', familyHash: 'GET fast.example.com/ping', durationMs: 5 }),
+      ],
+      start,
+      end,
+      { topN: 5, nPlusOneThreshold: 5, slowRouteMinCount: 1, slowRouteMs: 1000 },
+    );
+    expect(summary.slowOutgoing.map((hotspot) => hotspot.route)).toEqual([
+      'GET slow.example.com/x',
+    ]);
   });
 
   it('aggregates slow outgoing http_client calls by family, ranked by p99', () => {

@@ -351,10 +351,10 @@ function StatCards({
         hint="across queues"
       />
       <StatCard
-        label="Slow requests"
+        label="Slow routes"
         value={slowRequests.toLocaleString()}
         accent={slowRequests > 0 ? 'text-amber-400' : 'text-zinc-100'}
-        hint="routes over p99 budget"
+        hint="routes over the slow p99 threshold"
       />
     </div>
   );

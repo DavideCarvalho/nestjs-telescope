@@ -8,6 +8,13 @@ import { type PulseSummary, aggregatePulse, finalizePulse } from './pulse-summar
 const DEFAULT_TOP_N = 5;
 const DEFAULT_N_PLUS_ONE_THRESHOLD = 5;
 const DEFAULT_SLOW_ROUTE_MIN_COUNT = 1;
+/**
+ * Default p99 (ms) a route must reach to count as a slow-route hotspot. Matches
+ * the `slow` request-tag threshold (`SLOW_THRESHOLD_MS` in tagging/tagger.ts)
+ * and the HttpClientWatcher `slowMs` default, so "hotspot" lines up with the
+ * `slow` tag used everywhere else. See {@link PulseOptions.slowRouteMs}.
+ */
+const DEFAULT_SLOW_ROUTE_MS = 1000;
 
 export interface PulseServiceOptions {
   pageSize?: number;
@@ -18,6 +25,14 @@ export interface PulseServiceOptions {
   nPlusOneThreshold?: number;
   /** Min request count for a route to qualify as a slow-route hotspot. Default 1. */
   slowRouteMinCount?: number;
+  /**
+   * Min p99 (ms) for a route to count as a slow-route hotspot — a route only
+   * surfaces in "Slow request hotspots" when its p99 is **>= slowRouteMs**.
+   * Default 1000, matching the `slow` request-tag threshold so a "hotspot"
+   * means the same thing as the `slow` tag. Lower it on a latency-sensitive
+   * service; raise it to only flag egregious routes.
+   */
+  slowRouteMs?: number;
 }
 
 export interface PulseResult extends PulseSummary {
@@ -34,6 +49,7 @@ export class PulseService {
   private readonly topN: number;
   private readonly nPlusOneThreshold: number;
   private readonly slowRouteMinCount: number;
+  private readonly slowRouteMs: number;
 
   constructor(
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
@@ -44,6 +60,7 @@ export class PulseService {
     this.topN = options?.topN ?? DEFAULT_TOP_N;
     this.nPlusOneThreshold = options?.nPlusOneThreshold ?? DEFAULT_N_PLUS_ONE_THRESHOLD;
     this.slowRouteMinCount = options?.slowRouteMinCount ?? DEFAULT_SLOW_ROUTE_MIN_COUNT;
+    this.slowRouteMs = options?.slowRouteMs ?? DEFAULT_SLOW_ROUTE_MS;
   }
 
   async getHealth(windowMs: number): Promise<PulseResult> {
@@ -69,6 +86,7 @@ export class PulseService {
       topN: this.topN,
       nPlusOneThreshold: this.nPlusOneThreshold,
       slowRouteMinCount: this.slowRouteMinCount,
+      slowRouteMs: this.slowRouteMs,
     });
 
     // Pass 2: hydrate content for ONLY the handful of displayed rows — the top-N
