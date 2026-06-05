@@ -16,7 +16,12 @@
       "@dudousxd/nestjs-telescope-schedule",
       "@dudousxd/nestjs-telescope-otel",
       "@dudousxd/nestjs-telescope-ui",
-      "@dudousxd/nestjs-telescope-testing"
+      "@dudousxd/nestjs-telescope-testing",
+      "@dudousxd/nestjs-telescope-events",
+      "@dudousxd/nestjs-telescope-logs",
+      "@dudousxd/nestjs-telescope-mikro-orm-watcher",
+      "@dudousxd/nestjs-telescope-redis-watcher",
+      "@dudousxd/nestjs-telescope-sqs"
     ]
   ],
   "access": "public",
