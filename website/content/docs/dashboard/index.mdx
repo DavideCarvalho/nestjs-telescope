@@ -25,7 +25,10 @@ Open `/telescope`. The dashboard polls `/telescope/api/*` and renders the views 
 
 ## Overview & Pulse
 
-The **Overview** is the Horizon-style landing page: top stat cards, a throughput-over-time area chart from `/timeseries`, a per-type stacked area, and recent failures / slowest entries. It also renders the **Telescope health** card — host-path µs per capture, buffer pressure, flush p95, and dropped count, straight from `/health` (see [Performance](/docs/concepts/performance)).
+The **Overview** is organized by criticality — "what's wrong right now" above the fold, trends and self-health below.
+
+- **Top — operational triage.** A focused stat row (Requests with the total-entries figure as a hint, **Error rate** = exceptions ÷ requests over the window — red above 5%, Failed jobs, and **Slow requests** = the count of routes over their p99 budget), followed by **Recent failures**, an **N+1 query hotspots** card (the same detection the Pulse view surfaces, mounted here so it's reachable from the landing page), the **Slowest** entries, and a **Queues needing attention** card that lists only queues with failed jobs or a large pending backlog (links to the queue console; shows "All queues healthy" when clean). Every figure is derived from data already served by `/pulse` and `/queues` — no extra endpoints.
+- **Bottom — trends & self-health.** A throughput-over-time area chart from `/timeseries`, a per-type stacked area, then the **Server** vitals and the **Telescope health** card — host-path µs per capture, buffer pressure, flush p95, and dropped count, straight from `/health` (see [Performance](/docs/concepts/performance)).
 
 **Pulse** (`#/pulse`) is the at-a-glance health snapshot from `/pulse`: per-type entry counts, the slowest entries, the most frequent exceptions, and N+1 query occurrences — all rolled up from captured entries.
 
@@ -35,7 +38,11 @@ The **Overview** is the Horizon-style landing page: top stat cards, a throughput
 
 ## Entries, per type
 
-The entries view is the heart of the console: type tabs (request / query / job / exception / mail / cache / event / log / model / redis / …) with live polling. Open any entry to see its **correlated batch** — the request and *everything it caused*, in capture order. Each entry shows its type-specific content (the SQL of a query, the recipients of a mail, the stack of an exception), its tags, and its duration. Per-type **insights** surface query-latency percentiles per shape, cache hit/miss/ratio badges, and exception groupings.
+The entries view is the heart of the console: type tabs (request / query / job / exception / mail / cache / event / log / model / redis / …) with live polling. The per-type nav is **watcher-driven** — the sidebar and tabs render only the types whose watcher is actually registered (from `meta.watchers`), so you never see a dead "Redis" tab on an app that has no Redis watcher. `request` and `exception` always show (they're captured unconditionally), and direct URLs to a hidden type's page still work. While `meta` is loading, every type shows — there's no flash of hidden nav.
+
+Open any entry to see its **correlated batch** — the request and *everything it caused*, in capture order. Each entry shows its type-specific content (the SQL of a query, the recipients of a mail, the stack of an exception), its tags, and its duration. Per-type **insights** surface query-latency percentiles per shape, cache hit/miss/ratio badges, and exception groupings.
+
+The filter bar carries a generic **tag** combobox and a dedicated **User** combobox. The User filter queries the `user:` tag namespace (the ids the built-in `userTagger` emits) and displays bare ids with their entry counts; selecting one applies the underlying `tag=user:<id>` filter but renders as a `User: <id>` chip. The "View all activity for this user" pivot links in the entries table feed the same control — a `user:<id>` tag arriving via `?tag=` is recognized and shown as a User chip, not a raw tag.
 
 <Screenshot src="/screenshots/entries-request.png" alt="Entries view filtered to requests: total / p99 / error-rate cards, status-code and throughput charts, and the live entries table with tags" />
 

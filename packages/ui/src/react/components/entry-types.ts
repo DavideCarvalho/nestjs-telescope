@@ -69,3 +69,56 @@ export function isKnownType(typeId: string): boolean {
 export function resolveEntryQuery(typeId: string): { type?: string; tag?: string } {
   return BY_ID[typeId]?.query ?? { type: typeId };
 }
+
+/**
+ * Entry types that are ALWAYS captured regardless of which watchers a host
+ * registers, so their nav items must always show. `request` and `exception`
+ * are wired unconditionally by the core registrar (see
+ * `telescope-watcher-registrar.service.ts`, which seeds `[Request, Exception]`
+ * before appending registered watchers), so `/api/meta.watchers` always lists
+ * them — but we hard-code them here too so the nav stays correct even if a
+ * future server drops them from the list. `schedule` rides on the `job`
+ * watcher (scheduled runs are tagged `job` entries), so it's visible whenever
+ * `job` is.
+ */
+const ALWAYS_VISIBLE_TYPE_IDS = new Set(['request', 'exception']);
+
+/**
+ * Which nav/tab type ids to show given the server's registered watcher list.
+ *
+ * `/api/meta.watchers` carries EntryType strings (e.g. `['request',
+ * 'exception', 'query', 'job', 'redis']`) — the `type` field of each
+ * registered watcher, see the core registrar. We hide a type only when meta
+ * POSITIVELY says its watcher is absent:
+ *  - `watchers === undefined` → meta hasn't loaded or is from an older server
+ *    that predates the field; show everything (no flash-of-hidden-nav, and old
+ *    servers keep working).
+ *  - otherwise → show a type when it's always-visible, its id is in the watcher
+ *    set, or its backing query type is (so `schedule` follows `job`).
+ *
+ * Pure and order-preserving (keeps the canonical `ENTRY_TYPES` order) so it's
+ * trivially unit-testable.
+ */
+export function visibleEntryTypes(
+  types: readonly EntryTypeDef[],
+  watchers: readonly string[] | undefined,
+): EntryTypeDef[] {
+  if (watchers === undefined) return [...types];
+  const registered = new Set(watchers);
+  return types.filter((type) => {
+    if (ALWAYS_VISIBLE_TYPE_IDS.has(type.id)) return true;
+    // A type with a `query` override (e.g. schedule → job) is backed by that
+    // query type's watcher, not its own id.
+    const backingType = type.query?.type ?? type.id;
+    return registered.has(type.id) || registered.has(backingType);
+  });
+}
+
+/**
+ * The `all` pseudo-tab plus the visible entry-type ids — the type-tabs strip
+ * shows `all` first, then one tab per registered watcher. Pure wrapper around
+ * `visibleEntryTypes` so the tabs and the sidebar share one source of truth.
+ */
+export function visibleTypeTabIds(watchers: readonly string[] | undefined): string[] {
+  return ['all', ...visibleEntryTypes(ENTRY_TYPES, watchers).map((type) => type.id)];
+}

@@ -1,12 +1,23 @@
-const TYPES = ['all', 'request', 'query', 'job', 'exception', 'http_client', 'mail'] as const;
+import { visibleTypeTabIds } from './entry-types.js';
 
 export function TypeTabs({
   active,
   onChange,
-}: { active: string; onChange: (type: string) => void }): JSX.Element {
+  watchers,
+}: {
+  active: string;
+  onChange: (type: string) => void;
+  /**
+   * Registered watcher type strings from `/api/meta.watchers`. When supplied,
+   * only the `all` tab plus tabs for registered watchers render; when omitted
+   * (meta not loaded / older server), every tab shows — no flash-of-hidden-nav.
+   */
+  watchers?: readonly string[];
+}): JSX.Element {
+  const tabs = visibleTypeTabIds(watchers);
   return (
     <div className="flex gap-1 border-b border-zinc-800">
-      {TYPES.map((type) => (
+      {tabs.map((type) => (
         <button
           key={type}
           type="button"

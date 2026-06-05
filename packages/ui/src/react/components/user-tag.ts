@@ -25,3 +25,25 @@ export function userTagId(userTag: string): string {
 export function buildUserActivityHref(userTag: string): string {
   return `#/entries?tag=${encodeURIComponent(userTag)}`;
 }
+
+/** The fixed prefix the dedicated User filter narrows the tag search to. */
+export const USER_TAG_FILTER_PREFIX = USER_TAG_PREFIX;
+
+/**
+ * True when `tag` is a populated `user:<id>` tag — i.e. the active tag filter is
+ * really a user pivot and should render in the User control, not the generic
+ * tag chip. A bare `user:` (no id) is NOT a user filter.
+ */
+export function isUserTag(tag: string): boolean {
+  return tag.startsWith(USER_TAG_PREFIX) && tag.length > USER_TAG_PREFIX.length;
+}
+
+/**
+ * Prepends the `user:` prefix to a raw user id to form the underlying tag the
+ * entries query filters by. Idempotent: an already-prefixed value passes
+ * through unchanged, so the autocomplete (which surfaces full `user:<id>` tags)
+ * and a hand-typed bare id both resolve to the same tag.
+ */
+export function toUserTag(idOrTag: string): string {
+  return idOrTag.startsWith(USER_TAG_PREFIX) ? idOrTag : `${USER_TAG_PREFIX}${idOrTag}`;
+}

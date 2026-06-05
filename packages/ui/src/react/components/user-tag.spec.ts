@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
+import { buildUserActivityHref, findUserTag, isUserTag, toUserTag, userTagId } from './user-tag.js';
 
 describe('findUserTag', () => {
   it('returns the first user:<id> tag', () => {
@@ -30,5 +30,30 @@ describe('buildUserActivityHref', () => {
 
   it('url-encodes special characters in the id', () => {
     expect(buildUserActivityHref('user:a@b.com')).toBe('#/entries?tag=user%3Aa%40b.com');
+  });
+});
+
+describe('isUserTag', () => {
+  it('recognizes a populated user:<id> tag (so the User control claims it)', () => {
+    expect(isUserTag('user:42')).toBe(true);
+    expect(isUserTag('user:a@b.com')).toBe(true);
+  });
+
+  it('rejects non-user tags and a bare prefix', () => {
+    expect(isUserTag('slow')).toBe(false);
+    expect(isUserTag('status:500')).toBe(false);
+    expect(isUserTag('user:')).toBe(false);
+    expect(isUserTag('')).toBe(false);
+  });
+});
+
+describe('toUserTag', () => {
+  it('prefixes a bare id to form the underlying tag', () => {
+    expect(toUserTag('42')).toBe('user:42');
+    expect(toUserTag('a@b.com')).toBe('user:a@b.com');
+  });
+
+  it('is idempotent on an already-prefixed value', () => {
+    expect(toUserTag('user:42')).toBe('user:42');
   });
 });

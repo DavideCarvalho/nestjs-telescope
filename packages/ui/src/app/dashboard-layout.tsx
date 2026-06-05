@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { ENTRY_TYPES, RetentionIndicator, useLiveTail } from '../react/index.js';
+import {
+  ENTRY_TYPES,
+  RetentionIndicator,
+  useLiveTail,
+  useMeta,
+  visibleEntryTypes,
+} from '../react/index.js';
 import { useAuthOptional } from './auth-context.js';
 import { CommandPalette, usePalette } from './command-palette.js';
 import { useTheme } from './theme-context.js';
@@ -115,6 +121,11 @@ function LogoutButton(): JSX.Element | null {
 
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
   const { open, setOpen } = usePalette();
+  // Watcher-driven nav: only show a type's link when its watcher is registered.
+  // `meta.watchers` is undefined until /api/meta resolves (or on older servers),
+  // in which case `visibleEntryTypes` shows everything — no flash-of-hidden-nav.
+  const meta = useMeta();
+  const watcherTypes = visibleEntryTypes(ENTRY_TYPES, meta.data?.watchers);
   return (
     <div className="flex min-h-screen bg-zinc-950 font-mono text-sm text-zinc-200">
       <CommandPalette open={open} onClose={() => setOpen(false)} />
@@ -131,7 +142,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
           <span className="px-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-600">
             Watchers
           </span>
-          {ENTRY_TYPES.map((type) => (
+          {watcherTypes.map((type) => (
             <NavLink key={type.id} to={`/entries/${type.id}`} className={watcherLinkClass}>
               <span className={`h-2 w-2 shrink-0 rounded-full ${type.dot}`} aria-hidden="true" />
               {type.label}

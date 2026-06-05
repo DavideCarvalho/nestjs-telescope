@@ -200,9 +200,30 @@ describe('EntriesPage', () => {
       expect(entries).toHaveBeenCalledWith({ tag: 'user:42' });
     });
 
-    // the seeded tag renders as a clearable chip
-    const chip = await screen.findByText('tag:user:42');
+    // a seeded user:<id> tag is RECOGNIZED and rendered in the dedicated User
+    // control as a "User: <id>" chip — not the generic tag chip.
+    const chip = await screen.findByText('User: 42');
     expect(chip).toBeTruthy();
+    expect(screen.queryByText('tag:user:42')).toBeNull();
+  });
+
+  it('applies a user filter via the dedicated User control and shows a User chip', async () => {
+    const { client, entries } = mockClient([]);
+    renderAt('/entries', client);
+
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({});
+    });
+
+    // the User combobox queries the `user:` namespace; selecting an id applies
+    // the underlying `user:<id>` tag but the chip reads as a user, not a tag.
+    fireEvent.change(screen.getByLabelText('Filter by user'), { target: { value: '7' } });
+    fireEvent.keyDown(screen.getByLabelText('Filter by user'), { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({ tag: 'user:7' });
+    });
+    expect(await screen.findByText('User: 7')).toBeTruthy();
   });
 
   it('shows a type-aware empty state when nothing matches', async () => {

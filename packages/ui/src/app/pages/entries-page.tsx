@@ -4,11 +4,14 @@ import {
   EntriesTable,
   EntryInsights,
   TagAutocomplete,
+  USER_TAG_FILTER_PREFIX,
   dotForType,
   isKnownType,
+  isUserTag,
   labelForType,
   resolveEntryQuery,
   useEntries,
+  userTagId,
 } from '../../react/index.js';
 
 function emptyMessage(type: string | undefined, tag: string): string {
@@ -31,6 +34,13 @@ export function EntriesPage(): JSX.Element {
 
   const activeType = routeType && isKnownType(routeType) ? routeType : undefined;
   const trimmedTag = tag.trim();
+  // The single active tag filter is rendered in one of two controls: a populated
+  // `user:<id>` tag (whether selected in the User control or arriving via a
+  // `?tag=user:x` pivot link from the entries table) shows as a User chip;
+  // anything else shows as the generic tag chip. This is what makes the User
+  // control RECOGNIZE a user pivot instead of leaking the raw `user:` tag.
+  const activeUserTag = isUserTag(trimmedTag) ? trimmedTag : '';
+  const activeGenericTag = activeUserTag === '' ? trimmedTag : '';
   const trimmedSearch = search.trim();
   const familyHash = searchParams.get('familyHash') ?? '';
   const hasFamilyHash = familyHash !== '';
@@ -84,13 +94,31 @@ export function EntriesPage(): JSX.Element {
           <span className="rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-400">All types</span>
         )}
         <TagAutocomplete onSelect={setTag} />
-        {trimmedTag !== '' ? (
+        <TagAutocomplete
+          prefix={USER_TAG_FILTER_PREFIX}
+          placeholder="Filter by user…"
+          ariaLabel="Filter by user"
+          onSelect={setTag}
+        />
+        {activeGenericTag !== '' ? (
           <button
             type="button"
             onClick={() => setTag('')}
             className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
           >
-            <span>{`tag:${trimmedTag}`}</span>
+            <span>{`tag:${activeGenericTag}`}</span>
+            <span className="text-zinc-500" aria-hidden="true">
+              ×
+            </span>
+          </button>
+        ) : null}
+        {activeUserTag !== '' ? (
+          <button
+            type="button"
+            onClick={() => setTag('')}
+            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+          >
+            <span>{`User: ${userTagId(activeUserTag)}`}</span>
             <span className="text-zinc-500" aria-hidden="true">
               ×
             </span>

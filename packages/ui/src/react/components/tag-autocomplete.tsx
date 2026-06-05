@@ -8,6 +8,18 @@ const MAX_SUGGESTIONS = 10;
 interface TagAutocompleteProps {
   /** Applies the chosen tag as the active entries filter (same effect as the old input). */
   onSelect: (tag: string) => void;
+  /**
+   * Fixed prefix the search is locked to (e.g. `user:` for the User filter).
+   * Both the `GET /tags` query and the suggestion ranking prepend it, and it's
+   * stripped from what the user types and from each suggestion's display so the
+   * control reads as ids, not raw tags. Defaults to `''` — the generic tag
+   * filter unchanged.
+   */
+  prefix?: string;
+  /** Placeholder for the input. Defaults to the generic tag prompt. */
+  placeholder?: string;
+  /** Accessible label for the input. Defaults to `Filter by tag`. */
+  ariaLabel?: string;
 }
 
 /** Sorts by count desc, caps to the top N, and (defensively) filters by the typed prefix
@@ -25,7 +37,12 @@ function rankSuggestions(tags: TagCount[], prefix: string): TagCount[] {
  * and surfaces matching tags with their entry counts. Selecting one applies it as the
  * active `tag` filter and closes the list. Empty input shows no dropdown.
  */
-export function TagAutocomplete({ onSelect }: TagAutocompleteProps): JSX.Element {
+export function TagAutocomplete({
+  onSelect,
+  prefix = '',
+  placeholder = 'Filter by tag…',
+  ariaLabel = 'Filter by tag',
+}: TagAutocompleteProps): JSX.Element {
   const [input, setInput] = useState('');
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -33,9 +50,18 @@ export function TagAutocomplete({ onSelect }: TagAutocompleteProps): JSX.Element
   const listboxId = useId();
 
   const trimmed = input.trim();
-  const { data } = useTags(trimmed);
-  const suggestions = trimmed === '' ? [] : rankSuggestions(data ?? [], trimmed);
+  // The full tag the user is narrowing to — `user:` + `42` etc. The input shows
+  // only the stripped portion (the id), but the query and ranking work against
+  // the real, prefixed tag namespace so counts and matches stay correct.
+  const fullQuery = `${prefix}${trimmed}`;
+  const { data } = useTags(fullQuery);
+  const suggestions = trimmed === '' ? [] : rankSuggestions(data ?? [], fullQuery);
   const showList = open && suggestions.length > 0;
+
+  /** What we show in the row / input for a tag — the prefix stripped off. */
+  function displayOf(tag: string): string {
+    return prefix !== '' && tag.startsWith(prefix) ? tag.slice(prefix.length) : tag;
+  }
 
   // Clamp the highlight whenever the suggestion set shrinks.
   useEffect(() => {
@@ -52,9 +78,11 @@ export function TagAutocomplete({ onSelect }: TagAutocompleteProps): JSX.Element
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
+  // `tag` is always the full, prefixed tag the filter applies; the input mirrors
+  // the stripped display so a User filter never shows the `user:` plumbing.
   function choose(tag: string): void {
     onSelect(tag);
-    setInput(tag);
+    setInput(displayOf(tag));
     setOpen(false);
   }
 
@@ -64,7 +92,7 @@ export function TagAutocomplete({ onSelect }: TagAutocompleteProps): JSX.Element
       return;
     }
     if (!showList) {
-      if (event.key === 'Enter' && trimmed !== '') choose(trimmed);
+      if (event.key === 'Enter' && trimmed !== '') choose(fullQuery);
       return;
     }
     if (event.key === 'ArrowDown') {
@@ -77,7 +105,7 @@ export function TagAutocomplete({ onSelect }: TagAutocompleteProps): JSX.Element
       event.preventDefault();
       const picked = suggestions[highlight];
       if (picked) choose(picked.tag);
-      else if (trimmed !== '') choose(trimmed);
+      else if (trimmed !== '') choose(fullQuery);
     }
   }
 
@@ -94,8 +122,8 @@ export function TagAutocomplete({ onSelect }: TagAutocompleteProps): JSX.Element
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        placeholder="Filter by tag…"
-        aria-label="Filter by tag"
+        placeholder={placeholder}
+        aria-label={ariaLabel}
         role="combobox"
         aria-expanded={showList}
         aria-controls={listboxId}
@@ -130,7 +158,7 @@ export function TagAutocomplete({ onSelect }: TagAutocompleteProps): JSX.Element
                 index === highlight ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300'
               }`}
             >
-              <span className="truncate">{suggestion.tag}</span>
+              <span className="truncate">{displayOf(suggestion.tag)}</span>
               <span className="shrink-0 text-zinc-500">{suggestion.count}</span>
             </div>
           ))}

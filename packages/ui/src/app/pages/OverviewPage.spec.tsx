@@ -10,7 +10,16 @@ import type {
   TimeseriesReport,
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
-import { OverviewPage, toByTypeRows, toThroughputSeries } from './OverviewPage.js';
+import {
+  OverviewPage,
+  QUEUE_WAITING_ATTENTION_THRESHOLD,
+  deriveErrorRate,
+  deriveSlowRequestCount,
+  formatErrorRate,
+  queuesNeedingAttention,
+  toByTypeRows,
+  toThroughputSeries,
+} from './OverviewPage.js';
 
 const pulse: PulseReport = {
   windowStart: '',
@@ -154,20 +163,127 @@ describe('OverviewPage transforms', () => {
   });
 });
 
+describe('deriveErrorRate', () => {
+  it('divides exceptions by requests as a [0,1] fraction', () => {
+    expect(deriveErrorRate({ request: 100, exception: 5 })).toBeCloseTo(0.05);
+    expect(deriveErrorRate({ request: 4, exception: 1 })).toBeCloseTo(0.25);
+  });
+
+  it('returns null on an idle window rather than a misleading 0%', () => {
+    // no requests: the rate is undefined, not zero
+    expect(deriveErrorRate({ exception: 3 })).toBeNull();
+    expect(deriveErrorRate({})).toBeNull();
+  });
+
+  it('is zero when there are requests but no exceptions', () => {
+    expect(deriveErrorRate({ request: 50 })).toBe(0);
+  });
+});
+
+describe('formatErrorRate', () => {
+  it('renders a fraction as a one-decimal percentage', () => {
+    expect(formatErrorRate(0.286)).toBe('28.6%');
+    expect(formatErrorRate(0)).toBe('0.0%');
+  });
+
+  it('renders null as n/a', () => {
+    expect(formatErrorRate(null)).toBe('n/a');
+  });
+});
+
+describe('deriveSlowRequestCount', () => {
+  it('counts the slow-route families pulse flagged', () => {
+    expect(
+      deriveSlowRequestCount({
+        ...pulse,
+        slowRoutes: [
+          { route: 'GET /a', count: 3, p99: 900, p50: 100 },
+          { route: 'GET /b', count: 1, p99: 1200, p50: 200 },
+        ],
+      }),
+    ).toBe(2);
+  });
+
+  it('is zero when nothing is slow or pulse is absent', () => {
+    expect(deriveSlowRequestCount({ ...pulse, slowRoutes: [] })).toBe(0);
+    expect(deriveSlowRequestCount(undefined)).toBe(0);
+  });
+});
+
+describe('queuesNeedingAttention', () => {
+  function queueMetrics(over: Partial<QueueMetricsReport['queues'][number]>) {
+    return {
+      queue: 'q',
+      total: 0,
+      completed: 0,
+      failed: 0,
+      failureRate: 0,
+      throughputPerMinute: 0,
+      runtimeMs: null,
+      waitMs: null,
+      ...over,
+    };
+  }
+
+  it('flags queues with any failed jobs', () => {
+    const report: QueueMetricsReport = {
+      ...queues,
+      queues: [queueMetrics({ queue: 'mail', failed: 2, total: 10, completed: 8 })],
+    };
+    expect(queuesNeedingAttention(report).map((q) => q.queue)).toEqual(['mail']);
+  });
+
+  it('flags queues with a large pending backlog even with no failures', () => {
+    const pending = QUEUE_WAITING_ATTENTION_THRESHOLD;
+    const report: QueueMetricsReport = {
+      ...queues,
+      queues: [queueMetrics({ queue: 'big', total: pending + 5, completed: 5, failed: 0 })],
+    };
+    expect(queuesNeedingAttention(report).map((q) => q.queue)).toEqual(['big']);
+  });
+
+  it('ignores healthy queues (no failures, small backlog)', () => {
+    const report: QueueMetricsReport = {
+      ...queues,
+      queues: [
+        queueMetrics({ queue: 'ok', total: 50, completed: 50, failed: 0 }),
+        queueMetrics({ queue: 'tiny-backlog', total: 10, completed: 5, failed: 0 }),
+      ],
+    };
+    expect(queuesNeedingAttention(report)).toEqual([]);
+  });
+
+  it('returns an empty list when there is no queue report', () => {
+    expect(queuesNeedingAttention(undefined)).toEqual([]);
+  });
+});
+
 describe('OverviewPage', () => {
   it('renders stat numbers, chart titles, and lists from the mocked data', async () => {
     renderOverview();
     expect(await screen.findByText('Overview')).toBeTruthy();
     await waitFor(() => {
-      // total entries = 7 + 12 + 3 + 2 = 24
-      expect(screen.getByText('24')).toBeTruthy();
+      // requests = 7, with the total-entries figure (24) demoted to a hint
+      expect(screen.getByText('7')).toBeTruthy();
     });
+    expect(screen.getByText('24 entries total')).toBeTruthy();
     expect(screen.getByText('Throughput')).toBeTruthy();
     expect(screen.getByText('By type')).toBeTruthy();
     expect(screen.getByText('Recent failures')).toBeTruthy();
     expect(screen.getByText('Slowest')).toBeTruthy();
+    expect(screen.getByText('N+1 query hotspots')).toBeTruthy();
+    expect(screen.getByText('Queues needing attention')).toBeTruthy();
     expect(screen.getByText('TypeError')).toBeTruthy();
     expect(screen.getByText('select * from big')).toBeTruthy();
+  });
+
+  it('derives and renders the error rate from exceptions ÷ requests', async () => {
+    renderOverview();
+    expect(await screen.findByText('Error rate')).toBeTruthy();
+    // 2 exceptions ÷ 7 requests = 28.6%
+    await waitFor(() => {
+      expect(screen.getByText('28.6%')).toBeTruthy();
+    });
   });
 
   it('renders the Server card from the server-stats snapshot', async () => {

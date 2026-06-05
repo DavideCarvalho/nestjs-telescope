@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { HashRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../client/index.js';
@@ -7,7 +7,7 @@ import { ENTRY_TYPES, TelescopeProvider } from '../react/index.js';
 import { DashboardLayout } from './dashboard-layout.js';
 import { ThemeProvider } from './theme-context.js';
 
-function mockClient(): TelescopeClient {
+function mockClient(watchers: string[] = []): TelescopeClient {
   return {
     entries: async () => ({ data: [], nextCursor: null }),
     entry: async () => {
@@ -28,7 +28,7 @@ function mockClient(): TelescopeClient {
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
-      watchers: [],
+      watchers,
       traceLink: null,
       retention: null,
       sampling: {},
@@ -36,11 +36,11 @@ function mockClient(): TelescopeClient {
   };
 }
 
-function renderLayout() {
+function renderLayout(watchers?: string[]) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <ThemeProvider>
-      <TelescopeProvider client={mockClient()}>
+      <TelescopeProvider client={mockClient(watchers)}>
         <QueryClientProvider client={queryClient}>
           <HashRouter>
             <DashboardLayout>
@@ -62,13 +62,29 @@ describe('DashboardLayout', () => {
     }
   });
 
-  it('renders a Watchers nav item per entry type with a hash href to its filtered list', () => {
+  it('renders every Watchers nav item before meta resolves (no flash-of-hidden-nav)', () => {
+    // Asserting synchronously, before the async meta query settles: watchers is
+    // still undefined, so the fallback shows the full list.
     renderLayout();
     expect(screen.getByText('Watchers')).toBeTruthy();
     for (const type of ENTRY_TYPES) {
       const link = screen.getByRole('link', { name: type.label });
       expect(link.getAttribute('href')).toBe(`#/entries/${type.id}`);
     }
+  });
+
+  it('hides Watchers nav items whose watcher meta positively reports as absent', async () => {
+    // Only request, exception, and query are registered → redis/model/etc. drop
+    // out of the nav once meta resolves.
+    renderLayout(['request', 'exception', 'query']);
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Redis' })).toBeNull();
+    });
+    expect(screen.getByRole('link', { name: 'Requests' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Queries' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Exceptions' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Models' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Mail' })).toBeNull();
   });
 
   it('defaults the live-tail toggle to Live and flips to Paused on click', () => {
