@@ -113,12 +113,3 @@ export function visibleEntryTypes(
     return registered.has(type.id) || registered.has(backingType);
   });
 }
-
-/**
- * The `all` pseudo-tab plus the visible entry-type ids — the type-tabs strip
- * shows `all` first, then one tab per registered watcher. Pure wrapper around
- * `visibleEntryTypes` so the tabs and the sidebar share one source of truth.
- */
-export function visibleTypeTabIds(watchers: readonly string[] | undefined): string[] {
-  return ['all', ...visibleEntryTypes(ENTRY_TYPES, watchers).map((type) => type.id)];
-}

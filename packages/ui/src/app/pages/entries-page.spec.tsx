@@ -226,6 +226,26 @@ describe('EntriesPage', () => {
     expect(await screen.findByText('User: 7')).toBeTruthy();
   });
 
+  it('clears the other combobox draft when a selection lands in one control', async () => {
+    const { client } = mockClient([]);
+    renderAt('/entries', client);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Filter by tag')).toBeTruthy();
+    });
+
+    // leave a stale draft in the generic tag input, then apply a User selection
+    const tagInput = screen.getByLabelText('Filter by tag');
+    fireEvent.change(tagInput, { target: { value: 'slow' } });
+    fireEvent.change(screen.getByLabelText('Filter by user'), { target: { value: '7' } });
+    fireEvent.keyDown(screen.getByLabelText('Filter by user'), { key: 'Enter' });
+
+    // the generic control remounts, so its leftover 'slow' draft is gone
+    await waitFor(() => {
+      expect(screen.getByLabelText('Filter by tag')).toHaveProperty('value', '');
+    });
+  });
+
   it('shows a type-aware empty state when nothing matches', async () => {
     const { client } = mockClient([]);
     renderAt('/entries/cache', client);

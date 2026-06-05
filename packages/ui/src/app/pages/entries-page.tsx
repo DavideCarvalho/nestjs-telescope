@@ -31,6 +31,21 @@ export function EntriesPage(): JSX.Element {
   // drives the query, so typing never refetches — only Enter commits.
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
+  // Both comboboxes drive the single `tag` filter but each keeps its own draft
+  // input. Bumping the opposite control's key remounts it, clearing the stale
+  // text it left behind when a selection lands in the other one.
+  const [genericTagKey, setGenericTagKey] = useState(0);
+  const [userTagKey, setUserTagKey] = useState(0);
+
+  function selectGenericTag(nextTag: string): void {
+    setTag(nextTag);
+    setUserTagKey((current) => current + 1);
+  }
+
+  function selectUserTag(nextTag: string): void {
+    setTag(nextTag);
+    setGenericTagKey((current) => current + 1);
+  }
 
   const activeType = routeType && isKnownType(routeType) ? routeType : undefined;
   const trimmedTag = tag.trim();
@@ -93,12 +108,13 @@ export function EntriesPage(): JSX.Element {
         ) : (
           <span className="rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-400">All types</span>
         )}
-        <TagAutocomplete onSelect={setTag} />
+        <TagAutocomplete key={`tag-${genericTagKey}`} onSelect={selectGenericTag} />
         <TagAutocomplete
+          key={`user-${userTagKey}`}
           prefix={USER_TAG_FILTER_PREFIX}
           placeholder="Filter by user…"
           ariaLabel="Filter by user"
-          onSelect={setTag}
+          onSelect={selectUserTag}
         />
         {activeGenericTag !== '' ? (
           <button

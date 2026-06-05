@@ -5,7 +5,6 @@ import {
   labelForType,
   resolveEntryQuery,
   visibleEntryTypes,
-  visibleTypeTabIds,
 } from './entry-types.js';
 
 describe('ENTRY_TYPES dump', () => {
@@ -72,15 +71,5 @@ describe('visibleEntryTypes', () => {
   it('hides schedule when job is not registered', () => {
     const visible = visibleEntryTypes(ENTRY_TYPES, ['request', 'exception']);
     expect(visible.map((type) => type.id)).not.toContain('schedule');
-  });
-});
-
-describe('visibleTypeTabIds', () => {
-  it('prepends the all tab to the visible type ids', () => {
-    expect(visibleTypeTabIds(['query'])).toEqual(['all', 'request', 'query', 'exception']);
-  });
-
-  it('shows all tabs (all + every type) when watchers is undefined', () => {
-    expect(visibleTypeTabIds(undefined)).toEqual(['all', ...ENTRY_TYPES.map((type) => type.id)]);
   });
 });
