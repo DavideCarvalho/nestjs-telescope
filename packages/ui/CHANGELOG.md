@@ -1,5 +1,25 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 1.3.0
+
+### Minor Changes
+
+- [`7773e0a`](https://github.com/DavideCarvalho/nestjs-telescope/commit/7773e0ad120d2678a07e9eebc4631a19c5c8e381) - Hide the Traces page from the dashboard nav when the host has no `traceContext`.
+
+  Entries only get a `trace_id` when the host wires a `traceContext` provider, so an app without one had a permanently empty Traces page sitting as a dead nav item. The dashboard now hides that link — mirroring the watcher-driven nav, which already hides entry types whose watcher isn't registered.
+
+  - Core: `GET /api/meta` now returns `tracesEnabled: boolean` (whether a `traceContext` provider was configured).
+  - UI: the **Traces** nav item is hidden when `meta.tracesEnabled === false`. Undefined meta (loading, or an older server predating the field) still shows it — no flash-of-hidden-nav and backward-compatible. The `#/traces` route is untouched, so a direct visit still resolves.
+
+- [`8f9b65e`](https://github.com/DavideCarvalho/nestjs-telescope/commit/8f9b65e1b2ec1df664bc173cc76072c6fffdbc59) - Pulse "Slow request hotspots" now require a real slowness threshold.
+
+  Previously the slow-route (and slow-outgoing-HTTP) hotspots were a pure top-N p99 ranking with no floor, so a quiet host surfaced fast routes like `/health` at 18ms as "hotspots" — a false alarm. A route now only counts as a hotspot when its **p99 ≥ `slowRouteMs`** (default `1000`ms, matching the `slow` request-tag threshold and the `HttpClientWatcher` `slowMs` default).
+
+  - Configure via `pulse.slowRouteMs` on `TelescopeModule.forRoot({ pulse: { slowRouteMs } })`.
+  - The Overview "Slow requests" stat is now labeled **Slow routes** and means "routes over the slow p99 threshold".
+  - The Pulse panel shows a friendly empty state ("No routes over the slow threshold") when nothing qualifies.
+  - The "Slowest" entries ranking and N+1 hotspots are unchanged — only slow-ROUTE hotspots gained the threshold.
+
 ## 1.2.1
 
 ## 1.2.0
