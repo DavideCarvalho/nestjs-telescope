@@ -1,19 +1,37 @@
 # nestjs-telescope
 
-> Laravel Telescope, redesigned for NestJS. Watch every request, query, job,
-> email, and exception — correlated under one batch, non-blocking, pluggable,
-> and safe in production. Works on Express **and** Fastify.
+[![npm](https://img.shields.io/npm/v/@dudousxd/nestjs-telescope?color=cb3837&logo=npm)](https://www.npmjs.com/package/@dudousxd/nestjs-telescope)
+[![CI](https://github.com/DavideCarvalho/nestjs-telescope/actions/workflows/ci.yml/badge.svg)](https://github.com/DavideCarvalho/nestjs-telescope/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-**Status:** early development (`0.0.0`). See [`DESIGN.md`](./DESIGN.md) for the
-architecture and [`PRODUCT.md`](./PRODUCT.md) for the product brief.
+> Laravel Telescope, redesigned for NestJS. Watch every request, query, job,
+> email, cache hit, and exception — correlated under one batch, off the response
+> path, pluggable, and safe in production. Express **and** Fastify.
+
+`@dudousxd/nestjs-telescope` is an application observability console for NestJS.
+A set of watchers capture what happens *inside* a request — every query, queued
+job, sent email, cache hit, and thrown exception — correlate it all under one
+**batch** via `AsyncLocalStorage`, store it through a pluggable provider, and
+expose it through a headless API plus an optional dashboard. It's the missing
+Telescope for NestJS, designed framework-idiomatically rather than ported.
+
+![The Telescope Overview: stat cards, server vitals, the Telescope health card, and throughput / per-type area charts](./website/public/screenshots/overview.png)
 
 ## Quick start
 
-Import the module. Request and exception capture is wired automatically; the
-SQLite store and pruner are on by default.
+**1. Install** core and the dashboard:
+
+```bash
+pnpm add @dudousxd/nestjs-telescope @dudousxd/nestjs-telescope-ui
+```
+
+**2. Import** two modules. Request and exception capture wire themselves
+automatically, and a zero-config SQLite store is on by default:
 
 ```ts
+import { Module } from '@nestjs/common';
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 
 @Module({
   imports: [
@@ -23,71 +41,68 @@ import { TelescopeModule } from '@dudousxd/nestjs-telescope';
       authorizer: () => true, // gates the API; defaults to deny in production
       prune: { after: '24h' },
     }),
+    TelescopeUiModule.forRoot(),
   ],
 })
 export class AppModule {}
 ```
 
-Hit `GET /telescope/api/entries` (or `/telescope/api/entries/:id` for a request
-and everything it caused).
+Boot, then open **`/telescope`** for the dashboard or hit
+`GET /telescope/api/entries/:id` for a request and everything it caused. Most
+apps are done in under five minutes — see the
+[Getting Started guide](https://davidecarvalho.github.io/nestjs-telescope/docs/getting-started).
 
-Add `TelescopeUiModule.forRoot()` to mount a visual dashboard at `/telescope` —
-see [`packages/ui`](./packages/ui/README.md).
+## What you get
 
-For queue health, `GET /telescope/api/queues?window=1h` returns per-queue
-throughput, runtime and wait-time percentiles, and failure rate aggregated from
-captured job entries.
+| Feature | What it does |
+|---------|--------------|
+| **Watchers** | Request, query, job, mail, cache, schedule, HTTP-client, and exception capture — correlated under one batch in capture order. |
+| **Queue console** | A Horizon-style live view of BullMQ and SQS queues: per-state depth, individual jobs, and (behind a second default-deny gate) retry / remove / promote / redrive. |
+| **Pulse** | At-a-glance health: per-type counts, slowest entries, top exceptions, N+1 hotspots, and a throughput sparkline — rolled up from captured entries. |
+| **Health & overhead** | Capture runs *off* the response path; the dashboard surfaces Telescope's own host-path µs/capture, buffer pressure, and flush p95 on a `/health` card. |
+| **Storage adapters** | A pluggable `StorageProvider` SPI with a self-healing schema: SQLite by default, swap in Redis (multi-instance) or your own. |
+| **Dashboard auth** | A read `authorizer` gates the API (default-deny in production); a separate `authorizeAction` fails closed for every mutation. |
 
-For an at-a-glance health snapshot, `GET /telescope/api/pulse?window=1h` returns
-per-type entry counts, the slowest entries, the most frequent exceptions, and
-N+1 query occurrences — all aggregated from captured entries.
-
-`GET /telescope/api/timeseries?window=1h&buckets=60` returns bucketed throughput
-(total + per type) over the window — the data behind the dashboard sparkline.
-
-To capture outbound HTTP calls (correlated to the request/job that made them),
-add the built-in `HttpClientWatcher` — it instruments the global `fetch`, no peer
-dependency required, and sanitizes credentials/secret query params from captured
-URLs:
+## Dashboard
 
 ```ts
-import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
-
-TelescopeModule.forRoot({ watchers: [new HttpClientWatcher({ slowMs: 1000 })] });
+import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
+// imports: [TelescopeModule.forRoot(), TelescopeUiModule.forRoot()]
 ```
 
-Capture queries from MikroORM by wiring its logger —
-see [`packages/mikro-orm`](./packages/mikro-orm/README.md):
+A bundled React SPA served by a NestJS module — no frontend dependency imposed
+on your app. Open any request to see its **correlated batch**: a waterfall of
+the cache reads, queries, jobs, and exceptions it caused, alongside the request
+itself.
 
-```ts
-MikroOrmModule.forRootAsync({
-  inject: [TelescopeService],
-  useFactory: (telescope: TelescopeService) => ({
-    // ...your config
-    debug: ['query'],
-    loggerFactory: telescopeMikroOrmLogger((input) => telescope.record(input)),
-  }),
-});
-```
+![A request detail: the batch timeline waterfall, the correlated batch panel, and the request payload](./website/public/screenshots/request-detail.png)
+
+## Links
+
+- **Documentation** — https://davidecarvalho.github.io/nestjs-telescope
+- **Example app** — [`examples/basic-app`](./examples/basic-app) boots with zero
+  config and fills its own dashboard while you watch.
+- **Recipes** — [custom storage](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/custom-storage),
+  [custom watcher](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/custom-watcher),
+  [dashboard auth](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/dashboard-auth),
+  [tags & redaction](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/tags-and-redaction).
+- **Architecture** — [`DESIGN.md`](./DESIGN.md) · **Product brief** — [`PRODUCT.md`](./PRODUCT.md)
 
 ## Packages
 
-| Package | Status | What it is |
-|---------|--------|------------|
-| `@dudousxd/nestjs-telescope` | ✅ shipped | Core: request + exception watchers, recorder, ALS correlation, SQLite store, headless API, guard, pruner |
-| `@dudousxd/nestjs-telescope-mikro-orm` | ✅ shipped | MikroORM query watcher + N+1 detector |
-| `@dudousxd/nestjs-telescope-bullmq` | ✅ shipped | BullMQ job watcher: per-job capture + query/exception correlation |
-| `@dudousxd/nestjs-telescope-testing` | ✅ shipped | In-memory store re-export, `FakeClock`, watcher test harness |
-| `@dudousxd/nestjs-telescope-ui` | ✅ shipped | Bundled dashboard SPA + composable React components/hooks/client |
-| `@dudousxd/nestjs-telescope-typeorm` | ✅ shipped | TypeORM query watcher (host-wired logger) |
-| `@dudousxd/nestjs-telescope-prisma` | ✅ shipped | Prisma query watcher (`$on('query')`; see correlation caveat) |
-| `@dudousxd/nestjs-telescope-redis` | ✅ shipped | Redis-backed shared storage (multi-instance) |
-| `@dudousxd/nestjs-telescope-mail` | ✅ shipped | Mail watcher (nodemailer sendMail) |
-| `@dudousxd/nestjs-telescope-cache` | ✅ shipped | Cache watcher (get/set hit/miss) |
-| `@dudousxd/nestjs-telescope-schedule` | ✅ shipped | Schedule watcher (@nestjs/schedule cron/interval) |
-| `@dudousxd/nestjs-telescope-otel` | planned | Bidirectional OpenTelemetry bridge |
-| `@dudousxd/nestjs-telescope-pulse` | planned | Aggregate health dashboard (Pulse-mode) + N+1 insights |
-| `@dudousxd/nestjs-telescope-ui` | planned | Optional dashboard SPA |
+| Package | What it is |
+|---------|------------|
+| `@dudousxd/nestjs-telescope` | Core: request + exception watchers, recorder, ALS correlation, SQLite store, headless API, guard, pruner |
+| `@dudousxd/nestjs-telescope-ui` | Bundled dashboard SPA + composable React components / hooks / client |
+| `@dudousxd/nestjs-telescope-mikro-orm` | MikroORM query watcher + N+1 detector |
+| `@dudousxd/nestjs-telescope-typeorm` | TypeORM query watcher (host-wired logger) |
+| `@dudousxd/nestjs-telescope-prisma` | Prisma query watcher (`$on('query')`) |
+| `@dudousxd/nestjs-telescope-bullmq` | BullMQ job watcher: per-job capture + correlation |
+| `@dudousxd/nestjs-telescope-mail` | Mail watcher (nodemailer `sendMail`) |
+| `@dudousxd/nestjs-telescope-cache` | Cache watcher (get/set hit/miss) |
+| `@dudousxd/nestjs-telescope-schedule` | Schedule watcher (`@nestjs/schedule` cron/interval) |
+| `@dudousxd/nestjs-telescope-redis` | Redis-backed shared storage (multi-instance) |
+| `@dudousxd/nestjs-telescope-testing` | In-memory store, `FakeClock`, watcher test harness |
 
 ## License
 

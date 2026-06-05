@@ -24,7 +24,13 @@ It complements metrics and tracing; it doesn't replace them. This is about *corr
 
 ## Screenshot
 
-> _Dashboard screenshot placeholder — the `/telescope` overview, an entry batch, and the live queue console._
+The Overview lands you on Horizon-style stat cards, a throughput chart, a per-type stacked area, and the **Telescope health** card — the host-path cost of capture, straight from `/health`.
+
+<Screenshot src="/screenshots/overview.png" alt="Telescope Overview: stat cards, server vitals, the Telescope health card, and throughput / per-type area charts" />
+
+Open any request and you get its **correlated batch** — the cache reads, queries, and dumps it caused, laid out as a waterfall next to the request itself.
+
+<Screenshot src="/screenshots/request-detail.png" alt="A POST /coffee/order request detail: batch timeline waterfall on the left, the correlated batch panel on the right, plus headers and payload" />
 
 ## Quick links
 
