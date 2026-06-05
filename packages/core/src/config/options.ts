@@ -19,7 +19,33 @@ export interface RecorderTuning {
   flushIntervalMs?: number;
   /** Consumed by the NestJS integration layer's flush scheduler; the core Recorder itself does not start a timer. */
   flushBatchSize?: number;
+  /**
+   * Backoff before the single bounded retry of a failed `storage.store()` batch.
+   * On the first rejection the Recorder waits this long, then retries ONCE; a
+   * second failure drops the batch (`storeFailedDropped`). Default `1000`ms.
+   */
+  retryDelayMs?: number;
 }
+
+/**
+ * Tail-sampling rule for a single entry type. Keeps `rate` of the noise but
+ * always retains the entries that matter — errors and slow ones.
+ */
+export interface SamplingRule {
+  /** Base keep-rate 0–1 applied to ordinary entries of this type. */
+  rate: number;
+  /** When true, always keep entries that look like errors (see {@link isErrorEntry}). */
+  keepErrors?: boolean;
+  /** When set, always keep entries whose `durationMs` is at least this value. */
+  keepSlowMs?: number;
+}
+
+/**
+ * Per-type sampling configuration. Each type maps to either a bare keep-rate
+ * (uniform down-sampling, unchanged behaviour) or a {@link SamplingRule} object
+ * (tail-sampling: keep a fraction but always retain errors / slow entries).
+ */
+export type SamplingConfig = Record<string, number | SamplingRule>;
 
 /** Author-facing options. NestJS-specific fields (watchers, authorizer, path) are
  *  layered on in the Nest integration package; this shape is the agnostic subset. */
@@ -30,8 +56,12 @@ export interface TelescopeCoreOptions {
   /**
    * Per-entry-type keep rate (0–1). A bare number is normalised to `{ default: <rate> }`,
    * which applies to every entry type that lacks a specific rate override.
+   *
+   * A per-type value may also be a {@link SamplingRule} object to tail-sample:
+   * keep `rate` of the noise but always retain errors (`keepErrors`) and slow
+   * entries (`keepSlowMs`). Bare-number entries keep their exact prior behaviour.
    */
-  sampling?: number | Record<string, number>;
+  sampling?: number | SamplingConfig;
   recorder?: RecorderTuning;
   prune?: PruneOptions;
   taggers?: Tagger[];
@@ -55,7 +85,7 @@ export interface ResolvedCoreConfig {
   /** Normalized mount segment (no leading/trailing slash). Default `'telescope'`. */
   path: string;
   redact: RedactOptions;
-  sampling: Record<string, number>;
+  sampling: SamplingConfig;
   recorder: Required<RecorderTuning>;
   prune?: { afterMs: number; keepLast?: number; intervalMs: number };
   taggers: Tagger[];

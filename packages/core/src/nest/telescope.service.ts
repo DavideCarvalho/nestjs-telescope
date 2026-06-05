@@ -9,6 +9,7 @@ import {
 import { v7 } from 'uuid';
 import type { AuthMode, ResolvedDashboardAuth } from '../auth/dashboard-auth-config.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
+import { samplingRates } from '../config/sampling.js';
 import { createBatch } from '../context/batch.js';
 import { TelescopeContext } from '../context/telescope-context.js';
 import { setTelescopeDump } from '../dump/telescope-dump.js';
@@ -80,6 +81,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       redact: config.redact,
       sampling: config.sampling,
       bufferSize: config.recorder.bufferSize,
+      retryDelayMs: config.recorder.retryDelayMs,
       idFactory: () => v7(),
       ...(config.filter ? { filter: config.filter } : {}),
       ...(config.traceContext ? { traceContext: config.traceContext } : {}),
@@ -204,7 +206,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
             keepLast: this.config.prune.keepLast ?? null,
           }
         : null,
-      sampling: { ...this.config.sampling },
+      sampling: samplingRates(this.config.sampling),
       auth: {
         enabled: this.dashboardAuth !== null,
         modes: this.dashboardAuth ? [...this.dashboardAuth.modes] : [],

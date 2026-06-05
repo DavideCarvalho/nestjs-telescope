@@ -17,6 +17,34 @@ describe('resolveConfig', () => {
     expect(config.sampling).toEqual({ default: 0.5 });
   });
 
+  it('keeps a per-type bare-number sampling map unchanged', () => {
+    const config = resolveConfig({ sampling: { cache: 0.1, query: 1 } });
+    expect(config.sampling).toEqual({ cache: 0.1, query: 1 });
+  });
+
+  it('passes a per-type SamplingRule object through normalized', () => {
+    const config = resolveConfig({
+      sampling: { cache: { rate: 0.1, keepErrors: true, keepSlowMs: 500 } },
+    });
+    expect(config.sampling).toEqual({
+      cache: { rate: 0.1, keepErrors: true, keepSlowMs: 500 },
+    });
+  });
+
+  it('rejects a SamplingRule with an out-of-range rate', () => {
+    expect(() => resolveConfig({ sampling: { cache: { rate: 2 } } })).toThrow();
+  });
+
+  it('defaults recorder.retryDelayMs to 1000', () => {
+    const config = resolveConfig({});
+    expect(config.recorder.retryDelayMs).toBe(1000);
+  });
+
+  it('honors an explicit recorder.retryDelayMs', () => {
+    const config = resolveConfig({ recorder: { retryDelayMs: 250 } });
+    expect(config.recorder.retryDelayMs).toBe(250);
+  });
+
   it('parses a string prune duration into milliseconds', () => {
     const config = resolveConfig({ prune: { after: '24h' } });
     expect(config.prune?.afterMs).toBe(24 * 60 * 60 * 1000);

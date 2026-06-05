@@ -21,6 +21,9 @@ function makeRecorder(over: Partial<ConstructorParameters<typeof Recorder>[0]> =
     bufferSize: 100,
     now: () => 1_000,
     random: () => 0,
+    // Default to an instant backoff so the bounded store-retry never parks a
+    // real timer in tests. Individual cases override `delay` to drive timing.
+    delay: () => Promise.resolve(),
     idFactory: () => `id-${counter++}`,
     ...over,
   });
@@ -145,6 +148,147 @@ describe('Recorder', () => {
     expect(storeCallCount()).toBe(1);
   });
 
+  // ── Flush retry with bounded backoff ──────────────────────────────────────
+
+  describe('flush retry', () => {
+    it('retries once after a store failure and stores on the second attempt; counts retriedFlushes', async () => {
+      let attempt = 0;
+      const failingThenOk: StorageProvider = {
+        store: () => {
+          attempt += 1;
+          return attempt === 1 ? Promise.reject(new Error('transient')) : Promise.resolve();
+        },
+        update: () => Promise.resolve(),
+        find: () => Promise.resolve(null),
+        get: () => Promise.resolve({ data: [], nextCursor: null }),
+        batch: () => Promise.resolve([]),
+        tags: () => Promise.resolve([]),
+        prune: () => Promise.resolve(0),
+        clear: () => Promise.resolve(),
+      };
+      const delay = vi.fn(() => Promise.resolve());
+      const { recorder } = makeRecorder({ storage: failingThenOk, delay });
+
+      recorder.record({ type: 'request', content: { n: 1 } });
+      await recorder.flush();
+
+      // store() called exactly twice (fail, then succeed), with one backoff.
+      expect(attempt).toBe(2);
+      expect(delay).toHaveBeenCalledTimes(1);
+      // The batch persisted, so nothing was dropped.
+      expect(recorder.storeFailedDropped).toBe(0);
+      expect(recorder.droppedCount).toBe(0);
+      expect(recorder.getSelfMetrics().retriedFlushes).toBe(1);
+    });
+
+    it('honors the configured retryDelayMs as the backoff', async () => {
+      let attempt = 0;
+      const failingThenOk: StorageProvider = {
+        store: () => {
+          attempt += 1;
+          return attempt === 1 ? Promise.reject(new Error('transient')) : Promise.resolve();
+        },
+        update: () => Promise.resolve(),
+        find: () => Promise.resolve(null),
+        get: () => Promise.resolve({ data: [], nextCursor: null }),
+        batch: () => Promise.resolve([]),
+        tags: () => Promise.resolve([]),
+        prune: () => Promise.resolve(0),
+        clear: () => Promise.resolve(),
+      };
+      const delay = vi.fn(() => Promise.resolve());
+      const { recorder } = makeRecorder({ storage: failingThenOk, delay, retryDelayMs: 250 });
+
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+
+      expect(delay).toHaveBeenCalledWith(250);
+    });
+
+    it('drops and counts after the retry also fails (two failures total)', async () => {
+      let attempt = 0;
+      const onDrop = vi.fn();
+      const alwaysFailing: StorageProvider = {
+        store: () => {
+          attempt += 1;
+          return Promise.reject(new Error('disk full'));
+        },
+        update: () => Promise.resolve(),
+        find: () => Promise.resolve(null),
+        get: () => Promise.resolve({ data: [], nextCursor: null }),
+        batch: () => Promise.resolve([]),
+        tags: () => Promise.resolve([]),
+        prune: () => Promise.resolve(0),
+        clear: () => Promise.resolve(),
+      };
+      const delay = vi.fn(() => Promise.resolve());
+      const { recorder } = makeRecorder({ storage: alwaysFailing, delay, onDrop });
+
+      recorder.record({ type: 'request', content: {} });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+
+      // Two store attempts (initial + one retry), then drop the whole batch.
+      expect(attempt).toBe(2);
+      expect(recorder.getSelfMetrics().retriedFlushes).toBe(1);
+      expect(recorder.storeFailedDropped).toBe(2);
+      expect(recorder.droppedCount).toBe(2);
+      expect(onDrop).toHaveBeenCalledWith(2, 'store-failed');
+    });
+
+    it('does not pile up flushes during a retry: the ring keeps absorbing and a concurrent flush() shares the in-flight promise', async () => {
+      let storeCalls = 0;
+      let releaseRetry: (() => void) | null = null;
+      // First store rejects; the backoff delay is gated on releaseRetry() so we
+      // can drive records into the ring WHILE the single flush is mid-retry.
+      const failingThenOk: StorageProvider = {
+        store: () => {
+          storeCalls += 1;
+          return storeCalls === 1 ? Promise.reject(new Error('transient')) : Promise.resolve();
+        },
+        update: () => Promise.resolve(),
+        find: () => Promise.resolve(null),
+        get: () => Promise.resolve({ data: [], nextCursor: null }),
+        batch: () => Promise.resolve([]),
+        tags: () => Promise.resolve([]),
+        prune: () => Promise.resolve(0),
+        clear: () => Promise.resolve(),
+      };
+      // Resolves once the flush has reached the backoff (i.e. first store failed).
+      let signalDelayReached: (() => void) | null = null;
+      const delayReached = new Promise<void>((resolve) => {
+        signalDelayReached = resolve;
+      });
+      const delay = (): Promise<void> =>
+        new Promise<void>((resolve) => {
+          releaseRetry = resolve;
+          signalDelayReached?.();
+        });
+      const { recorder } = makeRecorder({ storage: failingThenOk, delay });
+
+      recorder.record({ type: 'request', content: { n: 1 } });
+      const flushPromise = recorder.flush();
+
+      // Wait until the flush is parked inside the backoff after its first failure.
+      await delayReached;
+
+      // A second flush() must NOT start a new store — it shares the in-flight one.
+      const concurrent = recorder.flush();
+      // The ring keeps absorbing new records meanwhile.
+      recorder.record({ type: 'request', content: { n: 2 } });
+      expect(storeCalls).toBe(1);
+
+      releaseRetry?.(); // let the retry proceed (and succeed)
+      await Promise.all([flushPromise, concurrent]);
+
+      // Exactly initial + retry = 2 store calls for the single batch; no pileup.
+      expect(storeCalls).toBe(2);
+      expect(recorder.getSelfMetrics().retriedFlushes).toBe(1);
+      // The record that arrived during the retry is still buffered for next flush.
+      expect(recorder.getSelfMetrics().bufferUsed).toBe(1);
+    });
+  });
+
   it('overflowDropped and storeFailedDropped track separate buckets; droppedCount is their sum', async () => {
     // overflow: bufferSize 2, push 3 entries
     const { recorder: r1 } = makeRecorder({ bufferSize: 2 });
@@ -253,6 +397,104 @@ describe('Recorder', () => {
     recorder.record({ type: 'query', content: {} });
     await recorder.flush();
     expect((await storage.get({})).data).toHaveLength(1);
+  });
+
+  // ── Tail-sampling (per-type rule objects) ─────────────────────────────────
+
+  describe('tail-sampling', () => {
+    it('a bare per-type number behaves exactly as before: rate 0 drops, rate 1 keeps', async () => {
+      // rate 0 → drop regardless of randomness
+      const dropped = makeRecorder({ sampling: { cache: 0 }, random: () => 0 });
+      dropped.recorder.record({ type: 'cache', content: { hit: true } });
+      await dropped.recorder.flush();
+      expect((await dropped.storage.get({})).data).toHaveLength(0);
+
+      // rate 1 → keep regardless of randomness
+      const kept = makeRecorder({ sampling: { cache: 1 }, random: () => 0.99 });
+      kept.recorder.record({ type: 'cache', content: { hit: true } });
+      await kept.recorder.flush();
+      expect((await kept.storage.get({})).data).toHaveLength(1);
+    });
+
+    it('applies the object rule rate: random under rate keeps, at/over rate drops', async () => {
+      // random 0.05 < 0.1 → keep
+      const kept = makeRecorder({
+        sampling: { cache: { rate: 0.1 } },
+        random: () => 0.05,
+      });
+      kept.recorder.record({ type: 'cache', content: { hit: true } });
+      await kept.recorder.flush();
+      expect((await kept.storage.get({})).data).toHaveLength(1);
+
+      // random 0.5 ≥ 0.1 → drop
+      const dropped = makeRecorder({
+        sampling: { cache: { rate: 0.1 } },
+        random: () => 0.5,
+      });
+      dropped.recorder.record({ type: 'cache', content: { hit: true } });
+      await dropped.recorder.flush();
+      expect((await dropped.storage.get({})).data).toHaveLength(0);
+    });
+
+    it('keepErrors keeps a failed entry even at rate 0 (content.failed)', async () => {
+      const { recorder, storage } = makeRecorder({
+        sampling: { cache: { rate: 0, keepErrors: true } },
+        random: () => 0, // would otherwise be dropped at rate 0
+      });
+      recorder.record({ type: 'cache', content: { failed: true } });
+      await recorder.flush();
+      expect((await storage.get({})).data).toHaveLength(1);
+    });
+
+    it('keepErrors keeps an entry whose content.statusCode >= 500 at rate 0', async () => {
+      const { recorder, storage } = makeRecorder({
+        sampling: { request: { rate: 0, keepErrors: true } },
+        random: () => 0,
+      });
+      recorder.record({ type: 'request', content: { statusCode: 503 } });
+      await recorder.flush();
+      expect((await storage.get({})).data).toHaveLength(1);
+    });
+
+    it('keepErrors keeps an entry tagged "failed" at rate 0', async () => {
+      const { recorder, storage } = makeRecorder({
+        sampling: { query: { rate: 0, keepErrors: true } },
+        random: () => 0,
+      });
+      recorder.record({ type: 'query', content: { sql: 'SELECT 1' }, tags: ['failed'] });
+      await recorder.flush();
+      expect((await storage.get({})).data).toHaveLength(1);
+    });
+
+    it('keepSlowMs keeps a slow entry at rate 0 but lets a fast one be sampled out', async () => {
+      // slow entry (durationMs >= keepSlowMs) is kept despite rate 0
+      const slow = makeRecorder({
+        sampling: { cache: { rate: 0, keepSlowMs: 500 } },
+        random: () => 0,
+      });
+      slow.recorder.record({ type: 'cache', content: { hit: true }, durationMs: 750 });
+      await slow.recorder.flush();
+      expect((await slow.storage.get({})).data).toHaveLength(1);
+
+      // fast & ok entry at rate 0 is dropped
+      const fast = makeRecorder({
+        sampling: { cache: { rate: 0, keepSlowMs: 500 } },
+        random: () => 0,
+      });
+      fast.recorder.record({ type: 'cache', content: { hit: true }, durationMs: 5 });
+      await fast.recorder.flush();
+      expect((await fast.storage.get({})).data).toHaveLength(0);
+    });
+
+    it('a fast, non-error entry over the rate threshold is sampled out under a rule', async () => {
+      const { recorder, storage } = makeRecorder({
+        sampling: { cache: { rate: 0.1, keepErrors: true, keepSlowMs: 500 } },
+        random: () => 0.9, // over rate, not an error, not slow → drop
+      });
+      recorder.record({ type: 'cache', content: { hit: true }, durationMs: 10 });
+      await recorder.flush();
+      expect((await storage.get({})).data).toHaveLength(0);
+    });
   });
 
   // ── Filter hook ───────────────────────────────────────────────────────────

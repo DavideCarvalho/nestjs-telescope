@@ -67,6 +67,29 @@ TelescopeModule.forRoot({
 With `prune` set but `sampling` empty, the library logs a one-line INFO at boot
 pointing at this recipe.
 
+#### Tail-sampling: keep what matters
+
+A per-type rate can also be a **rule object** to keep a fraction of the noise
+while always retaining the entries you'd never want sampled out — errors and
+slow ones. Plain-number config is unchanged; the object form is purely additive:
+
+```ts
+TelescopeModule.forRoot({
+  sampling: {
+    cache: { rate: 0.1, keepErrors: true, keepSlowMs: 500 },
+  },
+});
+```
+
+- `rate` — base keep-rate (0–1), applied to ordinary entries of that type.
+- `keepErrors` — always keep entries that look like errors: a `failed` tag,
+  `content.failed === true`, or `content.statusCode >= 500` (cheap, shallow
+  field reads — no deep walk on the hot path).
+- `keepSlowMs` — always keep entries whose `durationMs >= keepSlowMs`.
+
+So `{ rate: 0.1, keepErrors: true, keepSlowMs: 500 }` keeps 10% of healthy fast
+cache hits but **100%** of failed or ≥500ms ones.
+
 ### Watch the `truncated` counter
 
 `GET /telescope/api/health` reports a `truncatedCount`: entries whose content hit

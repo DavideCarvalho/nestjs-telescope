@@ -14,6 +14,7 @@ export * from './config/options.js';
 export * from './config/normalize-path.js';
 export * from './config/parse-duration.js';
 export * from './config/resolve-config.js';
+export * from './config/sampling.js';
 
 export * from './storage/cursor.js';
 export * from './storage/safe-json.js';

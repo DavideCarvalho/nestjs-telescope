@@ -1,3 +1,5 @@
+import type { SamplingConfig } from '../config/options.js';
+import { passesSampling } from '../config/sampling.js';
 import type { TelescopeContext } from '../context/telescope-context.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
@@ -11,6 +13,17 @@ import { runTaggers } from '../tagging/tagger.js';
 import type { TraceContext, TraceContextProvider } from '../trace/trace-context-provider.js';
 
 export type DropReason = 'overflow' | 'store-failed' | 'record-error';
+
+/**
+ * Default backoff seam: an unref'd `setTimeout` so a pending retry never keeps
+ * the host's event loop alive (e.g. during shutdown). Injectable for tests.
+ */
+function defaultUnrefDelay(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
 
 /**
  * Cheap, hot-path-safe self-observability counters describing the Recorder's
@@ -31,6 +44,12 @@ export interface RecorderSelfMetrics {
   flushes: number;
   /** Cumulative entries drained across all flushes. */
   flushedEntries: number;
+  /**
+   * Number of flush batches that failed their first `store()` and were retried
+   * once. A non-zero, climbing value means the storage backend is flaky; pair
+   * it with `storeFailedDropped` to see how many retries still ended in a drop.
+   */
+  retriedFlushes: number;
   /** Wall-clock duration of the most recent draining flush, or null. */
   lastFlushMs: number | null;
   /** Largest flush duration ever observed, or null. */
@@ -58,11 +77,27 @@ export interface RecorderOptions {
   instanceId: string;
   taggers: Tagger[];
   redact: RedactOptions;
-  /** Per-type keep-rate 0..1. Missing type ⇒ keep (rate 1). */
-  sampling: Record<string, number>;
+  /**
+   * Per-type sampling. A value may be a bare keep-rate (0..1) or a
+   * {@link SamplingRule} object that additionally keeps errors / slow entries.
+   * Missing type ⇒ falls back to `default`, else keep.
+   */
+  sampling: SamplingConfig;
   bufferSize: number;
+  /**
+   * Backoff (ms) before the single bounded retry of a failed `store()` batch.
+   * Defaults to 1000ms. The retry happens inside the same in-flight flush
+   * promise, so the `flushing` serialization still prevents pileups.
+   */
+  retryDelayMs?: number;
   now?: () => number;
   random?: () => number;
+  /**
+   * Injectable delay seam used between the failed first store and its retry.
+   * Defaults to an unref'd `setTimeout` so it never keeps the event loop alive.
+   * Tests inject a resolved/controllable promise for determinism.
+   */
+  delay?: (ms: number) => Promise<void>;
   idFactory: () => string;
   /**
    * Called (inside a try/catch) whenever entries are dropped, with the count
@@ -91,9 +126,13 @@ export interface RecorderOptions {
  * sustained overload a batch may be stored without its earliest entries);
  * recent activity is preferred.
  *
- * **Storage failures** — when `store()` rejects, the drained batch is dropped
- * with no retry by design (fail-open, never grow). Drops are surfaced via the
- * `onDrop` callback and the `storeFailedDropped` / `droppedCount` counters.
+ * **Storage failures** — when `store()` rejects, the drained batch is retried
+ * exactly ONCE after a bounded backoff (`retryDelayMs`, default 1000ms). Only a
+ * second failure drops the batch (fail-open, never grow). The retry runs inside
+ * the single in-flight `flushing` promise, so failed batches never pile up and
+ * the ring keeps absorbing/evicting meanwhile — memory stays bounded. Drops are
+ * surfaced via `onDrop` and the `storeFailedDropped` / `droppedCount` counters;
+ * each retried batch increments the `retriedFlushes` self-metric.
  */
 export class Recorder {
   // ── Ring-buffer state ──────────────────────────────────────────────────────
@@ -113,6 +152,8 @@ export class Recorder {
   private highWaterCount = 0;
   private flushCount = 0;
   private flushedEntriesCount = 0;
+  /** Flush batches that failed their first store() and were retried once. */
+  private retriedFlushCount = 0;
   private lastFlushDurationMs: number | null = null;
   private maxFlushDurationMs: number | null = null;
   private totalFlushDurationMs = 0;
@@ -125,10 +166,14 @@ export class Recorder {
   // ── Determinism seams ─────────────────────────────────────────────────────
   private readonly now: () => number;
   private readonly random: () => number;
+  private readonly delay: (ms: number) => Promise<void>;
+  private readonly retryDelayMs: number;
 
   constructor(private readonly options: RecorderOptions) {
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
+    this.retryDelayMs = options.retryDelayMs ?? 1_000;
+    this.delay = options.delay ?? defaultUnrefDelay;
     // Pre-size the ring so slot access is always O(1).
     this.ring = new Array<Entry | undefined>(options.bufferSize).fill(undefined);
   }
@@ -179,6 +224,7 @@ export class Recorder {
       bufferHighWater: this.highWaterCount,
       flushes: this.flushCount,
       flushedEntries: this.flushedEntriesCount,
+      retriedFlushes: this.retriedFlushCount,
       lastFlushMs: this.lastFlushDurationMs,
       maxFlushMs: this.maxFlushDurationMs,
       totalFlushMs: this.totalFlushDurationMs,
@@ -220,7 +266,7 @@ export class Recorder {
    * enriched entry instead of buffering it. Used only by the benchmark.
    */
   private measureCaptureOnce(input: RecordInput): void {
-    if (!this.passesSampling(input.type)) {
+    if (!this.passesSampling(input)) {
       return;
     }
     const entry = this.enrich(input);
@@ -234,7 +280,7 @@ export class Recorder {
   /** Synchronous, O(1), never throws into the caller. */
   record(input: RecordInput): void {
     try {
-      if (!this.passesSampling(input.type)) {
+      if (!this.passesSampling(input)) {
         return;
       }
       const entry = this.enrich(input);
@@ -274,12 +320,13 @@ export class Recorder {
     const flushStartedAt = this.now();
 
     const storage = this.options.storage;
-    this.flushing = storage
-      .store(drained)
-      .then(() => this.recordRollupsAfterStore(storage, drained))
-      .catch(() => {
-        this.storeFailedDrops += drained.length;
-        this.notifyDrop(drained.length, 'store-failed');
+    this.flushing = this.storeWithRetry(storage, drained)
+      .then((stored) => {
+        // Only pre-aggregate rollups for batches that actually persisted.
+        if (stored) {
+          return this.recordRollupsAfterStore(storage, drained);
+        }
+        return undefined;
       })
       .finally(() => {
         this.recordFlushMetrics(drained.length, this.now() - flushStartedAt);
@@ -287,6 +334,36 @@ export class Recorder {
       });
 
     return this.flushing;
+  }
+
+  /**
+   * Persists `drained` with ONE bounded retry. On the first `store()` rejection
+   * the Recorder waits `retryDelayMs` (default 1000ms) and retries exactly once;
+   * a second failure drops the batch (`storeFailedDropped` + `store-failed`).
+   *
+   * Hard bounds preserved: this runs INSIDE the single in-flight `flushing`
+   * promise, so no second failed batch can ever be queued concurrently, and the
+   * ring keeps absorbing/evicting meanwhile — memory stays bounded. Returns
+   * whether the batch was ultimately persisted.
+   */
+  private async storeWithRetry(storage: StorageProvider, drained: Entry[]): Promise<boolean> {
+    try {
+      await storage.store(drained);
+      return true;
+    } catch {
+      // First failure: count the retry, back off, then try exactly once more.
+      this.retriedFlushCount += 1;
+      await this.delay(this.retryDelayMs);
+      try {
+        await storage.store(drained);
+        return true;
+      } catch {
+        // Second failure: drop the batch (keep storeFailedDropped semantics).
+        this.storeFailedDrops += drained.length;
+        this.notifyDrop(drained.length, 'store-failed');
+        return false;
+      }
+    }
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
@@ -307,15 +384,13 @@ export class Recorder {
     }
   }
 
-  private passesSampling(type: string): boolean {
-    const rate = this.options.sampling[type] ?? this.options.sampling.default;
-    if (rate === undefined || rate >= 1) {
-      return true;
-    }
-    if (rate <= 0) {
-      return false;
-    }
-    return this.random() < rate;
+  /**
+   * Tail-sampling decision. Delegates to the shared resolver so the same logic
+   * backs both the live path and the benchmark. The hot-path cost is shallow
+   * field reads (type, tags, durationMs, content.statusCode/failed) — no walk.
+   */
+  private passesSampling(input: RecordInput): boolean {
+    return passesSampling(this.options.sampling, input, this.random);
   }
 
   private enrich(input: RecordInput): Entry {
