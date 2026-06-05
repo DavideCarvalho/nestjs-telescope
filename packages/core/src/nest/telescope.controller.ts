@@ -13,6 +13,7 @@ import {
   Param,
   Post,
   Query,
+  Res,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
@@ -521,6 +522,44 @@ export class TelescopeController {
     }
   }
 
+  // Read-only companion to the POST above: returns the ALREADY-cached diagnosis
+  // for this entry's family, if one exists, WITHOUT ever computing a new one (no
+  // model call, no token cost). The detail page fetches this on open so an
+  // auto-mode (or previously on-demand) diagnosis shows immediately instead of a
+  // bare "Diagnose with AI" button. Same guards/404 semantics as the POST:
+  //   - 404 when AI isn't configured or the entry isn't an exception;
+  //   - 200 `{ markdown, cached: true }` when a diagnosis is cached;
+  //   - 204 (empty) when none is cached yet (the family hasn't been diagnosed).
+  // The 204 — not a 200-with-null — keeps "nothing cached" unambiguous on the
+  // client and never tempts a reader into treating a null body as a result.
+  @Get('exceptions/:id/diagnosis')
+  async cachedDiagnosis(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: unknown,
+  ): Promise<{ markdown: string; cached: true } | undefined> {
+    const coordinator = this.service.diagnosisCoordinator;
+    if (coordinator === null) {
+      throw new NotFoundException('AI diagnosis is not configured.');
+    }
+    const entry = await this.storage.find(id);
+    if (
+      entry === null ||
+      (entry.type !== EntryType.Exception && entry.type !== EntryType.ClientException)
+    ) {
+      throw new NotFoundException('No exception entry with that id.');
+    }
+    const markdown = coordinator.peekCached(entry);
+    if (markdown === null) {
+      // No diagnosis cached for this family yet. 204 No Content — never invoke
+      // the diagnoser from a GET (a read must stay free and side-effect-free).
+      // `@Res` is `unknown` to keep express types out of the public signature
+      // (same convention as the auth controller); narrow before setting status.
+      setResponseStatus(res, 204);
+      return undefined;
+    }
+    return { markdown, cached: true };
+  }
+
   /** Count entries of this exception family in the trailing 24h (>= 1). */
   private async countExceptionFamily(type: string, familyHash: string | null): Promise<number> {
     if (familyHash === null) return 1;
@@ -537,5 +576,22 @@ export class TelescopeController {
   async clear(): Promise<{ cleared: true }> {
     await this.storage.clear();
     return { cleared: true };
+  }
+}
+
+/**
+ * Set an HTTP status on an express-like response without importing express into
+ * the controller's public signatures (we type `@Res` as `unknown`, matching the
+ * auth controller's convention). Narrows via a structural check rather than a
+ * cast so the no-unsafe-typing rule holds; a no-op if the object lacks `.status`.
+ */
+function setResponseStatus(response: unknown, status: number): void {
+  if (
+    response !== null &&
+    typeof response === 'object' &&
+    'status' in response &&
+    typeof response.status === 'function'
+  ) {
+    response.status(status);
   }
 }

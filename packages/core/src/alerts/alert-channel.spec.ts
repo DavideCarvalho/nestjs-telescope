@@ -28,6 +28,8 @@ function exceptionPayload(): AlertPayload {
       stack: 'TypeError: cannot read x\n  at a\n  at b',
       route: '/checkout',
       method: 'POST',
+      userAgent: null,
+      client: false,
       statusCode: 500,
       durationMs: 1234,
       user: '42',
@@ -101,10 +103,31 @@ describe('slackChannel', () => {
     expect(hasStack).toBe(true);
 
     // An actions block links to the dashboard entry built from dashboardUrl.
+    // The URL must be the SPA's entry-DETAIL route (`#/entries/view/:id`), NOT
+    // the type-scoped LIST route (`#/entries/:type`) — the latter rendered an
+    // empty filtered list when a recipient clicked the button.
     const actions = body.blocks.find((b: { type: string }) => b.type === 'actions');
-    expect(actions.elements[0].url).toBe(
-      'https://telescope.example/telescope#/entries/exception/ex-1',
-    );
+    expect(actions.elements[0].url).toBe('https://telescope.example/telescope#/entries/view/ex-1');
+  });
+
+  it('links a client_exception to the same detail route (view/:id, not the type list)', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(undefined));
+    const channel = slackChannel('https://hooks.slack.com/x', undefined, fetchMock);
+    const payload = exceptionPayload();
+    if (payload.exception !== undefined) {
+      // A browser-reported error: route is the page URL, no method/status, and
+      // `client` is true. The detail route is type-agnostic, so the link shape
+      // is identical to a server exception's.
+      payload.exception.client = true;
+      payload.exception.entryId = 'cex-7';
+      payload.exception.route = 'https://app.example/checkout';
+      payload.exception.method = null;
+      payload.exception.statusCode = null;
+    }
+    await channel.send(payload);
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body ?? '');
+    const actions = body.blocks.find((b: { type: string }) => b.type === 'actions');
+    expect(actions.elements[0].url).toBe('https://telescope.example/telescope#/entries/view/cex-7');
   });
 
   it('omits the dashboard link button when no dashboardUrl is configured', async () => {

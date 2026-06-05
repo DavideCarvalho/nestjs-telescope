@@ -55,9 +55,11 @@ createAiSdkDiagnoser({ model: openai('gpt-4o-mini') });
 - **`on-demand`** (default) — diagnosis runs only when an operator clicks **Diagnose with AI** on an exception detail page in the dashboard (`POST <telescope>/api/exceptions/:id/diagnose`).
 - **`auto`** — the first time a **new** exception family is seen, Telescope also runs a fire-and-forget diagnosis on the flush path (never blocking it) and caches the result. If a `new-exception` alert fires for that family, the diagnosis is attached to the alert when it is ready within a short grace window — Slack renders a **Probable cause (AI)** section.
 
+In `auto` mode the diagnosis **appears automatically** on the exception detail page: opening the entry reads any already-computed result via the read-only `GET <telescope>/api/exceptions/:id/diagnosis` and renders it immediately with the **cached** badge and a **Re-run** action. That GET is side-effect-free — it only serves the cache and **never** triggers a diagnosis (no model call, no cost), returning `204 No Content` when nothing is cached yet. The `POST` endpoint is reserved for on-demand and forced (**Re-run**) diagnosis.
+
 ## How it works
 
-- Results are cached per exception **family** (bounded, 24h TTL) so the same failure is diagnosed once. The dashboard shows a **cached** badge with a re-run (force) action.
+- Results are cached per exception **family** (bounded, 24h TTL) so the same failure is diagnosed once. The dashboard shows a **cached** badge with a re-run (force) action. The detail page fetches any cached result on open (the read-only `GET`), so an `auto`-mode diagnosis is visible without clicking; the **Diagnose with AI** button only appears for families that have not been diagnosed yet.
 - Each call sends a carefully engineered system prompt plus a labelled context message and is bounded by `maxOutputTokens` and a hard 30s timeout. A timeout or model error **rejects**; core handles it (the endpoint returns a safe 502, auto-mode swallows it) and **never** crashes the host.
 
 <Callout type="warn" title="Per-pod cache">

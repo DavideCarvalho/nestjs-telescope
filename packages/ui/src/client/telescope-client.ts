@@ -2,6 +2,7 @@ import type {
   AuthMeResult,
   AuthMode,
   AuthUser,
+  CachedDiagnosis,
   DiagnoseResult,
   EntriesQuery,
   Entry,
@@ -88,6 +89,14 @@ export interface TelescopeClient {
    * `{ ok: false }`, not thrown. `force` bypasses the per-family cache.
    */
   diagnose(entryId: string, force?: boolean): Promise<DiagnoseResult>;
+  /**
+   * Reads the ALREADY-cached AI diagnosis for an exception entry's family, if any
+   * (the read-only `GET /exceptions/:id/diagnosis`). NEVER triggers a diagnosis —
+   * a cache miss (204) or 404 (AI off / bad entry) both resolve to `null`, so the
+   * detail page can show an auto-mode result on open without paying for a model
+   * call. Never throws on those expected outcomes.
+   */
+  cachedDiagnosis(entryId: string): Promise<CachedDiagnosis>;
   liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>;
   schedulesLive(): Promise<{ tasks: ScheduledTask[] }>;
   queueCounts(driver: string, queue: string): Promise<QueueCounts>;
@@ -282,6 +291,17 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     return { ok: false, message };
   }
 
+  async function cachedDiagnosis(entryId: string): Promise<CachedDiagnosis> {
+    const response = await rawGet(`/exceptions/${encodeURIComponent(entryId)}/diagnosis`);
+    // 204 (nothing cached) and 404 (AI off / bad entry) are EXPECTED "nothing to
+    // show" outcomes — resolve to null rather than throwing. A 204 has no JSON
+    // body, so guard on status before parsing.
+    if (response.status === 204 || response.status === 404) return null;
+    if (!response.ok) return null;
+    const body = (await response.json()) as { markdown: string; cached: true };
+    return { markdown: body.markdown, cached: true };
+  }
+
   async function readDiagnoseMessage(response: Response): Promise<string> {
     const parsed = await response
       .json()
@@ -330,6 +350,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     prune: () => post<{ pruned: number }>('/retention/prune'),
     explain,
     diagnose,
+    cachedDiagnosis,
     liveQueues: () =>
       get<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>('/queues/live'),
     schedulesLive: () => get<{ tasks: ScheduledTask[] }>('/schedules/live'),

@@ -126,6 +126,17 @@ export interface TelescopeMeta {
 export type DiagnoseResult =
   | { ok: true; markdown: string; cached: boolean }
   | { ok: false; message: string };
+
+/**
+ * Outcome of the read-only `GET /exceptions/:id/diagnosis`: the ALREADY-cached
+ * diagnosis for the entry's family, fetched on detail-page open so an auto-mode
+ * (or previously on-demand) result shows immediately. The GET NEVER triggers a
+ * diagnosis — so `null` simply means "nothing cached yet" (the server returns
+ * 204), not a failure. A 404 (AI off / bad entry) also maps to `null`; the UI
+ * already gates this fetch behind `meta.ai.enabled`, so a 404 just means nothing
+ * to show.
+ */
+export type CachedDiagnosis = { markdown: string; cached: true } | null;
 /**
  * Retention/prune status returned by `GET /retention`. `entryCount` and
  * `oldestCreatedAt` are `null` unless the storage SPI can expose them cheaply

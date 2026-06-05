@@ -174,6 +174,109 @@ describe('POST /telescope/api/exceptions/:id/diagnose', () => {
   });
 });
 
+describe('GET /telescope/api/exceptions/:id/diagnosis (cached, read-only)', () => {
+  let app: INestApplication | undefined;
+
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  it('is 404 when no `ai` is configured', async () => {
+    const storage = new InMemoryStorageProvider();
+    await storage.store([exceptionEntry('e1')]);
+    app = await makeApp({ enabled: true, authorizer: () => true, storage });
+    await request(app.getHttpServer()).get('/telescope/api/exceptions/e1/diagnosis').expect(404);
+  });
+
+  it('is 403 when the dashboard read guard denies (auth-gated, mirrors the POST)', async () => {
+    const storage = new InMemoryStorageProvider();
+    await storage.store([exceptionEntry('e1')]);
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => false,
+      storage,
+      ai: { diagnoser: countingDiagnoser() },
+    });
+    await request(app.getHttpServer()).get('/telescope/api/exceptions/e1/diagnosis').expect(403);
+  });
+
+  it('is 404 for an unknown / non-exception entry', async () => {
+    const storage = new InMemoryStorageProvider();
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      storage,
+      ai: { diagnoser: countingDiagnoser() },
+    });
+    await request(app.getHttpServer()).get('/telescope/api/exceptions/nope/diagnosis').expect(404);
+  });
+
+  it('is 204 when nothing is cached and NEVER invokes the diagnoser', async () => {
+    const storage = new InMemoryStorageProvider();
+    await storage.store([exceptionEntry('e1')]);
+    const diagnoser = countingDiagnoser();
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      storage,
+      ai: { diagnoser },
+    });
+    const res = await request(app.getHttpServer())
+      .get('/telescope/api/exceptions/e1/diagnosis')
+      .expect(204);
+    expect(res.body).toEqual({});
+    // A read must be free: no model call, no cost.
+    expect(diagnoser.calls).toHaveLength(0);
+  });
+
+  it('returns the cached markdown (cached:true) after a prior diagnosis, without re-running', async () => {
+    const storage = new InMemoryStorageProvider();
+    await storage.store([exceptionEntry('e1')]);
+    const diagnoser = countingDiagnoser('## root cause\nx');
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      storage,
+      ai: { diagnoser },
+    });
+    // Populate the cache via the on-demand POST (one diagnoser call).
+    await request(app.getHttpServer()).post('/telescope/api/exceptions/e1/diagnose').expect(200);
+    expect(diagnoser.calls).toHaveLength(1);
+
+    const res = await request(app.getHttpServer())
+      .get('/telescope/api/exceptions/e1/diagnosis')
+      .expect(200);
+    expect(res.body).toEqual({ markdown: '## root cause\nx', cached: true });
+    // The GET served from cache — the diagnoser was NOT called again.
+    expect(diagnoser.calls).toHaveLength(1);
+  });
+
+  it('serves a cached diagnosis for a client_exception too', async () => {
+    const storage = new InMemoryStorageProvider();
+    await storage.store([
+      {
+        ...exceptionEntry('c1'),
+        type: EntryType.ClientException,
+        content: { name: 'TypeError', message: 'frontend boom', url: 'https://x.test/p' },
+      },
+    ]);
+    const diagnoser = countingDiagnoser('## client cause');
+    app = await makeApp({
+      enabled: true,
+      authorizer: () => true,
+      storage,
+      ai: { diagnoser },
+    });
+    await request(app.getHttpServer()).post('/telescope/api/exceptions/c1/diagnose').expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/telescope/api/exceptions/c1/diagnosis')
+      .expect(200);
+    expect(res.body).toEqual({ markdown: '## client cause', cached: true });
+    expect(diagnoser.calls).toHaveLength(1);
+  });
+});
+
 describe('GET /telescope/api/meta — aiEnabled', () => {
   let app: INestApplication | undefined;
   afterEach(async () => {

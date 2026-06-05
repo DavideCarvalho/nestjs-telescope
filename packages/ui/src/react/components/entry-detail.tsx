@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { DiagnoseResult, EntryWithBatch } from '../../client/index.js';
-import { useDiagnose, useExplain, useMeta } from '../use-telescope-queries.js';
+import { useCachedDiagnosis, useDiagnose, useExplain, useMeta } from '../use-telescope-queries.js';
 import { BatchTimeline } from './batch-timeline.js';
 import { CacheBadge } from './cache-badge.js';
 import { ExportJsonToolbar } from './export-json-toolbar.js';
@@ -485,20 +485,34 @@ function TraceRow({
 }
 
 /**
- * "Diagnose with AI" panel for exception / client_exception details. Visible only
- * when `meta.ai.enabled` (the host configured a diagnoser). Clicking POSTs to the
- * diagnose endpoint and renders the returned markdown; shows loading + error
- * states and, on a cached result, a "cached" badge with a Re-run (force) action.
+ * "AI diagnosis" panel for exception / client_exception details. Visible only
+ * when `meta.ai.enabled` (the host configured a diagnoser).
  *
- * The diagnose mutation rejects only on transport errors — the client maps the
- * expected 404/502 outcomes into a non-throwing `{ ok: false }` result — so the
- * click handler swallows the rejection and reads `diagnose.data` for the outcome.
+ * On mount it READS any already-cached diagnosis via the side-effect-free
+ * `GET /exceptions/:id/diagnosis` (`useCachedDiagnosis`, gated on `aiEnabled`).
+ * This is what makes an AUTO-MODE diagnosis — computed and cached at first-seen,
+ * and possibly already sent to Slack — appear immediately on open instead of a
+ * bare "Diagnose with AI" button. If nothing is cached, the button is shown so an
+ * operator can diagnose on demand; once a diagnosis exists (cached or freshly
+ * run) a "Re-run" (force) action replaces it and a "cached" badge is shown.
+ *
+ * The on-demand `diagnose` mutation rejects only on transport errors — the client
+ * maps the expected 404/502 outcomes into a non-throwing `{ ok: false }` result —
+ * so the click handler swallows the rejection and renders the outcome. A freshly
+ * run result (`result`) takes precedence over the mount-fetched cached one.
+ *
+ * Loading is kept subtle: while the GET is in flight we show a quiet "Checking…"
+ * line rather than flashing the button and then swapping it for a result.
  */
 function DiagnosePanel({
   entryId,
   aiEnabled,
 }: { entryId: string; aiEnabled: boolean }): JSX.Element | null {
   const diagnose = useDiagnose();
+  // Gated on `aiEnabled`: when AI is off we never fetch (the panel also returns
+  // null below, but the hook must be called unconditionally to respect the
+  // rules-of-hooks, hence the `enabled` flag rather than an early-return guard).
+  const cachedQuery = useCachedDiagnosis(entryId, aiEnabled);
   const [result, setResult] = useState<DiagnoseResult | null>(null);
 
   if (!aiEnabled) return null;
@@ -513,22 +527,29 @@ function DiagnosePanel({
     }
   }
 
-  const cached = result?.ok === true && result.cached;
-  const hasResult = result?.ok === true;
+  // A freshly run result wins; otherwise fall back to the mount-fetched cache.
+  const cachedHit = cachedQuery.data ?? null;
+  const ranResult = result;
+  const isCached =
+    ranResult !== null ? ranResult.ok === true && ranResult.cached : cachedHit !== null;
+  const hasResult = ranResult !== null ? ranResult.ok === true : cachedHit !== null;
+  // Subtle initial-load state: still resolving the cache lookup and the user
+  // hasn't clicked yet. Avoids flashing the button before a cached result lands.
+  const checkingCache = ranResult === null && cachedQuery.isLoading;
 
   return (
     <div className="mt-4 rounded border border-zinc-800 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
           AI diagnosis
-          {cached ? (
+          {isCached ? (
             <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] normal-case text-amber-400">
               cached
             </span>
           ) : null}
         </h3>
         <div className="flex items-center gap-2">
-          {hasResult ? (
+          {checkingCache ? null : hasResult ? (
             <button
               type="button"
               onClick={() => run(true)}
@@ -551,14 +572,20 @@ function DiagnosePanel({
       </div>
       {diagnose.isPending ? (
         <p className="text-xs text-zinc-600">Asking the model…</p>
-      ) : result === null ? (
+      ) : checkingCache ? (
+        <p className="text-xs text-zinc-600">Checking for an existing diagnosis…</p>
+      ) : ranResult !== null ? (
+        ranResult.ok ? (
+          <Markdown source={ranResult.markdown} />
+        ) : (
+          <p className="rounded bg-zinc-900 p-3 text-xs text-red-400">{ranResult.message}</p>
+        )
+      ) : cachedHit !== null ? (
+        <Markdown source={cachedHit.markdown} />
+      ) : (
         <p className="text-xs text-zinc-600">
           Get an AI-generated probable cause, where to look, and a suggested fix.
         </p>
-      ) : result.ok ? (
-        <Markdown source={result.markdown} />
-      ) : (
-        <p className="rounded bg-zinc-900 p-3 text-xs text-red-400">{result.message}</p>
       )}
     </div>
   );

@@ -298,6 +298,24 @@ export function useDiagnose() {
   });
 }
 
+/**
+ * Query options for the read-only cached-diagnosis lookup. `enabled` lets the
+ * caller gate the fetch on `meta.ai.enabled` so we never even ask when AI is off.
+ * No polling — a diagnosis, once cached, is stable for the page's lifetime; the
+ * Re-run mutation invalidates this key to refresh after a forced re-diagnosis.
+ */
+export function cachedDiagnosisQuery(client: TelescopeClient, entryId: string, enabled: boolean) {
+  return queryOptions({
+    queryKey: ['telescope', 'cached-diagnosis', entryId],
+    queryFn: () => client.cachedDiagnosis(entryId),
+    enabled,
+  });
+}
+
+export function useCachedDiagnosis(entryId: string, enabled: boolean) {
+  return useQuery(cachedDiagnosisQuery(useTelescopeClient(), entryId, enabled));
+}
+
 export function useEntries(query: EntriesQuery = {}) {
   return useQuery(entriesQuery(useTelescopeClient(), query, usePaused()));
 }

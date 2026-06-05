@@ -115,6 +115,21 @@ export class DiagnosisCoordinator {
   }
 
   /**
+   * Read-only, cache-ONLY lookup for an entry's diagnosis. Returns the cached
+   * markdown for the entry's family, or `null` on a miss / when the entry has no
+   * family hash. NEVER builds context and NEVER calls the diagnoser — so it costs
+   * nothing and can be safely fetched on every detail-page open. This is what
+   * makes an auto-mode (or previously on-demand) diagnosis visible immediately:
+   * the cache was populated by `observeFlush`/`onNewFamily` (auto) or a prior
+   * `diagnose` (on-demand), and this just surfaces it without re-running.
+   */
+  peekCached(entry: Entry): string | null {
+    const familyHash = entry.familyHash;
+    if (familyHash === null) return null;
+    return this.cache.get(familyHash);
+  }
+
+  /**
    * Auto-mode hook: a NEW exception family was just seen. Kick off diagnosis
    * fire-and-forget and cache the result. NEVER throws — this runs inside the
    * flush/alert path. If a diagnosis for this family is already in flight or

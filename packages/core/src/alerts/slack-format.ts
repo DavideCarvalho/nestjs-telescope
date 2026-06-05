@@ -125,16 +125,21 @@ function clipDiagnosis(diagnosis: string | undefined): string | null {
 /**
  * Build the deep link to the offending exception entry in the host's external
  * dashboard. Returns `null` when no `dashboardUrl` is configured or there is no
- * entry id to link to (rate rules carry no single id). The hash route mirrors the
- * SPA's `#/entries/exception/:id`.
+ * entry id to link to (rate rules carry no single id).
+ *
+ * The hash route mirrors the SPA's entry-DETAIL route `#/entries/view/:id`
+ * (see `packages/ui/src/app/App.tsx`). It deliberately does NOT use the older
+ * `#/entries/:type/:id` shape: `#/entries/<type>` matches the type-scoped LIST
+ * route `#/entries/:type`, so a recipient clicking the button landed on an empty
+ * filtered list rather than the entry detail. The detail view is type-agnostic
+ * (the same `EntryPage` renders both `exception` and `client_exception` by id),
+ * so a single `view/:id` link works for both.
  */
 function dashboardLink(payload: AlertPayload): string | null {
   const { dashboardUrl, exception } = payload;
   if (dashboardUrl === undefined || exception === undefined) return null;
   const base = dashboardUrl.replace(/\/+$/, '');
-  // A browser-reported error lives under the client_exception type page.
-  const typeSegment = exception.client ? 'client_exception' : 'exception';
-  return `${base}#/entries/${typeSegment}/${exception.entryId}`;
+  return `${base}#/entries/view/${exception.entryId}`;
 }
 
 /**

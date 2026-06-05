@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  CachedDiagnosis,
   DiagnoseResult,
   EntryWithBatch,
   TelescopeClient,
@@ -13,6 +14,7 @@ import { EntryDetail } from './entry-detail.js';
 function mockClient(
   meta: TelescopeMeta,
   diagnose: (id: string, force?: boolean) => Promise<DiagnoseResult>,
+  cachedDiagnosis: (id: string) => Promise<CachedDiagnosis> = async () => null,
 ) {
   return {
     entries: async () => ({ data: [], nextCursor: null }),
@@ -21,6 +23,7 @@ function mockClient(
     },
     meta: async () => meta,
     diagnose,
+    cachedDiagnosis,
   } as unknown as TelescopeClient;
 }
 
@@ -61,10 +64,11 @@ function meta(aiEnabled: boolean): TelescopeMeta {
 function renderDetail(
   aiEnabled: boolean,
   diagnose: (id: string, force?: boolean) => Promise<DiagnoseResult>,
+  cachedDiagnosis: (id: string) => Promise<CachedDiagnosis> = async () => null,
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <TelescopeProvider client={mockClient(meta(aiEnabled), diagnose)}>
+    <TelescopeProvider client={mockClient(meta(aiEnabled), diagnose, cachedDiagnosis)}>
       <QueryClientProvider client={queryClient}>
         <EntryDetail entry={exceptionEntry()} />
       </QueryClientProvider>
@@ -116,5 +120,39 @@ describe('EntryDetail AI diagnosis', () => {
     renderDetail(true, async () => ({ ok: false, message: 'AI diagnosis failed.' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Diagnose with AI' }));
     await waitFor(() => expect(screen.getByText('AI diagnosis failed.')).toBeTruthy());
+  });
+
+  it('renders a cached diagnosis on mount WITHOUT clicking (auto-mode result)', async () => {
+    // The mount-fetch resolves with a cached diagnosis (e.g. auto-mode populated
+    // it at first-seen). The markdown must appear with the cached badge + Re-run,
+    // and the on-demand POST must NOT have been called.
+    const diagnose = vi.fn(async () => ({ ok: true as const, markdown: 'x', cached: false }));
+    const cachedDiagnosis = vi.fn(async () => ({
+      markdown: '## Probable root cause\nAuto-diagnosed.',
+      cached: true as const,
+    }));
+    renderDetail(true, diagnose, cachedDiagnosis);
+    await screen.findByText('Auto-diagnosed.');
+    expect(screen.getByText('Probable root cause')).toBeTruthy();
+    expect(screen.getByText('cached')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Re-run' })).toBeTruthy();
+    expect(cachedDiagnosis).toHaveBeenCalledWith('ex1');
+    expect(diagnose).not.toHaveBeenCalled();
+  });
+
+  it('shows the Diagnose button when nothing is cached on mount', async () => {
+    const diagnose = vi.fn(async () => ({ ok: true as const, markdown: 'x', cached: false }));
+    const cachedDiagnosis = vi.fn(async () => null);
+    renderDetail(true, diagnose, cachedDiagnosis);
+    expect(await screen.findByRole('button', { name: 'Diagnose with AI' })).toBeTruthy();
+    expect(diagnose).not.toHaveBeenCalled();
+    expect(cachedDiagnosis).toHaveBeenCalledWith('ex1');
+  });
+
+  it('does not fetch the cached diagnosis when AI is disabled', async () => {
+    const cachedDiagnosis = vi.fn(async () => null);
+    renderDetail(false, async () => ({ ok: true, markdown: 'x', cached: false }), cachedDiagnosis);
+    await screen.findByText('boom', { exact: false });
+    expect(cachedDiagnosis).not.toHaveBeenCalled();
   });
 });
