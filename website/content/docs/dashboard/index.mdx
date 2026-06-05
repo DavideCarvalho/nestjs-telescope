@@ -116,7 +116,7 @@ TelescopeModule.forRoot({
 
 ### Rules
 
-- `new-exception` — fires the **first** time an exception's error family (`familyHash`) is seen within `window`, i.e. a genuinely **new** error. Evaluated **per flush** (not on the interval) so a new error pages you within a flush interval, and the alert carries rich context (see below). Dedup uses a bounded in-memory map — see the multi-replica note.
+- `new-exception` — fires the **first** time an exception's error family (`familyHash`) is seen within `window`, i.e. a genuinely **new** error. Evaluated **per flush** (not on the interval) so a new error pages you within a flush interval, and the alert carries rich context (see below). Dedup uses a bounded in-memory map — see the multi-replica note. By default this rule only ever sees **real server errors**: expected 4xx control flow (a 403 `ForbiddenException`, a 404, a validation 400) is **not** recorded as an exception entry, so it can never open a family or page you. See [Exception capture](/docs/concepts/capture#exception-capture). Set `exceptions.captureHttp4xx: true` to opt 4xx back in.
 - `exception-rate` — `>= threshold` exceptions in `window`.
 - `slow-request-rate` — `>= count` requests slower than `thresholdMs` in `window`.
 - `dropped-entries` — Recorder `droppedCount` grew by `>= threshold` since the last evaluation.

@@ -66,6 +66,24 @@ interface Entry<TContent = unknown> {
 
 `familyHash` is what powers *"show me every occurrence of this exception"* and the slow-query / duplicate-query views without scanning content. Queries normalize to a SQL template before hashing; exceptions hash on class + message.
 
+## Exception capture
+
+Exceptions thrown out of a route handler are captured automatically (no watcher to register) and recorded as `exception` entries — which is what opens an error family, drives the [`new-exception` alert](/docs/dashboard#alerts), and feeds [AI diagnosis](/docs/recipes/ai-exception-diagnosis).
+
+**By default, expected 4xx control flow is *not* recorded as an exception.** A NestJS `HttpException` whose status is a 4xx — a `403 ForbiddenException`, a `404 NotFoundException`, a `400` from the validation pipe — is the framework doing its job (permission denied, resource missing, bad input), not an incident. Recording each one would open a **new** exception family (the family hash keys on class + message + top frame, so every call site is distinct), fire the `new-exception` alert, and — in AI auto-mode — spend model tokens diagnosing intended behaviour. In production *every permission denial* would page on-call and burn a diagnosis. (This default changed after exactly that incident: Telescope's own client-errors `authorize` gate threw a 403, which was captured as a brand-new family and paged Slack.)
+
+The 4xx is **not lost** — the request watcher still records the 4xx `statusCode` (and a `status:4xx` tag) on its own `request` entry. You still see the 4xx in the dashboard and in error-rate metrics; it just doesn't spawn an exception family, can't fire `new-exception`, and can't trigger diagnosis.
+
+Always recorded: **5xx** `HttpException`s (real server errors) and any **non-`HttpException`** error (a plain `Error`, `TypeError`, etc.). Untouched: browser-reported [`client_exception`](/docs/recipes/reporting-frontend-errors) entries — those are deliberate reports recorded directly by the ingestion endpoint, never through this filter.
+
+To opt 4xx back in (restore the pre-change behaviour), set `exceptions.captureHttp4xx`:
+
+```ts
+TelescopeModule.forRoot({
+  exceptions: { captureHttp4xx: true }, // default false — 4xx is control flow, not an incident
+});
+```
+
 ## The Recorder pipeline
 
 `ctx.record(input)` hands the entry to the **Recorder** — a bounded, async, backpressure-safe pipe between watchers and storage. The application thread never waits on it:

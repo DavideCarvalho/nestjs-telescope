@@ -17,6 +17,36 @@ export interface AuthorizerContext {
 }
 
 /**
+ * Tuning for how thrown server-side exceptions become `exception` entries.
+ *
+ * WHY this exists: by default Telescope does NOT record a NestJS `HttpException`
+ * whose status is a 4xx (`>= 400 && < 500`) as an exception entry. A 403
+ * (Forbidden), 404 (NotFound) or a validation 400 is expected control flow —
+ * the framework doing its job — not an incident. Recording each one as an
+ * exception opens a NEW exception family (the family hash keys on
+ * name+message+top-frame, so each call site is distinct), fires the
+ * `new-exception` Slack alert, and in AI auto-mode spends model tokens
+ * diagnosing intended behaviour. In production every permission denial would
+ * page on-call and burn a diagnosis. (This default changed after exactly that
+ * incident: Telescope's own client-errors `authorize` gate threw a 403, which
+ * was captured as a brand-new family and paged Slack.)
+ *
+ * The 4xx is NOT lost — the request-capture middleware still records the 4xx
+ * `statusCode` on its own `request` entry; only the exception family is skipped.
+ *
+ * 5xx HttpExceptions and non-`HttpException` errors are ALWAYS recorded.
+ */
+export interface ExceptionsOptions {
+  /**
+   * When `true`, restore the pre-change behaviour: 4xx `HttpException`s are
+   * captured as exception entries again (and so can group, alert, and be
+   * diagnosed). Default `false` — 4xx control flow is skipped. Set this only if
+   * your host genuinely treats 4xx as exceptions worth grouping/alerting on.
+   */
+  captureHttp4xx?: boolean;
+}
+
+/**
  * Public front-end error ingestion (`POST <telescope>/api/client-errors`). When
  * enabled, browsers report errors directly to Telescope, which records them as
  * `client_exception` entries through the normal pipeline (family-hash,
@@ -163,6 +193,14 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * defined in core so core carries no AI dependency. See {@link TelescopeAiOptions}.
    */
   ai?: TelescopeAiOptions;
+  /**
+   * How thrown server-side exceptions become `exception` entries. The notable
+   * knob is `captureHttp4xx`: by default 4xx `HttpException`s (Forbidden /
+   * NotFound / validation 400) are treated as control flow and NOT recorded as
+   * exceptions, so they never open a family, fire `new-exception`, or trigger AI
+   * diagnosis. See {@link ExceptionsOptions}.
+   */
+  exceptions?: ExceptionsOptions;
 }
 
 export interface TelescopeOptionsFactory {
