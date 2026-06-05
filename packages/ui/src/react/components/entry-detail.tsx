@@ -1,5 +1,6 @@
-import type { EntryWithBatch } from '../../client/index.js';
-import { useExplain, useMeta } from '../use-telescope-queries.js';
+import { useState } from 'react';
+import type { DiagnoseResult, EntryWithBatch } from '../../client/index.js';
+import { useDiagnose, useExplain, useMeta } from '../use-telescope-queries.js';
 import { BatchTimeline } from './batch-timeline.js';
 import { CacheBadge } from './cache-badge.js';
 import { ExportJsonToolbar } from './export-json-toolbar.js';
@@ -41,7 +42,17 @@ export function EntryDetail({
         ) : entry.type === 'redis' ? (
           <RedisBody content={entry.content} />
         ) : entry.type === 'client_exception' ? (
-          <ClientExceptionBody content={entry.content} />
+          <>
+            <ClientExceptionBody content={entry.content} />
+            <DiagnosePanel entryId={entry.id} aiEnabled={meta?.ai?.enabled ?? false} />
+          </>
+        ) : entry.type === 'exception' ? (
+          <>
+            <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+              {JSON.stringify(entry.content, null, 2)}
+            </pre>
+            <DiagnosePanel entryId={entry.id} aiEnabled={meta?.ai?.enabled ?? false} />
+          </>
         ) : entry.type === 'request' ? (
           <RequestBody content={entry.content} />
         ) : entry.type === 'query' ? (
@@ -469,6 +480,172 @@ function TraceRow({
       >
         View all in this trace
       </a>
+    </div>
+  );
+}
+
+/**
+ * "Diagnose with AI" panel for exception / client_exception details. Visible only
+ * when `meta.ai.enabled` (the host configured a diagnoser). Clicking POSTs to the
+ * diagnose endpoint and renders the returned markdown; shows loading + error
+ * states and, on a cached result, a "cached" badge with a Re-run (force) action.
+ *
+ * The diagnose mutation rejects only on transport errors — the client maps the
+ * expected 404/502 outcomes into a non-throwing `{ ok: false }` result — so the
+ * click handler swallows the rejection and reads `diagnose.data` for the outcome.
+ */
+function DiagnosePanel({
+  entryId,
+  aiEnabled,
+}: { entryId: string; aiEnabled: boolean }): JSX.Element | null {
+  const diagnose = useDiagnose();
+  const [result, setResult] = useState<DiagnoseResult | null>(null);
+
+  if (!aiEnabled) return null;
+
+  async function run(force: boolean): Promise<void> {
+    try {
+      const next = await diagnose.mutateAsync({ entryId, force });
+      setResult(next);
+    } catch {
+      // Transport-level failure; the client maps API 404/502 to { ok: false }.
+      setResult({ ok: false, message: 'Diagnosis request failed.' });
+    }
+  }
+
+  const cached = result?.ok === true && result.cached;
+  const hasResult = result?.ok === true;
+
+  return (
+    <div className="mt-4 rounded border border-zinc-800 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+          AI diagnosis
+          {cached ? (
+            <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] normal-case text-amber-400">
+              cached
+            </span>
+          ) : null}
+        </h3>
+        <div className="flex items-center gap-2">
+          {hasResult ? (
+            <button
+              type="button"
+              onClick={() => run(true)}
+              disabled={diagnose.isPending}
+              className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {diagnose.isPending ? 'Re-running…' : 'Re-run'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => run(false)}
+              disabled={diagnose.isPending}
+              className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-emerald-400 hover:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {diagnose.isPending ? 'Diagnosing…' : 'Diagnose with AI'}
+            </button>
+          )}
+        </div>
+      </div>
+      {diagnose.isPending ? (
+        <p className="text-xs text-zinc-600">Asking the model…</p>
+      ) : result === null ? (
+        <p className="text-xs text-zinc-600">
+          Get an AI-generated probable cause, where to look, and a suggested fix.
+        </p>
+      ) : result.ok ? (
+        <Markdown source={result.markdown} />
+      ) : (
+        <p className="rounded bg-zinc-900 p-3 text-xs text-red-400">{result.message}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Lightweight markdown renderer. The UI deps carry NO markdown library, and the
+ * diagnosis output is a small, fixed-shape document (`## ` headings + paragraphs/
+ * bullets), so rather than add a heavy dependency we render it as styled
+ * preformatted sections: `## ` lines become headings, `- ` lines become bullets,
+ * and everything else is preformatted text. Inline emphasis is left as-is (the
+ * monospace block keeps it readable).
+ */
+type MarkdownBlock =
+  | { id: string; kind: 'heading'; text: string }
+  | { id: string; kind: 'paragraph'; text: string }
+  | { id: string; kind: 'bullets'; items: { id: string; text: string }[] };
+
+/** Parse the (small, fixed-shape) markdown into a typed block list with stable
+ *  keys, so rendering never relies on array indices as React keys. */
+function parseMarkdownBlocks(source: string): MarkdownBlock[] {
+  const blocks: MarkdownBlock[] = [];
+  let paragraph: string[] = [];
+  let bullets: { id: string; text: string }[] = [];
+  let counter = 0;
+  const nextId = (): string => `block-${counter++}`;
+
+  function flushParagraph(): void {
+    if (paragraph.length === 0) return;
+    blocks.push({ id: nextId(), kind: 'paragraph', text: paragraph.join('\n') });
+    paragraph = [];
+  }
+  function flushBullets(): void {
+    if (bullets.length === 0) return;
+    blocks.push({ id: nextId(), kind: 'bullets', items: bullets });
+    bullets = [];
+  }
+
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine.trimEnd();
+    if (/^#{1,6}\s+/.test(line)) {
+      flushParagraph();
+      flushBullets();
+      blocks.push({ id: nextId(), kind: 'heading', text: line.replace(/^#{1,6}\s+/, '') });
+    } else if (/^[-*]\s+/.test(line)) {
+      flushParagraph();
+      bullets.push({ id: nextId(), text: line.replace(/^[-*]\s+/, '') });
+    } else if (line.trim() === '') {
+      flushParagraph();
+      flushBullets();
+    } else {
+      flushBullets();
+      paragraph.push(line);
+    }
+  }
+  flushParagraph();
+  flushBullets();
+  return blocks;
+}
+
+function Markdown({ source }: { source: string }): JSX.Element {
+  const blocks = parseMarkdownBlocks(source);
+  return (
+    <div className="rounded bg-zinc-900 p-3">
+      {blocks.map((block) => {
+        if (block.kind === 'heading') {
+          return (
+            <h4 key={block.id} className="mt-3 mb-1 text-xs font-semibold text-emerald-400">
+              {block.text}
+            </h4>
+          );
+        }
+        if (block.kind === 'bullets') {
+          return (
+            <ul key={block.id} className="ml-4 list-disc text-xs leading-relaxed text-zinc-300">
+              {block.items.map((item) => (
+                <li key={item.id}>{item.text}</li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={block.id} className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">
+            {block.text}
+          </p>
+        );
+      })}
     </div>
   );
 }

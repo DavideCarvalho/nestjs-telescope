@@ -36,6 +36,14 @@ export interface TelescopeAlerterDeps {
   /** Cap on tracked error families for the `new-exception` rule (test seam). */
   maxFamilies?: number;
   logger?: Logger;
+  /**
+   * Optional AI-diagnosis lookup for `new-exception` alerts. When set (auto-mode
+   * AI configured), the alerter briefly awaits it for the firing family and, if a
+   * diagnosis is ready within the grace cap, attaches it to the payload as
+   * `diagnosis`. Returning `null` (or being unset) simply means no AI note — the
+   * alert fires either way. Never blocks the alert beyond the hook's own cap.
+   */
+  diagnosisFor?: (familyHash: string) => Promise<string | null>;
 }
 
 /**
@@ -245,6 +253,13 @@ export class TelescopeAlerter {
         ? this.buildClientContext(entry, occurrences)
         : await this.buildServerContext(entry, occurrences);
 
+    // Auto-mode AI enrichment: briefly await a diagnosis for this family. The
+    // hook caps its own wait, so this never holds the alert beyond the grace.
+    const diagnosis =
+      this.deps.diagnosisFor !== undefined && entry.familyHash !== null
+        ? await this.deps.diagnosisFor(entry.familyHash).catch(() => null)
+        : null;
+
     return {
       rule,
       value: occurrences,
@@ -255,6 +270,7 @@ export class TelescopeAlerter {
       ...(this.deps.alerts.dashboardUrl !== null
         ? { dashboardUrl: this.deps.alerts.dashboardUrl }
         : {}),
+      ...(diagnosis !== null ? { diagnosis } : {}),
     };
   }
 

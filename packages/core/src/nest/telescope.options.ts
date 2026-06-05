@@ -1,4 +1,5 @@
 // packages/core/src/nest/telescope.options.ts
+import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
 import type { TelescopeSessionUser } from '../auth/session-cookie.js';
@@ -152,6 +153,16 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * entries. DISABLED by default. See {@link ClientErrorsOptions}.
    */
   clientErrors?: ClientErrorsOptions;
+  /**
+   * AI-powered exception diagnosis. Supply a `diagnoser` (e.g.
+   * `createAiSdkDiagnoser` from `@dudousxd/nestjs-telescope-ai`) and the dashboard
+   * exposes a "Diagnose with AI" button on exception detail pages
+   * (`POST <telescope>/api/exceptions/:id/diagnose`). In `mode: 'auto'`, a NEW
+   * exception family is ALSO diagnosed fire-and-forget on the flush path and the
+   * result is attached to a firing `new-exception` alert when ready. The SHAPE is
+   * defined in core so core carries no AI dependency. See {@link TelescopeAiOptions}.
+   */
+  ai?: TelescopeAiOptions;
 }
 
 export interface TelescopeOptionsFactory {

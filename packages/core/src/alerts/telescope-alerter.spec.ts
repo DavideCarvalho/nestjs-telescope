@@ -41,6 +41,7 @@ interface Harness {
 function makeAlerter(
   rules: AlertRule[],
   partial: Partial<Omit<ResolvedAlerts, 'channels'>> = {},
+  diagnosisFor?: (familyHash: string) => Promise<string | null>,
 ): Harness {
   const storage = new InMemoryStorageProvider();
   const sent: AlertPayload[] = [];
@@ -65,6 +66,7 @@ function makeAlerter(
     droppedCount: () => dropped.value,
     now,
     logger: new Logger('test'),
+    ...(diagnosisFor !== undefined ? { diagnosisFor } : {}),
   });
   function setNow(ms: number): void {
     current = ms;
@@ -281,6 +283,30 @@ describe('TelescopeAlerter', () => {
       await alerter.evaluateFlush([ex]);
       expect(sent).toHaveLength(1);
       expect(sent[0]?.rule.type).toBe('new-exception');
+    });
+
+    it('attaches an AI diagnosis when the diagnosisFor hook returns one in time', async () => {
+      const { alerter, sent, storage } = makeAlerter(
+        [{ type: 'new-exception', window: '1h' }],
+        {},
+        async () => '## Probable root cause\nNull deref.',
+      );
+      const ex = await storeException(storage, 'fam-A', 'b1', NOW);
+      await alerter.evaluateFlush([ex]);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.diagnosis).toBe('## Probable root cause\nNull deref.');
+    });
+
+    it('dispatches WITHOUT a diagnosis when the hook returns null (slow/unready)', async () => {
+      const { alerter, sent, storage } = makeAlerter(
+        [{ type: 'new-exception', window: '1h' }],
+        {},
+        async () => null,
+      );
+      const ex = await storeException(storage, 'fam-A', 'b1', NOW);
+      await alerter.evaluateFlush([ex]);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.diagnosis).toBeUndefined();
     });
 
     it('does NOT re-fire for a repeat within the window', async () => {

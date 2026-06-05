@@ -19,6 +19,7 @@ import {
 import { durationToMs } from '../config/parse-duration.js';
 import type { QueryContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
+import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { type ServerStats, ServerStatsService } from '../metrics/server-stats.service.js';
 import type { StatsResult } from '../metrics/stats.js';
@@ -483,6 +484,53 @@ export class TelescopeController {
       const message = error instanceof Error ? error.message : 'EXPLAIN failed.';
       throw new ServiceUnavailableException({ message });
     }
+  }
+
+  // ── AI exception diagnosis ──────────────────────────────────────────────────
+
+  // Read-shaped ANALYSIS (it produces a markdown explanation, mutates no
+  // Telescope state and runs no destructive action), so — like `explain` — it
+  // sits behind the normal dashboard read guard, NOT the default-deny
+  // authorizeAction mutation gate. 404 when AI isn't configured or the entry
+  // isn't an exception; 502 when the diagnoser fails (a safe, generic message —
+  // the model's raw error is never surfaced to the dashboard).
+  @Post('exceptions/:id/diagnose')
+  @HttpCode(200)
+  async diagnose(
+    @Param('id') id: string,
+    @Query('force') force?: string,
+  ): Promise<{ markdown: string; cached: boolean }> {
+    const coordinator = this.service.diagnosisCoordinator;
+    if (coordinator === null) {
+      throw new NotFoundException('AI diagnosis is not configured.');
+    }
+    const entry = await this.storage.find(id);
+    if (
+      entry === null ||
+      (entry.type !== EntryType.Exception && entry.type !== EntryType.ClientException)
+    ) {
+      throw new NotFoundException('No exception entry with that id.');
+    }
+    const occurrences = await this.countExceptionFamily(entry.type, entry.familyHash);
+    try {
+      return await coordinator.diagnose(entry, occurrences, force === 'true');
+    } catch {
+      // The diagnoser rejected (timeout / model error). Surface a generic 502;
+      // the raw model error may carry provider internals, so it's never leaked.
+      throw new ServiceUnavailableException({ message: 'AI diagnosis failed.' });
+    }
+  }
+
+  /** Count entries of this exception family in the trailing 24h (>= 1). */
+  private async countExceptionFamily(type: string, familyHash: string | null): Promise<number> {
+    if (familyHash === null) return 1;
+    const after = new Date(Date.now() - durationToMs('24h'));
+    const result = await collectEntriesInWindow(
+      this.storage,
+      { type, familyHash, after, omitContent: true },
+      { scanCap: 10_000 },
+    );
+    return Math.max(1, result.entries.length);
   }
 
   @Delete('entries')

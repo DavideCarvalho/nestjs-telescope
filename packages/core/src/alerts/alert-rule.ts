@@ -143,4 +143,13 @@ export interface AlertPayload {
   exception?: ExceptionAlertContext;
   /** External dashboard URL when configured (lets channels build deep links). */
   dashboardUrl?: string;
+  /**
+   * AI-generated probable-cause markdown for a `new-exception` alert, attached
+   * when `ai` is configured in `'auto'` mode AND the diagnosis finished within
+   * the alert's short grace window. Absent when AI is off, the diagnosis was
+   * still running at dispatch time, or it failed — the alert always fires
+   * regardless, AI is purely additive. Channels that render it (Slack) append a
+   * "Probable cause (AI)" section.
+   */
+  diagnosis?: string;
 }

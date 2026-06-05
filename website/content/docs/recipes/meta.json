@@ -9,6 +9,7 @@
     "tags-and-redaction",
     "request-context",
     "archiving-exceptions-to-s3",
-    "reporting-frontend-errors"
+    "reporting-frontend-errors",
+    "ai-exception-diagnosis"
   ]
 }

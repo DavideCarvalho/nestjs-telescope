@@ -23,6 +23,13 @@ const STACK_CHAR_LIMIT = 2_800;
 const STACK_FRAME_LIMIT = 10;
 
 /**
+ * Char budget for the AI diagnosis section. The diagnoser is already bounded by
+ * `maxOutputTokens`, but a long report still has to share Slack's per-section
+ * 3000-char cap with its `*Probable cause (AI):*` label, so we hard-clip here.
+ */
+const DIAGNOSIS_CHAR_LIMIT = 2_800;
+
+/**
  * Minimal structural typings for the Block Kit subset we emit. We deliberately do
  * NOT pull in Slack's full SDK types — alerting must stay dependency-light, and
  * the shape we produce is small and stable. These exist so the formatter is fully
@@ -107,6 +114,14 @@ function clipStack(stack: string | null): string | null {
   return `${frames.slice(0, STACK_CHAR_LIMIT)}…`;
 }
 
+/** Trim + length-cap the AI diagnosis; `null`/empty passes through as `null`. */
+function clipDiagnosis(diagnosis: string | undefined): string | null {
+  if (diagnosis === undefined || diagnosis.trim() === '') return null;
+  const trimmed = diagnosis.trim();
+  if (trimmed.length <= DIAGNOSIS_CHAR_LIMIT) return trimmed;
+  return `${trimmed.slice(0, DIAGNOSIS_CHAR_LIMIT)}…`;
+}
+
 /**
  * Build the deep link to the offending exception entry in the host's external
  * dashboard. Returns `null` when no `dashboardUrl` is configured or there is no
@@ -183,6 +198,17 @@ export function formatSlackMessage(
   const stack = exception ? clipStack(exception.stack) : null;
   if (stack !== null) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `\`\`\`${stack}\`\`\`` } });
+  }
+
+  // AI probable-cause note (auto-mode), when one finished within the alert grace.
+  // Slack's mrkdwn isn't full markdown, but headings/bullets degrade readably; we
+  // just length-cap so the diagnosis can't blow Slack's 3000-char section budget.
+  const diagnosis = clipDiagnosis(payload.diagnosis);
+  if (diagnosis !== null) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Probable cause (AI):*\n${diagnosis}` },
+    });
   }
 
   const link = dashboardLink(payload);

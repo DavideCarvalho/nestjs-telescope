@@ -1,0 +1,103 @@
+---
+title: AI exception diagnosis
+description: Add an AI "probable cause" to every exception — a Diagnose with AI button in the dashboard, plus optional auto-mode that enriches new-exception alerts. Works with Bedrock, OpenAI, Anthropic, or any Vercel AI SDK model.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+When an exception lands, the fastest path to a fix is usually "what does this stack + route + the queries that just ran actually mean?". The [`@dudousxd/nestjs-telescope-ai`](/docs/packages/ai) package answers that question with an LLM: it builds a context from the **already-redacted** exception (class, message, stack), its sibling request (route/method/status/duration), and the request's recent **SQL** (shapes only, no bindings), then asks a model for a markdown report — probable cause, where to look, a suggested fix, and a confidence rating.
+
+The model is provider-agnostic via the [Vercel AI SDK](https://www.npmjs.com/package/ai): you bring `bedrock(...)`, `openai(...)`, `anthropic(...)`, or any AI-SDK model.
+
+---
+
+## Install
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-ai ai
+```
+
+Plus a provider package.
+
+---
+
+## Bedrock
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { createAiSdkDiagnoser } from '@dudousxd/nestjs-telescope-ai';
+import { bedrock } from '@ai-sdk/amazon-bedrock';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      ai: {
+        diagnoser: createAiSdkDiagnoser({
+          model: bedrock('anthropic.claude-3-5-sonnet-20240620-v1:0'),
+          maxOutputTokens: 1024,
+        }),
+        // 'on-demand' (default) = only when the dashboard button is clicked.
+        mode: 'on-demand',
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+The Bedrock provider reads AWS credentials/region from the standard `@aws-sdk` resolution chain — give the runtime an IAM role (or env vars) scoped to `bedrock:InvokeModel` in your region.
+
+---
+
+## OpenAI
+
+```ts
+import { createAiSdkDiagnoser } from '@dudousxd/nestjs-telescope-ai';
+import { openai } from '@ai-sdk/openai';
+
+TelescopeModule.forRoot({
+  ai: {
+    diagnoser: createAiSdkDiagnoser({ model: openai('gpt-4o-mini') }),
+    mode: 'on-demand',
+  },
+});
+```
+
+`@ai-sdk/openai` reads `OPENAI_API_KEY` from the environment.
+
+---
+
+## Using it
+
+Open any **exception** (or browser-reported **client_exception**) entry in the dashboard. With `ai` configured, a **Diagnose with AI** button appears; clicking it POSTs to `<telescope>/api/exceptions/:id/diagnose` and renders the returned markdown. The result is cached per exception **family** (24h), so re-opening the same error shows a **cached** badge with a **Re-run** action that forces a fresh diagnosis.
+
+---
+
+## Auto-mode: enrich alerts
+
+Set `mode: 'auto'` to also diagnose a **new** exception family the first time it is seen — fire-and-forget, on the flush path, never blocking capture. The result lands in the cache, so the dashboard button is instant. And if you run [alerts](/docs/dashboard) with a `new-exception` rule, a firing alert briefly waits for the diagnosis (a short grace) and attaches it — Slack renders a **Probable cause (AI)** section right under the stack.
+
+```ts
+TelescopeModule.forRoot({
+  ai: {
+    diagnoser: createAiSdkDiagnoser({ model: bedrock('anthropic.claude-3-5-sonnet-20240620-v1:0') }),
+    mode: 'auto',
+  },
+  alerts: {
+    channels: [slackChannel(process.env.SLACK_WEBHOOK_URL!)],
+    rules: [{ type: 'new-exception', window: '1h' }],
+  },
+});
+```
+
+If the diagnosis is not ready within the grace window, the alert still fires — just without the AI section. AI is always **additive**: a model outage or timeout never blocks an alert or a request.
+
+<Callout type="warn" title="What leaves your process">
+The diagnoser receives redacted content and SQL **without bindings**, but the exception message, stack, route, and SQL shapes are sent to your model provider. Scope the model/region accordingly. The diagnosis cache is per-pod (in-memory), so a family may be diagnosed up to once per replica.
+</Callout>
+
+---
+
+## Custom diagnoser
+
+`ai.diagnoser` is any `ExceptionDiagnoser` — `{ diagnose(context): Promise<string> }`. Supply your own (a local LLM, a fine-tuned endpoint, even a rules engine) and skip the AI-SDK package entirely; `createAiSdkDiagnoser` is just the batteries-included implementation.

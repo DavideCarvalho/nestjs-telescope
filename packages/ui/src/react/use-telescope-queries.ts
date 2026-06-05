@@ -285,6 +285,19 @@ export function useExplain() {
   return useMutation({ mutationFn: (entryId: string) => client.explain(entryId) });
 }
 
+interface DiagnoseVars {
+  entryId: string;
+  /** Bypass the per-family cache and force a fresh diagnosis. */
+  force?: boolean;
+}
+
+export function useDiagnose() {
+  const client = useTelescopeClient();
+  return useMutation({
+    mutationFn: (vars: DiagnoseVars) => client.diagnose(vars.entryId, vars.force ?? false),
+  });
+}
+
 export function useEntries(query: EntriesQuery = {}) {
   return useQuery(entriesQuery(useTelescopeClient(), query, usePaused()));
 }

@@ -82,4 +82,9 @@ export * from './alerts/resolve-alerts.js';
 export * from './alerts/slack-format.js';
 export * from './alerts/telescope-alerter.js';
 
+export * from './ai/diagnoser.js';
+export * from './ai/diagnose-context-builder.js';
+export * from './ai/diagnosis-cache.js';
+export * from './ai/diagnosis-coordinator.js';
+
 export const TELESCOPE_VERSION = '0.0.0';

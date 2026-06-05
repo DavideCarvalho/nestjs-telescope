@@ -76,6 +76,10 @@ TelescopeModule.forRoot({
 
 `POST /telescope/api/queries/explain` (`{ entryId }`) loads the query entry, runs the hook on the SQL/bindings exactly as captured, and returns `{ plan }`. When the hook isn't configured the button is hidden (`meta.explainEnabled` is `false`); a hook that throws surfaces as a clean error message in the panel rather than a crash.
 
+### Diagnose exceptions with AI
+
+Configure the [`@dudousxd/nestjs-telescope-ai`](/docs/packages/ai) package's `ai.diagnoser` and every **exception** (and browser **client_exception**) detail page grows a **Diagnose with AI** button. Clicking it POSTs `POST /telescope/api/exceptions/:id/diagnose` and renders a markdown report — probable cause, where to look, a suggested fix, and a confidence rating — built from the redacted exception, its route, and the request's recent SQL. Results are cached per error family (24h); a cached result shows a **cached** badge with a **Re-run** action. The button is hidden when AI isn't configured (`meta.ai.enabled` is `false`). See the [AI exception diagnosis recipe](/docs/recipes/ai-exception-diagnosis).
+
 ### Retention controls
 
 The Overview page surfaces a **Retention** card with the configured window (from `prune`) and a **Prune now** button. Pruning is a mutation, so the button appears only when retention is configured *and* mutations are enabled (`authorizeAction` present — the same default-deny gate the queue console uses). It fires `POST /telescope/api/retention/prune` after a confirm and reports how many entries were removed.

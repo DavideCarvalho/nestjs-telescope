@@ -7,6 +7,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { v7 } from 'uuid';
+import { DiagnosisCoordinator } from '../ai/diagnosis-coordinator.js';
 import { resolveAlerts } from '../alerts/resolve-alerts.js';
 import { TelescopeAlerter } from '../alerts/telescope-alerter.js';
 import type { AuthMode, ResolvedDashboardAuth } from '../auth/dashboard-auth-config.js';
@@ -65,6 +66,13 @@ export interface TelescopeMeta {
    * are armed. The dashboard surfaces this as a read-only "Alerts: N rules" badge.
    */
   alerts: { enabled: boolean; ruleCount: number };
+  /**
+   * AI exception-diagnosis state. `enabled` is true when the host configured a
+   * `diagnoser`; the dashboard renders the "Diagnose with AI" button on exception
+   * detail pages only then. `mode` mirrors the configured mode (`'on-demand'` by
+   * default), purely informational for the UI.
+   */
+  ai: { enabled: boolean; mode: 'auto' | 'on-demand' | null };
 }
 
 /**
@@ -93,6 +101,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   /** Resolved (boot-validated) alerting config, or `null` when unconfigured. */
   private readonly alerts: ReturnType<typeof resolveAlerts>;
   private alerter: TelescopeAlerter | null = null;
+  /** AI exception-diagnosis coordinator, or `null` when `ai` is unconfigured. */
+  private readonly diagnosis: DiagnosisCoordinator | null;
 
   constructor(
     @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
@@ -104,6 +114,13 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
     // dashboardAuth): no destination / empty rules / bad duration throws.
     this.alerts = resolveAlerts(this.options.alerts);
+    // Build the AI coordinator (if configured) BEFORE the Recorder so its
+    // auto-mode flush hook can be wired into `onFlushStored` below. The
+    // coordinator is a no-op on the flush path in on-demand mode.
+    this.diagnosis =
+      this.options.ai !== undefined
+        ? new DiagnosisCoordinator(this.options.ai, this.storage)
+        : null;
     this.recorder = new Recorder({
       storage,
       context: this.context,
@@ -120,7 +137,12 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       // batch-context fetch only on a real fire. Delegates to the alerter built
       // just below; the closure reads `this.alerter` at flush time (always set by
       // then). Never throws into the flush — the alerter swallows failures.
-      onFlushStored: (entries) => this.alerter?.evaluateFlush(entries),
+      // The same path drives AI auto-mode: a NEW family kicks off a fire-and-
+      // forget diagnosis (no-op in on-demand mode / when AI is off).
+      onFlushStored: (entries) => {
+        this.diagnosis?.observeFlush(entries);
+        return this.alerter?.evaluateFlush(entries);
+      },
     });
     // Construct the alerter AFTER the Recorder so its `droppedCount` baseline can
     // be read. The interval is started later in onModuleInit; the new-exception
@@ -131,6 +153,14 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         storage: this.storage,
         instanceId: this.config.instanceId,
         droppedCount: () => this.recorder.droppedCount,
+        // In auto-mode, let a firing new-exception alert briefly await the AI
+        // diagnosis and attach it. on-demand / off → no hook, no enrichment.
+        ...(this.diagnosis?.isAuto
+          ? {
+              diagnosisFor: (familyHash: string) =>
+                this.diagnosis?.awaitForAlert(familyHash) ?? Promise.resolve(null),
+            }
+          : {}),
       });
     }
     // Wire the global dump sink so `telescopeDump(value, label)` can be called
@@ -273,7 +303,20 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         enabled: this.alerts !== null,
         ruleCount: this.alerts?.rules.length ?? 0,
       },
+      ai: {
+        enabled: this.diagnosis !== null,
+        mode: this.diagnosis?.mode ?? null,
+      },
     };
+  }
+
+  /**
+   * AI exception-diagnosis coordinator, or `null` when `ai` is unconfigured. The
+   * gated controller reads this to run the on-demand `diagnose` endpoint (and to
+   * 404 when AI is off).
+   */
+  get diagnosisCoordinator(): DiagnosisCoordinator | null {
+    return this.diagnosis;
   }
 
   /**

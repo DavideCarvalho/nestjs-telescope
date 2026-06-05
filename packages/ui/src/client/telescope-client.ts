@@ -2,6 +2,7 @@ import type {
   AuthMeResult,
   AuthMode,
   AuthUser,
+  DiagnoseResult,
   EntriesQuery,
   Entry,
   EntryWithBatch,
@@ -81,6 +82,12 @@ export interface TelescopeClient {
    * threw) are EXPECTED outcomes surfaced as `{ ok: false }`, not thrown.
    */
   explain(entryId: string): Promise<ExplainResult>;
+  /**
+   * Diagnoses a captured exception (or client_exception) entry with AI. 404 (AI
+   * off / bad entry) and 502 (diagnoser failed) are EXPECTED outcomes surfaced as
+   * `{ ok: false }`, not thrown. `force` bypasses the per-family cache.
+   */
+  diagnose(entryId: string, force?: boolean): Promise<DiagnoseResult>;
   liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>;
   schedulesLive(): Promise<{ tasks: ScheduledTask[] }>;
   queueCounts(driver: string, queue: string): Promise<QueueCounts>;
@@ -264,6 +271,33 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     return `EXPLAIN failed (${response.status})`;
   }
 
+  async function diagnose(entryId: string, force = false): Promise<DiagnoseResult> {
+    const query = force ? '?force=true' : '';
+    const response = await rawPost(`/exceptions/${encodeURIComponent(entryId)}/diagnose${query}`);
+    if (response.ok) {
+      const body = (await response.json()) as { markdown: string; cached: boolean };
+      return { ok: true, markdown: body.markdown, cached: body.cached };
+    }
+    const message = await readDiagnoseMessage(response);
+    return { ok: false, message };
+  }
+
+  async function readDiagnoseMessage(response: Response): Promise<string> {
+    const parsed = await response
+      .json()
+      .then((value: unknown) => value)
+      .catch(() => null);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'message' in parsed &&
+      typeof parsed.message === 'string'
+    ) {
+      return parsed.message;
+    }
+    return `Diagnosis failed (${response.status})`;
+  }
+
   return {
     entries: (query = {}) =>
       get<Page<Entry>>('/entries', {
@@ -295,6 +329,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     retention: () => get<RetentionInfo>('/retention'),
     prune: () => post<{ pruned: number }>('/retention/prune'),
     explain,
+    diagnose,
     liveQueues: () =>
       get<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>('/queues/live'),
     schedulesLive: () => get<{ tasks: ScheduledTask[] }>('/schedules/live'),

@@ -108,7 +108,24 @@ export interface TelescopeMeta {
    * when enabled). The unauthenticated SPA learns the modes from `/auth/me`.
    */
   auth: { enabled: boolean; modes: AuthMode[] };
+  /**
+   * AI exception-diagnosis state. `enabled` is true when the host configured a
+   * `diagnoser`; the dashboard renders the "Diagnose with AI" button on exception
+   * detail pages only then. `mode` is informational. OPTIONAL so the UI stays
+   * backward-compatible with older servers that predate the field (treated as
+   * disabled).
+   */
+  ai?: { enabled: boolean; mode: 'auto' | 'on-demand' | null };
 }
+
+/**
+ * Outcome of `POST /exceptions/:id/diagnose`: the markdown report and whether it
+ * was served from cache, or a clean error message (404 AI-off/bad-entry, 502
+ * diagnoser failure) — surfaced rather than thrown, like {@link ExplainResult}.
+ */
+export type DiagnoseResult =
+  | { ok: true; markdown: string; cached: boolean }
+  | { ok: false; message: string };
 /**
  * Retention/prune status returned by `GET /retention`. `entryCount` and
  * `oldestCreatedAt` are `null` unless the storage SPI can expose them cheaply

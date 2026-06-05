@@ -1,0 +1,73 @@
+---
+title: "@dudousxd/nestjs-telescope-ai"
+description: AI-powered exception diagnosis — turn a captured exception into a markdown triage report (probable cause, where to look, suggested fix, confidence) using the Vercel AI SDK with any provider.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-ai ai
+# plus your provider, e.g.
+pnpm add @ai-sdk/amazon-bedrock
+# or
+pnpm add @ai-sdk/openai
+```
+
+Turns a captured exception — its class, message, stack, the route or page it came from, and the (already-redacted) SQL that ran in the same request — into a concise markdown triage report: **probable root cause**, **where to look**, a **suggested fix**, and a **confidence** rating.
+
+It implements core's `ExceptionDiagnoser` SPI using the [Vercel AI SDK](https://www.npmjs.com/package/ai) (`generateText`). The `ai` package is a **peer dependency** and the model is **provider-agnostic** — you plug in Bedrock, OpenAI, Anthropic, or any AI-SDK `LanguageModel`. Core itself carries **no AI dependency**: only the option *shape* lives in core.
+
+## Usage
+
+Pass `createAiSdkDiagnoser(...)` as `ai.diagnoser` on the module.
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { createAiSdkDiagnoser } from '@dudousxd/nestjs-telescope-ai';
+import { bedrock } from '@ai-sdk/amazon-bedrock';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      ai: {
+        diagnoser: createAiSdkDiagnoser({
+          model: bedrock('anthropic.claude-3-5-sonnet-20240620-v1:0'),
+          maxOutputTokens: 1024,
+        }),
+        mode: 'auto', // default 'on-demand'
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+With OpenAI instead:
+
+```ts
+import { openai } from '@ai-sdk/openai';
+
+createAiSdkDiagnoser({ model: openai('gpt-4o-mini') });
+```
+
+## Modes
+
+- **`on-demand`** (default) — diagnosis runs only when an operator clicks **Diagnose with AI** on an exception detail page in the dashboard (`POST <telescope>/api/exceptions/:id/diagnose`).
+- **`auto`** — the first time a **new** exception family is seen, Telescope also runs a fire-and-forget diagnosis on the flush path (never blocking it) and caches the result. If a `new-exception` alert fires for that family, the diagnosis is attached to the alert when it is ready within a short grace window — Slack renders a **Probable cause (AI)** section.
+
+## How it works
+
+- Results are cached per exception **family** (bounded, 24h TTL) so the same failure is diagnosed once. The dashboard shows a **cached** badge with a re-run (force) action.
+- Each call sends a carefully engineered system prompt plus a labelled context message and is bounded by `maxOutputTokens` and a hard 30s timeout. A timeout or model error **rejects**; core handles it (the endpoint returns a safe 502, auto-mode swallows it) and **never** crashes the host.
+
+<Callout type="warn" title="Per-pod cache">
+The diagnosis cache is in-process memory. In a multi-replica deployment each pod caches independently, so the same family may be diagnosed up to once per pod — the same per-replica trade-off the `new-exception` alert tracker makes.
+</Callout>
+
+## Privacy
+
+The diagnoser only receives **already-redacted** content as stored by Telescope's Recorder, and SQL is passed **without bindings** — query values never leave your process just because diagnosis ran. Note that the exception message, stack, route, and SQL shapes **are** sent to your configured model provider; scope the model and region accordingly.
+
+## Custom diagnosers
+
+`ai.diagnoser` is just an `ExceptionDiagnoser` — `{ diagnose(context): Promise<string> }`. You can supply your own (a fine-tuned model, a local LLM, a rules engine) without this package; `createAiSdkDiagnoser` is simply the batteries-included AI-SDK implementation.
