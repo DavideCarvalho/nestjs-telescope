@@ -1,5 +1,30 @@
 # @dudousxd/nestjs-telescope
 
+## 1.5.0
+
+### Minor Changes
+
+- [`79e7063`](https://github.com/DavideCarvalho/nestjs-telescope/commit/79e706380c915ee14eb1e1257c6428887889a3b3) - Skip expected 4xx `HttpException`s by default — they're control flow, not incidents.
+
+  The server exception interceptor no longer records a NestJS `HttpException` whose status is a 4xx (`>= 400 && < 500`) as an `exception` entry. A `403 ForbiddenException`, a `404 NotFoundException`, or a `400` from the validation pipe is the framework doing its job — permission denied, resource missing, bad input — not an incident.
+
+  **Why this changed (a real incident):** Telescope's own client-errors `authorize` gate threw a 403, the interceptor captured it as a brand-**new** exception family (the family hash keys on class + message + top frame, so each call site is distinct), which fired the `new-exception` Slack alert and, in AI auto-mode, burned a model diagnosis on intended behaviour. In production every permission denial would page on-call and spend tokens.
+
+  **Nothing is lost.** The request watcher still records the 4xx `statusCode` on its own `request` entry (independently), so the 4xx is still visible in the dashboard and in error-rate metrics — it just no longer opens an exception family, fires `new-exception`, or triggers AI diagnosis. Because the `new-exception` alert and AI auto-diagnosis both consume `exception` entries off the flush path, filtering at capture covers them with no separate change.
+
+  **Always recorded:** 5xx `HttpException`s (real server errors) and any non-`HttpException` error. **Untouched:** browser-reported `client_exception` entries (recorded directly by the ingestion endpoint, never through this interceptor).
+
+  **Escape hatch:** set `exceptions: { captureHttp4xx: true }` (new option, default `false`) to restore the pre-change behaviour and capture 4xx `HttpException`s as exceptions again.
+
+- [`9e1f318`](https://github.com/DavideCarvalho/nestjs-telescope/commit/9e1f318ba876f3aaf066168b6f8feaa8e20ea5c6) - Fix Slack "Open in Telescope" deep links, and surface cached AI diagnoses on the exception detail page.
+
+  **Slack deep link landed on an empty page.** The "Open in Telescope" button built `<dashboard>#/entries/<type>/<id>`, but `#/entries/<type>` matches the SPA's type-scoped **list** route (`#/entries/:type`) — so the trailing id was ignored and the recipient saw an empty filtered list instead of the entry. The link now points at the real entry-**detail** route, `#/entries/view/:id`, which renders the same `EntryPage` for both `exception` and `client_exception` entries.
+
+  **Auto-mode diagnosis was invisible on the detail page.** In `auto` mode the AI diagnosis is computed and cached per family at first-seen (and may already have been sent to Slack), yet the exception detail page still showed a bare **Diagnose with AI** button as if nothing existed. Now:
+
+  - **Core** adds a read-only `GET <telescope>/api/exceptions/:id/diagnosis` behind the same dashboard read guard as the POST. It serves `{ markdown, cached: true }` from the per-family cache when present and `204 No Content` when absent. It is strictly side-effect-free — it **never** builds context or calls the diagnoser, so a read costs no model tokens.
+  - **UI** `DiagnosePanel` fetches that GET on mount (only when `meta.ai.enabled`). A cached diagnosis renders immediately with the **cached** badge and a **Re-run** (force) action; the **Diagnose with AI** button only appears for families that have not been diagnosed yet. The mount fetch shows a subtle "checking" line rather than flashing the button and then swapping it.
+
 ## 1.4.0
 
 ### Minor Changes
