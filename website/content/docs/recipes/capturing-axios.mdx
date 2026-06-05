@@ -1,0 +1,74 @@
+---
+title: Capture @nestjs/axios traffic
+description: HttpClientWatcher patches global fetch out of the box, but @nestjs/axios calls bypass it. Wire the axios source to capture HttpService and plain axios instances too — no monkey-patching.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`HttpClientWatcher` instruments the global `fetch` with no peer dependency. But most NestJS apps call out through `@nestjs/axios`'s `HttpService`, and in Node axios uses the **http adapter**, not `fetch` — so those outbound calls are invisible to the fetch patch. Pass an `axios` source to capture them too, via axios's public interceptor API (no monkey-patching). Axios and fetch entries share the same content shape, tags, and family-hash, so they're indistinguishable in the dashboard.
+
+---
+
+## `@nestjs/axios` — resolve `HttpService` lazily
+
+`HttpService` isn't constructed until the Nest container is up, so you can't pass its `axiosRef` at `forRoot` time. Use the custom-source `instrument(attach, ctx)` hook: it runs at register time with a `ctx.moduleRef`, so you resolve `HttpService` and hand its `axiosRef` to `attach`.
+
+```ts
+import { Module } from '@nestjs/common';
+import { HttpModule, HttpService } from '@nestjs/axios';
+import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
+
+@Module({
+  imports: [
+    HttpModule,
+    TelescopeModule.forRoot({
+      watchers: [
+        new HttpClientWatcher({
+          slowMs: 1000,
+          axios: {
+            instrument(attach, ctx) {
+              // HttpService is up by register time — grab the real instance.
+              const http = ctx.moduleRef.get(HttpService, { strict: false });
+              attach(http.axiosRef); // wire request/response interceptors onto it
+            },
+          },
+        }),
+      ],
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+Now every call through injected `HttpService` records an outbound-HTTP entry, correlated to the request or job that made it — alongside any `fetch` calls, in the same batch.
+
+---
+
+## Plain axios instance
+
+If you hold your own axios client, hand it over directly — no custom source needed:
+
+```ts
+import axios from 'axios';
+import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
+
+const client = axios.create({ baseURL: 'https://api.example.com' });
+
+TelescopeModule.forRoot({
+  watchers: [new HttpClientWatcher({ axios: client })],
+});
+```
+
+---
+
+## How it works
+
+- **Public interceptors, not patches.** The watcher registers request/response interceptors on the instance — nothing is monkey-patched, so it composes with your own interceptors.
+- **Errors are re-thrown.** A non-2xx records `error.response.status`; a transport failure (no response) records `statusCode: null` and a `failed` tag. Either way the rejection propagates — your error handling is untouched.
+- **Idempotent per instance.** Instrumenting the same axios instance twice (e.g. shared across watchers) never double-records.
+
+<Callout type="info">
+  **Double-capture edge case:** if you explicitly configure axios with the **fetch adapter** (Node's default is the http adapter), one call could record on both the axios and `fetch` paths. Keep the http adapter, or pass only one source.
+</Callout>
+
+See the [`HttpClientWatcher` reference](/docs/packages/core#httpclientwatcher--axios--nestjsaxios) for the full option surface.

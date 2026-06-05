@@ -4,6 +4,7 @@
     "index",
     "custom-storage",
     "custom-watcher",
+    "capturing-axios",
     "dashboard-auth",
     "tags-and-redaction",
     "request-context"

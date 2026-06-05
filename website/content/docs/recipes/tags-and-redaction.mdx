@@ -121,3 +121,18 @@ TelescopeModule.forRoot({ sampling: 0.25 });
 - **A bare number is normalized to `{ default: <rate> }`** — it applies to every type without a specific override.
 - **Sampling is the right tool for volume** (keep a representative slice of queries); **`filter` is for noise** (drop probes entirely). Reach for whichever matches intent.
 - Keep exceptions and requests at `1` — they're low-volume and high-signal; you almost never want to sample them out.
+
+### Level-aware tail sampling — keep the errors
+
+A per-type rate can also be an object `{ rate, keepErrors }`. With `keepErrors: true`, an entry that *is* an error is always kept — the rate only applies to the rest. For `log`, "error" means level `warn` / `error` / `fatal`, so you can sample chatty `info`/`debug` logs hard and never drop a warning:
+
+```ts
+TelescopeModule.forRoot({
+  sampling: {
+    // Keep 10% of logs, but every warn/error/fatal line survives the cut.
+    log: { rate: 0.1, keepErrors: true },
+  },
+});
+```
+
+This is tail sampling: the keep decision reads the finished entry's level/tags, so the signal you actually care about is never the thing that gets thrown away.

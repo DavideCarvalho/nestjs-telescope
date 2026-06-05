@@ -9,6 +9,7 @@ Every recipe here is a complete, working example built against the real v1.x SPI
 |---|---|
 | [Custom storage adapter](/docs/recipes/custom-storage) | Persist entries in a store no shipped adapter covers (Mongo, Knex, a file). Implement `StorageProvider` end to end. |
 | [Custom watcher](/docs/recipes/custom-watcher) | Capture a source Telescope doesn't ship a watcher for (WebSocket events, a bespoke cache), correlated to the request that caused it. |
+| [Capture @nestjs/axios traffic](/docs/recipes/capturing-axios) | Outbound calls through `HttpService` (or any axios instance) bypass the `fetch` patch — wire the `axios` source to capture them too. |
 | [Dashboard login & sessions](/docs/recipes/dashboard-auth) | Gate the dashboard against *your own* user table, bridge an existing JWT session, and role-gate queue mutations. |
 | [Custom tags & redaction](/docs/recipes/tags-and-redaction) | Tag entries by tenant, mask extra fields, drop noisy entries, and sample high-volume types. |
 | [Request context for your routes](/docs/recipes/request-context) | Capture the authenticated user under a `setGlobalPrefix`, and drop ad-hoc debug dumps. |

@@ -40,6 +40,8 @@ Once a request carries a user, the built-in **`userTagger`** tags that request e
 
 Because tags are indexed and filterable end-to-end, this turns into a one-click pivot in the dashboard: every user-tagged entry shows a `user:<id>` chip in the entries table, and the entry detail view offers **"View all activity for this user"**. Clicking either lands you on the entries list pre-filtered to that tag (`#/entries?tag=user:<id>`) — every request that user made, across types, in one view.
 
+The entries pages also carry a dedicated **User** combobox over the `user:` tag namespace these tags create: it lists the ids `userTagger` emitted (with per-user entry counts), and selecting one renders a `User: <id>` chip instead of a raw tag. The "View all activity for this user" pivot feeds that same control, so a `user:<id>` arriving via `?tag=` shows up as a User chip. See the [dashboard tour](/docs/dashboard#entries-per-type).
+
 ```ts
 // The userTagger is in BUILTIN_TAGGERS — nothing to wire up. A request whose
 // resolved user is { id: 42 } is tagged "user:42"; the dashboard does the rest.
