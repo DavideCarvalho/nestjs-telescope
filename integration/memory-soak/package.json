@@ -1,0 +1,36 @@
+{
+  "name": "memory-soak",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Memory soak harness + regression guard for @dudousxd/nestjs-telescope under sustained HTTP load.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "soak": "node --expose-gc dist/soak.js",
+    "analyze": "node dist/analyze-snapshot.js",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@dudousxd/nestjs-telescope-cache": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/instrumentation-http": "^0.57.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
