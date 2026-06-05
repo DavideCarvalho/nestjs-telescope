@@ -111,11 +111,20 @@ function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
       droppedCount: 0,
       watchers: [],
       traceLink: null,
-      retention: null,
+      retention: { afterMs: 3_600_000, keepLast: null },
+      pruneEnabled: true,
+      explainEnabled: false,
       sampling: {},
     }),
     serverStats: async () => serverStats,
     health: async () => healthOverride,
+    retention: async () => ({
+      retention: { afterMs: 3_600_000, keepLast: null },
+      entryCount: null,
+      oldestCreatedAt: null,
+      pruneSupported: true,
+    }),
+    prune: async () => ({ pruned: 0 }),
   };
 }
 

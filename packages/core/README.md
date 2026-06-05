@@ -98,3 +98,31 @@ capturing fat content (often an ORM entity) — the fix is to project lighter
 content (e.g. `req.user` → `{ id, email }`) or tighten `redact` / add `sampling`.
 The dashboard's **Overview** health card surfaces the same figure as a *Truncated*
 stat.
+
+## Explain slow queries
+
+Telescope is DB-agnostic, so query `EXPLAIN` is an opt-in **host hook** — you
+bring the connection and dialect. Supply `explainQuery`, and the dashboard's
+query detail grows an **Explain** button (`POST /telescope/api/queries/explain`,
+`{ entryId }`) that replays the captured SQL/bindings through your hook and
+renders `{ plan }`. The hook runs arbitrary `EXPLAIN <sql>` against your
+database, so scope its connection **read-only**. A hook that throws surfaces as a
+clean `{ message }` error, not a crash. Hidden when unset (`meta.explainEnabled`).
+
+```ts
+TelescopeModule.forRoot({
+  explainQuery: async (sql, bindings) => {
+    const [rows] = await pool.query(`EXPLAIN FORMAT=JSON ${sql}`, bindings);
+    return rows;
+  },
+});
+```
+
+## On-demand prune
+
+With a `prune` retention window configured, `GET /telescope/api/retention`
+reports the resolved window and `POST /telescope/api/retention/prune` runs a
+prune on demand. Pruning is a **mutation**, so it sits behind the same
+default-deny `authorizeAction` gate as the queue console: `403` until you supply
+that callback, `400` when no `prune` window is set. The Overview **Retention**
+card shows a *Prune now* button only when both are in place (`meta.pruneEnabled`).

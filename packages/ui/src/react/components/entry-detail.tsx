@@ -1,5 +1,5 @@
 import type { EntryWithBatch } from '../../client/index.js';
-import { useMeta } from '../use-telescope-queries.js';
+import { useExplain, useMeta } from '../use-telescope-queries.js';
 import { BatchTimeline } from './batch-timeline.js';
 import { CacheBadge } from './cache-badge.js';
 import { ExportJsonToolbar } from './export-json-toolbar.js';
@@ -42,6 +42,12 @@ export function EntryDetail({
           <RedisBody content={entry.content} />
         ) : entry.type === 'request' ? (
           <RequestBody content={entry.content} />
+        ) : entry.type === 'query' ? (
+          <QueryBody
+            entryId={entry.id}
+            content={entry.content}
+            explainEnabled={meta?.explainEnabled ?? false}
+          />
         ) : (
           <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
             {JSON.stringify(entry.content, null, 2)}
@@ -270,6 +276,74 @@ function RequestBody({ content }: { content: unknown }): JSX.Element {
         </pre>
       ) : (
         <p className="text-xs text-zinc-600">anonymous</p>
+      )}
+    </div>
+  );
+}
+
+function QueryBody({
+  entryId,
+  content,
+  explainEnabled,
+}: { entryId: string; content: unknown; explainEnabled: boolean }): JSX.Element {
+  const record =
+    typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
+  const sql = typeof record.sql === 'string' ? record.sql : String(record.sql ?? '');
+  const slow = record.slow === true;
+  const explain = useExplain();
+  const result = explain.data;
+
+  async function onExplain(): Promise<void> {
+    try {
+      await explain.mutateAsync(entryId);
+    } catch {
+      // mutateAsync rejects only on transport errors; the client maps the
+      // expected 404/503 outcomes into a non-throwing `{ ok: false }` result.
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 font-mono text-sm text-sky-400">
+          query
+          {slow ? (
+            <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-amber-400">
+              slow
+            </span>
+          ) : null}
+        </h3>
+        {explainEnabled ? (
+          <button
+            type="button"
+            onClick={onExplain}
+            disabled={explain.isPending}
+            className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {explain.isPending ? 'Explaining…' : 'Explain'}
+          </button>
+        ) : null}
+      </div>
+      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">{sql}</pre>
+      {Array.isArray(record.bindings) && record.bindings.length > 0 ? (
+        <>
+          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-zinc-500">Bindings</h3>
+          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+            {prettyJson(record.bindings)}
+          </pre>
+        </>
+      ) : null}
+      {explain.isPending ? (
+        <p className="mt-3 text-xs text-zinc-600">Running EXPLAIN…</p>
+      ) : result === undefined ? null : result.ok ? (
+        <>
+          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-zinc-500">Query plan</h3>
+          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+            {prettyJson(result.plan)}
+          </pre>
+        </>
+      ) : (
+        <p className="mt-3 rounded bg-zinc-900 p-3 text-xs text-red-400">{result.message}</p>
       )}
     </div>
   );

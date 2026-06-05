@@ -7,15 +7,20 @@ import {
   type StackedAreaRow,
   WindowSelect,
   deriveTypes,
+  formatRetention,
   useHealth,
+  useMeta,
+  usePrune,
   usePulse,
   useQueues,
+  useRetention,
   useServerStats,
   useTimeseries,
 } from '../../react/index.js';
 import type {
   PulseReport,
   QueueMetricsReport,
+  RetentionInfo,
   ServerStats,
   TelescopeHealth,
   TimeseriesReport,
@@ -147,6 +152,62 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
   );
 }
 
+function RetentionCard({
+  retention,
+  pruneEnabled,
+}: {
+  retention: RetentionInfo | undefined;
+  pruneEnabled: boolean;
+}): JSX.Element {
+  const prune = usePrune();
+  const window = retention?.retention;
+
+  async function onPrune(): Promise<void> {
+    if (
+      !globalThis.confirm('Prune now deletes entries older than the retention window. Continue?')
+    ) {
+      return;
+    }
+    try {
+      const result = await prune.mutateAsync();
+      globalThis.alert(`Pruned ${result.pruned} ${result.pruned === 1 ? 'entry' : 'entries'}.`);
+    } catch {
+      globalThis.alert('Prune failed.');
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400">Retention</h3>
+        {pruneEnabled ? (
+          <button
+            type="button"
+            onClick={onPrune}
+            disabled={prune.isPending}
+            className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {prune.isPending ? 'Pruning…' : 'Prune now'}
+          </button>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatCard
+          label="Window"
+          value={window ? formatRetention(window.afterMs) : 'none'}
+          accent={window ? 'text-emerald-400' : 'text-zinc-500'}
+          hint={window?.keepLast != null ? `keep last ${window.keepLast}` : 'unbounded'}
+        />
+        <StatCard
+          label="Entries"
+          value={retention?.entryCount != null ? retention.entryCount.toLocaleString() : 'n/a'}
+        />
+        <StatCard label="Oldest" value={retention?.oldestCreatedAt != null ? 'tracked' : 'n/a'} />
+      </div>
+    </section>
+  );
+}
+
 function formatBucketTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -267,6 +328,8 @@ export function OverviewPage(): JSX.Element {
   const series = useTimeseries({ window, buckets: 60 });
   const serverStats = useServerStats();
   const health = useHealth();
+  const retention = useRetention();
+  const meta = useMeta();
 
   const throughput = toThroughputSeries(series.data);
   const byTypeRows = toByTypeRows(series.data);
@@ -284,6 +347,8 @@ export function OverviewPage(): JSX.Element {
       <ServerStatsCard stats={serverStats.data} />
 
       <TelescopeHealthCard health={health.data} />
+
+      <RetentionCard retention={retention.data} pruneEnabled={meta.data?.pruneEnabled ?? false} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <AreaChartCard title="Throughput" valueLabel="entries" data={throughput} />

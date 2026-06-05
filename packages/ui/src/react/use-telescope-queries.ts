@@ -56,6 +56,16 @@ export function healthQuery(client: TelescopeClient, paused = false) {
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
+export function retentionKey() {
+  return ['telescope', 'retention'] as const;
+}
+export function retentionQuery(client: TelescopeClient, paused = false) {
+  return queryOptions({
+    queryKey: retentionKey(),
+    queryFn: () => client.retention(),
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+  });
+}
 export function pulseQuery(client: TelescopeClient, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'pulse', window],
@@ -252,6 +262,27 @@ export function useQueueEnqueue() {
       });
     },
   });
+}
+
+export function useRetention() {
+  return useQuery(retentionQuery(useTelescopeClient(), usePaused()));
+}
+
+export function usePrune() {
+  const client = useTelescopeClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => client.prune(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: retentionKey() });
+      queryClient.invalidateQueries({ queryKey: ['telescope', 'entries'] });
+    },
+  });
+}
+
+export function useExplain() {
+  const client = useTelescopeClient();
+  return useMutation({ mutationFn: (entryId: string) => client.explain(entryId) });
 }
 
 export function useEntries(query: EntriesQuery = {}) {

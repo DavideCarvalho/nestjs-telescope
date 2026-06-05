@@ -90,6 +90,10 @@ export interface TelescopeMeta {
   traceLink: string | null;
   /** Resolved retention window from `prune`, or `null` when unbounded. */
   retention: { afterMs: number; keepLast: number | null } | null;
+  /** Whether on-demand pruning is available (prune window AND mutations enabled). */
+  pruneEnabled: boolean;
+  /** Whether query EXPLAIN is available (host configured an `explainQuery` hook). */
+  explainEnabled: boolean;
   /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
   sampling: Record<string, number>;
   /**
@@ -98,6 +102,21 @@ export interface TelescopeMeta {
    */
   auth: { enabled: boolean; modes: AuthMode[] };
 }
+/**
+ * Retention/prune status returned by `GET /retention`. `entryCount` and
+ * `oldestCreatedAt` are `null` unless the storage SPI can expose them cheaply
+ * (it currently can't, so Telescope never scans to derive them).
+ */
+export interface RetentionInfo {
+  retention: { afterMs: number; keepLast: number | null } | null;
+  entryCount: number | null;
+  oldestCreatedAt: string | null;
+  pruneSupported: true;
+}
+
+/** Outcome of `POST /queries/explain`: the plan, or a clean error message. */
+export type ExplainResult = { ok: true; plan: unknown } | { ok: false; message: string };
+
 export interface DurationStats {
   avg: number;
   p50: number;

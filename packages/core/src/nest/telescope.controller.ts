@@ -4,6 +4,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Inject,
@@ -12,10 +13,12 @@ import {
   Param,
   Post,
   Query,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { durationToMs } from '../config/parse-duration.js';
-import type { Entry } from '../entry/entry.js';
+import type { QueryContent } from '../entry/content.js';
+import { type Entry, EntryType } from '../entry/entry.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { type ServerStats, ServerStatsService } from '../metrics/server-stats.service.js';
 import type { StatsResult } from '../metrics/stats.js';
@@ -78,6 +81,36 @@ const ACTION_METHOD: Record<QueueActionName, keyof QueueManager> = {
 interface EnqueueBody {
   name?: string;
   payload?: unknown;
+}
+
+interface ExplainBody {
+  entryId?: string;
+}
+
+/**
+ * Retention/prune status surfaced to the dashboard. `retention` mirrors meta's
+ * shape (the configured window) or `null` when unbounded. `entryCount`/
+ * `oldestCreatedAt` are `null` unless the storage SPI can expose them cheaply
+ * (it currently can't — newest-first `get` has no count/oldest), so we never
+ * scan to derive them. `pruneSupported` advertises that the on-demand prune
+ * endpoint exists (separate from whether it's authorized/configured).
+ */
+export interface RetentionInfo {
+  retention: { afterMs: number; keepLast: number | null } | null;
+  entryCount: number | null;
+  oldestCreatedAt: string | null;
+  pruneSupported: true;
+}
+
+/** Type guard: a query entry carries a non-empty SQL string to explain. */
+function isQueryContentWithSql(content: unknown): content is QueryContent {
+  return (
+    typeof content === 'object' &&
+    content !== null &&
+    'sql' in content &&
+    typeof (content as { sql: unknown }).sql === 'string' &&
+    (content as { sql: string }).sql !== ''
+  );
 }
 
 @UseGuards(TelescopeGuard)
@@ -378,6 +411,78 @@ export class TelescopeController {
   @Get('health')
   health(): TelescopeHealth {
     return this.service.getHealth();
+  }
+
+  // ── Retention / prune ──────────────────────────────────────────────────────
+
+  @Get('retention')
+  retention(): RetentionInfo {
+    const prune = this.options.prune;
+    // entryCount / oldestCreatedAt require an ascending scan or a count the
+    // StorageProvider SPI does not expose cheaply. We deliberately do NOT scan,
+    // so both stay null until/unless the SPI grows a cheap accessor.
+    return {
+      retention: prune
+        ? {
+            afterMs: durationToMs(prune.after),
+            keepLast: prune.keepLast ?? null,
+          }
+        : null,
+      entryCount: null,
+      oldestCreatedAt: null,
+      pruneSupported: true,
+    };
+  }
+
+  // Prune is a MUTATION (deletes entries), so it stays behind the default-deny
+  // authorizeAction gate. The queue-shaped TelescopeActionGuard can't validate
+  // it (no driver/queue/action params), so we enforce the same default-deny
+  // here directly: no `authorizeAction` configured → 403.
+  @Post('retention/prune')
+  @HttpCode(200)
+  async prune(): Promise<{ pruned: number }> {
+    if (!this.options.authorizeAction) {
+      throw new ForbiddenException('Mutations are disabled (no authorizeAction configured).');
+    }
+    const prune = this.options.prune;
+    if (!prune) {
+      throw new BadRequestException('No `prune` retention window is configured.');
+    }
+    const olderThan = new Date(Date.now() - durationToMs(prune.after));
+    const pruned =
+      prune.keepLast !== undefined
+        ? await this.storage.prune(olderThan, prune.keepLast)
+        : await this.storage.prune(olderThan);
+    return { pruned };
+  }
+
+  // ── Query EXPLAIN ──────────────────────────────────────────────────────────
+
+  // Read-shaped (it returns a plan, mutates no Telescope state) so it sits behind
+  // the normal read guard. NOTE: the host hook runs arbitrary `EXPLAIN <sql>`
+  // against its database — hosts MUST scope that connection read-only.
+  @Post('queries/explain')
+  @HttpCode(200)
+  async explain(@Body() body: ExplainBody): Promise<{ plan: unknown }> {
+    const explainQuery = this.options.explainQuery;
+    if (!explainQuery) {
+      throw new NotFoundException('Query EXPLAIN is not configured.');
+    }
+    if (body === undefined || body === null || typeof body.entryId !== 'string') {
+      throw new BadRequestException('Body must include an "entryId".');
+    }
+    const entry = await this.storage.find(body.entryId);
+    if (!entry || entry.type !== EntryType.Query || !isQueryContentWithSql(entry.content)) {
+      throw new NotFoundException('No query entry with SQL for that id.');
+    }
+    try {
+      // Pass the SQL/bindings EXACTLY as captured — plans carry no user data.
+      const plan = await explainQuery(entry.content.sql, entry.content.bindings ?? []);
+      return { plan };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'EXPLAIN failed.';
+      throw new ServiceUnavailableException({ message });
+    }
   }
 
   @Delete('entries')

@@ -56,6 +56,27 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   resolveUser?: (request: unknown) => unknown;
   /**
+   * Host-provided hook that runs an engine `EXPLAIN` for a captured query and
+   * returns the plan. Telescope is DB-agnostic, so the HOST brings its own
+   * connection/dialect — Telescope only hands over the captured SQL and bindings
+   * exactly as recorded. When unset, the explain endpoint reports 404 (feature
+   * off) and `meta.explainEnabled` is `false`.
+   *
+   * The hook runs ARBITRARY SQL `EXPLAIN` against your database, so scope its
+   * connection read-only (and to non-sensitive schemas) — a captured statement
+   * is replayed as `EXPLAIN <sql>`. Throwing surfaces as a clean `{ message }`
+   * error to the dashboard (the plan failed to run), not a crash.
+   *
+   * @example MySQL (mysql2):
+   * ```ts
+   * explainQuery: async (sql, bindings) => {
+   *   const [rows] = await pool.query(`EXPLAIN FORMAT=JSON ${sql}`, bindings);
+   *   return rows;
+   * }
+   * ```
+   */
+  explainQuery?: (sql: string, bindings: unknown[]) => Promise<unknown>;
+  /**
    * Cookie-session gate for the dashboard. When set, every guarded `/api/*`
    * route (except `/api/auth/*`) requires a valid signed session cookie, AND
    * the existing `authorizer` still runs (AND semantics). The cookie is minted

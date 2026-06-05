@@ -32,6 +32,18 @@ export interface TelescopeMeta {
   traceLink: string | null;
   /** Resolved retention window from `prune`, or `null` when unbounded. */
   retention: { afterMs: number; keepLast: number | null } | null;
+  /**
+   * Whether on-demand pruning is available from the dashboard: requires both a
+   * configured retention window (`prune`) AND mutations enabled (`authorizeAction`
+   * present, the same default-deny gate the queue mutations use). When `false`,
+   * the dashboard hides/disables the "Prune now" control.
+   */
+  pruneEnabled: boolean;
+  /**
+   * Whether the query EXPLAIN feature is available (the host configured an
+   * `explainQuery` hook). When `false`, the dashboard hides the "Explain" button.
+   */
+  explainEnabled: boolean;
   /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
   sampling: Record<string, number>;
   /**
@@ -206,6 +218,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
             keepLast: this.config.prune.keepLast ?? null,
           }
         : null,
+      pruneEnabled: this.config.prune !== undefined && Boolean(this.options.authorizeAction),
+      explainEnabled: Boolean(this.options.explainQuery),
       sampling: samplingRates(this.config.sampling),
       auth: {
         enabled: this.dashboardAuth !== null,

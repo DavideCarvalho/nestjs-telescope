@@ -213,6 +213,56 @@ describe('TelescopeService', () => {
     expect(meta.sampling).toEqual({});
   });
 
+  it('getMeta pruneEnabled requires BOTH a prune window and authorizeAction', async () => {
+    // prune window but no authorizeAction → not enabled (mutation gated)
+    const gatedService = new TelescopeService(
+      resolveConfig({ recorder: { flushIntervalMs: 5 }, prune: { after: '1h' } }),
+      new InMemoryStorageProvider(),
+      {},
+    );
+    active = gatedService;
+    expect((await gatedService.getMeta()).pruneEnabled).toBe(false);
+    await gatedService.onApplicationShutdown();
+
+    // authorizeAction but no prune window → not enabled (nothing to prune to)
+    const noWindowService = new TelescopeService(
+      resolveConfig({ recorder: { flushIntervalMs: 5 } }),
+      new InMemoryStorageProvider(),
+      { authorizeAction: () => true },
+    );
+    active = noWindowService;
+    expect((await noWindowService.getMeta()).pruneEnabled).toBe(false);
+    await noWindowService.onApplicationShutdown();
+
+    // both present → enabled
+    const enabledService = new TelescopeService(
+      resolveConfig({ recorder: { flushIntervalMs: 5 }, prune: { after: '1h' } }),
+      new InMemoryStorageProvider(),
+      { authorizeAction: () => true },
+    );
+    active = enabledService;
+    expect((await enabledService.getMeta()).pruneEnabled).toBe(true);
+  });
+
+  it('getMeta explainEnabled reflects the explainQuery hook presence', async () => {
+    const off = new TelescopeService(
+      resolveConfig({ recorder: { flushIntervalMs: 5 } }),
+      new InMemoryStorageProvider(),
+      {},
+    );
+    active = off;
+    expect((await off.getMeta()).explainEnabled).toBe(false);
+    await off.onApplicationShutdown();
+
+    const on = new TelescopeService(
+      resolveConfig({ recorder: { flushIntervalMs: 5 } }),
+      new InMemoryStorageProvider(),
+      { explainQuery: () => Promise.resolve({}) },
+    );
+    active = on;
+    expect((await on.getMeta()).explainEnabled).toBe(true);
+  });
+
   it('getMeta returns null keepLast when prune omits it', async () => {
     const config = resolveConfig({
       recorder: { flushIntervalMs: 5 },

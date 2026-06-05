@@ -5,6 +5,7 @@ import type {
   EntriesQuery,
   Entry,
   EntryWithBatch,
+  ExplainResult,
   JobPage,
   LoginResult,
   Page,
@@ -15,6 +16,7 @@ import type {
   QueueMetricsReport,
   QueueState,
   QueueSummary,
+  RetentionInfo,
   ScheduledTask,
   ServerStats,
   StatsResult,
@@ -70,6 +72,15 @@ export interface TelescopeClient {
   meta(): Promise<TelescopeMeta>;
   serverStats(): Promise<ServerStats>;
   health(): Promise<TelescopeHealth>;
+  /** Retention/prune status for the Overview retention card. */
+  retention(): Promise<RetentionInfo>;
+  /** Runs on-demand prune (gated server-side by the default-deny mutation guard). */
+  prune(): Promise<{ pruned: number }>;
+  /**
+   * Explains a captured query entry. 404 (no hook / bad entry) and 503 (hook
+   * threw) are EXPECTED outcomes surfaced as `{ ok: false }`, not thrown.
+   */
+  explain(entryId: string): Promise<ExplainResult>;
   liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>;
   schedulesLive(): Promise<{ tasks: ScheduledTask[] }>;
   queueCounts(driver: string, queue: string): Promise<QueueCounts>;
@@ -227,6 +238,32 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     await rawPost('/auth/logout');
   }
 
+  async function explain(entryId: string): Promise<ExplainResult> {
+    const response = await rawPost('/queries/explain', { entryId });
+    if (response.ok) {
+      const body = (await response.json()) as { plan: unknown };
+      return { ok: true, plan: body.plan };
+    }
+    const message = await readExplainMessage(response);
+    return { ok: false, message };
+  }
+
+  async function readExplainMessage(response: Response): Promise<string> {
+    const parsed = await response
+      .json()
+      .then((value: unknown) => value)
+      .catch(() => null);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'message' in parsed &&
+      typeof parsed.message === 'string'
+    ) {
+      return parsed.message;
+    }
+    return `EXPLAIN failed (${response.status})`;
+  }
+
   return {
     entries: (query = {}) =>
       get<Page<Entry>>('/entries', {
@@ -255,6 +292,9 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     meta: () => get<TelescopeMeta>('/meta'),
     serverStats: () => get<ServerStats>('/server-stats'),
     health: () => get<TelescopeHealth>('/health'),
+    retention: () => get<RetentionInfo>('/retention'),
+    prune: () => post<{ pruned: number }>('/retention/prune'),
+    explain,
     liveQueues: () =>
       get<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>('/queues/live'),
     schedulesLive: () => get<{ tasks: ScheduledTask[] }>('/schedules/live'),
