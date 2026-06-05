@@ -4,6 +4,7 @@ description: The core module — request + exception watchers, the recorder, ALS
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 <Tabs items={['pnpm', 'npm']}>
   <Tab value="pnpm">
@@ -43,13 +44,55 @@ Hit `GET /telescope/api/entries` (or `/telescope/api/entries/:id` for a request 
 |---|---|
 | _request watcher_ | Every HTTP request (wired automatically) — opens the batch. |
 | _exception watcher_ | Every thrown exception (wired automatically). |
-| `HttpClientWatcher` | Outbound `fetch` calls, correlated to the request/job. Sanitizes credentials and secret query params; no peer dependency. |
+| `HttpClientWatcher` | Outbound `fetch` calls, correlated to the request/job. Optionally also axios / `@nestjs/axios`. Sanitizes credentials and secret query params; no peer dependency. |
 
 ```ts
 import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
 
 TelescopeModule.forRoot({ watchers: [new HttpClientWatcher({ slowMs: 1000 })] });
 ```
+
+### `HttpClientWatcher` + axios / `@nestjs/axios`
+
+`fetch` is patched out of the box, but NestJS apps mostly call out through `@nestjs/axios`'s `HttpService` — and in Node, axios uses the **http adapter**, not `fetch`, so those calls are invisible to the `fetch` patch. Pass an `axios` source to capture them too, via axios's public interceptor API (no monkey-patching). Both paths share the same content shape, tags, and family-hash, so axios and fetch entries are indistinguishable in the dashboard.
+
+**`@nestjs/axios` — resolve `HttpService` lazily.** `HttpService` isn't constructed until the container is up, so use the custom-source `instrument` hook to grab `axiosRef` at register time from `ctx.moduleRef`:
+
+```ts
+import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
+import { HttpService } from '@nestjs/axios';
+
+TelescopeModule.forRoot({
+  watchers: [
+    new HttpClientWatcher({
+      slowMs: 1000,
+      axios: {
+        instrument(attach, ctx) {
+          const http = ctx.moduleRef.get(HttpService, { strict: false });
+          attach(http.axiosRef); // wire interceptors onto the real instance
+        },
+      },
+    }),
+  ],
+});
+```
+
+**Plain axios instance — hand it over directly:**
+
+```ts
+import axios from 'axios';
+import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
+
+const client = axios.create({ baseURL: 'https://api.example.com' });
+
+TelescopeModule.forRoot({ watchers: [new HttpClientWatcher({ axios: client })] });
+```
+
+On a non-2xx response the entry records `error.response.status`; on a transport failure (no response) it records `statusCode: null` (tagged `failed`). Either way the rejection is **re-thrown**, so your error handling is untouched. Instrumentation is idempotent per axios instance, so sharing one instance across watchers never double-records.
+
+<Callout type="info">
+  **Double-capture edge case:** if you explicitly configure axios with the **fetch adapter** (Node's default is the http adapter), a single call could record on both the axios and `fetch` paths. Keep the http adapter, or pass only one source.
+</Callout>
 
 ## Headless API
 

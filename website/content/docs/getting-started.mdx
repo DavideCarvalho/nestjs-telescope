@@ -130,6 +130,8 @@ import { TelescopeModule, HttpClientWatcher } from '@dudousxd/nestjs-telescope';
 TelescopeModule.forRoot({ watchers: [new HttpClientWatcher({ slowMs: 1000 })] });
 ```
 
+Calls through `@nestjs/axios` bypass `fetch` — pass an `axios` source to capture them too (see the [`HttpClientWatcher` reference](/docs/packages/core#httpclientwatcher--axios--nestjsaxios)).
+
 To capture **queries** from MikroORM, wire its logger so each query correlates to the request that triggered it:
 
 ```ts
