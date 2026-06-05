@@ -1,6 +1,6 @@
 ---
 title: Documentation
-description: Laravel Telescope-style observability for NestJS — requests, queries, jobs, mail, cache, and exceptions correlated under one batch, plus live queue management and a health dashboard.
+description: Laravel Telescope-style observability for NestJS — requests, queries, jobs, mail, cache, and exceptions correlated under one batch, plus live queue management, a health dashboard, Slack error alerting, AI diagnosis, frontend error reporting, and archival.
 ---
 
 Welcome to the **nestjs-telescope** documentation.
@@ -15,6 +15,10 @@ Head to the [Getting Started](/docs/getting-started) guide to mount the dashboar
 - **A Horizon-style live queue console.** Browse BullMQ and SQS queues in real time — depth per state, individual jobs, and (behind a second default-deny gate) retry / remove / promote / redrive.
 - **A Pulse-style health dashboard.** Per-type entry counts, the slowest entries, the most frequent exceptions, N+1 occurrences, and a throughput sparkline — all rolled up from captured entries.
 - **Off the response path.** Request capture fires *after* the response is flushed; query capture is ~microseconds. Telescope is built so that it never slows the app it observes — and it surfaces its own cost on a `/health` card.
+- **Error alerting.** A genuinely *new* exception family pages you — Slack (Block Kit, with route/user and a deep link), a raw webhook, or your own sink — alongside rate, slow-route, and dropped-entry rules.
+- **AI diagnosis.** One click turns an exception into a probable-cause / suggested-fix report from its stack, route, and the SQL that just ran. In auto-mode it enriches the Slack alert. Bedrock, OpenAI, or any Vercel AI SDK model.
+- **Frontend error reporting.** Point a browser error handler at a public endpoint and `client_exception` reports flow through the same pipeline — family hashing, alerts, archive, the dashboard's Client errors tab.
+- **Archive before prune.** Per-type retention keeps exceptions a week and requests an hour; an `archive.sink` ships doomed entries to S3 (or any cold store) before the pruner deletes them.
 
 ## Why
 
@@ -38,6 +42,9 @@ Open any request and you get its **correlated batch** — the cache reads, queri
 - [Capture & correlation](/docs/concepts/capture) — watchers, batches, and the ALS flow
 - [Storage](/docs/concepts/storage) — the `StorageProvider` SPI, self-healing schema, adapter table
 - [Performance](/docs/concepts/performance) — off-the-response-path capture and the `/health` endpoint
-- [Dashboard tour](/docs/dashboard) — overview, entries, traces, queues console, schedules
+- [Dashboard tour](/docs/dashboard) — overview, entries, traces, queues console, schedules, and [alerts](/docs/dashboard#alerts)
 - [Dashboard auth](/docs/dashboard/auth) — gate the dashboard to your admins, all the way to prod
+- [AI diagnosis](/docs/packages/ai) — turn a captured exception into a probable-cause report
+- [Reporting frontend errors](/docs/recipes/reporting-frontend-errors) — browsers POST straight to Telescope
+- [Archiving to S3](/docs/recipes/archiving-exceptions-to-s3) — export entries before the pruner deletes them
 - [Packages](/docs/packages) — one page per watcher, storage, and queue manager

@@ -6,7 +6,9 @@
 
 > Laravel Telescope, redesigned for NestJS. Watch every request, query, job,
 > email, cache hit, and exception — correlated under one batch, off the response
-> path, pluggable, and safe in production. Express **and** Fastify.
+> path, pluggable, and safe in production. Alert new errors to Slack, diagnose
+> them with AI, capture frontend errors, and archive before you prune. Express
+> **and** Fastify.
 
 `@dudousxd/nestjs-telescope` is an application observability console for NestJS.
 A set of watchers capture what happens *inside* a request — every query, queued
@@ -60,7 +62,10 @@ apps are done in under five minutes — see the
 | **Queue console** | A Horizon-style live view of BullMQ and SQS queues: per-state depth, individual jobs, and (behind a second default-deny gate) retry / remove / promote / redrive. |
 | **Pulse** | At-a-glance health: per-type counts, slowest entries, top exceptions, N+1 hotspots, and a throughput sparkline — rolled up from captured entries. |
 | **Health & overhead** | Capture runs *off* the response path; the dashboard surfaces Telescope's own host-path µs/capture, buffer pressure, and flush p95 on a `/health` card. |
-| **Storage adapters** | A pluggable `StorageProvider` SPI with a self-healing schema: SQLite by default, swap in Redis (multi-instance) or your own. |
+| **Storage adapters** | A pluggable `StorageProvider` SPI with a self-healing schema: SQLite by default, swap in Redis (multi-instance) or your own. Per-type retention + an `archive.sink` to ship doomed entries to S3 before prune. |
+| **Error alerting** | A genuinely *new* exception family pages you — Slack (Block Kit, route/user, deep link), a raw webhook, or a custom sink — plus rate, slow-route, and dropped-entry rules. |
+| **AI diagnosis** | `@dudousxd/nestjs-telescope-ai` turns an exception into a probable-cause / suggested-fix report (Bedrock, OpenAI, any AI-SDK model). On-demand button or auto-mode that enriches the Slack alert. |
+| **Frontend errors** | An opt-in public endpoint records browser `client_exception` reports through the same pipeline — family hashing, alerts, archive, dashboard. |
 | **Dashboard auth** | A read `authorizer` gates the API (default-deny in production); a separate `authorizeAction` fails closed for every mutation. |
 
 ## Dashboard
@@ -85,7 +90,10 @@ itself.
 - **Recipes** — [custom storage](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/custom-storage),
   [custom watcher](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/custom-watcher),
   [dashboard auth](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/dashboard-auth),
-  [tags & redaction](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/tags-and-redaction).
+  [tags & redaction](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/tags-and-redaction),
+  [archiving to S3](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/archiving-exceptions-to-s3),
+  [reporting frontend errors](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/reporting-frontend-errors),
+  [AI exception diagnosis](https://davidecarvalho.github.io/nestjs-telescope/docs/recipes/ai-exception-diagnosis).
 - **Architecture** — [`DESIGN.md`](./DESIGN.md) · **Product brief** — [`PRODUCT.md`](./PRODUCT.md)
 
 ## Packages
@@ -102,6 +110,8 @@ itself.
 | `@dudousxd/nestjs-telescope-cache` | Cache watcher (get/set hit/miss) |
 | `@dudousxd/nestjs-telescope-schedule` | Schedule watcher (`@nestjs/schedule` cron/interval) |
 | `@dudousxd/nestjs-telescope-redis` | Redis-backed shared storage (multi-instance) |
+| `@dudousxd/nestjs-telescope-ai` | AI exception diagnoser (Vercel AI SDK — Bedrock, OpenAI, any model) |
+| `@dudousxd/nestjs-telescope-otel` | OpenTelemetry trace-context provider + bridge |
 | `@dudousxd/nestjs-telescope-testing` | In-memory store, `FakeClock`, watcher test harness |
 
 ## License

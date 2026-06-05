@@ -2,6 +2,8 @@ import Link from 'next/link';
 import {
   Activity,
   ArrowRight,
+  Bell,
+  Bug,
   Database,
   Gauge,
   HeartPulse,
@@ -9,6 +11,7 @@ import {
   Lock,
   Radio,
   Shield,
+  Sparkles,
   Terminal,
   Zap,
 } from 'lucide-react';
@@ -83,9 +86,10 @@ function Hero() {
         <p className="mt-6 max-w-2xl text-pretty text-lg text-fd-muted-foreground">
           Watch every request, query, job, email, cache hit, and exception —
           correlated under one batch, off the response path, pluggable to the
-          core, and safe in production. Plus a Horizon-style live queue console
-          and a Pulse-style health dashboard. Works on Express{' '}
-          <em>and</em> Fastify.
+          core, and safe in production. Alert new errors to Slack, diagnose them
+          with AI, capture frontend errors, and archive before you prune. Plus a
+          Horizon-style live queue console and a Pulse-style health dashboard.
+          Works on Express <em>and</em> Fastify.
         </p>
 
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
@@ -385,8 +389,26 @@ const FEATURES: readonly Feature[] = [
   {
     icon: Database,
     title: 'Pluggable storage',
-    body: 'SQLite zero-config out of the box; MikroORM, TypeORM, Prisma and Redis adapters with self-healing schema when you scale.',
+    body: 'SQLite zero-config out of the box; MikroORM, TypeORM, Prisma and Redis adapters with self-healing schema. Archive entries to S3 before per-type retention prunes them.',
     accent: 'text-teal-400',
+  },
+  {
+    icon: Bell,
+    title: 'Error alerting',
+    body: 'A new exception pages you in Slack — formatted Block Kit with route, user and a deep link — or any webhook or custom sink. Rate, slow-route and dropped-entry rules too.',
+    accent: 'text-orange-400',
+  },
+  {
+    icon: Sparkles,
+    title: 'AI diagnosis',
+    body: 'One click turns an exception into a triage report — probable cause, where to look, a suggested fix — from the stack, route and the SQL that just ran. Bedrock, OpenAI, or any AI-SDK model.',
+    accent: 'text-fuchsia-400',
+  },
+  {
+    icon: Bug,
+    title: 'Frontend errors',
+    body: 'Point your browser error handler at a public endpoint and report client_exceptions through the same pipeline — family hashing, alerts, the dashboard. A react-error-boundary in minutes.',
+    accent: 'text-cyan-400',
   },
   {
     icon: Shield,
@@ -404,8 +426,8 @@ function FeatureGrid() {
           One console for everything in flight
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-fd-muted-foreground">
-          Six surfaces, one mental model. Every signal your NestJS app emits,
-          captured and correlated.
+          Capture, correlate, alert, diagnose. Every signal your NestJS app
+          emits — backend and browser — on one mental model.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

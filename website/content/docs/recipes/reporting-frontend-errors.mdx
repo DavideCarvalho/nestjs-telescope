@@ -5,7 +5,7 @@ description: Turn Telescope into your frontend error reporter — a public inges
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Instead of a hand-rolled reporter that POSTs to a bespoke endpoint (and pings Slack itself), point your browser error handler at Telescope. With `clientErrors` enabled, the browser reports errors to a public endpoint and Telescope records them as **`client_exception`** entries through the *same* pipeline as server exceptions — so they get a stable family hash, the `failed` / `client` / `user:<id>` tags, and they compose with [new-exception alerts](/docs/recipes/dashboard-auth), per-type [prune & archive](/docs/recipes/archiving-exceptions-to-s3), and the dashboard's "Client errors" tab.
+Instead of a hand-rolled reporter that POSTs to a bespoke endpoint (and pings Slack itself), point your browser error handler at Telescope. With `clientErrors` enabled, the browser reports errors to a public endpoint and Telescope records them as **`client_exception`** entries through the *same* pipeline as server exceptions — so they get a stable family hash, the `failed` / `client` / `user:<id>` tags, and they compose with [new-exception alerts](/docs/dashboard#alerts), per-type [prune & archive](/docs/recipes/archiving-exceptions-to-s3), and the dashboard's "Client errors" tab.
 
 ## Enable the endpoint
 
@@ -143,4 +143,4 @@ reportError(error, undefined);
 
 ## What you get
 
-Every accepted report lands as a `client_exception` entry. In the dashboard a **Client errors** tab appears in the per-type sidebar (it's watcher-driven, so it shows only while `clientErrors` is enabled), and each entry renders its message, stack, component stack, URL and user-agent. Because they carry a family hash and the `failed`/`client` tags, a brand-new frontend error family fires your [`new-exception` alert](/docs/dashboard/auth) just like a server one — with the page URL and user-agent in place of a server route.
+Every accepted report lands as a `client_exception` entry. In the dashboard a **Client errors** tab appears in the per-type sidebar (it's watcher-driven, so it shows only while `clientErrors` is enabled), and each entry renders its message, stack, component stack, URL and user-agent. Because they carry a family hash and the `failed`/`client` tags, a brand-new frontend error family fires your [`new-exception` alert](/docs/dashboard#alerts) just like a server one — with the page URL and user-agent in place of a server route.

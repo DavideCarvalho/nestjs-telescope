@@ -1,6 +1,6 @@
 ---
 title: Recipes
-description: Copy-pasteable cookbook for extending Telescope — a custom storage adapter, custom watchers, dashboard login against your own user table, custom tags and redaction, and request-context capture under a global prefix.
+description: Copy-pasteable cookbook for extending Telescope — a custom storage adapter, custom watchers, dashboard login, custom tags and redaction, request-context capture, archiving to S3 before prune, reporting frontend errors, and AI exception diagnosis.
 ---
 
 Every recipe here is a complete, working example built against the real v1.x SPI — the same interfaces the shipped adapters and watchers implement. Read the problem statement, copy the code, adapt the clearly-marked sketch parts to your stack.
@@ -15,5 +15,6 @@ Every recipe here is a complete, working example built against the real v1.x SPI
 | [Request context for your routes](/docs/recipes/request-context) | Capture the authenticated user under a `setGlobalPrefix`, and drop ad-hoc debug dumps. |
 | [Archiving exceptions to S3](/docs/recipes/archiving-exceptions-to-s3) | Export entries of a type to cold storage *before* the pruner deletes them, with the `archive.sink` hook and `@aws-sdk/client-s3`. |
 | [Reporting frontend errors](/docs/recipes/reporting-frontend-errors) | Let browsers POST errors straight to Telescope (`client_exception` entries) instead of a hand-rolled reporter — endpoint config, the security knobs, a fetch/`sendBeacon` snippet, and a `react-error-boundary` integration. |
+| [AI exception diagnosis](/docs/recipes/ai-exception-diagnosis) | Add a **Diagnose with AI** button (and optional auto-mode that enriches `new-exception` alerts) that turns a captured exception into a probable-cause report — Bedrock, OpenAI, or any Vercel AI SDK model. |
 
 Each recipe links back to the concept page that explains the mechanism — the recipes are the *how*, the concepts are the *why*.

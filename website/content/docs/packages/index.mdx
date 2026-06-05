@@ -1,6 +1,6 @@
 ---
 title: Packages
-description: The full suite — core, the dashboard, watchers, storage adapters, queue managers, the OpenTelemetry bridge, and test utilities. Install only what your stack needs.
+description: The full suite — core, the dashboard, watchers, storage adapters, queue managers, the OpenTelemetry bridge, the AI exception diagnoser, and test utilities. Install only what your stack needs.
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
@@ -25,6 +25,7 @@ Telescope is a monorepo of small, single-purpose packages. You install [core](/d
 | `@dudousxd/nestjs-telescope-bullmq` | BullMQ job watcher + live queue manager (browse + mutations). |
 | `@dudousxd/nestjs-telescope-sqs` | SQS live-queue manager (depth + DLQ inspection + redrive). |
 | `@dudousxd/nestjs-telescope-otel` | OpenTelemetry trace-context provider. |
+| `@dudousxd/nestjs-telescope-ai` | AI exception diagnoser (Vercel AI SDK — Bedrock, OpenAI, any model). |
 | `@dudousxd/nestjs-telescope-testing` | In-memory store, `FakeClock`, watcher test harness. |
 
 <Cards>
@@ -34,5 +35,6 @@ Telescope is a monorepo of small, single-purpose packages. You install [core](/d
   <Card title="Storages" href="/docs/packages/storages" description="MikroORM (MySQL/SQLite) and Redis adapters." />
   <Card title="Queue managers" href="/docs/packages/queue-managers" description="BullMQ and SQS live consoles + mutations." />
   <Card title="OpenTelemetry (-otel)" href="/docs/packages/otel" description="Stamp entries with the active trace/span." />
+  <Card title="AI diagnosis (-ai)" href="/docs/packages/ai" description="Turn a captured exception into a probable-cause report." />
   <Card title="Testing" href="/docs/packages/testing" description="FakeClock, watcher harness, in-memory store." />
 </Cards>
