@@ -97,7 +97,7 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
         </span>
       </div>
       {health ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard
             label="Capture cost"
             value={`${formatMicros(health.captureCostNanos)}/capture`}
@@ -129,6 +129,14 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
               health.droppedCount > 0
                 ? `overflow ${health.overflowDropped} · store ${health.storeFailedDropped}`
                 : 'keeping up'
+            }
+          />
+          <StatCard
+            label="Truncated"
+            value={health.truncatedCount.toLocaleString()}
+            accent={health.truncatedCount > 0 ? 'text-amber-400' : 'text-emerald-400'}
+            hint={
+              health.truncatedCount > 0 ? 'fat content — tune redact/sampling' : 'within bounds'
             }
           />
         </div>

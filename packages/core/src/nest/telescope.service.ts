@@ -124,6 +124,15 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
           'slowing analytics over time. Set e.g. `prune: { after: "1h" }` ' +
           '(and/or `sampling` to down-sample noisy request volume).',
       );
+    } else if (Object.keys(this.config.sampling).length === 0) {
+      // Retention is set, but with no `sampling` every captured entry is kept —
+      // the retained working set is `prune.after × ingest rate × entry size`.
+      // High-volume streams (cache hits especially) dominate that product, so
+      // nudge hosts toward per-type sampling. INFO, single line, non-noisy.
+      this.logger.log(
+        'No `sampling` configured — high-volume streams (e.g. cache) are kept in full. ' +
+          'Add per-type rates to bound store volume, e.g. `sampling: { cache: 0.1 }`.',
+      );
     }
     // Let the storage acquire resources / ensure its schema before first use.
     await this.storage.init?.();

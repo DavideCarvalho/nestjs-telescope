@@ -392,6 +392,55 @@ describe('Recorder', () => {
       expect(recorder.benchmarkRecordCost(0)).toBe(0);
       expect(recorder.benchmarkRecordCost(-5)).toBe(0);
     });
+
+    it('counts entries whose content was truncated by a redaction bound', async () => {
+      const { recorder } = makeRecorder();
+      // A normal entry: nothing truncated.
+      recorder.record({ type: 'request', content: { ok: 1 } });
+      expect(recorder.getSelfMetrics().truncatedCount).toBe(0);
+
+      // A fat entry whose string field blows past the default maxStringLength.
+      recorder.record({ type: 'request', content: { blob: 'x'.repeat(20_000) } });
+      expect(recorder.getSelfMetrics().truncatedCount).toBe(1);
+
+      // A second fat entry increments again.
+      recorder.record({ type: 'request', content: { blob: 'y'.repeat(20_000) } });
+      expect(recorder.getSelfMetrics().truncatedCount).toBe(2);
+
+      await recorder.flush();
+      // Cumulative — not reset by flush.
+      expect(recorder.getSelfMetrics().truncatedCount).toBe(2);
+    });
+  });
+
+  // ── Ring-buffer slot hygiene (incident fix) ────────────────────────────────
+
+  describe('drain slot hygiene', () => {
+    it('nulls drained slots so fat entries do not linger in the ring after a flush', async () => {
+      const { recorder } = makeRecorder({ bufferSize: 4 });
+      recorder.record({ type: 'request', content: { n: 1 } });
+      recorder.record({ type: 'request', content: { n: 2 } });
+      recorder.record({ type: 'request', content: { n: 3 } });
+      // Before the flush, three slots hold entries.
+      expect(recorder.retainedSlotCount).toBe(3);
+
+      await recorder.flush();
+
+      // After the flush the ring retains nothing — no stale references linger.
+      expect(recorder.retainedSlotCount).toBe(0);
+      expect(recorder.getSelfMetrics().bufferUsed).toBe(0);
+    });
+
+    it('keeps retainedSlotCount equal to live entries across interleaved record/flush', async () => {
+      const { recorder } = makeRecorder({ bufferSize: 4 });
+      recorder.record({ type: 'request', content: { n: 1 } });
+      recorder.record({ type: 'request', content: { n: 2 } });
+      await recorder.flush();
+      // New records after a flush reuse the (now-nulled) slots cleanly.
+      recorder.record({ type: 'request', content: { n: 3 } });
+      expect(recorder.retainedSlotCount).toBe(1);
+      expect(recorder.getSelfMetrics().bufferUsed).toBe(1);
+    });
   });
 
   // ── Trace context enrichment ──────────────────────────────────────────────

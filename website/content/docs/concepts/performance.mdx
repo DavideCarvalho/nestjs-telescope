@@ -32,7 +32,42 @@ Any residual floor on a remote database is network round-trip time (one RTT per 
 
 ## Bounded memory under backpressure
 
-The Recorder's ring buffer has a hard cap. Under a flood it drops the oldest entry and increments a dropped counter — it never grows unboundedly and never blocks the app. Sampling and the `filter()` hook let you down-sample high-volume request floods; because requests are already off the response path, that's a *store-volume* lever, not a latency one.
+The Recorder's ring buffer has a hard cap. Under a flood it drops the oldest entry and increments a dropped counter — it never grows unboundedly and never blocks the app. On flush it nulls the drained slots, so a flushed (potentially fat) entry isn't retained in the ring afterward. Sampling and the `filter()` hook let you down-sample high-volume request floods; because requests are already off the response path, that's a *store-volume* lever, not a latency one.
+
+## Memory bounds
+
+Telescope holds a *bounded working set*, by design — there's no unbounded leak. The heap it retains is roughly:
+
+```
+heap ≈ prune.after × ingest rate × bytes per entry
+```
+
+Those factors multiply, so a high rate of *fat* entries against a generous retention window can still pin real heap. Telescope bounds each factor at capture time.
+
+**Bounded redaction.** `redact()` runs synchronously on the hot path; besides masking, it's the detach that snapshots content into a reference-free clone. That clone is hard-bounded so a fat object graph (e.g. a hydrated ORM `req.user`) can't become a fat entry — all on by default, tunable per app via `redact`:
+
+| Bound             | Default | Beyond it                                     |
+| ----------------- | ------- | --------------------------------------------- |
+| `maxDepth`        | `8`     | subtree → `'[Truncated: depth]'`              |
+| `maxStringLength` | `8_192` | string → first N chars + `'…[truncated]'`     |
+| `maxArrayLength`  | `200`   | first N items + `'[Truncated: N of M items]'` |
+| `maxNodes`        | `5_000` | remaining subtrees → `'[Truncated: size]'`    |
+
+The defaults are generous: a normal request / query / cache entry is cloned byte-identically and never trips a bound — the bounds only bite on pathological mega-graphs.
+
+```ts
+TelescopeModule.forRoot({
+  prune: { after: '1h' },
+  redact: { maxNodes: 2_000 },     // tighter cap for fat content
+  sampling: { cache: 0.1 },        // keep 10% of high-volume cache hits
+});
+```
+
+**Sampling for high-volume streams.** Sampling is a store-volume lever (requests are already off the response path). Cache hits especially dominate the working-set product — keep a fraction. With `prune` set but `sampling` empty, Telescope logs a one-line INFO at boot pointing at this recipe.
+
+<Callout type="info" title="The truncated counter">
+  `GET /telescope/api/health` reports `truncatedCount` — entries whose content hit a redaction bound and was clipped. A climbing value means a watcher is capturing fat content (often an ORM entity); the fix is to project lighter content (`req.user` → `{ id, email }`) or tighten `redact` / add `sampling`. The Overview health card surfaces it as a *Truncated* stat.
+</Callout>
 
 ## The `/health` endpoint — Telescope's own cost, surfaced
 

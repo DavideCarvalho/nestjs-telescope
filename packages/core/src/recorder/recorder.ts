@@ -2,7 +2,7 @@ import type { TelescopeContext } from '../context/telescope-context.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
 import type { RedactOptions } from '../redaction/redact.js';
-import { redact } from '../redaction/redact.js';
+import { redactBounded } from '../redaction/redact.js';
 import { aggregateDeltas } from '../rollup/aggregate-deltas.js';
 import { isRollupStore } from '../rollup/rollup-store.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -43,6 +43,13 @@ export interface RecorderSelfMetrics {
   storeFailedDropped: number;
   /** Sum of all drop buckets (overflow + store-failed + record-error). */
   droppedCount: number;
+  /**
+   * Entries whose content hit a redaction bound and was clipped (depth, string,
+   * array, or node budget). A non-zero, climbing value means hosts are capturing
+   * fat content (e.g. ORM entities) — a signal to project lighter content or add
+   * per-type `sampling`. The entry is still recorded; only its payload is bounded.
+   */
+  truncatedCount: number;
 }
 
 export interface RecorderOptions {
@@ -109,6 +116,8 @@ export class Recorder {
   private lastFlushDurationMs: number | null = null;
   private maxFlushDurationMs: number | null = null;
   private totalFlushDurationMs = 0;
+  /** Entries whose content was clipped by a redaction bound (incident guard). */
+  private truncatedEntryCount = 0;
 
   // ── Concurrency guard ─────────────────────────────────────────────────────
   private flushing: Promise<void> | null = null;
@@ -140,6 +149,24 @@ export class Recorder {
   }
 
   /**
+   * Number of ring slots still holding an entry reference. After a flush this
+   * MUST equal `bufferUsed` (only the live, not-yet-drained entries), never the
+   * stale entries a previous flush left behind.
+   *
+   * @internal Test-only seam to assert `drain()` nulls drained slots so fat
+   * entries don't linger in the ring after a flush. Not part of the public API.
+   */
+  get retainedSlotCount(): number {
+    let retained = 0;
+    for (const slot of this.ring) {
+      if (slot !== undefined) {
+        retained += 1;
+      }
+    }
+    return retained;
+  }
+
+  /**
    * Snapshot of the Recorder's own behaviour. All fields are cheap integer
    * counters accumulated on the hot path plus off-path flush timings — no
    * per-record timing is taken, so reading this never taxes `record()`.
@@ -158,6 +185,7 @@ export class Recorder {
       overflowDropped: this.overflowDrops,
       storeFailedDropped: this.storeFailedDrops,
       droppedCount: this.droppedCount,
+      truncatedCount: this.truncatedEntryCount,
     };
   }
 
@@ -304,12 +332,20 @@ export class Recorder {
     } catch {
       trace = null;
     }
+    // Bounded, synchronous redaction. The sync detach is load-bearing — it
+    // snapshots the (possibly fat, possibly live-ORM-graph) content into a plain,
+    // reference-free, size-capped clone at record() time (see spec §A.1). Track
+    // when a bound clipped content so /health can surface fat-capture pressure.
+    const redacted = redactBounded(input.content, this.options.redact);
+    if (redacted.truncated) {
+      this.truncatedEntryCount += 1;
+    }
     const base: Entry = {
       id: this.options.idFactory(),
       batchId,
       type: input.type,
       familyHash: input.familyHash ?? null,
-      content: redact(input.content, this.options.redact),
+      content: redacted.value,
       tags: input.tags ?? [],
       sequence: this.options.context.nextSequence(),
       durationMs: input.durationMs ?? null,
@@ -357,6 +393,12 @@ export class Recorder {
       const slot = (this.head + i) % capacity;
       // The slot is always defined here because we only read within count.
       result[i] = this.ring[slot] as Entry;
+      // Null the drained slot so the ring no longer retains the (potentially
+      // fat) entry after a flush. Without this, stale fat entries linger in
+      // unread slots up to capacity until overwritten — a slow memory floor
+      // that fed the incident's working set. Per-slot here is the cheapest
+      // correct clear (only the slots we actually held).
+      this.ring[slot] = undefined;
     }
     // Reset ring state.
     this.head = 0;

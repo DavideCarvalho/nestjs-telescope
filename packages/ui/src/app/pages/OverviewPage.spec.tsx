@@ -58,6 +58,7 @@ const health = {
   overflowDropped: 0,
   storeFailedDropped: 0,
   droppedCount: 0,
+  truncatedCount: 0,
   captureCostNanos: 8700,
 };
 
@@ -202,5 +203,14 @@ describe('OverviewPage', () => {
     const value = hint.previousElementSibling;
     expect(value?.textContent).toBe('15');
     expect(value?.className).toContain('text-red-400');
+  });
+
+  it('surfaces the truncated counter when content is being clipped by redaction bounds', async () => {
+    renderOverview({ ...health, truncatedCount: 9 });
+    const hint = await screen.findByText('fat content — tune redact/sampling');
+    expect(hint).toBeTruthy();
+    const value = hint.previousElementSibling;
+    expect(value?.textContent).toBe('9');
+    expect(value?.className).toContain('text-amber-400');
   });
 });

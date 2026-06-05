@@ -181,6 +181,8 @@ export interface TelescopeHealth {
   storeFailedDropped: number;
   /** Total entries dropped (overflow + store failures). */
   droppedCount: number;
+  /** Entries whose content was clipped by a redaction bound (depth/string/array/node). */
+  truncatedCount: number;
   /** Mean nanoseconds per capture, from an on-demand micro-benchmark. */
   captureCostNanos: number;
 }

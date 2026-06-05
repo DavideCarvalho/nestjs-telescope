@@ -122,7 +122,7 @@ describe('TelescopeService', () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     try {
       const service = new TelescopeService(
-        resolveConfig({ prune: { after: '1h' } }),
+        resolveConfig({ prune: { after: '1h' }, sampling: { cache: 0.1 } }),
         new InMemoryStorageProvider(),
         {},
       );
@@ -131,6 +131,38 @@ describe('TelescopeService', () => {
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('No `prune` configured'));
     } finally {
       warn.mockRestore();
+    }
+  });
+
+  it('logs sampling guidance when prune is set but sampling is empty', async () => {
+    const info = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    try {
+      const service = new TelescopeService(
+        resolveConfig({ prune: { after: '1h' } }),
+        new InMemoryStorageProvider(),
+        {},
+      );
+      active = service;
+      await service.onModuleInit();
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('No `sampling` configured'));
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('does not log sampling guidance when sampling is configured', async () => {
+    const info = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    try {
+      const service = new TelescopeService(
+        resolveConfig({ prune: { after: '1h' }, sampling: { cache: 0.1 } }),
+        new InMemoryStorageProvider(),
+        {},
+      );
+      active = service;
+      await service.onModuleInit();
+      expect(info).not.toHaveBeenCalledWith(expect.stringContaining('No `sampling` configured'));
+    } finally {
+      info.mockRestore();
     }
   });
 
@@ -219,9 +251,21 @@ describe('TelescopeService', () => {
     expect(health.bufferUsed).toBe(2);
     expect(health.bufferHighWater).toBe(2);
     expect(health.droppedCount).toBe(0);
+    expect(health.truncatedCount).toBe(0);
     expect(health.captureCostNanos).toBeGreaterThan(0);
     // The benchmark must not have buffered anything extra.
     expect(health.recorded).toBe(2);
+  });
+
+  it('getHealth surfaces the truncated counter when a fat entry is captured', async () => {
+    const { service } = makeService();
+    active = service;
+    await service.runInBatch('http', async () => {
+      service.record({ type: 'request', content: { ok: 1 } });
+      // A fat string field blows past the default redaction string bound.
+      service.record({ type: 'request', content: { blob: 'x'.repeat(20_000) } });
+    });
+    expect(service.getHealth().truncatedCount).toBe(1);
   });
 
   it('getHealth reflects enabled=false when capture is disabled', () => {
