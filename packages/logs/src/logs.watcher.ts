@@ -45,6 +45,12 @@ type LoggerMethod = (message: unknown, ...optionalParams: unknown[]) => void;
  *  double-wraps the other's wrapper. */
 const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:loggerPatched');
 
+/** Sibling marker for the STATIC `Logger.*` methods (the class object itself,
+ *  not its prototype). Statics live on a different object than the prototype, so
+ *  they need their own idempotency flag — but for the same reason
+ *  ({@link PATCHED}): two watchers or two package copies must not double-wrap. */
+const STATICS_PATCHED = Symbol.for('@dudousxd/nestjs-telescope:loggerStaticsPatched');
+
 /** The slice of `Logger.prototype` we read/write: the level methods (each
  *  possibly absent, e.g. `fatal` on older Nest) plus our idempotency marker.
  *  Indexing the real `Logger` class type by these string keys isn't structurally
@@ -53,18 +59,37 @@ type PatchablePrototype = { [Level in PatchableLevel]?: LoggerMethod } & {
   [PATCHED]?: boolean;
 };
 
+/** The slice of the `Logger` class object (its static methods) we read/write —
+ *  the same level methods plus the statics idempotency marker. Same indexing
+ *  rationale as {@link PatchablePrototype}: the real `Logger` constructor type
+ *  doesn't allow indexing by these string keys, so we view it through this
+ *  precise record instead. */
+type PatchableStatics = { [Level in PatchableLevel]?: LoggerMethod } & {
+  [STATICS_PATCHED]?: boolean;
+};
+
 /**
  * Captures Nest `Logger` output and records each line as an `EntryType.Log`
  * entry, correlated to the active request/job batch.
  *
  * ## Two capture paths (and why they coexist)
  *
- * 1. **Auto-patch (default, zero-config).** `register` tees the
- *    `@nestjs/common` `Logger.prototype` methods: each patched method calls the
- *    original first (host behavior — console output, any custom logger behind the
- *    facade — is untouched) and then records a telescope entry. This captures
- *    both `new Logger(Ctx)` instance logs and the `Logger.log(...)` statics
- *    (which delegate to a shared instance whose prototype is patched).
+ * 1. **Auto-patch (default, zero-config).** `register` tees both the
+ *    `@nestjs/common` `Logger.prototype` methods AND the static `Logger.*`
+ *    methods on the class object: each patched method calls the original first
+ *    (host behavior — console output, any custom logger behind the facade — is
+ *    untouched) and then records a telescope entry. The prototype tee captures
+ *    `new Logger(Ctx)` instance logs; the static tee captures `Logger.log(...)`
+ *    calls.
+ *
+ *    Both must be patched because, in Nest 11, the two are *independent* call
+ *    paths that never cross: an instance `log()` delegates to
+ *    `this.localInstance` (a `ConsoleLogger`, not a `Logger`), and a static
+ *    `Logger.log()` delegates to `Logger.staticInstanceRef` (also a
+ *    `ConsoleLogger`). Neither routes through the other, so patching the
+ *    prototype alone would silently miss every static call — and because they
+ *    don't cross, patching both records each logical call exactly once (no
+ *    double-record). Verified against the installed @nestjs/common in tests.
  *
  * 2. **Explicit `TelescopeConsoleLogger`.** For hosts that bypass the facade
  *    (logging straight through their app logger), installing
@@ -78,8 +103,9 @@ type PatchablePrototype = { [Level in PatchableLevel]?: LoggerMethod } & {
  * {@link withTelescopeLogRecording} in log-sink.ts.
  *
  * ## Resilience
- * - The prototype patch is idempotent process-wide (a `Symbol.for` marker) and
- *   the sink is wired exactly once per instance (a guard flag).
+ * - The prototype and statics patches are each idempotent process-wide (sibling
+ *   `Symbol.for` markers) and the sink is wired exactly once per instance (a
+ *   guard flag).
  * - If `ctx.record` throws, the failure is swallowed so a telescope error can
  *   never break the host's logging.
  * - Telescope's own log contexts (`Telescope`, `Recorder`, ...) are filtered
@@ -110,6 +136,7 @@ export class LogsWatcher implements Watcher {
 
     if (this.autoPatch) {
       this.patchLoggerPrototype(ctx);
+      this.patchLoggerStatics(ctx);
     }
   }
 
@@ -161,6 +188,60 @@ export class LogsWatcher implements Watcher {
         });
       };
       prototype[level] = patched;
+    }
+  }
+
+  /** Tee the STATIC `@nestjs/common` `Logger.*` methods: call the original,
+   *  then record. Idempotent process-wide via the {@link STATICS_PATCHED}
+   *  marker.
+   *
+   *  WHY a separate patch from the prototype: a static `Logger.log()` delegates
+   *  to `Logger.staticInstanceRef` (a `ConsoleLogger`), never to
+   *  `Logger.prototype`, so the prototype tee alone never sees static calls.
+   *  WHY this can't double-record an instance call: an instance `log()`
+   *  delegates to `this.localInstance` (also a `ConsoleLogger`), never to the
+   *  static `Logger.log`. The two paths are disjoint — see the class JSDoc. */
+  private patchLoggerStatics(ctx: WatcherContext): void {
+    // View the `Logger` class object through the precise {@link PatchableStatics}
+    // record so the level keys index cleanly (the `Logger` constructor type
+    // doesn't allow string indexing). Same single hop through `unknown` as the
+    // prototype patch — the codebase's narrow marker-pattern.
+    const statics = Logger as unknown as PatchableStatics;
+    if (statics[STATICS_PATCHED]) return;
+    statics[STATICS_PATCHED] = true;
+
+    const watcher = this;
+    for (const level of PATCHABLE_LEVELS) {
+      const originalMethod = statics[level];
+      // `fatal` is absent before Nest 10.2 — skip cleanly rather than wrap undefined.
+      if (typeof originalMethod !== 'function') continue;
+
+      const patched = function patchedStaticLevel(
+        // `this` is the `Logger` class object: the original static reads
+        // `this.staticInstanceRef`, so we must preserve it via `.call(this, ...)`.
+        this: unknown,
+        message: unknown,
+        ...optionalParams: unknown[]
+      ): void {
+        // Same re-entrancy guard as the prototype patch: a nested log (e.g. our
+        // own failure logging) calls the original but does NOT record, breaking
+        // the record→log→record loop.
+        if (isTelescopeRecordingLog()) {
+          originalMethod.call(this, message, ...optionalParams);
+          return;
+        }
+        // Flag set around the original too: if `staticInstanceRef` is a
+        // TelescopeConsoleLogger, its sink sees the flag and skips, so the static
+        // call records exactly once (here, not in the sink).
+        withTelescopeLogRecording(() => {
+          originalMethod.call(this, message, ...optionalParams);
+          // Statics have no instance context — `Logger.log(message, context?)`
+          // carries the context only as the trailing string param, which
+          // `contextFromParams` (inside recordFromFacade) reads off the tail.
+          watcher.recordFromFacade(ctx, level, message, optionalParams, null);
+        });
+      };
+      statics[level] = patched;
     }
   }
 

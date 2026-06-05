@@ -40,17 +40,24 @@ function quietLogger(): TelescopeConsoleLogger {
 }
 
 const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:loggerPatched');
+const STATICS_PATCHED = Symbol.for('@dudousxd/nestjs-telescope:loggerStaticsPatched');
 const LEVELS = ['log', 'error', 'warn', 'debug', 'verbose', 'fatal'] as const;
 
-/** The prototype patch is process-wide idempotent via a `Symbol.for` marker.
- *  Tests mutate the real `Logger.prototype`, so snapshot the originals and the
- *  marker before each test and restore them after — otherwise the first test to
- *  patch would poison every later one. */
+/** Both the prototype and statics patches are process-wide idempotent via
+ *  `Symbol.for` markers. Tests mutate the real `Logger.prototype` AND the real
+ *  `Logger` class object, so snapshot the originals and both markers before each
+ *  test and restore them after — otherwise the first test to patch would poison
+ *  every later one. */
 const originalMethods = new Map<string, unknown>();
+const originalStatics = new Map<string, unknown>();
 
 beforeEach(() => {
   const prototype = Logger.prototype as unknown as Record<string, unknown>;
-  for (const level of LEVELS) originalMethods.set(level, prototype[level]);
+  const statics = Logger as unknown as Record<string, unknown>;
+  for (const level of LEVELS) {
+    originalMethods.set(level, prototype[level]);
+    originalStatics.set(level, statics[level]);
+  }
   // Silence the real console for instance-logger calls during these tests.
   Logger.overrideLogger(false);
 });
@@ -60,12 +67,19 @@ afterEach(() => {
   const prototype = Logger.prototype as unknown as Record<string, unknown> & {
     [PATCHED]?: boolean;
   };
+  const statics = Logger as unknown as Record<string, unknown> & {
+    [STATICS_PATCHED]?: boolean;
+  };
   for (const level of LEVELS) {
     const original = originalMethods.get(level);
     if (original === undefined) delete prototype[level];
     else prototype[level] = original;
+    const originalStatic = originalStatics.get(level);
+    if (originalStatic === undefined) delete statics[level];
+    else statics[level] = originalStatic;
   }
   delete prototype[PATCHED];
+  delete statics[STATICS_PATCHED];
   Logger.overrideLogger(true);
   vi.restoreAllMocks();
 });
@@ -291,6 +305,123 @@ describe('LogsWatcher', () => {
       // Records once on the first watcher's ctx; no second wrapper layer means
       // the second watcher's ctx is never reached and no double-record happens.
       expect(first.recorded).toHaveLength(1);
+    });
+  });
+
+  describe('auto-patch mode — static Logger.* calls', () => {
+    it('records through a `Logger.log(msg, ctx)` static call', () => {
+      const { ctx, recorded } = makeHarness();
+      new LogsWatcher().register(ctx);
+
+      Logger.log('hello static', 'StaticService');
+
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.type).toBe('log');
+      expect(recorded[0]!.content).toEqual({
+        level: 'log',
+        message: 'hello static',
+        context: 'StaticService',
+      });
+    });
+
+    it('records a static `Logger.error(msg, stack, ctx)` with level and context', () => {
+      const { ctx, recorded } = makeHarness();
+      new LogsWatcher().register(ctx);
+
+      Logger.error('static boom', 'trace', 'StaticService');
+
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.content).toEqual({
+        level: 'error',
+        message: 'static boom',
+        context: 'StaticService',
+      });
+      // Error level is tagged so keepErrors tail-sampling retains it.
+      expect(recorded[0]!.tags).toEqual(['log', 'log:error']);
+    });
+
+    it('records context null when the static call supplies none', () => {
+      const { ctx, recorded } = makeHarness();
+      new LogsWatcher().register(ctx);
+
+      Logger.log('no static context');
+
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.content).toMatchObject({ context: null });
+    });
+
+    it('skips Telescope-internal contexts on the static path', () => {
+      const { ctx, recorded } = makeHarness();
+      new LogsWatcher().register(ctx);
+
+      Logger.log('internal', 'Recorder');
+      Logger.log('kept', 'AppService');
+
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.content).toMatchObject({ context: 'AppService' });
+    });
+
+    it('still invokes the original static behavior (host output preserved)', () => {
+      const { ctx } = makeHarness();
+      const original: (...args: unknown[]) => void = Logger.log;
+      const spy = vi.fn();
+      // `this` must remain the Logger class so the original reads staticInstanceRef.
+      Logger.log = function spiedStatic(this: unknown, ...args: unknown[]): void {
+        spy(...args);
+        original.apply(this, args);
+      };
+
+      new LogsWatcher().register(ctx);
+      Logger.log('to original static', 'Svc');
+
+      expect(spy).toHaveBeenCalledWith('to original static', 'Svc');
+    });
+
+    it('does not infinitely loop when ctx.record throws on a static call', () => {
+      const { ctx } = makeHarness({ recordThrows: true });
+      new LogsWatcher().register(ctx);
+
+      // The failed record logs an error via `new Logger(LogsWatcher.name)`; the
+      // shared re-entrancy guard must stop the record→log→record loop.
+      expect(() => Logger.log('boom', 'Svc')).not.toThrow();
+    });
+
+    it('patches the statics exactly once across two watchers (idempotent)', () => {
+      const first = makeHarness();
+      new LogsWatcher().register(first.ctx);
+      // A second watcher (or second package copy) must not double-wrap.
+      new LogsWatcher().register(makeHarness().ctx);
+
+      Logger.log('once', 'Svc');
+
+      expect(first.recorded).toHaveLength(1);
+    });
+  });
+
+  describe('exactly-once across both patched paths', () => {
+    // Instance and static calls are disjoint paths in Nest 11 (an instance
+    // log() delegates to localInstance, a static Logger.log() to
+    // staticInstanceRef — both ConsoleLoggers, neither routing through the
+    // other). Patching both must therefore record each logical call exactly
+    // once, never twice.
+    it('records one instance `new Logger(X).log(m)` call exactly once', () => {
+      const { ctx, recorded } = makeHarness();
+      new LogsWatcher().register(ctx);
+
+      new Logger('X').log('m');
+
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.content).toEqual({ level: 'log', message: 'm', context: 'X' });
+    });
+
+    it('records one static `Logger.log(m, X)` call exactly once', () => {
+      const { ctx, recorded } = makeHarness();
+      new LogsWatcher().register(ctx);
+
+      Logger.log('m', 'X');
+
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.content).toEqual({ level: 'log', message: 'm', context: 'X' });
     });
   });
 
