@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-testing",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Test utilities for @dudousxd/nestjs-telescope — FakeClock, watcher harness, InMemoryStorageProvider re-export.",
   "license": "MIT",
   "repository": {

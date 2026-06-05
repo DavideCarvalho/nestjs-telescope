@@ -1,5 +1,144 @@
 # @dudousxd/nestjs-telescope
 
+## 2.0.0
+
+### Minor Changes
+
+- [`c2423f3`](https://github.com/DavideCarvalho/nestjs-telescope/commit/c2423f330be3f9b92c0dbf2348220bf8740dab86) - Add webhook alerting (v1).
+
+  A new `alerts` option evaluates rules on an unref'd interval and POSTs a JSON
+  payload to a `webhookUrl` when a rule fires (per-rule `cooldown` suppresses
+  re-notifies). Three rule kinds: `exception-rate` (`>= threshold` exceptions in a
+  `window`), `slow-request-rate` (`>= count` requests slower than `thresholdMs` in
+  a `window`), and `dropped-entries` (Recorder `droppedCount` grew by `>= threshold`
+  since the last evaluation — a delta). Exception/slow rules read a small,
+  content-omitted, scan-capped window via `collectEntriesInWindow`; dropped uses
+  the Recorder self-metrics delta.
+
+  The webhook POST is bounded by a 5s `AbortController` timeout; failures are
+  warn-logged once per rule kind and **never** throw into the host. A configured
+  `alerts` with an empty `webhookUrl` or empty `rules` (or an unparseable duration)
+  is a fail-closed boot error. `TelescopeMeta` gains `alerts: { enabled, ruleCount }`.
+
+- [`d8173d4`](https://github.com/DavideCarvalho/nestjs-telescope/commit/d8173d4c5d362814aa0fcdb0bfb35fd353b3d1a8) - Add `dashboardAuth` — a cookie-session gate for the Telescope dashboard.
+
+  Hosts can now require a signed, same-origin session cookie for every dashboard
+  API call, all the way to prod, with no infra (no oauth2-proxy/ingress). A
+  generic SPA can't send a host's Bearer header on navigations, but a path-scoped
+  cookie rides along automatically — so this gates the dashboard without breaking
+  its client.
+
+  Two modes mint the same stateless HMAC-SHA256 cookie (`node:crypto` only, no JWT
+  dependency):
+
+  - **`session`** (seamless): the host frontend POSTs `/<path>/api/auth/session`
+    carrying its own auth; a host hook validates the raw request and returns the
+    session user.
+  - **`login`** (universal): a built-in login form POSTs `/<path>/api/auth/login`;
+    a host hook validates the credentials.
+
+  ```ts
+  TelescopeModule.forRoot({
+    dashboardAuth: {
+      secret: process.env.TELESCOPE_AUTH_SECRET,
+      ttl: "8h", // sliding renewal past 50% of the TTL
+      login: (u, p) =>
+        u === env.USER && p === env.PASS ? { id: "ops" } : null,
+    },
+  });
+  ```
+
+  When configured, `TelescopeGuard` requires a valid cookie on every `/api/*`
+  route except `/api/auth/*`, attaches the session as `request.telescopeSession`
+  (readable by `authorizer` / `authorizeAction`), and still ANDs the existing
+  `authorizer`. `meta` gains `auth: { enabled, modes }`. A missing/empty `secret`
+  or no hook is a boot error (fail closed). When unset, behavior is unchanged.
+
+- [`d200d15`](https://github.com/DavideCarvalho/nestjs-telescope/commit/d200d158f927e6a67396e594b32bfd0a0b3424e4) - Bound memory by design at capture time, fixing a production OOM incident.
+
+  A host hit a GC death spiral at its container limit. There was no unbounded leak:
+  the heap was a retained _working set_ — `prune.after × ingest rate × bytes per
+entry` — amplified by `redact()` deep-cloning fat enumerable object graphs (a
+  host's `req.user` ORM entity → tens-of-KB..MB clones per entry), high-cardinality
+  cache capture volume, and the Recorder ring never nulling drained slots (stale fat
+  entries lingered up to capacity). The synchronous `redact()` detach is
+  load-bearing and must stay synchronous, so the fix bounds the clone instead of
+  deferring it.
+
+  - **Bounded redaction (on by default).** `redact()` now applies hard, overridable
+    bounds: `maxDepth` (8), `maxStringLength` (8_192), `maxArrayLength` (200), and a
+    per-call `maxNodes, maxContentBytes (16KB serialized-byte budget — the deterministic bytes-per-entry cap)` (5_000) node budget that caps a mega-graph regardless of its
+    shape. Defaults are generous — a normal request / query / cache entry is cloned
+    byte-identically; bounds only bite on pathological content. Key/path masking,
+    cycle-safety, sync-and-never-throwing behavior, and the public `redact()`
+    signature are unchanged. A new sibling `redactBounded()` also returns whether
+    truncation happened.
+  - **Recorder hardening.** `drain()` nulls drained ring slots so flushed fat
+    entries aren't retained afterward. A new `truncatedCount` self-metric counts
+    entries whose content hit a bound; it surfaces automatically in
+    `GET /telescope/api/health`, and the dashboard Overview adds a _Truncated_ stat
+    card (ui patch).
+  - **High-volume guidance.** When `prune` is set but `sampling` is empty, boot logs
+    a one-line INFO pointing at per-type sampling (e.g. `sampling: { cache: 0.1 }`)
+    to bound store volume on high-cardinality streams.
+
+- [`953ae12`](https://github.com/DavideCarvalho/nestjs-telescope/commit/953ae12fd35e42df3b806d6bbec6b49e3e3c71fb) - Two Recorder robustness features: a bounded flush retry and tail-sampling.
+
+  - **Bounded flush retry.** A failed `storage.store(batch)` previously dropped the
+    whole batch immediately. The Recorder now retries the batch **exactly once**
+    after a bounded backoff (`recorder.retryDelayMs`, default `1000`ms); only a
+    second failure drops it (the `storeFailedDropped` semantics are unchanged). The
+    retry runs _inside_ the single in-flight flush promise, so failed batches never
+    pile up and the ring keeps absorbing/evicting meanwhile — memory stays bounded.
+    The backoff timer is unref'd (never keeps the event loop alive), and a new
+    `delay` seam keeps it deterministic in tests. A new `retriedFlushes`
+    self-metric counts batches that needed the retry (surfaced via
+    `getSelfMetrics()` / `GET /telescope/api/health`).
+
+  - **Tail-sampling.** `sampling` per-type values may now be a rule object —
+    `{ rate, keepErrors?, keepSlowMs? }` — in addition to a bare keep-rate. The
+    rule keeps `rate` of the noise but **always** retains errors (`keepErrors`: a
+    `failed` tag, `content.failed === true`, or `content.statusCode >= 500`) and
+    slow entries (`durationMs >= keepSlowMs`). Plain-number config keeps its exact
+    prior behaviour. The decision uses only shallow fields already on the
+    `RecordInput` (type, tags, durationMs, a couple of content property reads), so
+    the hot path stays cheap. Resolution/normalization lives in `resolveConfig`.
+
+- [`4ceb884`](https://github.com/DavideCarvalho/nestjs-telescope/commit/4ceb8846b7307cf522d841c909d7eaf7fcb1aa4e) - Add retention/prune controls and query EXPLAIN.
+
+  **Retention / prune.** A new `GET /api/retention` reports the configured retention
+  window (`entryCount`/`oldestCreatedAt` stay `null` — the storage SPI exposes no
+  cheap count/oldest, and Telescope never scans to derive them). `POST /api/retention/prune`
+  runs an on-demand prune behind the existing default-deny mutation gate
+  (`authorizeAction`); it 403s when mutations are disabled and 400s when no `prune`
+  window is configured. The Overview page gains a Retention card with a confirm-gated
+  "Prune now" button, shown only when `meta.pruneEnabled` (prune window AND mutations).
+
+  **Query EXPLAIN.** A new host hook
+  `explainQuery?: (sql, bindings) => Promise<unknown>` lets the host run an
+  engine `EXPLAIN` (it brings its own connection/dialect — e.g. MySQL
+  `EXPLAIN FORMAT=JSON`). `POST /api/queries/explain` loads the query entry and
+  returns `{ plan }`; a hook throw surfaces as a clean `{ message }`. The query
+  entry detail gains an "Explain" button (only when `meta.explainEnabled`) that
+  renders the plan JSON with loading/error states.
+
+  `TelescopeMeta` gains `pruneEnabled` and `explainEnabled`.
+
+- [`15e3e90`](https://github.com/DavideCarvalho/nestjs-telescope/commit/15e3e903d82616966342feeb966fbd44ad6a2631) - Add user drill-down: pivot from any request entry to all of a user's activity.
+
+  A new built-in **`userTagger`** (in `BUILTIN_TAGGERS`) tags request entries with
+  the authenticated user's identity as `user:<id>`. It reads `content.user`,
+  preferring `id`, then `_id` (Mongo), then `email` — cheap property reads gated to
+  request entries, never throwing on odd content shapes. Whatever `resolveUser`
+  returns becomes a filterable tag.
+
+  The dashboard turns that tag into a one-click pivot, reusing the existing
+  indexed-tag filter (no new query dimension): user-tagged rows show a `user:<id>`
+  chip in the entries table, and the entry detail view offers **"View all activity
+  for this user"**. Both navigate to the all-types entries list pre-filtered by the
+  tag (`#/entries?tag=user:<id>`), which the entries page now seeds from the `?tag=`
+  query string — the same deep-link mechanism as `?familyHash=`.
+
 ## 1.0.0
 
 ### Minor Changes
