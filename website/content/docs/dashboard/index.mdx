@@ -124,7 +124,7 @@ TelescopeModule.forRoot({
 ### Channels
 
 - **`slackChannel(url, options?)`** — POSTs Slack [Block Kit](https://api.slack.com/block-kit) JSON: a header with a severity emoji + rule name, fielded context (route, method, status, user, count/rate, window), a truncated stack snippet in a code block, and — when `dashboardUrl` is set — an **Open in Telescope** button deep-linking to the entry (`${dashboardUrl}#/entries/exception/${id}`). `options` accepts `{ username, iconEmoji }`.
-- **`webhookChannel(url)`** — POSTs the raw {@link AlertPayload} JSON. This is the v1 behavior unchanged; existing relays that parse the raw body keep working.
+- **`webhookChannel(url)`** — POSTs the raw `AlertPayload` JSON. This is the v1 behavior unchanged; existing relays that parse the raw body keep working.
 - **`customChannel(fn, name?)`** — calls your async `fn(alert)` for anything else (email, SNS, PagerDuty, a DB row). Throwing is safe — the alerter isolates and logs it.
 
 ### Slack recipe
