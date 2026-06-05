@@ -127,6 +127,44 @@ describe('Recorder', () => {
     await expect(recorder.flush()).resolves.toBeUndefined();
   });
 
+  describe('onFlushStored hook', () => {
+    it('fires with the just-stored entries after a successful flush', async () => {
+      const seen: Entry[][] = [];
+      const { recorder } = makeRecorder({ onFlushStored: (entries) => seen.push(entries) });
+      recorder.record({ type: 'exception', content: {} });
+      await recorder.flush();
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toHaveLength(1);
+      expect(seen[0]?.[0]?.type).toBe('exception');
+    });
+
+    it('does NOT fire when the batch fails to store', async () => {
+      const failing: StorageProvider = {
+        ...new InMemoryStorageProvider(),
+        store: () => Promise.reject(new Error('down')),
+      };
+      const onFlushStored = vi.fn();
+      const { recorder } = makeRecorder({
+        storage: failing,
+        onFlushStored,
+        delay: () => Promise.resolve(),
+      });
+      recorder.record({ type: 'exception', content: {} });
+      await recorder.flush();
+      expect(onFlushStored).not.toHaveBeenCalled();
+    });
+
+    it('swallows a throwing hook so the flush never breaks the host', async () => {
+      const { recorder } = makeRecorder({
+        onFlushStored: () => {
+          throw new Error('hook boom');
+        },
+      });
+      recorder.record({ type: 'exception', content: {} });
+      await expect(recorder.flush()).resolves.toBeUndefined();
+    });
+  });
+
   // ── NEW TESTS ─────────────────────────────────────────────────────────────
 
   it('serializes concurrent flush() calls: store is invoked only once while in-flight', async () => {

@@ -1,7 +1,11 @@
 // packages/core/src/alerts/alert-rule.ts
+import type { AlertChannel } from './alert-channel.js';
 
 /**
- * A single alerting rule. Each rule is evaluated on every tick of the alerter.
+ * A single alerting rule. Each rule is evaluated on every tick of the alerter,
+ * EXCEPT `new-exception` which evaluates per-flush over just-stored exception
+ * entries (so a brand-new error family pages you within a flush interval, not a
+ * full evaluation interval).
  *
  * - `exception-rate`    — fires when `>= threshold` exception entries were
  *                         recorded in the trailing `window`.
@@ -11,24 +15,51 @@
  *                         grew by `>= threshold` since the previous evaluation
  *                         (a delta, not an absolute — so a once-busy host that
  *                         dropped a burst at boot doesn't keep re-firing).
+ * - `new-exception`     — fires the FIRST time an exception's `familyHash` is
+ *                         seen within `window` (a genuinely NEW error family).
+ *                         Dedup is an in-memory, per-replica seen-map, so the
+ *                         same family may alert ONCE PER POD in a multi-replica
+ *                         deployment (acceptable for v1 — see docs).
  */
 export type AlertRule =
   | { type: 'exception-rate'; window: string; threshold: number }
   | { type: 'slow-request-rate'; window: string; thresholdMs: number; count: number }
-  | { type: 'dropped-entries'; threshold: number };
+  | { type: 'dropped-entries'; threshold: number }
+  | { type: 'new-exception'; window: string };
 
 /**
- * Webhook-only alerting (v1). When set, {@link TelescopeAlerter} evaluates
- * `rules` on an unref'd interval and POSTs a JSON payload to `webhookUrl` when a
- * rule fires (and is not within its cooldown). A configured `alerts` with an
- * empty `webhookUrl` or empty `rules` is a fail-closed boot error.
+ * Pluggable alerting (v2). When set, {@link TelescopeAlerter} evaluates `rules`
+ * and fans each fired alert out to EVERY configured channel concurrently. A
+ * configured `alerts` with no destination (neither `channels` nor the legacy
+ * `webhookUrl`) or empty `rules` is a fail-closed boot error.
  */
 export interface AlertsOptions {
-  /** POSTed JSON to this URL when a rule fires (e.g. a Slack incoming webhook). */
-  webhookUrl: string;
+  /**
+   * Delivery destinations. Each fired alert is sent to every channel
+   * concurrently; one channel failing never blocks the others. Use the factory
+   * helpers: `slackChannel(url)`, `webhookChannel(url)`, `customChannel(fn)`.
+   * Optional ONLY for backward compatibility with `webhookUrl` — supply at least
+   * one of `channels` / `webhookUrl`.
+   */
+  channels?: AlertChannel[];
+  /**
+   * Legacy single raw-JSON webhook (v1). Still accepted: internally rewritten
+   * into a `webhookChannel(webhookUrl)` and appended to `channels`. Prefer
+   * `channels` for new configs.
+   */
+  webhookUrl?: string;
+  /**
+   * The host's EXTERNAL Telescope dashboard URL (e.g.
+   * `https://telescope.example.com/telescope/`). When set, channels that support
+   * deep links (Slack) build a link straight to the offending entry, e.g.
+   * `${dashboardUrl}#/entries/exception/${id}`. Optional; without it the Slack
+   * message simply omits the "Open in Telescope" button.
+   */
+  dashboardUrl?: string;
   /**
    * Evaluation cadence as a duration string (e.g. `'1m'`). Default `'1m'`.
-   * Resolved to ms via `durationToMs`.
+   * Resolved to ms via `durationToMs`. (Interval rules only; `new-exception`
+   * evaluates per-flush.)
    */
   every?: string;
   /** Re-notify suppression per rule, as a duration string. Default `'15m'`. */
@@ -39,21 +70,65 @@ export interface AlertsOptions {
 
 /** Boot-resolved, validated alerting config (durations normalized to ms). */
 export interface ResolvedAlerts {
-  webhookUrl: string;
+  /** All destinations, with any legacy `webhookUrl` already folded in. */
+  channels: AlertChannel[];
+  /** External dashboard URL for deep links, or `null` when unset. */
+  dashboardUrl: string | null;
   intervalMs: number;
   cooldownMs: number;
   rules: AlertRule[];
 }
 
-/** Shape POSTed to the webhook when a rule fires. */
+/**
+ * Rich exception context attached to a `new-exception` alert. Pulled from the
+ * exception entry AND its sibling request entry in the SAME batch (queried by
+ * `batchId` only when the rule actually fires, so the common no-fire path stays
+ * a single in-memory map lookup). Absent on rate-rule alerts.
+ */
+export interface ExceptionAlertContext {
+  /** Stable family hash that was first-seen this window. */
+  familyHash: string;
+  /** Exception class name (e.g. `TypeError`). */
+  class: string;
+  /** Exception message. */
+  message: string;
+  /** Truncated stack (first frames), or `null`. */
+  stack: string | null;
+  /** Request route/uri from the sibling request entry, or `null`. */
+  route: string | null;
+  /** Request method, or `null`. */
+  method: string | null;
+  /** Response status code, or `null`. */
+  statusCode: number | null;
+  /** Request duration (ms), or `null`. */
+  durationMs: number | null;
+  /** Authenticated user id from a `user:<id>` tag, or `null`. */
+  user: string | null;
+  /** Times this family was seen in the window (>= 1; 1 on first-occurrence). */
+  occurrences: number;
+  /** Exception entry id (for the dashboard deep link). */
+  entryId: string;
+  /** Batch id that ties the exception to its request entry. */
+  batchId: string;
+}
+
+/**
+ * Shape delivered to channels when a rule fires. BACKWARD COMPATIBLE with the v1
+ * raw-webhook JSON: every v1 field (`rule`, `value`, `threshold`, `firedAt`,
+ * `instanceId`) is unchanged; new fields are purely additive and optional.
+ */
 export interface AlertPayload {
   rule: AlertRule;
   /** The measured value that crossed the threshold. */
   value: number;
-  /** The rule's threshold (`threshold` or `count`, per rule kind). */
+  /** The rule's threshold (`threshold`/`count`, or `1` for `new-exception`). */
   threshold: number;
   /** ISO-8601 fire time. */
   firedAt: string;
   /** The reporting instance (`config.instanceId`). */
   instanceId: string;
+  /** Rich context for `new-exception` alerts; absent for rate rules. */
+  exception?: ExceptionAlertContext;
+  /** External dashboard URL when configured (lets channels build deep links). */
+  dashboardUrl?: string;
 }

@@ -82,15 +82,26 @@ The Overview page surfaces a **Retention** card with the configured window (from
 
 ## Alerts
 
-Telescope can POST a JSON alert to a webhook when a rule trips — **webhook-only** in v1. Rules are evaluated on an unref'd interval (`every`, default `1m`); each rule has a per-rule `cooldown` (default `15m`) to suppress re-notifies. A failing webhook is logged once per rule kind and **never** crashes the host. A configured `alerts` with an empty `webhookUrl` or empty `rules` is a fail-closed boot error.
+Telescope fires an alert when a rule trips and fans it out to one or more **channels** — Slack (formatted), a raw webhook, or your own custom sink. Rules are evaluated on an unref'd interval (`every`, default `1m`); each rule has a per-rule `cooldown` (default `15m`) to suppress re-notifies. A failing channel is logged once per channel and **never** crashes the host — one channel failing never blocks the others. A configured `alerts` with **no destination** (neither `channels` nor the legacy `webhookUrl`) or empty `rules` is a fail-closed boot error.
 
 ```ts
+import { slackChannel, webhookChannel, customChannel } from '@dudousxd/nestjs-telescope';
+
 TelescopeModule.forRoot({
   alerts: {
-    webhookUrl: process.env.SLACK_WEBHOOK_URL,
+    // The external URL of your dashboard — used to build deep links in alerts.
+    dashboardUrl: 'https://telescope.example.com/telescope/',
+    channels: [
+      slackChannel(process.env.SLACK_WEBHOOK_URL),
+      webhookChannel(process.env.OPS_WEBHOOK_URL),
+      customChannel(async (alert) => {
+        await sns.publish({ TopicArn, Message: JSON.stringify(alert) });
+      }),
+    ],
     every: '1m',
     cooldown: '15m',
     rules: [
+      { type: 'new-exception', window: '1h' },
       { type: 'exception-rate', window: '5m', threshold: 10 },
       { type: 'slow-request-rate', window: '5m', thresholdMs: 1000, count: 20 },
       { type: 'dropped-entries', threshold: 100 },
@@ -99,17 +110,53 @@ TelescopeModule.forRoot({
 });
 ```
 
+### Rules
+
+- `new-exception` — fires the **first** time an exception's error family (`familyHash`) is seen within `window`, i.e. a genuinely **new** error. Evaluated **per flush** (not on the interval) so a new error pages you within a flush interval, and the alert carries rich context (see below). Dedup uses a bounded in-memory map — see the multi-replica note.
 - `exception-rate` — `>= threshold` exceptions in `window`.
 - `slow-request-rate` — `>= count` requests slower than `thresholdMs` in `window`.
 - `dropped-entries` — Recorder `droppedCount` grew by `>= threshold` since the last evaluation.
 
-The POSTed payload:
+### Channels
+
+- **`slackChannel(url, options?)`** — POSTs Slack [Block Kit](https://api.slack.com/block-kit) JSON: a header with a severity emoji + rule name, fielded context (route, method, status, user, count/rate, window), a truncated stack snippet in a code block, and — when `dashboardUrl` is set — an **Open in Telescope** button deep-linking to the entry (`${dashboardUrl}#/entries/exception/${id}`). `options` accepts `{ username, iconEmoji }`.
+- **`webhookChannel(url)`** — POSTs the raw {@link AlertPayload} JSON. This is the v1 behavior unchanged; existing relays that parse the raw body keep working.
+- **`customChannel(fn, name?)`** — calls your async `fn(alert)` for anything else (email, SNS, PagerDuty, a DB row). Throwing is safe — the alerter isolates and logs it.
+
+### Slack recipe
+
+1. Create a Slack [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel you want alerts in and copy its URL.
+2. Set it as an env var (e.g. `SLACK_WEBHOOK_URL`) and pass it to `slackChannel(process.env.SLACK_WEBHOOK_URL)`.
+3. Set `alerts.dashboardUrl` to your dashboard's external origin so the message includes an **Open in Telescope** button.
+
+### `new-exception` payload
+
+When a `new-exception` rule fires, the payload adds an `exception` block pulled from the exception entry **and its sibling request entry in the same batch**:
 
 ```json
-{ "rule": { "...": "..." }, "value": 12, "threshold": 10, "firedAt": "2026-06-04T00:00:00.000Z", "instanceId": "host-1" }
+{
+  "rule": { "type": "new-exception", "window": "1h" },
+  "value": 1, "threshold": 1,
+  "firedAt": "2026-06-05T00:00:00.000Z", "instanceId": "host-1",
+  "dashboardUrl": "https://telescope.example.com/telescope/",
+  "exception": {
+    "familyHash": "ab12…", "class": "TypeError", "message": "cannot read x",
+    "stack": "TypeError: cannot read x\n  at …",
+    "route": "/checkout", "method": "POST", "statusCode": 500, "durationMs": 1234,
+    "user": "42", "occurrences": 1, "entryId": "0190…", "batchId": "0190…"
+  }
+}
 ```
 
-For **Slack**, point `webhookUrl` at an [incoming webhook](https://api.slack.com/messaging/webhooks); the raw payload arrives as the request body (wrap it in your own relay for a formatted message). `meta.alerts` reports `{ enabled, ruleCount }`.
+The legacy raw-webhook JSON is **backward compatible**: every v1 field (`rule`, `value`, `threshold`, `firedAt`, `instanceId`) is unchanged; `exception`/`dashboardUrl` are purely additive.
+
+<Callout type="warn">
+  **Multi-replica caveat.** `new-exception` dedup is an in-memory, per-pod map (capped at ~10k families, oldest evicted). In a multi-replica deployment the **same** new error family may alert **once per pod** the first time each pod sees it. This is acceptable for v1; a cross-pod store would defeat the goal of a cheap map lookup on the hot flush path.
+</Callout>
+
+### Legacy `webhookUrl`
+
+The v1 single `webhookUrl` is still accepted and is internally folded into a `webhookChannel(webhookUrl)`, appended after any explicit `channels`. Prefer `channels` for new configs. `meta.alerts` reports `{ enabled, ruleCount }`.
 
 ## Traces
 

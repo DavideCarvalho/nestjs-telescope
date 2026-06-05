@@ -116,6 +116,14 @@ export interface RecorderOptions {
   filter?: (entry: Entry) => boolean;
   /** Optional ambient trace-context source; read once per recorded entry. */
   traceContext?: TraceContextProvider;
+  /**
+   * Best-effort hook fired with the entries a flush JUST persisted (after a
+   * successful `store()`, before the next flush). Powers per-flush alert
+   * evaluation (the `new-exception` rule) without coupling the Recorder to the
+   * alerter. Called inside a try/catch — a faulty hook is swallowed and can never
+   * break the flush or the host. NOT called for a batch that failed to store.
+   */
+  onFlushStored?: (entries: Entry[]) => void | Promise<void>;
 }
 
 /**
@@ -321,12 +329,13 @@ export class Recorder {
 
     const storage = this.options.storage;
     this.flushing = this.storeWithRetry(storage, drained)
-      .then((stored) => {
-        // Only pre-aggregate rollups for batches that actually persisted.
+      .then(async (stored) => {
+        // Only pre-aggregate rollups + notify the flush hook for batches that
+        // actually persisted (an alert must never fire for a dropped batch).
         if (stored) {
-          return this.recordRollupsAfterStore(storage, drained);
+          await this.recordRollupsAfterStore(storage, drained);
+          await this.notifyFlushStored(drained);
         }
-        return undefined;
       })
       .finally(() => {
         this.recordFlushMetrics(drained.length, this.now() - flushStartedAt);
@@ -381,6 +390,21 @@ export class Recorder {
       await storage.recordRollups(aggregateDeltas(drained));
     } catch {
       // Rollups are best-effort; entries are already stored. Swallow.
+    }
+  }
+
+  /**
+   * Invoke the `onFlushStored` hook with the just-persisted batch. Awaited inside
+   * the flush chain so the hook's work (e.g. per-flush alert evaluation) settles
+   * before `flush()` resolves, but wrapped so a rejection/throw is swallowed — the
+   * entries are already stored and a hook bug must never break the flush.
+   */
+  private async notifyFlushStored(drained: Entry[]): Promise<void> {
+    if (this.options.onFlushStored === undefined) return;
+    try {
+      await this.options.onFlushStored(drained);
+    } catch {
+      // Best-effort observability hook; never break the flush.
     }
   }
 

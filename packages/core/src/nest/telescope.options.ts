@@ -88,11 +88,12 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   dashboardAuth?: DashboardAuthOptions;
   /**
-   * Webhook-only alerting (v1). When set, Telescope evaluates `rules` on an
-   * unref'd interval and POSTs a JSON payload to `webhookUrl` when a rule fires
-   * (per-rule cooldown applies). A configured `alerts` with an empty
-   * `webhookUrl` or empty `rules` is a fail-closed boot error. See
-   * {@link AlertsOptions}.
+   * Pluggable-channel alerting. When set, Telescope evaluates `rules` and fans
+   * each fired alert out to every configured `channels` entry (Slack / raw
+   * webhook / custom sink) concurrently; one channel failing never blocks the
+   * others. The legacy single `webhookUrl` is still accepted and folded into the
+   * channels. A configured `alerts` with NO destination or empty `rules` is a
+   * fail-closed boot error. See {@link AlertsOptions}.
    */
   alerts?: AlertsOptions;
   /**

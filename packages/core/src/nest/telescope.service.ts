@@ -101,6 +101,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Inject(TELESCOPE_DASHBOARD_AUTH)
     private readonly dashboardAuth: ResolvedDashboardAuth | null = null,
   ) {
+    // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
+    // dashboardAuth): no destination / empty rules / bad duration throws.
+    this.alerts = resolveAlerts(this.options.alerts);
     this.recorder = new Recorder({
       storage,
       context: this.context,
@@ -113,10 +116,23 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       idFactory: () => v7(),
       ...(config.filter ? { filter: config.filter } : {}),
       ...(config.traceContext ? { traceContext: config.traceContext } : {}),
+      // Per-flush new-exception evaluation: cheap map lookup per stored exception,
+      // batch-context fetch only on a real fire. Delegates to the alerter built
+      // just below; the closure reads `this.alerter` at flush time (always set by
+      // then). Never throws into the flush — the alerter swallows failures.
+      onFlushStored: (entries) => this.alerter?.evaluateFlush(entries),
     });
-    // Boot-validate alerts here (fail-closed at provider instantiation, like
-    // dashboardAuth): an empty webhookUrl / empty rules / bad duration throws.
-    this.alerts = resolveAlerts(this.options.alerts);
+    // Construct the alerter AFTER the Recorder so its `droppedCount` baseline can
+    // be read. The interval is started later in onModuleInit; the new-exception
+    // hook above is already wired and becomes live as soon as this is assigned.
+    if (this.alerts !== null) {
+      this.alerter = new TelescopeAlerter({
+        alerts: this.alerts,
+        storage: this.storage,
+        instanceId: this.config.instanceId,
+        droppedCount: () => this.recorder.droppedCount,
+      });
+    }
     // Wire the global dump sink so `telescopeDump(value, label)` can be called
     // anywhere without injecting this service. Cleared on shutdown.
     setTelescopeDump((value, label) => this.dump(value, label));
@@ -176,17 +192,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     }, this.config.recorder.flushIntervalMs);
     // Don't keep the event loop alive solely for the flush timer.
     this.flushTimer.unref?.();
-    // Start webhook alerting when configured (unref'd interval; never crashes
-    // the host — failures are swallowed inside the alerter).
-    if (this.alerts !== null) {
-      this.alerter = new TelescopeAlerter({
-        alerts: this.alerts,
-        storage: this.storage,
-        instanceId: this.config.instanceId,
-        droppedCount: () => this.recorder.droppedCount,
-      });
-      this.alerter.start();
-    }
+    // Start alerting when configured (unref'd interval for the rate rules; the
+    // new-exception rule already runs via the Recorder's onFlushStored hook).
+    // Never crashes the host — failures are swallowed inside the alerter.
+    this.alerter?.start();
   }
 
   async onApplicationShutdown(): Promise<void> {
