@@ -1,0 +1,30 @@
+{
+  "name": "example-basic-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "30-second onboarding demo for @dudousxd/nestjs-telescope — a tiny NestJS app that fills the dashboard by itself.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "tsc -p tsconfig.json && node dist/main.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@dudousxd/nestjs-telescope-cache": "workspace:*",
+    "@dudousxd/nestjs-telescope-ui": "workspace:*",
+    "@nestjs/common": "11.1.24",
+    "@nestjs/core": "11.1.24",
+    "@nestjs/platform-express": "11.1.24",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.41",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
