@@ -352,6 +352,46 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(afterKeep.data.map((e) => e.id).sort()).toEqual(['new-a', 'old-b', 'old-c']);
   });
 
+  it('pruneScoped deletes by type, excludes overridden types, and honors keepLast', async () => {
+    await provider.init();
+    const cutoff = new Date(Date.UTC(2024, 0, 10));
+    const old = new Date(Date.UTC(2024, 0, 1));
+    const fresh = new Date(Date.UTC(2024, 0, 20));
+
+    async function seed(): Promise<void> {
+      await provider.clear();
+      await provider.store([
+        makeEntry({ id: 'req-old', type: 'request', createdAt: old }),
+        makeEntry({ id: 'req-new', type: 'request', createdAt: fresh }),
+        makeEntry({ id: 'exc-old', type: 'exception', createdAt: old }),
+        makeEntry({ id: 'job-old', type: 'job', createdAt: old }),
+      ]);
+    }
+
+    // type = ? scoping.
+    await seed();
+    expect(await provider.pruneScoped({ before: cutoff, type: 'exception' })).toBe(1);
+    expect((await provider.get({})).data.map((e) => e.id).sort()).toEqual([
+      'job-old',
+      'req-new',
+      'req-old',
+    ]);
+
+    // type NOT IN (...) scoping.
+    await seed();
+    expect(await provider.pruneScoped({ before: cutoff, excludeTypes: ['exception'] })).toBe(2);
+    expect((await provider.get({})).data.map((e) => e.id).sort()).toEqual(['exc-old', 'req-new']);
+
+    // keepLast within a single type scope.
+    await provider.clear();
+    await provider.store([
+      makeEntry({ id: 'e1', type: 'exception', createdAt: new Date(Date.UTC(2024, 0, 1)) }),
+      makeEntry({ id: 'e2', type: 'exception', createdAt: new Date(Date.UTC(2024, 0, 2)) }),
+    ]);
+    expect(await provider.pruneScoped({ before: cutoff, type: 'exception', keepLast: 1 })).toBe(1);
+    expect((await provider.get({})).data.map((e) => e.id)).toEqual(['e2']);
+  });
+
   it('tags() returns counts, filtered by prefix', async () => {
     await provider.init();
     await provider.store([

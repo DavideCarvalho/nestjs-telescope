@@ -148,6 +148,46 @@ describe('SqliteStorageProvider', () => {
     expect((await store.get({})).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  describe('pruneScoped', () => {
+    const old = new Date('2026-01-01T00:00:00Z');
+    const fresh = new Date('2026-03-01T00:00:00Z');
+    const cutoff = new Date('2026-02-01T00:00:00Z');
+
+    async function seed(): Promise<void> {
+      await store.store([
+        entry({ id: 'req-old', type: 'request', createdAt: old }),
+        entry({ id: 'req-new', type: 'request', createdAt: fresh }),
+        entry({ id: 'exc-old', type: 'exception', createdAt: old }),
+        entry({ id: 'job-old', type: 'job', createdAt: old }),
+      ]);
+    }
+
+    it('prunes ONLY the named type (WHERE created_at < ? AND type = ?)', async () => {
+      await seed();
+      expect(await store.pruneScoped({ before: cutoff, type: 'exception' })).toBe(1);
+      expect((await store.get({})).data.map((e) => e.id).sort()).toEqual([
+        'job-old',
+        'req-new',
+        'req-old',
+      ]);
+    });
+
+    it('excludeTypes carves out the overridden types (type NOT IN (...))', async () => {
+      await seed();
+      expect(await store.pruneScoped({ before: cutoff, excludeTypes: ['exception'] })).toBe(2);
+      expect((await store.get({})).data.map((e) => e.id).sort()).toEqual(['exc-old', 'req-new']);
+    });
+
+    it('keepLast spares the newest N in-scope rows', async () => {
+      await store.store([
+        entry({ id: 'e1', type: 'exception', createdAt: new Date('2026-01-01T00:00:00Z') }),
+        entry({ id: 'e2', type: 'exception', createdAt: new Date('2026-01-02T00:00:00Z') }),
+      ]);
+      expect(await store.pruneScoped({ before: cutoff, type: 'exception', keepLast: 1 })).toBe(1);
+      expect((await store.get({})).data.map((e) => e.id)).toEqual(['e2']);
+    });
+  });
+
   it('falls back to DEFAULT_LIMIT when limit is NaN', async () => {
     await store.store([entry({ id: '1' }), entry({ id: '2' })]);
     const page = await store.get({ limit: Number.NaN });

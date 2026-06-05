@@ -50,6 +50,44 @@ describe('resolveConfig', () => {
     expect(config.prune?.afterMs).toBe(24 * 60 * 60 * 1000);
   });
 
+  it('resolves prune.perType durations into a perTypeMs map', () => {
+    const config = resolveConfig({
+      prune: { after: '5m', perType: { exception: '7d', query: 3_600_000 } },
+    });
+    expect(config.prune?.perTypeMs).toEqual({
+      exception: 7 * 24 * 60 * 60 * 1000,
+      query: 3_600_000,
+    });
+  });
+
+  it('defaults perTypeMs to an empty map when perType is absent (legacy behaviour)', () => {
+    const config = resolveConfig({ prune: { after: '5m' } });
+    expect(config.prune?.perTypeMs).toEqual({});
+  });
+
+  it('rejects an unparseable perType duration at resolution', () => {
+    expect(() =>
+      resolveConfig({ prune: { after: '5m', perType: { exception: 'banana' } } }),
+    ).toThrow(/Invalid duration/);
+  });
+
+  it('resolves archive with defaulted batchSize/maxBatchesPerCycle and a Set of types', () => {
+    const sink = async (): Promise<void> => undefined;
+    const config = resolveConfig({
+      prune: { after: '5m' },
+      archive: { types: ['exception'], sink },
+    });
+    expect(config.archive?.types.has('exception')).toBe(true);
+    expect(config.archive?.batchSize).toBe(500);
+    expect(config.archive?.maxBatchesPerCycle).toBe(10);
+    expect(config.archive?.sink).toBe(sink);
+  });
+
+  it('rejects an empty archive.types list', () => {
+    const sink = async (): Promise<void> => undefined;
+    expect(() => resolveConfig({ archive: { types: [], sink } })).toThrow();
+  });
+
   it('rejects an out-of-range sampling rate', () => {
     expect(() => resolveConfig({ sampling: 2 })).toThrow();
   });

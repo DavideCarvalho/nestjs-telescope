@@ -7,10 +7,64 @@ import type { TraceContextProvider } from '../trace/trace-context-provider.js';
 
 export type Duration = number | string;
 
+/**
+ * Export-before-prune: hand doomed entries to a host-owned `sink` (S3, a data
+ * lake, cold storage…) BEFORE the pruner deletes them, so retention shrinks the
+ * live store without losing the data that matters.
+ *
+ * The contract is "archive THEN delete, per type, per cycle":
+ *  - Only entry types listed in `types` are archived; every other type prunes
+ *    normally and is unaffected by archiving.
+ *  - For each archived type the pruner fetches entries older than THAT type's
+ *    cutoff (its `perType` override, else the global `after`) and streams them to
+ *    `sink` in `batchSize` chunks. The type's entries are deleted ONLY after the
+ *    sink resolves for all of its batches.
+ *  - If the sink throws/rejects, that type is NOT deleted this cycle (the doomed
+ *    entries survive to be retried next cycle); the error is logged (rate-limited
+ *    to once per cycle) and the rest of the prune cycle continues. A failing sink
+ *    can never crash the host or stop the pruner.
+ *  - Work per type per cycle is bounded (see {@link ArchiveOptions.maxBatchesPerCycle});
+ *    any remainder is picked up on the next tick.
+ */
+export interface ArchiveOptions {
+  /** Entry types to archive before pruning. Types not listed prune normally. */
+  types: string[];
+  /**
+   * Receives a batch of doomed entries. MUST resolve only once the batch is
+   * durably stored; a rejection makes the pruner keep those entries (retry next
+   * cycle). Runs OUTSIDE the host request path — it may do slow network I/O.
+   */
+  sink: (entries: Entry[]) => Promise<void>;
+  /** Entries handed to `sink` per call. Default 500. */
+  batchSize?: number;
+  /**
+   * Hard cap on the number of `sink` batches per archived type per cycle, so a
+   * large backlog can never make one tick do unbounded work (which would stall
+   * the unref'd timer and pile up memory). Leftover is archived next cycle.
+   * Default 10.
+   */
+  maxBatchesPerCycle?: number;
+}
+
 export interface PruneOptions {
   after: Duration;
   keepLast?: number;
   intervalMs?: number;
+  /**
+   * Per-entry-type retention overrides. Each key is an entry type (e.g.
+   * `'exception'`, `'request'`) and the value is a {@link Duration} cutoff for
+   * THAT type only. Types absent from this map fall back to the global `after`,
+   * so omitting `perType` reproduces the exact pre-existing global behaviour.
+   *
+   * Each cutoff is validated at module init the same way `after` is — an
+   * unparseable duration is a boot error, not a silent runtime skip.
+   *
+   * @example keep exceptions for a week, everything else for the global default
+   * ```ts
+   * prune: { after: '5m', intervalMs: 60_000, perType: { exception: '7d' } }
+   * ```
+   */
+  perType?: Record<string, Duration>;
 }
 
 export interface RecorderTuning {
@@ -64,6 +118,12 @@ export interface TelescopeCoreOptions {
   sampling?: number | SamplingConfig;
   recorder?: RecorderTuning;
   prune?: PruneOptions;
+  /**
+   * Export captured entries to a host-owned sink right before the pruner deletes
+   * them. See {@link ArchiveOptions}. Only meaningful alongside `prune`: with no
+   * pruning nothing is ever doomed, so nothing is archived.
+   */
+  archive?: ArchiveOptions;
   taggers?: Tagger[];
   instanceId?: string;
   filter?: (entry: Entry) => boolean;
@@ -87,7 +147,27 @@ export interface ResolvedCoreConfig {
   redact: RedactOptions;
   sampling: SamplingConfig;
   recorder: Required<RecorderTuning>;
-  prune?: { afterMs: number; keepLast?: number; intervalMs: number };
+  prune?: {
+    afterMs: number;
+    keepLast?: number;
+    intervalMs: number;
+    /**
+     * Resolved per-type cutoffs in ms, keyed by entry type. Empty when the host
+     * supplied no `perType` overrides (the common case), in which case the
+     * pruner runs a single global cycle exactly as before.
+     */
+    perTypeMs: Record<string, number>;
+  };
+  /**
+   * Resolved archive config (with `batchSize`/`maxBatchesPerCycle` defaulted),
+   * or absent when the host configured no `archive`.
+   */
+  archive?: {
+    types: Set<string>;
+    sink: (entries: Entry[]) => Promise<void>;
+    batchSize: number;
+    maxBatchesPerCycle: number;
+  };
   taggers: Tagger[];
   instanceId: string;
   filter?: (entry: Entry) => boolean;

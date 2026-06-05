@@ -7,6 +7,7 @@ import type {
   EntryQuery,
   EntryWithBatch,
   Page,
+  PruneScope,
   StorageProvider,
   TagCount,
 } from './storage-provider.js';
@@ -106,6 +107,29 @@ export class InMemoryStorageProvider implements StorageProvider, RollupStore {
     }
     this.entries = survivors;
     return before - this.entries.length;
+  }
+
+  async pruneScoped(input: PruneScope): Promise<number> {
+    const { before, type, excludeTypes, keepLast } = input;
+    const excluded = excludeTypes !== undefined ? new Set(excludeTypes) : null;
+    // A row is in scope when it is older than the cutoff AND matches the type
+    // selector: a single `type`, OR (for the global bulk) any type NOT excluded.
+    const inScope = (entry: Entry): boolean => {
+      if (entry.createdAt >= before) return false;
+      if (type !== undefined) return entry.type === type;
+      if (excluded !== null) return !excluded.has(entry.type);
+      return true;
+    };
+    const before_ = this.entries.length;
+    const survivors = this.entries.filter((entry) => !inScope(entry));
+    if (keepLast !== undefined && survivors.length < this.entries.length) {
+      // Resurrect the newest `keepLast` of the doomed rows, mirroring prune().
+      const reprieved = this.entries.filter(inScope).sort(this.newestFirst).slice(0, keepLast);
+      this.entries = [...survivors, ...reprieved];
+    } else {
+      this.entries = survivors;
+    }
+    return before_ - this.entries.length;
   }
 
   async clear(): Promise<void> {

@@ -53,6 +53,23 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
+/**
+ * A single type-scoped prune request (see {@link StorageProvider.pruneScoped}).
+ * `type` and `excludeTypes` are mutually exclusive: set `type` to prune ONE type,
+ * or `excludeTypes` to prune everything EXCEPT a set (the global bulk delete with
+ * the per-type-overridden types carved out). Neither set means "all types".
+ */
+export interface PruneScope {
+  /** Delete entries strictly older than this instant. */
+  before: Date;
+  /** When set, restrict the delete to this single entry type. */
+  type?: string;
+  /** When set, delete every type EXCEPT these (the global non-overridden bulk). */
+  excludeTypes?: string[];
+  /** Keep the newest N of the matched-and-doomed rows, as in {@link StorageProvider.prune}. */
+  keepLast?: number;
+}
+
 export interface TagCount {
   tag: string;
   count: number;
@@ -80,6 +97,24 @@ export interface StorageProvider {
   /** Returns tag counts for entries matching `prefix`. The returned order is unspecified. */
   tags(prefix?: string): Promise<TagCount[]>;
   prune(olderThan: Date, keepLast?: number): Promise<number>;
+  /**
+   * Type-scoped prune for per-type retention. ADDITIVE and OPTIONAL: providers
+   * that predate per-type retention omit it, and the pruner falls back to the
+   * global {@link StorageProvider.prune} (logging a one-time warn) so third-party
+   * providers keep working — at the cost of using the global cutoff for everyone.
+   *
+   * The pruner drives one call per distinct cutoff per cycle:
+   *  - the global cutoff with `excludeTypes` set to the overridden types, which
+   *    must delete every entry older than `before` whose `type` is NOT in that
+   *    list (`WHERE created_at < ? AND type NOT IN (...)`); and
+   *  - one call per overridden type with `type` set (`WHERE created_at < ? AND
+   *    type = ?`).
+   *
+   * `type` and `excludeTypes` are mutually exclusive. `keepLast`, when set, has
+   * the SAME meaning as in `prune`: keep the newest N of the matched-and-doomed
+   * rows. Returns the number of rows deleted.
+   */
+  pruneScoped?(input: PruneScope): Promise<number>;
   clear(): Promise<void>;
   /**
    * Acquire resources / ensure schema. Optional; called ONCE at application boot,

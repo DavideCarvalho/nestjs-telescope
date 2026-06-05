@@ -361,6 +361,52 @@ describe('RedisStorageProvider', () => {
     expect(page.data.map((e) => e.id)).toEqual(['fresh', 'o3', 'o2']);
   });
 
+  describe('pruneScoped', () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    const cutoff = new Date(base + 5000);
+
+    async function seed(): Promise<void> {
+      await store.store([
+        entry({ id: 'req-old', type: 'request', createdAt: new Date(base) }),
+        entry({ id: 'req-new', type: 'request', createdAt: new Date(base + 10_000) }),
+        entry({ id: 'exc-old', type: 'exception', createdAt: new Date(base) }),
+        entry({ id: 'job-old', type: 'job', createdAt: new Date(base) }),
+      ]);
+    }
+
+    it('prunes ONLY the named type via its per-type index', async () => {
+      await seed();
+      const removed = await store.pruneScoped({ before: cutoff, type: 'exception' });
+      expect(removed).toBe(1);
+      expect(await store.find('exc-old')).toBeNull();
+      expect(await store.find('req-old')).not.toBeNull();
+      expect(await store.find('job-old')).not.toBeNull();
+    });
+
+    it('excludeTypes prunes every old entry except the carved-out type', async () => {
+      await seed();
+      const removed = await store.pruneScoped({ before: cutoff, excludeTypes: ['exception'] });
+      expect(removed).toBe(2); // req-old + job-old
+      expect(await store.find('exc-old')).not.toBeNull();
+      expect(await store.find('req-old')).toBeNull();
+      expect(await store.find('job-old')).toBeNull();
+      expect(await store.find('req-new')).not.toBeNull();
+    });
+
+    it('keepLast spares the newest N of a single scoped type', async () => {
+      await store.store([
+        entry({ id: 'e0', type: 'exception', createdAt: new Date(base) }),
+        entry({ id: 'e1', type: 'exception', createdAt: new Date(base + 1000) }),
+        entry({ id: 'e2', type: 'exception', createdAt: new Date(base + 2000) }),
+      ]);
+      const removed = await store.pruneScoped({ before: cutoff, type: 'exception', keepLast: 1 });
+      expect(removed).toBe(2);
+      expect(await store.find('e2')).not.toBeNull();
+      expect(await store.find('e1')).toBeNull();
+      expect(await store.find('e0')).toBeNull();
+    });
+  });
+
   describe('RollupStore SPI', () => {
     it('is detected as a RollupStore (both methods present)', () => {
       expect(isRollupStore(store)).toBe(true);

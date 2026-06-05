@@ -201,4 +201,60 @@ describe('InMemoryStorageProvider', () => {
     expect(removed).toBe(1);
     expect((await store.get({})).data.map((e) => e.id)).toEqual(['2']);
   });
+
+  describe('pruneScoped', () => {
+    const old = new Date('2026-01-01T00:00:00Z');
+    const fresh = new Date('2026-03-01T00:00:00Z');
+    const cutoff = new Date('2026-02-01T00:00:00Z');
+
+    async function seed(): Promise<InMemoryStorageProvider> {
+      const store = new InMemoryStorageProvider();
+      await store.store([
+        entry({ id: 'req-old', type: 'request', createdAt: old }),
+        entry({ id: 'req-new', type: 'request', createdAt: fresh }),
+        entry({ id: 'exc-old', type: 'exception', createdAt: old }),
+        entry({ id: 'exc-new', type: 'exception', createdAt: fresh }),
+        entry({ id: 'job-old', type: 'job', createdAt: old }),
+      ]);
+      return store;
+    }
+
+    it('prunes ONLY the named type older than the cutoff', async () => {
+      const store = await seed();
+      const removed = await store.pruneScoped({ before: cutoff, type: 'exception' });
+      expect(removed).toBe(1);
+      const remaining = (await store.get({})).data.map((e) => e.id).sort();
+      // exc-old gone; every other type's old entry survives.
+      expect(remaining).toEqual(['exc-new', 'job-old', 'req-new', 'req-old']);
+    });
+
+    it('excludeTypes prunes every old entry EXCEPT the carved-out types', async () => {
+      const store = await seed();
+      // Global bulk: prune everything old except the overridden `exception` type.
+      const removed = await store.pruneScoped({ before: cutoff, excludeTypes: ['exception'] });
+      expect(removed).toBe(2); // req-old + job-old
+      const remaining = (await store.get({})).data.map((e) => e.id).sort();
+      expect(remaining).toEqual(['exc-new', 'exc-old', 'req-new']);
+    });
+
+    it('empty excludeTypes behaves like a global prune (no type carve-out)', async () => {
+      const store = await seed();
+      const removed = await store.pruneScoped({ before: cutoff, excludeTypes: [] });
+      expect(removed).toBe(3); // all three old entries
+      expect((await store.get({})).data.map((e) => e.id).sort()).toEqual(['exc-new', 'req-new']);
+    });
+
+    it('keepLast spares the newest N of the in-scope doomed rows', async () => {
+      const store = new InMemoryStorageProvider();
+      await store.store([
+        entry({ id: 'e1', type: 'exception', createdAt: new Date('2026-01-01T00:00:00Z') }),
+        entry({ id: 'e2', type: 'exception', createdAt: new Date('2026-01-02T00:00:00Z') }),
+        entry({ id: 'e3', type: 'exception', createdAt: new Date('2026-01-03T00:00:00Z') }),
+      ]);
+      const removed = await store.pruneScoped({ before: cutoff, type: 'exception', keepLast: 1 });
+      expect(removed).toBe(2);
+      // The newest old one (e3) is spared.
+      expect((await store.get({})).data.map((e) => e.id)).toEqual(['e3']);
+    });
+  });
 });

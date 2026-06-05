@@ -1,0 +1,77 @@
+---
+title: Archiving exceptions to S3
+description: Export exception entries to Amazon S3 before the pruner deletes them, using the archive.sink hook and @aws-sdk/client-s3 — host-side code; Telescope itself stays dependency-free.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Pruning keeps the live store small, but some entries are worth keeping forever — exceptions, audit-worthy events. The `archive` option hands a type's doomed entries to a **sink** of yours *before* the pruner deletes them. Here we ship them to S3, one object per batch.
+
+Telescope stays dependency-free: the AWS SDK lives in **your** app, and the sink is **your** code. Telescope only calls it.
+
+---
+
+## Wire the sink
+
+```ts
+import { Module } from '@nestjs/common';
+import { TelescopeModule, type Entry } from '@dudousxd/nestjs-telescope';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+
+// One client for the app — reused across every batch.
+const s3 = new S3Client({ region: process.env.AWS_REGION });
+const BUCKET = process.env.TELESCOPE_ARCHIVE_BUCKET;
+
+/**
+ * Persist one batch of doomed entries as a single newline-delimited-JSON object.
+ * MUST resolve only once the object is durably written: if it throws, Telescope
+ * keeps the batch and retries it next prune cycle (nothing is lost).
+ */
+async function archiveToS3(entries: Entry[]): Promise<void> {
+  // Stable, collision-free key: date prefix + the batch's id range.
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `telescope/exceptions/${day}/${entries[0].id}-${entries.at(-1)!.id}.ndjson`;
+  const body = entries.map((entry) => JSON.stringify(entry)).join('\n');
+
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: 'application/x-ndjson',
+    }),
+  );
+}
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      // Keep exceptions a week, everything else five minutes.
+      prune: { after: '5m', intervalMs: 60_000, perType: { exception: '7d' } },
+      archive: {
+        types: ['exception'],
+        sink: archiveToS3,
+        batchSize: 500,        // entries per S3 object (default 500)
+        maxBatchesPerCycle: 10, // safety cap per cycle (default 10)
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+That's the whole integration. Every cycle, before any `exception` older than `7d` is deleted, its entries flow through `archiveToS3` in 500-entry batches; the delete runs only after each batch's `PutObjectCommand` resolves.
+
+---
+
+## What the contract guarantees
+
+- **Archive, then delete.** The exception type is deleted only after its sink resolves — never before. The entries handed to `sink` still exist in storage at sink time.
+- **Failure is safe.** If `PutObjectCommand` rejects (throttling, an expired credential), the exception type is **not deleted this cycle**. The entries survive and are retried next cycle. The error is logged once per cycle; non-archived types prune normally regardless.
+- **Bounded work.** At most `maxBatchesPerCycle` batches per type per cycle, so a large backlog can't make one tick do unbounded I/O — the remainder is archived on the next tick.
+
+<Callout type="info">
+  The sink runs **outside** the request path, on the pruner's unref'd interval. Slow network I/O here costs nothing on your hot path — but a sink that hangs forever stalls that type's pruning, so give the S3 call a sane timeout via the client config.
+</Callout>
+
+See [Retention and pruning](/docs/concepts/storage#retention-and-pruning) for the per-type cutoff model the archive cutoff follows.

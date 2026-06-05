@@ -37,6 +37,19 @@ const optionsSchema = z.object({
       after: z.union([z.number().positive(), z.string()]),
       keepLast: z.number().int().nonnegative().optional(),
       intervalMs: z.number().int().positive().default(60_000),
+      perType: z.record(z.union([z.number().positive(), z.string()])).optional(),
+    })
+    .optional(),
+  archive: z
+    .object({
+      types: z.array(z.string()).nonempty(),
+      // The sink is a runtime function; zod can only assert it is callable. The
+      // precise `(entries: Entry[]) => Promise<void>` shape is enforced by the
+      // TelescopeCoreOptions type at the call site, so we copy it through from
+      // the original options object below rather than from the parsed value.
+      sink: z.function(),
+      batchSize: z.number().int().positive().default(500),
+      maxBatchesPerCycle: z.number().int().positive().default(10),
     })
     .optional(),
   instanceId: z.string().optional(),
@@ -84,14 +97,36 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
     ...(options.traceLink ? { traceLink: options.traceLink } : {}),
   };
   if (parsed.prune) {
+    // Resolve per-type overrides through the SAME duration parser as `after`, so
+    // a bad per-type duration fails the boot here rather than silently skipping
+    // that type at prune time. Absent `perType` yields `{}` → identical to the
+    // pre-existing single-cutoff behaviour.
+    const perTypeMs: Record<string, number> = {};
+    if (parsed.prune.perType) {
+      for (const [type, duration] of Object.entries(parsed.prune.perType)) {
+        perTypeMs[type] = durationToMs(duration);
+      }
+    }
     const pruneEntry: ResolvedCoreConfig['prune'] = {
       afterMs: durationToMs(parsed.prune.after),
       intervalMs: parsed.prune.intervalMs,
+      perTypeMs,
     };
     if (parsed.prune.keepLast !== undefined) {
       pruneEntry.keepLast = parsed.prune.keepLast;
     }
     resolved.prune = pruneEntry;
+  }
+  // `archive` carries a runtime `sink` function whose precise signature zod can't
+  // express; take the function from the original (typed) options object so the
+  // resolved config keeps the exact `(Entry[]) => Promise<void>` type, no cast.
+  if (parsed.archive && options.archive) {
+    resolved.archive = {
+      types: new Set(parsed.archive.types),
+      sink: options.archive.sink,
+      batchSize: parsed.archive.batchSize,
+      maxBatchesPerCycle: parsed.archive.maxBatchesPerCycle,
+    };
   }
   if (options.filter !== undefined) {
     resolved.filter = options.filter;

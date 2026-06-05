@@ -10,6 +10,7 @@ import type {
   EntryQuery,
   EntryWithBatch,
   Page,
+  PruneScope,
   StorageProvider,
   TagCount,
 } from './storage-provider.js';
@@ -324,6 +325,48 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
            )`,
       )
       .run({ cutoff, keepLast }).changes;
+  }
+
+  async pruneScoped(input: PruneScope): Promise<number> {
+    const cutoff = input.before.getTime();
+    // Build the type predicate as a parameterised fragment so the single delete
+    // and the keepLast carve-out share identical row selection. `type = ?`,
+    // `type NOT IN (?, ?, …)`, or (neither) the whole table.
+    const { typeSql, typeParams } = this.scopedTypePredicate(input);
+    const where = `created_at < ?${typeSql ? ` and ${typeSql}` : ''}`;
+    if (input.keepLast === undefined) {
+      return this.db
+        .prepare(`delete from telescope_entries where ${where}`)
+        .run(cutoff, ...typeParams).changes;
+    }
+    // Delete the in-scope-and-old rows, but spare the newest `keepLast` of them.
+    return this.db
+      .prepare(
+        `delete from telescope_entries
+         where ${where}
+           and id not in (
+             select id from telescope_entries where ${where}
+             order by created_at desc, id desc limit ?
+           )`,
+      )
+      .run(cutoff, ...typeParams, cutoff, ...typeParams, input.keepLast).changes;
+  }
+
+  /**
+   * Returns the SQL fragment + ordered params for a {@link PruneScope}'s type
+   * selector. `type` → `type = ?`; `excludeTypes` → `type not in (?, …)` (an
+   * empty exclude list degenerates to "no type filter", i.e. all types); neither
+   * → no fragment.
+   */
+  private scopedTypePredicate(input: PruneScope): { typeSql: string; typeParams: string[] } {
+    if (input.type !== undefined) {
+      return { typeSql: 'type = ?', typeParams: [input.type] };
+    }
+    if (input.excludeTypes !== undefined && input.excludeTypes.length > 0) {
+      const placeholders = input.excludeTypes.map(() => '?').join(', ');
+      return { typeSql: `type not in (${placeholders})`, typeParams: [...input.excludeTypes] };
+    }
+    return { typeSql: '', typeParams: [] };
   }
 
   async clear(): Promise<void> {

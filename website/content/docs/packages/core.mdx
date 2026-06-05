@@ -116,7 +116,8 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `authorizeAction` | Separate, **default-deny** gate for queue mutations. |
 | `dashboardAuth` | Signed-cookie login for the dashboard — see [Dashboard auth](/docs/dashboard/auth). |
 | `redact` | Deep-redact configured `headers` / `query` / `body` paths (default sensitive keys always run). |
-| `prune` | Retention window driving the scheduled pruner (e.g. `{ after: '24h' }`). |
+| `prune` | Retention window driving the scheduled pruner (e.g. `{ after: '24h' }`). Supports `perType` for [per-type cutoffs](/docs/concepts/storage#per-type-retention) (e.g. `{ after: '5m', perType: { exception: '7d' } }`). |
+| `archive` | Export a type's entries to a sink **before** the pruner deletes them — see [Archiving before prune](/docs/concepts/storage#archiving-before-prune). |
 | `pulse` | Health-snapshot tuning. `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot — matches the `slow` tag threshold, so a quiet host shows no false hotspots. |
 | `traceContext` / `traceLink` | OpenTelemetry trace stamping + deep-link template — see [`-otel`](/docs/packages/otel). |
 | `queueManagers` | Live queue managers — see [queue managers](/docs/packages/queue-managers). |

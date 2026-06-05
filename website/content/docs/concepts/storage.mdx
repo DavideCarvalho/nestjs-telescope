@@ -20,6 +20,7 @@ interface StorageProvider {
   batch(batchId: string): Promise<Entry[]>;        // the correlation view
   tags(prefix?: string): Promise<TagCount[]>;
   prune(olderThan: Date, keepLast?: number): Promise<number>;
+  pruneScoped?(input: PruneScope): Promise<number>; // optional: per-type retention
   clear(): Promise<void>;
 }
 ```
@@ -65,3 +66,47 @@ TelescopeModule.forRoot({ prune: { after: '24h' } });
 ```
 
 The Redis adapter has no per-key TTL — pruning is explicit through this same path, so retention behaves the same regardless of backend.
+
+### Per-type retention
+
+Different entry types have different value over time: a request is noise after an hour, but an exception is worth a week. `prune.perType` overrides the global cutoff for specific types — everything else keeps using `after`:
+
+```ts
+TelescopeModule.forRoot({
+  prune: {
+    after: '5m',            // global: requests, queries, cache ops…
+    intervalMs: 60_000,
+    perType: { exception: '7d' }, // exceptions live a week
+  },
+});
+```
+
+Each cycle the pruner runs **one bulk delete** for every non-overridden type at the global cutoff (`type NOT IN (...)`), plus **one delete per overridden type** at its own cutoff (`type = ?`). Per-type durations are validated at boot exactly like `after` — a bad value is a startup error, not a silent skip. Omitting `perType` reproduces the prior single-cutoff behaviour byte-for-byte.
+
+<Callout type="info">
+  Per-type retention uses a new optional `pruneScoped()` method on the storage contract. Every in-repo adapter (SQLite, MikroORM, Redis, in-memory) implements it. A third-party provider that predates it keeps working — the pruner falls back to the global cutoff for all types and logs a one-time warning.
+</Callout>
+
+### Archiving before prune
+
+Pruning deletes. When a type is worth keeping but not in the live store, hand its doomed entries to an `archive.sink` **before** the pruner deletes them — export to S3, a data lake, cold storage:
+
+```ts
+TelescopeModule.forRoot({
+  prune: { after: '5m', perType: { exception: '7d' } },
+  archive: {
+    types: ['exception'],
+    sink: async (entries) => { /* persist the batch durably */ },
+    batchSize: 500,        // entries per sink call (default 500)
+  },
+});
+```
+
+The contract is **archive, then delete, per type, per cycle**:
+
+- Only listed `types` are archived; every other type prunes normally.
+- For each archived type the pruner fetches entries older than that type's cutoff and streams them to `sink` in `batchSize` chunks. It deletes the type **only after the sink resolves**.
+- If the sink throws, that type is **not deleted this cycle** — the doomed entries survive to be retried next cycle. The error is logged (once per cycle) and the rest of the prune continues. A failing sink can never crash the host or stall the pruner.
+- Work is bounded: at most `maxBatchesPerCycle` batches per type per cycle (default 10); any backlog is picked up next tick.
+
+See the [Archiving exceptions to S3](/docs/recipes) recipe for a copy-pasteable sink.

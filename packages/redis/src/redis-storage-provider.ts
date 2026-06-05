@@ -3,6 +3,7 @@ import {
   type EntryQuery,
   type EntryWithBatch,
   type Page,
+  type PruneScope,
   type RollupBucket,
   type RollupDelta,
   type RollupStore,
@@ -273,11 +274,42 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
    * are removed. Returns the number actually removed.
    */
   async prune(olderThan: Date, keepLast?: number): Promise<number> {
+    return this.pruneWith(this.indexKey(), olderThan, keepLast, null);
+  }
+
+  async pruneScoped(input: PruneScope): Promise<number> {
+    // Scope by SOURCE INDEX where possible: a single `type` scans that type's
+    // own inv-ordered index (no false candidates, no per-entry type re-check).
+    // `excludeTypes` has no precomputed index, so scan the primary index and
+    // skip excluded types after loading each entry (we load it anyway to clean
+    // up its secondary indexes). `keepLast` semantics match prune().
+    if (input.type !== undefined) {
+      return this.pruneWith(this.typeIndexKey(input.type), input.before, input.keepLast, null);
+    }
+    const excluded =
+      input.excludeTypes !== undefined && input.excludeTypes.length > 0
+        ? new Set(input.excludeTypes)
+        : null;
+    return this.pruneWith(this.indexKey(), input.before, input.keepLast, excluded);
+  }
+
+  /**
+   * Shared prune core. Scans `sourceIndex` for members older than `olderThan`,
+   * spares the newest `keepLast` of them, optionally drops members whose entry
+   * `type` is in `excludeTypes`, and removes the survivors' rows plus every
+   * secondary index reference in one pipeline. Returns the number removed.
+   */
+  private async pruneWith(
+    sourceIndex: string,
+    olderThan: Date,
+    keepLast: number | undefined,
+    excludeTypes: Set<string> | null,
+  ): Promise<number> {
     const boundary = invBound(olderThan.getTime());
     // Candidates are returned oldest-first (largest member first is `+`, but
     // ZRANGEBYLEX is ascending, so smaller inv→ first; within this range the
     // smallest member is the newest of the OLD entries).
-    const candidates = await this.redis.zrangebylex(this.indexKey(), `(${boundary}`, '+');
+    const candidates = await this.redis.zrangebylex(sourceIndex, `(${boundary}`, '+');
     if (candidates.length === 0) return 0;
 
     // candidates ascending = newest-first among the old set. Keep the newest `keepLast`.
@@ -296,6 +328,12 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
       if (id === undefined || member === undefined) continue;
       const raw = raws[i];
       const entry = raw === null || raw === undefined ? null : this.parseEntry(raw);
+      // excludeTypes carve-out: spare any entry whose type is excluded. A row
+      // with no readable entry can't be type-checked, so it is removed (it is
+      // already orphaned/old and would otherwise leak its index members).
+      if (excludeTypes !== null && entry !== null && excludeTypes.has(entry.type)) {
+        continue;
+      }
       removed++;
       pipeline.del(this.entryKey(id));
       pipeline.zrem(this.indexKey(), member);

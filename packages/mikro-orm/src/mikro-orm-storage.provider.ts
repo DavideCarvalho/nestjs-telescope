@@ -54,6 +54,7 @@ import type {
   EntryQuery,
   EntryWithBatch,
   Page,
+  PruneScope,
   RollupBucket,
   RollupDelta,
   RollupStore,
@@ -370,6 +371,30 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
       { orderBy: { createdAt: 'desc', id: 'desc' }, fields: ['id'] },
     );
     const toDelete = older.slice(keepLast).map((row) => row.id);
+    if (toDelete.length === 0) return 0;
+    return em.nativeDelete(TelescopeEntry, { id: { $in: toDelete } });
+  }
+
+  async pruneScoped(input: PruneScope): Promise<number> {
+    const em = this.forkEm();
+    // `createdAt < before` plus the type selector (single type, or all-except a
+    // set, or — when neither is given — no type filter). MikroORM renders the
+    // type clause to `type = ?` / `type not in (?, …)` on every driver.
+    const where: FilterQuery<TelescopeEntryRow> = { createdAt: { $lt: input.before } };
+    if (input.type !== undefined) {
+      where.type = input.type;
+    } else if (input.excludeTypes !== undefined && input.excludeTypes.length > 0) {
+      where.type = { $nin: input.excludeTypes };
+    }
+    if (input.keepLast === undefined) {
+      return em.nativeDelete(TelescopeEntry, where);
+    }
+
+    const older = await em.find(TelescopeEntry, where, {
+      orderBy: { createdAt: 'desc', id: 'desc' },
+      fields: ['id'],
+    });
+    const toDelete = older.slice(input.keepLast).map((row) => row.id);
     if (toDelete.length === 0) return 0;
     return em.nativeDelete(TelescopeEntry, { id: { $in: toDelete } });
   }
