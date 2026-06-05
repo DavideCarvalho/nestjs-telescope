@@ -88,6 +88,13 @@ export interface TelescopeMeta {
   droppedCount: number;
   watchers: string[];
   traceLink: string | null;
+  /**
+   * Whether the host wired a `traceContext` provider. Absent on older servers
+   * that predate the field — treated as "show the Traces nav" so the UI stays
+   * backward-compatible. Only a positive `false` hides the (otherwise empty)
+   * Traces page.
+   */
+  tracesEnabled?: boolean;
   /** Resolved retention window from `prune`, or `null` when unbounded. */
   retention: { afterMs: number; keepLast: number | null } | null;
   /** Whether on-demand pruning is available (prune window AND mutations enabled). */

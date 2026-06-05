@@ -192,6 +192,26 @@ describe('TelescopeService', () => {
     expect((await service.getMeta()).traceLink).toBe('https://traces.example/{traceId}/{spanId}');
   });
 
+  it('getMeta reports tracesEnabled true when a traceContext provider is configured', async () => {
+    // A traceContext means entries get real trace_ids, so the Traces page has
+    // content — the dashboard keeps its nav item.
+    const config = resolveConfig({
+      recorder: { flushIntervalMs: 5 },
+      traceContext: { current: () => null },
+    });
+    const service = new TelescopeService(config, new InMemoryStorageProvider(), {});
+    active = service;
+    expect((await service.getMeta()).tracesEnabled).toBe(true);
+  });
+
+  it('getMeta reports tracesEnabled false when no traceContext is configured', async () => {
+    // No traceContext → every trace_id is null → the Traces page is permanently
+    // empty, so the dashboard hides the nav item.
+    const { service } = makeService();
+    active = service;
+    expect((await service.getMeta()).tracesEnabled).toBe(false);
+  });
+
   it('getMeta reflects configured retention and sampling', async () => {
     const config = resolveConfig({
       recorder: { flushIntervalMs: 5 },

@@ -11,7 +11,13 @@ import { useAuthOptional } from './auth-context.js';
 import { CommandPalette, usePalette } from './command-palette.js';
 import { useTheme } from './theme-context.js';
 
-const NAV = [
+interface TopNavItem {
+  to: string;
+  label: string;
+  end: boolean;
+}
+
+const NAV: TopNavItem[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/entries', label: 'Entries', end: true },
   { to: '/traces', label: 'Traces', end: true },
@@ -19,6 +25,27 @@ const NAV = [
   { to: '/queues', label: 'Queues', end: false },
   { to: '/schedules', label: 'Schedules', end: false },
 ];
+
+/**
+ * Which top-level nav items to show given `meta.tracesEnabled`. The Traces page
+ * (`#/traces`) only has content when the host wired a `traceContext` provider —
+ * otherwise every entry's `trace_id` is null and the page is permanently empty,
+ * so we drop the dead nav item. Mirrors `visibleEntryTypes`' watcher logic:
+ *  - `tracesEnabled === undefined` → meta hasn't loaded or is from an older
+ *    server that predates the field; show Traces (no flash-of-hidden-nav, and
+ *    old servers keep working).
+ *  - only a POSITIVE `false` hides it. The route stays mounted, so a direct
+ *    `#/traces` visit still resolves.
+ *
+ * Pure and order-preserving so it's trivially unit-testable.
+ */
+export function visibleTopNav(
+  items: readonly TopNavItem[],
+  tracesEnabled: boolean | undefined,
+): TopNavItem[] {
+  if (tracesEnabled !== false) return [...items];
+  return items.filter((item) => item.to !== '/traces');
+}
 
 function topLinkClass({ isActive }: { isActive: boolean }): string {
   return `block rounded px-3 py-1.5 text-xs uppercase tracking-wide ${
@@ -126,13 +153,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
   // in which case `visibleEntryTypes` shows everything — no flash-of-hidden-nav.
   const meta = useMeta();
   const watcherTypes = visibleEntryTypes(ENTRY_TYPES, meta.data?.watchers);
+  // Hide the Traces nav item when meta positively reports no traceContext: the
+  // page would be permanently empty. Undefined meta → show it (same backward-
+  // compatible fallback as the watcher-driven nav above).
+  const topNav = visibleTopNav(NAV, meta.data?.tracesEnabled);
   return (
     <div className="flex min-h-screen bg-zinc-950 font-mono text-sm text-zinc-200">
       <CommandPalette open={open} onClose={() => setOpen(false)} />
       <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-zinc-800 px-3 py-4">
         <span className="px-3 text-base font-semibold text-emerald-400">Telescope</span>
         <nav className="flex flex-col gap-1">
-          {NAV.map((item) => (
+          {topNav.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={topLinkClass}>
               {item.label}
             </NavLink>

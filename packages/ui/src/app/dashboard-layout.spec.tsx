@@ -4,8 +4,14 @@ import { HashRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../client/index.js';
 import { ENTRY_TYPES, TelescopeProvider } from '../react/index.js';
-import { DashboardLayout } from './dashboard-layout.js';
+import { DashboardLayout, visibleTopNav } from './dashboard-layout.js';
 import { ThemeProvider } from './theme-context.js';
+
+const TOP_NAV = [
+  { to: '/', label: 'Overview', end: true },
+  { to: '/traces', label: 'Traces', end: true },
+  { to: '/pulse', label: 'Pulse', end: false },
+];
 
 function mockClient(watchers: string[] = []): TelescopeClient {
   return {
@@ -85,6 +91,23 @@ describe('DashboardLayout', () => {
     expect(screen.getByRole('link', { name: 'Exceptions' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Models' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Mail' })).toBeNull();
+  });
+
+  it('hides the Traces nav item only when tracesEnabled is positively false', () => {
+    // No traceContext on the host → Traces page is permanently empty → drop it.
+    const hidden = visibleTopNav(TOP_NAV, false);
+    expect(hidden.map((item) => item.to)).toEqual(['/', '/pulse']);
+  });
+
+  it('shows the Traces nav item when tracesEnabled is true', () => {
+    const shown = visibleTopNav(TOP_NAV, true);
+    expect(shown.map((item) => item.to)).toEqual(['/', '/traces', '/pulse']);
+  });
+
+  it('shows the Traces nav item when tracesEnabled is undefined (loading / older server)', () => {
+    // No flash-of-hidden-nav and backward-compatible with servers predating the field.
+    const shown = visibleTopNav(TOP_NAV, undefined);
+    expect(shown.map((item) => item.to)).toEqual(['/', '/traces', '/pulse']);
   });
 
   it('defaults the live-tail toggle to Live and flips to Paused on click', () => {

@@ -32,6 +32,12 @@ export interface TelescopeMeta {
   droppedCount: number;
   watchers: string[];
   traceLink: string | null;
+  /**
+   * Whether the host wired a `traceContext` provider. When `false`, every entry's
+   * `trace_id` is null, so the dashboard's Traces page is permanently empty — the
+   * UI hides that nav item, mirroring how unregistered watchers hide their types.
+   */
+  tracesEnabled: boolean;
   /** Resolved retention window from `prune`, or `null` when unbounded. */
   retention: { afterMs: number; keepLast: number | null } | null;
   /**
@@ -240,6 +246,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       droppedCount: this.recorder.droppedCount,
       watchers: [...this.watcherTypes],
       traceLink: this.config.traceLink ?? null,
+      tracesEnabled: this.config.traceContext !== undefined,
       retention: this.config.prune
         ? {
             afterMs: this.config.prune.afterMs,

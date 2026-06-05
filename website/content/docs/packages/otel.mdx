@@ -30,4 +30,4 @@ import { OtelTraceContextProvider } from '@dudousxd/nestjs-telescope-otel';
 export class AppModule {}
 ```
 
-Every entry recorded inside an active span then carries `traceId` and `spanId` (lower-case hex). The dashboard uses these to group entries by trace at `#/traces/:traceId` (see the [dashboard tour](/docs/dashboard)) and to render the "view in trace" deep-link.
+Every entry recorded inside an active span then carries `traceId` and `spanId` (lower-case hex). The dashboard uses these to group entries by trace at `#/traces/:traceId` (see the [dashboard tour](/docs/dashboard)) and to render the "view in trace" deep-link. The **Traces** nav item only appears once a `traceContext` provider is configured — without one every `trace_id` is null and the page stays empty, so the dashboard hides the link.
