@@ -53,15 +53,24 @@ export interface AxiosErrorLike {
  * time there. `response.use(onFulfilled, onRejected)` runs on the way back; we
  * compute duration and record on both branches. We ignore the handler ids axios
  * returns (used for ejecting) — we never eject.
+ *
+ * The fulfilled callbacks are GENERIC identity signatures (`<C extends ...>(c:
+ * C) => C`) rather than `(c: Like) => Like`: axios's own `use` requires its
+ * concrete `InternalAxiosRequestConfig` back from the interceptor, and a
+ * callback declared to return only the structural Like type would not be
+ * assignable (return-type covariance). The generic instantiates at axios's
+ * concrete types, so a real `AxiosInstance` matches with zero casts — which is
+ * the whole point of the duck-typed surface. Our interceptors really are
+ * identities (observe + return the same object), so the signature is honest.
  */
 export interface AxiosInterceptorLike {
   interceptors: {
     request: {
-      use(onFulfilled: (config: AxiosRequestConfigLike) => AxiosRequestConfigLike): number;
+      use(onFulfilled: <C extends AxiosRequestConfigLike>(config: C) => C): number;
     };
     response: {
       use(
-        onFulfilled: (response: AxiosResponseLike) => AxiosResponseLike,
+        onFulfilled: <R extends AxiosResponseLike>(response: R) => R,
         onRejected: (error: unknown) => unknown,
       ): number;
     };
