@@ -15,6 +15,47 @@ export interface AuthorizerContext {
   request: unknown;
 }
 
+/**
+ * Public front-end error ingestion (`POST <telescope>/api/client-errors`). When
+ * enabled, browsers report errors directly to Telescope, which records them as
+ * `client_exception` entries through the normal pipeline (family-hash,
+ * `failed`/`client`/`user:<id>` tags, alerts, prune, archive, dashboard).
+ *
+ * DISABLED by default: a public, unauthenticated ingestion surface is opt-in.
+ * While disabled the controller is mounted but returns 404 for every request, so
+ * the route never silently accepts traffic and toggling needs no remount.
+ *
+ * Security knobs, all best-effort and PER-POD (see the multi-replica caveat on
+ * `rateLimit`): a byte cap (`maxBodyBytes`), an in-memory per-IP token bucket
+ * (`rateLimit`), and an `authorize` hook for session/header validation.
+ */
+export interface ClientErrorsOptions {
+  /** Master switch. Default `false` — the endpoint 404s until explicitly enabled. */
+  enabled: boolean;
+  /**
+   * Hard cap on the accepted request body size in bytes. A larger body is
+   * rejected (413) BEFORE structural validation, so a hostile browser can't make
+   * Telescope parse a huge payload. Default `32_768` (32 KB).
+   */
+  maxBodyBytes?: number;
+  /**
+   * Per-IP token-bucket rate limit. `perMinute` requests are allowed per IP per
+   * minute (default `60`); over the limit returns 429. The bucket map is bounded
+   * and per-pod (in-memory), so in a multi-replica deployment the EFFECTIVE limit
+   * is `perMinute × pods` and a client pinned to one pod sees exactly `perMinute`
+   * — acceptable for abuse-dampening, not a hard quota. A shared limiter would
+   * need a cross-pod store and is out of scope here.
+   */
+  rateLimit?: { perMinute: number };
+  /**
+   * Optional gate that runs FIRST, before validation/rate-limiting. Return
+   * `false` to reject with 403 — lets a host require a session cookie or a shared
+   * header on the public endpoint. A throw is treated as a denial (fail closed)
+   * and never crashes the request.
+   */
+  authorize?: (request: unknown) => boolean | Promise<boolean>;
+}
+
 export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   /** Storage provider. Defaults to a SqliteStorageProvider(':memory:'). */
   storage?: StorageProvider;
@@ -105,6 +146,12 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * alarms. See {@link PulseServiceOptions}.
    */
   pulse?: PulseServiceOptions;
+  /**
+   * Public front-end error ingestion. When `enabled`, browsers can POST errors
+   * to `<telescope>/api/client-errors` and they are recorded as `client_exception`
+   * entries. DISABLED by default. See {@link ClientErrorsOptions}.
+   */
+  clientErrors?: ClientErrorsOptions;
 }
 
 export interface TelescopeOptionsFactory {

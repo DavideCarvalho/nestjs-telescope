@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { type Observable, catchError, throwError } from 'rxjs';
 import { EntryType } from '../entry/entry.js';
+import { exceptionFamilyHash } from '../entry/exception-family-hash.js';
 import { TelescopeService } from './telescope.service.js';
 
 @Injectable()
@@ -20,7 +21,14 @@ export class TelescopeExceptionInterceptor implements NestInterceptor {
         const err = error instanceof Error ? error : new Error(String(error));
         this.service.record({
           type: EntryType.Exception,
-          familyHash: `${err.name}:${err.message}`,
+          // Include the top stack frame so two unrelated call sites that throw
+          // the same name+message stay distinct families (shared with the
+          // client-error controller so both sources group identically).
+          familyHash: exceptionFamilyHash({
+            name: err.name,
+            message: err.message,
+            stack: err.stack ?? null,
+          }),
           content: {
             class: err.name,
             message: err.message,

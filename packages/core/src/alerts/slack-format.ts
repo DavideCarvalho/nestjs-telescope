@@ -117,7 +117,9 @@ function dashboardLink(payload: AlertPayload): string | null {
   const { dashboardUrl, exception } = payload;
   if (dashboardUrl === undefined || exception === undefined) return null;
   const base = dashboardUrl.replace(/\/+$/, '');
-  return `${base}#/entries/exception/${exception.entryId}`;
+  // A browser-reported error lives under the client_exception type page.
+  const typeSegment = exception.client ? 'client_exception' : 'exception';
+  return `${base}#/entries/${typeSegment}/${exception.entryId}`;
 }
 
 /**
@@ -151,9 +153,14 @@ export function formatSlackMessage(
   if (exception !== undefined) {
     contextFields.push(field('Error', `${exception.class}: ${exception.message}`));
     if (exception.route !== null) {
+      // For a client_exception, `route` is the page URL (no method/status).
+      const label = exception.client ? 'URL' : 'Route';
       const method = exception.method ?? '';
       const status = exception.statusCode === null ? '' : ` → ${exception.statusCode}`;
-      contextFields.push(field('Route', `${method} ${exception.route}${status}`.trim()));
+      contextFields.push(field(label, `${method} ${exception.route}${status}`.trim()));
+    }
+    if (exception.userAgent !== null) {
+      contextFields.push(field('User agent', exception.userAgent));
     }
     if (exception.durationMs !== null) {
       contextFields.push(field('Duration', `${exception.durationMs} ms`));

@@ -1,6 +1,7 @@
 // packages/core/src/index.ts
 export * from './entry/entry.js';
 export * from './entry/content.js';
+export * from './entry/exception-family-hash.js';
 export * from './dump/telescope-dump.js';
 export * from './trace/trace-context-provider.js';
 export * from './redaction/redact.js';
@@ -33,6 +34,9 @@ export * from './nest/telescope.guard.js';
 export * from './nest/telescope-action.guard.js';
 export * from './nest/telescope.controller.js';
 export * from './nest/telescope-auth.controller.js';
+export * from './nest/client-error.controller.js';
+export * from './nest/client-error-rate-limiter.js';
+export * from './nest/client-error-validation.js';
 export * from './nest/telescope-pruner.service.js';
 export * from './nest/telescope.module.js';
 export * from './nest/platform-request.js';

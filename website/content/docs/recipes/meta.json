@@ -8,6 +8,7 @@
     "dashboard-auth",
     "tags-and-redaction",
     "request-context",
-    "archiving-exceptions-to-s3"
+    "archiving-exceptions-to-s3",
+    "reporting-frontend-errors"
   ]
 }

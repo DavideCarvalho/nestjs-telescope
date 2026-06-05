@@ -94,10 +94,22 @@ export interface ExceptionAlertContext {
   message: string;
   /** Truncated stack (first frames), or `null`. */
   stack: string | null;
-  /** Request route/uri from the sibling request entry, or `null`. */
+  /**
+   * Where the error happened: the sibling request's route/uri for a server
+   * exception, or the browser page `url` for a `client_exception`. `null` when
+   * neither is available.
+   */
   route: string | null;
-  /** Request method, or `null`. */
+  /** Request method, or `null` (always `null` for a client_exception). */
   method: string | null;
+  /**
+   * Reporting browser's user-agent — present ONLY for a `client_exception`
+   * (front-end errors carry no server route/method but do carry a UA). `null`
+   * for server exceptions.
+   */
+  userAgent: string | null;
+  /** True when this alert is a browser-reported `client_exception`. */
+  client: boolean;
   /** Response status code, or `null`. */
   statusCode: number | null;
   /** Request duration (ms), or `null`. */

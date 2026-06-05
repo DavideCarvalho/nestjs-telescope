@@ -40,6 +40,8 @@ export function EntryDetail({
           <ModelBody content={entry.content} />
         ) : entry.type === 'redis' ? (
           <RedisBody content={entry.content} />
+        ) : entry.type === 'client_exception' ? (
+          <ClientExceptionBody content={entry.content} />
         ) : entry.type === 'request' ? (
           <RequestBody content={entry.content} />
         ) : entry.type === 'query' ? (
@@ -203,6 +205,75 @@ function RedisBody({ content }: { content: unknown }): JSX.Element {
       <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
         {prettyJson(record.args)}
       </pre>
+    </div>
+  );
+}
+
+/**
+ * A labelled monospace block for a stack / component-stack string. Rendered only
+ * when there's something to show, so an error without a stack doesn't leave an
+ * empty fence. The orange accent matches the `client_exception` type dot.
+ */
+function StackBlock({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="mb-4">
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">{label}</h3>
+      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs leading-relaxed text-zinc-300">
+        {value}
+      </pre>
+    </div>
+  );
+}
+
+/**
+ * Renders a browser-reported `client_exception`: the name + message header,
+ * page URL and user-agent, then the JS stack and (when present) the React
+ * component stack, followed by any host-supplied `extra` debugging context.
+ * Reads every field defensively — the content originated from an UNTRUSTED
+ * browser, so nothing is assumed beyond `message`.
+ */
+function ClientExceptionBody({ content }: { content: unknown }): JSX.Element {
+  const record =
+    typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
+  const name = typeof record.name === 'string' ? record.name : null;
+  const message =
+    typeof record.message === 'string' ? record.message : String(record.message ?? '');
+  const url = typeof record.url === 'string' ? record.url : null;
+  const userAgent = typeof record.userAgent === 'string' ? record.userAgent : null;
+  const release = typeof record.release === 'string' ? record.release : null;
+  const stack = typeof record.stack === 'string' ? record.stack : null;
+  const componentStack = typeof record.componentStack === 'string' ? record.componentStack : null;
+  return (
+    <div>
+      <h3 className="mb-3 flex flex-wrap items-center gap-2 font-mono text-sm text-orange-400">
+        {name ? (
+          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] uppercase">{name}</span>
+        ) : null}
+        <span className="text-zinc-300">{message}</span>
+        {release ? <span className="text-[10px] text-zinc-500">{release}</span> : null}
+      </h3>
+      {url ? (
+        <div className="mb-4">
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">URL</h3>
+          <div className="break-all font-mono text-xs text-zinc-300">{url}</div>
+        </div>
+      ) : null}
+      {userAgent ? (
+        <div className="mb-4">
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">User agent</h3>
+          <div className="break-all font-mono text-[11px] text-zinc-400">{userAgent}</div>
+        </div>
+      ) : null}
+      {stack ? <StackBlock label="Stack" value={stack} /> : null}
+      {componentStack ? <StackBlock label="Component stack" value={componentStack} /> : null}
+      {hasContent(record.extra) ? (
+        <div className="mb-4">
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Extra</h3>
+          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+            {prettyJson(record.extra)}
+          </pre>
+        </div>
+      ) : null}
     </div>
   );
 }

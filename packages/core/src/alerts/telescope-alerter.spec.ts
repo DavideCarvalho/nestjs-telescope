@@ -351,6 +351,43 @@ describe('TelescopeAlerter', () => {
       expect(sent).toHaveLength(0);
     });
 
+    it('fires for a brand-new client_exception with client context (url/userAgent)', async () => {
+      const { alerter, sent, storage } = makeAlerter([{ type: 'new-exception', window: '1h' }]);
+      const clientError = entry('client_exception', {
+        id: 'ce-1',
+        batchId: 'bc1',
+        familyHash: 'fam-CLIENT',
+        tags: ['failed', 'client', 'user:99'],
+        content: {
+          name: 'TypeError',
+          message: 'x is undefined',
+          stack: 'TypeError: x is undefined\n    at foo (app.js:1:1)',
+          url: 'https://app.example.com/cart',
+          userAgent: 'Mozilla/5.0',
+          clientIp: '203.0.113.7',
+        },
+      });
+      await storage.store([clientError]);
+      await alerter.evaluateFlush([clientError]);
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.rule.type).toBe('new-exception');
+      const context = sent[0]?.exception;
+      expect(context).toMatchObject({
+        familyHash: 'fam-CLIENT',
+        class: 'TypeError',
+        message: 'x is undefined',
+        client: true,
+        // For a client_exception, `route` carries the page URL and method is null.
+        route: 'https://app.example.com/cart',
+        method: null,
+        userAgent: 'Mozilla/5.0',
+        statusCode: null,
+        user: '99',
+        entryId: 'ce-1',
+      });
+    });
+
     it('evicts oldest families beyond the cap, re-firing an evicted family', async () => {
       const storage = new InMemoryStorageProvider();
       const sent: AlertPayload[] = [];

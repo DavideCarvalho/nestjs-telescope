@@ -1,0 +1,146 @@
+---
+title: Reporting frontend errors
+description: Turn Telescope into your frontend error reporter — a public ingestion endpoint browsers POST to, recorded as client_exception entries that compose with new-exception alerts, prune, archive and the dashboard. Endpoint config, security knobs, a fetch/sendBeacon snippet, and a react-error-boundary integration.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Instead of a hand-rolled reporter that POSTs to a bespoke endpoint (and pings Slack itself), point your browser error handler at Telescope. With `clientErrors` enabled, the browser reports errors to a public endpoint and Telescope records them as **`client_exception`** entries through the *same* pipeline as server exceptions — so they get a stable family hash, the `failed` / `client` / `user:<id>` tags, and they compose with [new-exception alerts](/docs/recipes/dashboard-auth), per-type [prune & archive](/docs/recipes/archiving-exceptions-to-s3), and the dashboard's "Client errors" tab.
+
+## Enable the endpoint
+
+Ingestion is **off by default** — a public, unauthenticated surface is opt-in. Turn it on with `clientErrors.enabled`:
+
+```ts
+import { Module } from '@nestjs/common';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      enabled: true,
+      clientErrors: {
+        enabled: true,
+        // All optional — shown with their defaults.
+        maxBodyBytes: 32_768, // reject bodies larger than 32 KB (413)
+        rateLimit: { perMinute: 60 }, // per-IP token bucket; over → 429
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+This mounts `POST /telescope/api/client-errors` (it follows your configured dashboard `path`). The endpoint is **ungated** — it carries no dashboard session guard, because ordinary users' browsers hit it. While `enabled` is `false` it returns **404** for every request, so a disabled endpoint never silently accepts traffic.
+
+## The request body
+
+The browser POSTs JSON. Only `message` is required; everything else is optional and the server validates and length-caps it before recording (the body is **untrusted**):
+
+| Field | Type | Notes |
+|---|---|---|
+| `message` | string (required) | The error message. ≤ 2 KB. |
+| `name` | string | Error class, e.g. `TypeError`. Feeds the family hash. |
+| `stack` | string | JS stack. Its top frame also feeds the family hash. ≤ 16 KB. |
+| `componentStack` | string | React error-boundary component stack. ≤ 16 KB. |
+| `url` | string | Page URL where the error happened. ≤ 2 KB. |
+| `userAgent` | string | Reporting browser UA. ≤ 2 KB. |
+| `user` | object | Identity (`{ id }` / `{ _id }` / `{ email }`) → pivoted into a `user:<id>` tag. |
+| `release` | string | App version / build id. |
+| `extra` | object | Free-form debugging context, bounded by the normal redaction budget at record time. |
+
+The server adds `clientIp` (from `x-forwarded-for`'s first hop, else `request.ip`) — you never send it. An invalid body returns **400** with a generic reason and **never echoes your payload back**.
+
+## Security knobs
+
+This is a public endpoint, so it ships with three best-effort defenses:
+
+- **`maxBodyBytes`** — bodies over the cap are rejected **before** parsing/validation (413).
+- **`rateLimit.perMinute`** — a per-IP token bucket; over the limit returns **429**. The bucket map is bounded (oldest IP evicted at ~10k IPs).
+- **`authorize`** — an optional gate that runs **first**; return `false` to reject with **403**. Use it to require a session cookie or a shared header. A throw is treated as a denial (fail-closed) and never crashes the request.
+
+```ts
+clientErrors: {
+  enabled: true,
+  // Only accept reports from a logged-in user (validate your own session).
+  authorize: (request) => Boolean(getSessionFromCookie(request)),
+},
+```
+
+<Callout type="warn">
+The rate limit is **per-pod and in-memory**. In a multi-replica deployment the effective limit is `perMinute × pods`, and a client pinned to one pod sees exactly `perMinute`. It's abuse-dampening, not a hard global quota — a shared limiter would need a cross-pod store.
+</Callout>
+
+## Browser snippet
+
+A tiny `reportError` helper — no new package. It prefers `navigator.sendBeacon` (fire-and-forget, survives page unload) and falls back to `fetch` with `keepalive`:
+
+```ts
+// report-error.ts
+const TELESCOPE_URL = 'https://your-app.example.com/telescope/api/client-errors';
+
+export function reportError(error: unknown, extra?: Record<string, unknown>): void {
+  const err = error instanceof Error ? error : new Error(String(error));
+  const body = JSON.stringify({
+    message: err.message,
+    name: err.name,
+    stack: err.stack ?? null,
+    url: window.location.href,
+    userAgent: navigator.userAgent,
+    ...(extra ? { extra } : {}),
+  });
+
+  try {
+    // sendBeacon is ideal: non-blocking and survives navigation/unload.
+    if (navigator.sendBeacon?.(TELESCOPE_URL, new Blob([body], { type: 'application/json' }))) {
+      return;
+    }
+  } catch {
+    // fall through to fetch
+  }
+
+  // Fallback. `keepalive` lets it complete during unload; never throw on failure.
+  void fetch(TELESCOPE_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {});
+}
+
+// Wire the global handlers.
+window.addEventListener('error', (event) => reportError(event.error ?? event.message));
+window.addEventListener('unhandledrejection', (event) => reportError(event.reason));
+```
+
+## React error boundary
+
+With [`react-error-boundary`](https://github.com/bvaughn/react-error-boundary), report from `onError` and pass the React component stack as `extra.componentStack` (or the dedicated `componentStack` field):
+
+```tsx
+import { ErrorBoundary, type ErrorInfo } from 'react-error-boundary';
+import { reportError } from './report-error';
+
+function onError(error: Error, info: ErrorInfo): void {
+  reportError(error, { componentStack: info.componentStack });
+}
+
+export function App({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary FallbackComponent={ErrorFallback} onError={onError}>
+      {children}
+    </ErrorBoundary>
+  );
+}
+```
+
+To populate the dedicated `componentStack` field (so the dashboard renders it as its own block), send it top-level instead of under `extra`:
+
+```ts
+reportError(error, undefined);
+// or build the body yourself with `componentStack: info.componentStack`.
+```
+
+## What you get
+
+Every accepted report lands as a `client_exception` entry. In the dashboard a **Client errors** tab appears in the per-type sidebar (it's watcher-driven, so it shows only while `clientErrors` is enabled), and each entry renders its message, stack, component stack, URL and user-agent. Because they carry a family hash and the `failed`/`client` tags, a brand-new frontend error family fires your [`new-exception` alert](/docs/dashboard/auth) just like a server one — with the page URL and user-agent in place of a server route.

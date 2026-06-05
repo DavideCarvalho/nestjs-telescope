@@ -13,6 +13,15 @@ export const EntryType = {
   Log: 'log',
   Model: 'model',
   Redis: 'redis',
+  /**
+   * A browser-reported error ingested via the public `POST /api/client-errors`
+   * endpoint. Distinct from a server `Exception` (which the interceptor captures
+   * in-process) so the dashboard, sampling, prune and archive can treat
+   * front-end errors as their own stream — yet it carries the SAME `failed`/
+   * `client`/`user:<id>` tags and a family-hash so the `new-exception` alert and
+   * the exception groupings compose over both.
+   */
+  ClientException: 'client_exception',
 } as const;
 
 export type BuiltinEntryType = (typeof EntryType)[keyof typeof EntryType];

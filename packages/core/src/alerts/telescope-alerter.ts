@@ -1,7 +1,7 @@
 // packages/core/src/alerts/telescope-alerter.ts
 import { Logger } from '@nestjs/common';
 import { durationToMs } from '../config/parse-duration.js';
-import type { ExceptionContent, RequestContent } from '../entry/content.js';
+import type { ClientExceptionContent, ExceptionContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -129,7 +129,12 @@ export class TelescopeAlerter {
     const nowMs = this.now();
     try {
       for (const entry of storedEntries) {
-        if (entry.type !== EntryType.Exception) continue;
+        // Server exceptions AND browser-reported client_exceptions both feed the
+        // new-exception rule — a brand-new front-end error family should page
+        // just like a server one.
+        if (entry.type !== EntryType.Exception && entry.type !== EntryType.ClientException) {
+          continue;
+        }
         if (entry.familyHash === null) continue;
         const isNew = this.newExceptionTracker.observe(entry.familyHash, nowMs, windowMs);
         if (!isNew) continue;
@@ -234,36 +239,11 @@ export class TelescopeAlerter {
     windowMs: number,
     nowMs: number,
   ): Promise<AlertPayload> {
-    const exceptionContent = entry.content as Partial<ExceptionContent>;
-    const request = await this.findSiblingRequest(entry.batchId);
-    const requestContent = (request?.content ?? null) as Partial<RequestContent> | null;
-    const occurrences = await this.countFamilyInWindow(entry.familyHash, windowMs);
-
-    const context: ExceptionAlertContext = {
-      familyHash: entry.familyHash ?? '',
-      class: typeof exceptionContent.class === 'string' ? exceptionContent.class : 'Error',
-      message: typeof exceptionContent.message === 'string' ? exceptionContent.message : '',
-      stack: clipStackFrames(
-        typeof exceptionContent.stack === 'string' ? exceptionContent.stack : null,
-      ),
-      route:
-        requestContent !== null && typeof requestContent.uri === 'string'
-          ? requestContent.uri
-          : null,
-      method:
-        requestContent !== null && typeof requestContent.method === 'string'
-          ? requestContent.method
-          : null,
-      statusCode:
-        requestContent !== null && typeof requestContent.statusCode === 'number'
-          ? requestContent.statusCode
-          : null,
-      durationMs: request?.durationMs ?? null,
-      user: userFromTags(request?.tags ?? entry.tags),
-      occurrences,
-      entryId: entry.id,
-      batchId: entry.batchId,
-    };
+    const occurrences = await this.countFamilyInWindow(entry.type, entry.familyHash, windowMs);
+    const context =
+      entry.type === EntryType.ClientException
+        ? this.buildClientContext(entry, occurrences)
+        : await this.buildServerContext(entry, occurrences);
 
     return {
       rule,
@@ -278,19 +258,90 @@ export class TelescopeAlerter {
     };
   }
 
+  /**
+   * Build the server-exception context: the exception's own fields plus its
+   * sibling REQUEST entry (route/method/status/duration/user) from the same batch.
+   */
+  private async buildServerContext(
+    entry: Entry,
+    occurrences: number,
+  ): Promise<ExceptionAlertContext> {
+    const exceptionContent = asPartialExceptionContent(entry.content);
+    const request = await this.findSiblingRequest(entry.batchId);
+    const requestContent = request === null ? null : asPartialRequestContent(request.content);
+    return {
+      familyHash: entry.familyHash ?? '',
+      class: typeof exceptionContent.class === 'string' ? exceptionContent.class : 'Error',
+      message: typeof exceptionContent.message === 'string' ? exceptionContent.message : '',
+      stack: clipStackFrames(
+        typeof exceptionContent.stack === 'string' ? exceptionContent.stack : null,
+      ),
+      route:
+        requestContent !== null && typeof requestContent.uri === 'string'
+          ? requestContent.uri
+          : null,
+      method:
+        requestContent !== null && typeof requestContent.method === 'string'
+          ? requestContent.method
+          : null,
+      userAgent: null,
+      client: false,
+      statusCode:
+        requestContent !== null && typeof requestContent.statusCode === 'number'
+          ? requestContent.statusCode
+          : null,
+      durationMs: request?.durationMs ?? null,
+      user: userFromTags(request?.tags ?? entry.tags),
+      occurrences,
+      entryId: entry.id,
+      batchId: entry.batchId,
+    };
+  }
+
+  /**
+   * Build the client-exception context from the browser-reported content. There's
+   * no sibling request (the error came straight from the browser), so `route` is
+   * the page `url`, `method`/`statusCode`/`durationMs` are null, and `userAgent`
+   * carries the reporting browser. The user comes from the entry's own
+   * `user:<id>` tag (the controller tagged it at record time).
+   */
+  private buildClientContext(entry: Entry, occurrences: number): ExceptionAlertContext {
+    const content = asPartialClientExceptionContent(entry.content);
+    return {
+      familyHash: entry.familyHash ?? '',
+      class: typeof content.name === 'string' ? content.name : 'Error',
+      message: typeof content.message === 'string' ? content.message : '',
+      stack: clipStackFrames(typeof content.stack === 'string' ? content.stack : null),
+      route: typeof content.url === 'string' ? content.url : null,
+      method: null,
+      userAgent: typeof content.userAgent === 'string' ? content.userAgent : null,
+      client: true,
+      statusCode: null,
+      durationMs: null,
+      user: userFromTags(entry.tags),
+      occurrences,
+      entryId: entry.id,
+      batchId: entry.batchId,
+    };
+  }
+
   /** Find the sibling REQUEST entry in the exception's batch (or `null`). */
   private async findSiblingRequest(batchId: string): Promise<Entry | null> {
     const batch = await this.deps.storage.batch(batchId);
     return batch.find((member) => member.type === EntryType.Request) ?? null;
   }
 
-  /** Count exception entries of this family in the trailing window (>= 1). */
-  private async countFamilyInWindow(familyHash: string | null, windowMs: number): Promise<number> {
+  /** Count entries of this family AND type in the trailing window (>= 1). */
+  private async countFamilyInWindow(
+    type: string,
+    familyHash: string | null,
+    windowMs: number,
+  ): Promise<number> {
     if (familyHash === null) return 1;
     const after = new Date(this.now() - windowMs);
     const result = await collectEntriesInWindow(
       this.deps.storage,
-      { type: EntryType.Exception, familyHash, after, omitContent: true },
+      { type, familyHash, after, omitContent: true },
       { scanCap: ALERT_SCAN_CAP },
     );
     // The just-stored occurrence is included; never report fewer than 1.
@@ -321,6 +372,41 @@ export class TelescopeAlerter {
     const message = reason instanceof Error ? reason.message : String(reason);
     this.logger.warn(`Telescope alert channel '${channel.name}' failed: ${message}`);
   }
+}
+
+/** A non-null object narrowed to a string-keyed record (else an empty record),
+ *  so content fields can be read without a cast. */
+function asContentRecord(content: unknown): Record<string, unknown> {
+  return typeof content === 'object' && content !== null ? { ...content } : {};
+}
+
+function asPartialExceptionContent(content: unknown): Partial<ExceptionContent> {
+  const record = asContentRecord(content);
+  return {
+    ...(typeof record.class === 'string' ? { class: record.class } : {}),
+    ...(typeof record.message === 'string' ? { message: record.message } : {}),
+    ...(typeof record.stack === 'string' ? { stack: record.stack } : {}),
+  };
+}
+
+function asPartialRequestContent(content: unknown): Partial<RequestContent> {
+  const record = asContentRecord(content);
+  return {
+    ...(typeof record.uri === 'string' ? { uri: record.uri } : {}),
+    ...(typeof record.method === 'string' ? { method: record.method } : {}),
+    ...(typeof record.statusCode === 'number' ? { statusCode: record.statusCode } : {}),
+  };
+}
+
+function asPartialClientExceptionContent(content: unknown): Partial<ClientExceptionContent> {
+  const record = asContentRecord(content);
+  return {
+    ...(typeof record.name === 'string' ? { name: record.name } : {}),
+    ...(typeof record.message === 'string' ? { message: record.message } : {}),
+    ...(typeof record.stack === 'string' ? { stack: record.stack } : {}),
+    ...(typeof record.url === 'string' ? { url: record.url } : {}),
+    ...(typeof record.userAgent === 'string' ? { userAgent: record.userAgent } : {}),
+  };
 }
 
 /** Keep at most the first N stack frames; `null` passes through. */

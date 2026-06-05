@@ -32,18 +32,30 @@ function identityToken(value: unknown): string | null {
   return null;
 }
 
+/**
+ * The `user:<id>` tag for a raw user value, or `null` when no usable identity is
+ * present. Prefers `id`, then `_id`, then `email` — so Passport (`id`), Mongo
+ * (`_id`), and email-keyed identities all pivot to the SAME `user:` namespace
+ * the dashboard's User filter reads. Shared by `userTagger` (request entries)
+ * and the client-error controller so a browser-reported error tags identically
+ * to a server request. Cheap property reads only; never throws.
+ */
+export function userIdentityTag(user: unknown): string | null {
+  if (!isRecord(user)) return null;
+  const id = identityToken(user.id) ?? identityToken(user._id) ?? identityToken(user.email);
+  return id === null ? null : `user:${id}`;
+}
+
 /** Tags request entries with the authenticated user's identity (`user:<id>`).
- *  Reads `content.user`, preferring `id`, then `_id`, then `email` — so Passport
- *  (`id`), Mongo (`_id`), and email-keyed identities all pivot. Type-gated to
- *  request entries and built from cheap property reads only (hot path); any
- *  non-object content or missing user yields no tag and never throws. */
+ *  Reads `content.user` via {@link userIdentityTag} (preferring `id`/`_id`/
+ *  `email`). Type-gated to request entries and built from cheap property reads
+ *  only (hot path); any non-object content or missing user yields no tag and
+ *  never throws. */
 export const userTagger: Tagger = (entry) => {
   if (entry.type !== EntryType.Request) return [];
   if (!isRecord(entry.content)) return [];
-  const user = entry.content.user;
-  if (!isRecord(user)) return [];
-  const id = identityToken(user.id) ?? identityToken(user._id) ?? identityToken(user.email);
-  return id === null ? [] : [`user:${id}`];
+  const tag = userIdentityTag(entry.content.user);
+  return tag === null ? [] : [tag];
 };
 
 export const BUILTIN_TAGGERS: readonly Tagger[] = [statusTagger, slowTagger, userTagger];

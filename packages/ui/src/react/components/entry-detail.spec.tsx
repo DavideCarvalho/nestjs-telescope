@@ -116,6 +116,32 @@ describe('EntryDetail trace row', () => {
   });
 });
 
+describe('EntryDetail client_exception', () => {
+  it('renders the message, url, user-agent, stack and component stack', async () => {
+    await renderDetail(
+      entry({
+        type: 'client_exception',
+        content: {
+          name: 'TypeError',
+          message: 'x is undefined',
+          url: 'https://app.example.com/cart',
+          userAgent: 'Mozilla/5.0 (Test)',
+          stack: 'TypeError: x is undefined\n    at foo (app.js:1:1)',
+          componentStack: '\n    in Cart\n    in App',
+          clientIp: '203.0.113.7',
+        },
+      }),
+      null,
+    );
+    expect(screen.getByText('x is undefined')).toBeTruthy();
+    expect(screen.getByText('https://app.example.com/cart')).toBeTruthy();
+    expect(screen.getByText('Mozilla/5.0 (Test)')).toBeTruthy();
+    expect(screen.getByText('Stack')).toBeTruthy();
+    expect(screen.getByText('Component stack')).toBeTruthy();
+    expect(screen.getByText(/at foo \(app.js:1:1\)/)).toBeTruthy();
+  });
+});
+
 function child(over: Partial<EntryWithBatch>): EntryWithBatch {
   return entry({ type: 'query', batch: [], ...over });
 }

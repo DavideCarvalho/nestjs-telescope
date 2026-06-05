@@ -24,7 +24,10 @@ describe('TelescopeExceptionInterceptor', () => {
     expect(entry).toBeDefined();
     expect((entry?.content as { class: string }).class).toBe('TypeError');
     expect((entry?.content as { message: string }).message).toBe('boom');
-    expect(entry?.familyHash).toBe('TypeError:boom'); // groups recurring exceptions
+    // familyHash now = name:message:topFrame so two unrelated call sites that
+    // throw the same name+message stay distinct families. The top frame is the
+    // real call site from this test, so assert the stable prefix + a frame.
+    expect(entry?.familyHash).toMatch(/^TypeError:boom:at /);
   });
 
   it('passes successful streams through untouched', async () => {

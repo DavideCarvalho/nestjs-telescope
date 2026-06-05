@@ -24,6 +24,7 @@ import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { ClientErrorController } from './client-error.controller.js';
 import { dynamicController } from './dynamic-controller.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeAuthController } from './telescope-auth.controller.js';
@@ -119,6 +120,10 @@ export class TelescopeModule implements NestModule {
         // /api/auth/* routes resolve ahead of the catch-all and stay ungated
         // (it carries no @UseGuards(TelescopeGuard)).
         dynamicController(TelescopeAuthController, `${path}/api/auth`),
+        // Public front-end error ingestion — also ungated (ordinary browsers
+        // hit it). It enforces its own opt-in/rate-limit/authorize knobs and
+        // 404s while disabled. Mounts before the catch-all gated controller.
+        dynamicController(ClientErrorController, `${path}/api/client-errors`),
         dynamicController(TelescopeController, `${path}/api`),
       ],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
@@ -152,6 +157,7 @@ export class TelescopeModule implements NestModule {
       imports: [DiscoveryModule, ...(config.imports ?? [])],
       controllers: [
         dynamicController(TelescopeAuthController, `${path}/api/auth`),
+        dynamicController(ClientErrorController, `${path}/api/client-errors`),
         dynamicController(TelescopeController, `${path}/api`),
       ],
       providers: [

@@ -32,6 +32,19 @@ describe('ENTRY_TYPES model and redis', () => {
   });
 });
 
+describe('ENTRY_TYPES client_exception', () => {
+  it('includes a client_exception type with a "Client errors" label and dot color', () => {
+    const client = ENTRY_TYPES.find((type) => type.id === 'client_exception');
+    expect(client).toEqual({
+      id: 'client_exception',
+      label: 'Client errors',
+      dot: 'bg-orange-500',
+    });
+    expect(labelForType('client_exception')).toBe('Client errors');
+    expect(dotForType('client_exception')).toBe('bg-orange-500');
+  });
+});
+
 describe('resolveEntryQuery', () => {
   it('maps schedule onto the tagged-job filter', () => {
     expect(resolveEntryQuery('schedule')).toEqual({ type: 'job', tag: 'schedule' });
@@ -71,5 +84,13 @@ describe('visibleEntryTypes', () => {
   it('hides schedule when job is not registered', () => {
     const visible = visibleEntryTypes(ENTRY_TYPES, ['request', 'exception']);
     expect(visible.map((type) => type.id)).not.toContain('schedule');
+  });
+
+  it('shows client_exception only when meta lists it (clientErrors enabled)', () => {
+    const enabled = visibleEntryTypes(ENTRY_TYPES, ['request', 'exception', 'client_exception']);
+    expect(enabled.map((type) => type.id)).toContain('client_exception');
+    // Disabled: meta omits it, so the tab is hidden (it is NOT always-visible).
+    const disabled = visibleEntryTypes(ENTRY_TYPES, ['request', 'exception']);
+    expect(disabled.map((type) => type.id)).not.toContain('client_exception');
   });
 });

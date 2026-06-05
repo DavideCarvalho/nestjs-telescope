@@ -39,7 +39,12 @@ export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
         );
       }
     }
-    const types = [EntryType.Request, EntryType.Exception, ...registered];
+    // Client-error ingestion isn't a "watcher" (no register() call), but the
+    // dashboard's watcher-driven nav keys the "Client errors" tab off the meta
+    // list — so surface its type only when the public endpoint is enabled.
+    const clientErrorTypes =
+      this.options.clientErrors?.enabled === true ? [EntryType.ClientException] : [];
+    const types = [EntryType.Request, EntryType.Exception, ...registered, ...clientErrorTypes];
     this.service.setWatchers(types);
     this.logger.log(`Telescope watching: ${types.join(', ')}`);
   }

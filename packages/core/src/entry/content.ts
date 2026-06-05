@@ -117,6 +117,47 @@ export interface ModelContent {
 }
 
 /**
+ * A browser-reported error ingested via the public `POST /api/client-errors`
+ * endpoint (see {@link EntryType.ClientException}). Everything beyond `message`
+ * is optional because the browser is UNTRUSTED — the controller validates the
+ * structure and length-caps the strings before recording, and `extra` (an
+ * arbitrary, host-defined bag of debugging context) is bounded by the normal
+ * redaction budget at record time exactly like every other content payload.
+ *
+ * Field intent:
+ *  - `message`        — the error message (required; the one field we insist on).
+ *  - `name`           — the error class/name (e.g. `TypeError`), when the browser
+ *                       supplied one. Feeds the family hash alongside `message`.
+ *  - `stack`          — the JS stack string. Its TOP frame also feeds the family
+ *                       hash, mirroring how server exceptions group.
+ *  - `componentStack` — React's component stack (from an error boundary), kept
+ *                       separate from `stack` so the dashboard can show both.
+ *  - `url`            — the page URL where the error happened (the front-end
+ *                       analogue of a request route).
+ *  - `userAgent`      — the reporting browser's UA string.
+ *  - `user`           — a host-supplied user identity (id/_id/email pivoted into
+ *                       a `user:<id>` tag, mirroring the server `userTagger`).
+ *  - `release`        — an app version / build id, so errors can be grouped by
+ *                       deploy.
+ *  - `extra`          — free-form debugging context; redacted/bounded like any
+ *                       other content (never trusted to be small or shallow).
+ *  - `clientIp`       — filled in BY THE SERVER from `request.ip` / the first
+ *                       `x-forwarded-for` hop; never read from the body.
+ */
+export interface ClientExceptionContent {
+  message: string;
+  name: string | null;
+  stack: string | null;
+  componentStack: string | null;
+  url: string | null;
+  userAgent: string | null;
+  user: unknown;
+  release: string | null;
+  extra: Record<string, unknown> | null;
+  clientIp: string | null;
+}
+
+/**
  * A Redis command issued through a wrapped client (e.g. ioredis). `command` is
  * the command name (uppercased, e.g. `GET`); `args` are the command arguments,
  * redacted by the Recorder; `durationMs` is the round-trip time in milliseconds
