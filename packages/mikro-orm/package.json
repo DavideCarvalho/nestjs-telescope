@@ -27,7 +27,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@dudousxd/nestjs-telescope": "workspace:^",
     "@mikro-orm/core": ">=7.0.0",
     "@mikro-orm/sql": ">=7.0.0",
     "@mikro-orm/nestjs": ">=7.0.0",

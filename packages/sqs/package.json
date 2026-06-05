@@ -27,7 +27,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@dudousxd/nestjs-telescope": "workspace:^",
     "@nestjs/common": ">=10.0.0",
     "@nestjs/core": ">=10.0.0",
     "reflect-metadata": ">=0.1.13"

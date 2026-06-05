@@ -2,8 +2,7 @@
   "$schema": "https://unpkg.com/@changesets/config@2.3.0/schema.json",
   "changelog": ["@changesets/changelog-github", { "repo": "DavideCarvalho/nestjs-telescope" }],
   "commit": false,
-  "fixed": [],
-  "linked": [
+  "fixed": [
     [
       "@dudousxd/nestjs-telescope",
       "@dudousxd/nestjs-telescope-mikro-orm",
@@ -24,8 +23,12 @@
       "@dudousxd/nestjs-telescope-sqs"
     ]
   ],
+  "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": []
+  "ignore": [],
+  "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
+    "onlyUpdatePeerDependentsWhenOutOfRange": true
+  }
 }

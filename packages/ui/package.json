@@ -37,7 +37,7 @@
     "typecheck": "tsc -p tsconfig.lib.json --noEmit && tsc -p tsconfig.server.json --noEmit"
   },
   "peerDependencies": {
-    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@dudousxd/nestjs-telescope": "workspace:^",
     "@nestjs/common": ">=11.0.0",
     "@nestjs/core": ">=11.0.0"
   },
