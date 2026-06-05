@@ -1,5 +1,7 @@
 # @dudousxd/nestjs-telescope-mikro-orm-watcher
 
+## 1.4.0
+
 ## 1.3.0
 
 ## 1.2.1

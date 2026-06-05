@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-redis",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Redis-backed shared storage provider for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
