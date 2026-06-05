@@ -71,4 +71,8 @@ export * from './pulse/pulse.service.js';
 
 export * from './http/http-client.watcher.js';
 
+export * from './alerts/alert-rule.js';
+export * from './alerts/resolve-alerts.js';
+export * from './alerts/telescope-alerter.js';
+
 export const TELESCOPE_VERSION = '0.0.0';

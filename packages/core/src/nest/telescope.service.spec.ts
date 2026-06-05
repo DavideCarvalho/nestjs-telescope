@@ -428,6 +428,51 @@ describe('TelescopeService', () => {
     expect(initLog).toEqual(['init']);
   });
 
+  it('getMeta reports alerts disabled when unset', async () => {
+    const { service } = makeService();
+    active = service;
+    expect((await service.getMeta()).alerts).toEqual({ enabled: false, ruleCount: 0 });
+  });
+
+  it('getMeta reports alerts enabled with the rule count when configured', async () => {
+    const service = new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {
+      alerts: {
+        webhookUrl: 'https://hook',
+        rules: [
+          { type: 'exception-rate', window: '5m', threshold: 10 },
+          { type: 'dropped-entries', threshold: 100 },
+        ],
+      },
+    });
+    active = service;
+    expect((await service.getMeta()).alerts).toEqual({ enabled: true, ruleCount: 2 });
+  });
+
+  it('constructor fails closed when alerts is configured without a webhookUrl', () => {
+    expect(
+      () =>
+        new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {
+          alerts: { webhookUrl: '', rules: [{ type: 'dropped-entries', threshold: 1 }] },
+        }),
+    ).toThrow(/webhookUrl/);
+  });
+
+  it('onModuleInit starts an alerter timer when alerts are configured; shutdown stops it', async () => {
+    const clearSpy = vi.spyOn(global, 'clearInterval');
+    const service = new TelescopeService(
+      resolveConfig({ recorder: { flushIntervalMs: 5 } }),
+      new InMemoryStorageProvider(),
+      {
+        alerts: { webhookUrl: 'https://hook', rules: [{ type: 'dropped-entries', threshold: 1 }] },
+      },
+    );
+    await service.onModuleInit();
+    await service.onApplicationShutdown();
+    // Both the flush timer and the alerter timer must be cleared on shutdown.
+    expect(clearSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    clearSpy.mockRestore();
+  });
+
   it('onModuleInit does not start (or await init) when disabled', async () => {
     const initLog: string[] = [];
     const fakeStorage: StorageProvider & { init(): void } = {

@@ -1,4 +1,5 @@
 // packages/core/src/nest/telescope.options.ts
+import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
 import type { TelescopeSessionUser } from '../auth/session-cookie.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
@@ -85,6 +86,14 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * `dashboardAuth` with a missing/empty `secret` or no hook is a boot error.
    */
   dashboardAuth?: DashboardAuthOptions;
+  /**
+   * Webhook-only alerting (v1). When set, Telescope evaluates `rules` on an
+   * unref'd interval and POSTs a JSON payload to `webhookUrl` when a rule fires
+   * (per-rule cooldown applies). A configured `alerts` with an empty
+   * `webhookUrl` or empty `rules` is a fail-closed boot error. See
+   * {@link AlertsOptions}.
+   */
+  alerts?: AlertsOptions;
 }
 
 export interface TelescopeOptionsFactory {

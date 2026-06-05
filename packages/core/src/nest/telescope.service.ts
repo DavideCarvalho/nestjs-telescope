@@ -7,6 +7,8 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { v7 } from 'uuid';
+import { resolveAlerts } from '../alerts/resolve-alerts.js';
+import { TelescopeAlerter } from '../alerts/telescope-alerter.js';
 import type { AuthMode, ResolvedDashboardAuth } from '../auth/dashboard-auth-config.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { samplingRates } from '../config/sampling.js';
@@ -52,6 +54,11 @@ export interface TelescopeMeta {
    * the 401 body of `GET /api/auth/me` instead — meta stays behind the gate.
    */
   auth: { enabled: boolean; modes: AuthMode[] };
+  /**
+   * Webhook alerting state: whether `alerts` is configured and how many rules
+   * are armed. The dashboard surfaces this as a read-only "Alerts: N rules" badge.
+   */
+  alerts: { enabled: boolean; ruleCount: number };
 }
 
 /**
@@ -77,6 +84,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(TelescopeService.name);
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private watcherTypes: string[] = [];
+  /** Resolved (boot-validated) alerting config, or `null` when unconfigured. */
+  private readonly alerts: ReturnType<typeof resolveAlerts>;
+  private alerter: TelescopeAlerter | null = null;
 
   constructor(
     @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
@@ -98,6 +108,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       ...(config.filter ? { filter: config.filter } : {}),
       ...(config.traceContext ? { traceContext: config.traceContext } : {}),
     });
+    // Boot-validate alerts here (fail-closed at provider instantiation, like
+    // dashboardAuth): an empty webhookUrl / empty rules / bad duration throws.
+    this.alerts = resolveAlerts(this.options.alerts);
     // Wire the global dump sink so `telescopeDump(value, label)` can be called
     // anywhere without injecting this service. Cleared on shutdown.
     setTelescopeDump((value, label) => this.dump(value, label));
@@ -157,6 +170,17 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     }, this.config.recorder.flushIntervalMs);
     // Don't keep the event loop alive solely for the flush timer.
     this.flushTimer.unref?.();
+    // Start webhook alerting when configured (unref'd interval; never crashes
+    // the host — failures are swallowed inside the alerter).
+    if (this.alerts !== null) {
+      this.alerter = new TelescopeAlerter({
+        alerts: this.alerts,
+        storage: this.storage,
+        instanceId: this.config.instanceId,
+        droppedCount: () => this.recorder.droppedCount,
+      });
+      this.alerter.start();
+    }
   }
 
   async onApplicationShutdown(): Promise<void> {
@@ -165,6 +189,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
+    }
+    if (this.alerter) {
+      this.alerter.stop();
+      this.alerter = null;
     }
     await this.recorder.flush();
     // Always close after the final flush. Providers that borrow a host resource no-op close().
@@ -224,6 +252,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       auth: {
         enabled: this.dashboardAuth !== null,
         modes: this.dashboardAuth ? [...this.dashboardAuth.modes] : [],
+      },
+      alerts: {
+        enabled: this.alerts !== null,
+        ruleCount: this.alerts?.rules.length ?? 0,
       },
     };
   }

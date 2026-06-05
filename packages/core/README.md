@@ -126,3 +126,39 @@ prune on demand. Pruning is a **mutation**, so it sits behind the same
 default-deny `authorizeAction` gate as the queue console: `403` until you supply
 that callback, `400` when no `prune` window is set. The Overview **Retention**
 card shows a *Prune now* button only when both are in place (`meta.pruneEnabled`).
+
+## Alerts (webhook)
+
+Telescope can POST a JSON alert to a webhook when a rule trips. It's
+**webhook-only** (v1) and runs on an unref'd interval — a failing webhook is
+logged once per rule kind and **never** crashes the host.
+
+```ts
+TelescopeModule.forRoot({
+  alerts: {
+    webhookUrl: process.env.SLACK_WEBHOOK_URL, // any endpoint that accepts a JSON POST
+    every: '1m',       // evaluation cadence (default '1m')
+    cooldown: '15m',   // per-rule re-notify suppression (default '15m')
+    rules: [
+      { type: 'exception-rate', window: '5m', threshold: 10 },
+      { type: 'slow-request-rate', window: '5m', thresholdMs: 1000, count: 20 },
+      { type: 'dropped-entries', threshold: 100 },
+    ],
+  },
+});
+```
+
+- `exception-rate` — fires when `>= threshold` exceptions were recorded in `window`.
+- `slow-request-rate` — fires when `>= count` requests slower than `thresholdMs` were recorded in `window`.
+- `dropped-entries` — fires when the Recorder's `droppedCount` grew by `>= threshold` since the previous evaluation (a delta).
+
+A configured `alerts` with an empty `webhookUrl` or empty `rules` is a
+**fail-closed boot error**. The POSTed payload is:
+
+```json
+{ "rule": { "...": "..." }, "value": 12, "threshold": 10, "firedAt": "2026-06-04T00:00:00.000Z", "instanceId": "host-1" }
+```
+
+For Slack, point `webhookUrl` at an incoming-webhook URL; the raw payload lands
+as the message body (wrap it in your own relay if you want a formatted message).
+`meta.alerts` reports `{ enabled, ruleCount }`.

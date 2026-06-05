@@ -62,6 +62,37 @@ TelescopeModule.forRoot({
 
 The Overview page surfaces a **Retention** card with the configured window (from `prune`) and a **Prune now** button. Pruning is a mutation, so the button appears only when retention is configured *and* mutations are enabled (`authorizeAction` present — the same default-deny gate the queue console uses). It fires `POST /telescope/api/retention/prune` after a confirm and reports how many entries were removed.
 
+## Alerts
+
+Telescope can POST a JSON alert to a webhook when a rule trips — **webhook-only** in v1. Rules are evaluated on an unref'd interval (`every`, default `1m`); each rule has a per-rule `cooldown` (default `15m`) to suppress re-notifies. A failing webhook is logged once per rule kind and **never** crashes the host. A configured `alerts` with an empty `webhookUrl` or empty `rules` is a fail-closed boot error.
+
+```ts
+TelescopeModule.forRoot({
+  alerts: {
+    webhookUrl: process.env.SLACK_WEBHOOK_URL,
+    every: '1m',
+    cooldown: '15m',
+    rules: [
+      { type: 'exception-rate', window: '5m', threshold: 10 },
+      { type: 'slow-request-rate', window: '5m', thresholdMs: 1000, count: 20 },
+      { type: 'dropped-entries', threshold: 100 },
+    ],
+  },
+});
+```
+
+- `exception-rate` — `>= threshold` exceptions in `window`.
+- `slow-request-rate` — `>= count` requests slower than `thresholdMs` in `window`.
+- `dropped-entries` — Recorder `droppedCount` grew by `>= threshold` since the last evaluation.
+
+The POSTed payload:
+
+```json
+{ "rule": { "...": "..." }, "value": 12, "threshold": 10, "firedAt": "2026-06-04T00:00:00.000Z", "instanceId": "host-1" }
+```
+
+For **Slack**, point `webhookUrl` at an [incoming webhook](https://api.slack.com/messaging/webhooks); the raw payload arrives as the request body (wrap it in your own relay for a formatted message). `meta.alerts` reports `{ enabled, ruleCount }`.
+
 ## Traces
 
 When you run the [OpenTelemetry provider](/docs/packages/watchers), each entry is stamped with the ambient `traceId` / `spanId`. The dashboard then offers a `#/traces/:traceId` route that lists every entry sharing that trace — the in-app correlation view — alongside a deep-link out to your trace backend (Jaeger / Grafana / …) via the configured `traceLink` template.
