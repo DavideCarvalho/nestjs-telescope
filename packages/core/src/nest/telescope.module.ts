@@ -29,6 +29,8 @@ import { dynamicController } from './dynamic-controller.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeAuthController } from './telescope-auth.controller.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
+import { TelescopeMcpController } from './telescope-mcp.controller.js';
+import { TelescopeOverloadGuard } from './telescope-overload-guard.service.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
 import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
@@ -82,6 +84,7 @@ const SHARED_PROVIDERS: Provider[] = [
   ServerStatsService,
   TelescopeRequestMiddleware,
   TelescopeWatcherRegistrar,
+  TelescopeOverloadGuard,
   QueueManagerRegistry,
   ScheduleManagerRegistry,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
@@ -124,6 +127,9 @@ export class TelescopeModule implements NestModule {
         // hit it). It enforces its own opt-in/rate-limit/authorize knobs and
         // 404s while disabled. Mounts before the catch-all gated controller.
         dynamicController(ClientErrorController, `${path}/api/client-errors`),
+        // MCP server — ungated by TelescopeGuard (it enforces its own Bearer
+        // token / dev-only check); mounts before the catch-all gated controller.
+        dynamicController(TelescopeMcpController, `${path}/api/mcp`),
         dynamicController(TelescopeController, `${path}/api`),
       ],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
@@ -158,6 +164,9 @@ export class TelescopeModule implements NestModule {
       controllers: [
         dynamicController(TelescopeAuthController, `${path}/api/auth`),
         dynamicController(ClientErrorController, `${path}/api/client-errors`),
+        // MCP server — ungated by TelescopeGuard (it enforces its own Bearer
+        // token / dev-only check); mounts before the catch-all gated controller.
+        dynamicController(TelescopeMcpController, `${path}/api/mcp`),
         dynamicController(TelescopeController, `${path}/api`),
       ],
       providers: [

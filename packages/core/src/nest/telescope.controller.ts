@@ -13,12 +13,13 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { durationToMs } from '../config/parse-duration.js';
-import type { QueryContent } from '../entry/content.js';
+import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
@@ -152,6 +153,24 @@ export class TelescopeController {
   @Get('entries/:id')
   show(@Param('id') id: string): Promise<EntryWithBatch | null> {
     return this.storage.find(id);
+  }
+
+  // Request REPLAY. Re-issues a captured request entry against the local server
+  // and reports the outcome. It is a MUTATION (it actually hits the app, which
+  // may write), so — like `prune` — it stays behind the default-deny
+  // authorizeAction gate rather than the read guard. The queue-shaped
+  // TelescopeActionGuard can't validate it (no driver/queue/action params), so we
+  // enforce the same default-deny here directly: no `authorizeAction` → 403.
+  @Get('entries/:id/replay')
+  async replay(@Param('id') id: string, @Req() request: unknown): Promise<ReplayResult> {
+    if (!this.options.authorizeAction) {
+      throw new ForbiddenException('Mutations are disabled (no authorizeAction configured).');
+    }
+    const entry = await this.storage.find(id);
+    if (entry === null || entry.type !== EntryType.Request) {
+      throw new NotFoundException('No request entry with that id.');
+    }
+    return replayRequest(entry.content as RequestContent, request);
   }
 
   @Get('batches/:id')
@@ -594,4 +613,107 @@ function setResponseStatus(response: unknown, status: number): void {
   ) {
     response.status(status);
   }
+}
+
+/** Outcome of a request replay (see {@link TelescopeController.replay}). */
+export interface ReplayResult {
+  /** HTTP status of the replayed response, or `0` when the call never completed. */
+  status: number;
+  /** Wall-clock duration of the replay in ms. */
+  durationMs: number;
+  /** The response body, capped at {@link REPLAY_BODY_CAP} bytes. */
+  body: string;
+  /** Present when the replay failed to complete (timeout / network error). */
+  error?: string;
+}
+
+const REPLAY_TIMEOUT_MS = 30_000;
+/** Max bytes of the replayed response body returned (4 KB). */
+const REPLAY_BODY_CAP = 4096;
+/** Headers stripped from the replayed request (auth/session/routing leakage). */
+const REPLAY_STRIPPED_HEADERS = new Set(['cookie', 'authorization', 'host', 'content-length']);
+
+/**
+ * Re-issue a captured request against the LOCAL server (127.0.0.1:<port>) so a
+ * developer can reproduce it from the dashboard. The replay carries a
+ * `x-telescope-replay: 1` header (so the host can recognize/skip it) and strips
+ * cookie/authorization/host headers — a replay must not silently reuse the
+ * original caller's credentials. Bounded by a 30s timeout; the body is capped at
+ * 4 KB. Never throws — a failed call returns `status: 0` with an `error`.
+ */
+async function replayRequest(content: RequestContent, request: unknown): Promise<ReplayResult> {
+  const port = resolveLocalPort(request);
+  const path = content.uri.startsWith('/') ? content.uri : `/${content.uri}`;
+  const url = `http://127.0.0.1:${port}${path}`;
+  const headers = buildReplayHeaders(content.headers);
+  const method = (content.method || 'GET').toUpperCase();
+  const hasBody = method !== 'GET' && method !== 'HEAD' && content.payload != null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REPLAY_TIMEOUT_MS);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      ...(hasBody ? { body: serializePayload(content.payload, headers) } : {}),
+      signal: controller.signal,
+      redirect: 'manual',
+    });
+    const text = await response.text();
+    return {
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      body: text.slice(0, REPLAY_BODY_CAP),
+    };
+  } catch (error: unknown) {
+    return {
+      status: 0,
+      durationMs: Date.now() - startedAt,
+      body: '',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Copy headers minus the stripped set, and force `x-telescope-replay: 1`. */
+function buildReplayHeaders(source: Record<string, unknown>): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (REPLAY_STRIPPED_HEADERS.has(key.toLowerCase())) continue;
+    if (typeof value === 'string') headers[key] = value;
+    else if (Array.isArray(value) && typeof value[0] === 'string') headers[key] = value[0];
+  }
+  headers['x-telescope-replay'] = '1';
+  return headers;
+}
+
+/** Serialize a captured payload to a fetch body, defaulting to JSON. */
+function serializePayload(payload: unknown, headers: Record<string, string>): string {
+  if (typeof payload === 'string') return payload;
+  const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === 'content-type');
+  if (!hasContentType) headers['content-type'] = 'application/json';
+  return JSON.stringify(payload);
+}
+
+/** Resolve the local server port from the incoming request's socket/host header. */
+function resolveLocalPort(request: unknown): number {
+  if (typeof request === 'object' && request !== null) {
+    const socket = (request as { socket?: { localPort?: unknown } }).socket;
+    if (socket && typeof socket.localPort === 'number' && socket.localPort > 0) {
+      return socket.localPort;
+    }
+    const headers = (request as { headers?: Record<string, unknown> }).headers;
+    const host = headers?.host;
+    if (typeof host === 'string') {
+      const portPart = host.split(':')[1];
+      const parsed = portPart !== undefined ? Number(portPart) : Number.NaN;
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+  // Fall back to PORT env or the conventional 3000.
+  const envPort = Number(process.env.PORT);
+  return Number.isFinite(envPort) && envPort > 0 ? envPort : 3000;
 }

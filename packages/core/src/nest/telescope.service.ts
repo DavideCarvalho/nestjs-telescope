@@ -279,6 +279,25 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     await this.recorder.flush();
   }
 
+  /**
+   * Pause capture (overload protection). While paused the Recorder drops new
+   * `record()` calls; flushing continues so the buffer drains. Driven by the
+   * OverloadGuard when event-loop lag crosses its threshold.
+   */
+  pause(): void {
+    this.recorder.pause();
+  }
+
+  /** Resume capture after a {@link pause}. */
+  resume(): void {
+    this.recorder.resume();
+  }
+
+  /** Whether capture is currently paused by overload protection. */
+  get isPaused(): boolean {
+    return this.recorder.isPaused;
+  }
+
   async getMeta(): Promise<TelescopeMeta> {
     return {
       enabled: this.config.enabled,

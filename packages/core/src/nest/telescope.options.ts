@@ -201,6 +201,34 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * diagnosis. See {@link ExceptionsOptions}.
    */
   exceptions?: ExceptionsOptions;
+  /**
+   * MCP (Model Context Protocol) server. When enabled, Telescope serves a
+   * stateless JSON-RPC MCP endpoint at `POST <telescope>/api/mcp` so coding
+   * agents (Claude Code, Cursor, …) can query the captured data directly —
+   * "why is POST /checkout slow?" → the agent pulls the batch waterfall with
+   * every query. Backed by the same storage/stats APIs as the dashboard.
+   *
+   * AUTH: when a `token` is configured, every MCP request MUST carry a
+   * `Authorization: Bearer <token>` header (the MCP transport's auth model; the
+   * cookie-session dashboard gate doesn't apply to a header-only agent client).
+   * Without a token the endpoint is allowed ONLY when `NODE_ENV !== 'production'`
+   * (mirroring the default-open-in-dev dashboard authorizer) — in production a
+   * tokenless MCP config is refused (403) so the surface never opens unguarded.
+   *
+   * Pass `true` for the dev-only default, or `{ token }` to require a Bearer
+   * token. DISABLED by default (`undefined`).
+   */
+  mcp?: boolean | { token?: string };
+  /**
+   * Overhead guard / overload protection. Telescope watches the event-loop lag
+   * (via `perf_hooks.monitorEventLoopDelay`) and, when the p99 lag crosses a
+   * threshold, PAUSES capture (the Recorder drops new `record()` calls) until
+   * the lag recovers — so a telescope under load can never amplify an incident.
+   *
+   * Pass `true` (the default) for the 200ms threshold, `false` to disable, or
+   * `{ maxEventLoopLagMs }` to tune it. ON by default at 200ms.
+   */
+  overloadProtection?: boolean | { maxEventLoopLagMs?: number };
 }
 
 export interface TelescopeOptionsFactory {

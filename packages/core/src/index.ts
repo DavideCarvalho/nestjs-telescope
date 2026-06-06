@@ -33,6 +33,8 @@ export * from './nest/telescope.service.js';
 export * from './nest/telescope.guard.js';
 export * from './nest/telescope-action.guard.js';
 export * from './nest/telescope.controller.js';
+export * from './nest/telescope-mcp.controller.js';
+export * from './nest/telescope-overload-guard.service.js';
 export * from './nest/telescope-auth.controller.js';
 export * from './nest/client-error.controller.js';
 export * from './nest/client-error-rate-limiter.js';

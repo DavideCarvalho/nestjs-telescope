@@ -171,6 +171,15 @@ export class Recorder {
   // ── Concurrency guard ─────────────────────────────────────────────────────
   private flushing: Promise<void> | null = null;
 
+  // ── Overload protection ────────────────────────────────────────────────────
+  /**
+   * When paused, `record()` becomes a no-op (the entry is dropped, counted as an
+   * overflow drop) so a telescope under load can never amplify an incident. Set
+   * by the overhead guard when event-loop lag crosses its threshold; cleared
+   * when lag recovers. Flushing continues so the buffer still drains.
+   */
+  private paused = false;
+
   // ── Determinism seams ─────────────────────────────────────────────────────
   private readonly now: () => number;
   private readonly random: () => number;
@@ -285,9 +294,36 @@ export class Recorder {
 
   // ── Core API ───────────────────────────────────────────────────────────────
 
+  /**
+   * Whether capture is currently paused by the overhead guard. While paused,
+   * `record()` drops new entries (counted as an overflow drop) but flushing
+   * continues so the buffer drains.
+   */
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Pause capture: `record()` becomes a dropping no-op until {@link resume}. */
+  pause(): void {
+    this.paused = true;
+  }
+
+  /** Resume capture after a {@link pause}. */
+  resume(): void {
+    this.paused = false;
+  }
+
   /** Synchronous, O(1), never throws into the caller. */
   record(input: RecordInput): void {
     try {
+      // Overload guard: while paused, drop new entries (counted as overflow) so
+      // a telescope under load can never amplify an incident. Flushing still
+      // drains whatever is already buffered.
+      if (this.paused) {
+        this.overflowDrops += 1;
+        this.notifyDrop(1, 'overflow');
+        return;
+      }
       if (!this.passesSampling(input)) {
         return;
       }

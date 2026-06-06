@@ -29,6 +29,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/** Whether the request was re-issued by Telescope's replay endpoint. */
+function hasReplayHeader(headers: Record<string, unknown>): boolean {
+  const value = headers['x-telescope-replay'];
+  if (typeof value === 'string') return value !== '';
+  return Array.isArray(value) && value.length > 0;
+}
+
 /** The parsed request body (Express/Fastify), or `null` when none is present. */
 function readPayload(request: unknown): unknown {
   return isRecord(request) && 'body' in request ? request.body : null;
@@ -70,6 +77,11 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     const startedAt = Date.now();
     const response = asFinishable(res);
 
+    // A replay (re-issued from the dashboard) carries `x-telescope-replay: 1`.
+    // Tag its captured entry so the dashboard/agent can tell replays apart from
+    // organic traffic (and a host could choose to skip them entirely).
+    const isReplay = hasReplayHeader(request.headers);
+
     if (response) {
       response.once('finish', () => {
         this.service.record({
@@ -78,6 +90,7 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
           // request entries by endpoint via the indexed family_hash column and
           // doubles as the human label — no content hydration needed.
           familyHash: normalizeRoute(request.method, request.url),
+          ...(isReplay ? { tags: ['replay'] } : {}),
           content: {
             method: request.method,
             uri: request.url,

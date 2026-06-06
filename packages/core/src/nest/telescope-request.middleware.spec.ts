@@ -65,6 +65,26 @@ describe('TelescopeRequestMiddleware', () => {
     expect((request?.content as { uri: string }).uri).toBe('/api/user/me');
   });
 
+  it('tags a replayed request (x-telescope-replay header) with `replay`', async () => {
+    const storage = new InMemoryStorageProvider();
+    const service = new TelescopeService(resolveConfig({}), storage, {});
+    const mw = new TelescopeRequestMiddleware(service);
+
+    const req = {
+      method: 'GET',
+      url: '/orders/42',
+      headers: { 'x-telescope-replay': '1' },
+      socket: { remoteAddress: '10.0.0.1' },
+    };
+    const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+    mw.use(req, res, vi.fn());
+    res.emit('finish');
+    await service.flush();
+
+    const request = (await storage.get({})).data.find((e) => e.type === 'request');
+    expect(request?.tags).toContain('replay');
+  });
+
   it('skips telescope dashboard paths without beginning a batch or recording', async () => {
     const storage = new InMemoryStorageProvider();
     const service = new TelescopeService(resolveConfig({}), storage, {});
