@@ -1,0 +1,83 @@
+---
+title: Configuration
+description: The full TelescopeModule.forRoot() options reference — capture, storage, the gate, retention, alerts, AI, the MCP server, and overload protection.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Every option below is passed to `TelescopeModule.forRoot({ … })`. All are optional — the defaults give you a zero-config SQLite store, request/exception capture, a production-deny gate, and overload protection. This page is the consolidated reference; each option links out to the concept or recipe that covers it in depth.
+
+## Capture & correlation
+
+| Option | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Master switch. Compute inline (e.g. `NODE_ENV !== 'production'`). |
+| `watchers` | `[]` | Built-in + custom watchers (queries, jobs, mail, cache, …). Request and exception capture wire automatically. See [Capture](/docs/concepts/capture). |
+| `sampling` | _none_ | Per-type keep-fractions for high-volume streams (e.g. `{ cache: 0.1 }`). |
+| `redact` | sensible defaults | Deep-redaction of `headers` / `query` / `body` paths plus content bounds (`maxDepth`, `maxStringLength`, …). See [Performance](/docs/concepts/performance#memory-bounds). |
+| `resolveUser` | reads `request.user` | Resolves the authenticated user recorded on a request entry. |
+| `exceptions` | `{ captureHttp4xx: false }` | How thrown exceptions become entries. By default 4xx control flow is **not** recorded as an exception. See [Exception capture](/docs/concepts/capture#exception-capture). |
+| `registerRequestMiddleware` | `true` | Auto-register request-capture middleware. Set `false` when using `setGlobalPrefix(...)` and register capture in bootstrap instead. |
+
+## Storage & retention
+
+| Option | Default | Description |
+|---|---|---|
+| `storage` | embedded SQLite | A `StorageProvider`. Swap for Redis / MikroORM / in-memory. See [Storage](/docs/concepts/storage). |
+| `prune` | _none_ | Retention window driving the scheduled pruner (e.g. `{ after: '24h' }`); `perType` for [per-type cutoffs](/docs/concepts/storage#per-type-retention). |
+| `archive` | _none_ | Export a type's entries to a sink **before** the pruner deletes them. See [Archiving before prune](/docs/concepts/storage#archiving-before-prune). |
+
+## The gate
+
+| Option | Default | Description |
+|---|---|---|
+| `authorizer` | deny in production | Gates the read API. **Denies in production by default** until you supply one. |
+| `authorizeAction` | **deny** | Separate, default-deny gate for **mutations** — queue actions, **Prune now**, and [request replay](/docs/dashboard#replay-a-request). Throwing denies (fails closed). |
+| `dashboardAuth` | _none_ | Signed-cookie login for the dashboard. See [Dashboard auth](/docs/dashboard/auth). |
+| `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
+
+## Health, alerts & AI
+
+| Option | Default | Description |
+|---|---|---|
+| `pulse` | _none_ | Health-snapshot tuning; `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot. |
+| `alerts` | _none_ | Pluggable-channel alerting (Slack / webhook / custom) + rules. See [Alerts](/docs/dashboard#alerts). |
+| `ai` | _none_ | AI exception diagnosis. See [AI diagnosis](/docs/packages/ai). |
+| `traceContext` / `traceLink` | _none_ | OpenTelemetry trace stamping + deep-link template. See [`-otel`](/docs/packages/otel). |
+| `explainQuery` | _none_ | Host hook that runs an engine `EXPLAIN` for a captured query. See [Explain slow queries](/docs/dashboard#explain-slow-queries). |
+
+## Queues & schedules
+
+| Option | Default | Description |
+|---|---|---|
+| `queueManagers` | `[]` | Live queue managers (BullMQ / SQS). See [queue managers](/docs/packages/queue-managers). |
+| `scheduleManagers` | `[]` | Schedule managers (`@nestjs/schedule`). See [the schedule watcher](/docs/packages/watchers). |
+
+## Agents & resilience
+
+| Option | Default | Description |
+|---|---|---|
+| `mcp` | disabled | MCP server for coding agents. `true` (dev-only, refused in production), `{ token }` (Bearer-gated everywhere), or omitted/`false` to disable. See [MCP server](/docs/concepts/mcp). |
+| `overloadProtection` | `true` (200ms) | Pause capture under event-loop pressure. See below. |
+
+### `overloadProtection`
+
+```ts
+overloadProtection?: boolean | { maxEventLoopLagMs?: number };
+```
+
+Telescope samples the process event-loop delay (`perf_hooks.monitorEventLoopDelay`) on a 1s interval and, when the **p99 lag** crosses the threshold, **pauses the Recorder** (`record()` becomes a no-op) until the lag recovers — so a telescope under load can never amplify an incident.
+
+- `true` (the **default**) — protect with a **200ms** p99 threshold.
+- `false` — disable.
+- `{ maxEventLoopLagMs }` — tune the threshold (defaults to 200 when omitted).
+
+```ts
+TelescopeModule.forRoot({
+  overloadProtection: { maxEventLoopLagMs: 100 }, // pause sooner
+});
+```
+
+<Callout type="info">
+  The sampling timer is `unref`'d (it never keeps the host's loop alive), and the guard degrades to a no-op when `perf_hooks.monitorEventLoopDelay` is unavailable. See [Performance → Overload protection](/docs/concepts/performance#overload-protection-pause-under-event-loop-pressure).
+</Callout>

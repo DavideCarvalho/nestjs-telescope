@@ -1,0 +1,80 @@
+---
+title: MCP server
+description: An optional Model Context Protocol server at /telescope/api/mcp — stateless JSON-RPC over streamable HTTP so coding agents (Claude Code, Cursor, …) can debug straight from the captured data.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Telescope can expose an **MCP (Model Context Protocol) server** so a coding agent — Claude Code, Cursor, or anything that speaks MCP — can query your captured data directly. Instead of pasting a stack trace into a chat, you ask *"why is `POST /checkout` slow?"* and the agent pulls the request's batch waterfall with every query, log, and exception it produced.
+
+It's the same storage, pulse, and AI-diagnosis APIs the dashboard uses, exposed as MCP tools. There is **no SDK dependency** — it's a hand-rolled, stateless JSON-RPC server over the MCP streamable-HTTP transport.
+
+## Enable it
+
+The server is **disabled by default**. Turn it on with the `mcp` option:
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  mcp: true, // dev-only: open when NODE_ENV !== 'production'
+});
+```
+
+Once enabled it mounts at `POST <path>/api/mcp` — for the default mount path that's `POST /telescope/api/mcp`.
+
+<Callout type="info">
+  The transport is stateless: `POST` carries every JSON-RPC call, `GET` returns `405` (there is no server→client notification stream to open), and `DELETE` is a `200` no-op (there is no session to terminate).
+</Callout>
+
+## Authentication
+
+| `mcp` value | Behavior |
+|---|---|
+| _omitted_ / `false` | Disabled — the endpoint is not mounted. |
+| `true` | Open when `NODE_ENV !== 'production'`; **refused (`403`) in production** so the surface never opens unguarded. |
+| `{ token }` | Requires `Authorization: Bearer <token>` on every request — in dev **and** prod. |
+
+This mirrors the default-open-in-dev dashboard authorizer. The MCP controller carries **no** cookie-session guard: the dashboard's cookie gate doesn't apply to a header-only agent client, so the controller enforces its own Bearer check. For any production use, configure a token:
+
+```ts
+TelescopeModule.forRoot({
+  mcp: { token: process.env.TELESCOPE_MCP_TOKEN },
+});
+```
+
+<Callout type="warn">
+  A tokenless `mcp: true` in production is **refused**, not silently opened. To run MCP in production you must supply a `token`.
+</Callout>
+
+## Connect an agent
+
+For Claude Code, register the server over the HTTP transport:
+
+```bash
+claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp
+```
+
+When you've configured a token, pass it as a Bearer header:
+
+```bash
+claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp \
+  --header "Authorization: Bearer $TELESCOPE_MCP_TOKEN"
+```
+
+Any MCP-capable client works the same way — point it at the `<path>/api/mcp` URL and (when configured) supply the Bearer token.
+
+## Tools
+
+The agent gets five tools, all reading the same data the dashboard does:
+
+| Tool | What it does |
+|---|---|
+| `list_entries` | List recent entries, newest first. Filter by `type`, full-text `search`, `tag`, or `sinceMinutes`; `limit` defaults to 20 (max 100). Returns compact summaries — the agent drills in with `get_entry`. |
+| `get_entry` | One entry by `id` **with its full batch** — every other entry recorded during the same request/job (queries, logs, renders…), i.e. the waterfall. |
+| `get_batch` | Every entry of a batch (one request/job execution) by `batchId`, ordered by sequence. |
+| `get_stats` | Aggregate health snapshot of the last hour: throughput + percentiles, slowest requests/queries, N+1 suspects, exception families, per-route aggregates, cache hit rate, telescope health. |
+| `diagnose_exception` | Run [AI diagnosis](/docs/packages/ai) on an exception entry by `id` (probable cause, where to look, suggested fix). Only available when `ai` is configured — otherwise it returns a "not configured" message. |
+
+A typical agent flow: `get_stats` to find the slowest route, `list_entries` to find a representative request, then `get_entry` to pull its batch waterfall and spot the N+1.

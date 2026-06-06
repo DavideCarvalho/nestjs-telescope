@@ -121,5 +121,7 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `pulse` | Health-snapshot tuning. `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot — matches the `slow` tag threshold, so a quiet host shows no false hotspots. |
 | `traceContext` / `traceLink` | OpenTelemetry trace stamping + deep-link template — see [`-otel`](/docs/packages/otel). |
 | `queueManagers` | Live queue managers — see [queue managers](/docs/packages/queue-managers). |
+| `mcp` | Optional MCP server for coding agents — `true` (dev-only) or `{ token }`. Disabled by default. See [MCP server](/docs/concepts/mcp). |
+| `overloadProtection` | Pause capture under event-loop pressure. `true` (default, 200ms p99), `false`, or `{ maxEventLoopLagMs }`. See [Performance](/docs/concepts/performance#overload-protection-pause-under-event-loop-pressure). |
 
 See [Capture & correlation](/docs/concepts/capture) for the recorder pipeline and the `Entry` / `Watcher` / `StorageProvider` SPIs.

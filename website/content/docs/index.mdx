@@ -19,6 +19,8 @@ Head to the [Getting Started](/docs/getting-started) guide to mount the dashboar
 - **AI diagnosis.** One click turns an exception into a probable-cause / suggested-fix report from its stack, route, and the SQL that just ran. In auto-mode it enriches the Slack alert. Bedrock, OpenAI, or any Vercel AI SDK model.
 - **Frontend error reporting.** Point a browser error handler at a public endpoint and `client_exception` reports flow through the same pipeline — family hashing, alerts, archive, the dashboard's Client errors tab.
 - **Archive before prune.** Per-type retention keeps exceptions a week and requests an hour; an `archive.sink` ships doomed entries to S3 (or any cold store) before the pruner deletes them.
+- **MCP for coding agents.** An optional Model Context Protocol server lets Claude Code, Cursor, or any MCP client debug straight from the captured data — *"why is `POST /checkout` slow?"* pulls the batch waterfall with every query.
+- **Safe under load.** Capture stays off the response path, and an overload guard pauses recording when the event loop is lagging — so a telescope under pressure never amplifies an incident.
 
 ## Why
 
@@ -45,6 +47,7 @@ Open any request and you get its **correlated batch** — the cache reads, queri
 - [Dashboard tour](/docs/dashboard) — overview, entries, traces, queues console, schedules, and [alerts](/docs/dashboard#alerts)
 - [Dashboard auth](/docs/dashboard/auth) — gate the dashboard to your admins, all the way to prod
 - [AI diagnosis](/docs/packages/ai) — turn a captured exception into a probable-cause report
+- [MCP server](/docs/concepts/mcp) — let coding agents query the captured data over Model Context Protocol
 - [Reporting frontend errors](/docs/recipes/reporting-frontend-errors) — browsers POST straight to Telescope
 - [Archiving to S3](/docs/recipes/archiving-exceptions-to-s3) — export entries before the pruner deletes them
 - [Packages](/docs/packages) — one page per watcher, storage, and queue manager

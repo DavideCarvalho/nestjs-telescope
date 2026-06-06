@@ -80,6 +80,14 @@ TelescopeModule.forRoot({
 
 Configure the [`@dudousxd/nestjs-telescope-ai`](/docs/packages/ai) package's `ai.diagnoser` and every **exception** (and browser **client_exception**) detail page grows a **Diagnose with AI** button. Clicking it POSTs `POST /telescope/api/exceptions/:id/diagnose` and renders a markdown report — probable cause, where to look, a suggested fix, and a confidence rating — built from the redacted exception, its route, and the request's recent SQL. Results are cached per error family (24h); a cached result shows a **cached** badge with a **Re-run** action. The button is hidden when AI isn't configured (`meta.ai.enabled` is `false`). See the [AI exception diagnosis recipe](/docs/recipes/ai-exception-diagnosis).
 
+### Replay a request
+
+A **request** entry detail offers a **Replay** action that re-issues the captured request against your own running server, so you can reproduce *"what exactly did this 500 do?"* from the dashboard without hand-crafting the call. It hits `GET /telescope/api/entries/:id/replay`, which re-issues the captured method/path/body against `127.0.0.1` (the local server, resolved from the request's port) and reports the replayed status, duration, and a truncated response body.
+
+Replaying actually hits your app — which may write — so it is a **mutation** gated by `authorizeAction`, the same default-deny gate the queue console and **Prune now** use. Without an `authorizeAction` callback the endpoint returns `403` even for callers the read `authorizer` already trusts, and the Replay action is hidden.
+
+The replayed request carries an `x-telescope-replay: 1` header (so your app can recognize or skip it) and **strips** the `cookie`, `authorization`, and `host` headers — a replay must never silently reuse the original caller's session or credentials. Its own captured `request` entry is tagged **`replay`**, so replays are distinguishable from real traffic in the entries table (and via the MCP `list_entries` tool).
+
 ### Retention controls
 
 The Overview page surfaces a **Retention** card with the configured window (from `prune`) and a **Prune now** button. Pruning is a mutation, so the button appears only when retention is configured *and* mutations are enabled (`authorizeAction` present — the same default-deny gate the queue console uses). It fires `POST /telescope/api/retention/prune` after a confirm and reports how many entries were removed.
