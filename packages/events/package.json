@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-events",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "@nestjs/event-emitter (EventEmitter2) event watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -57,5 +61,11 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["nestjs", "telescope", "event-emitter", "events", "observability"]
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "event-emitter",
+    "events",
+    "observability"
+  ]
 }

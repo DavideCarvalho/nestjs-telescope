@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-redis",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Redis-backed shared storage provider for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -41,5 +45,11 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["nestjs", "telescope", "redis", "storage", "observability"]
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "redis",
+    "storage",
+    "observability"
+  ]
 }

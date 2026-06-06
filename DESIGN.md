@@ -215,9 +215,16 @@ interface TelescopeModuleOptions {
 
   // --- access control (API + UI) ---
   authorizer?: (ctx: AuthorizerContext) => boolean | Promise<boolean>; // default: deny in production
+  authorizeAction?: (ctx, action) => boolean | Promise<boolean>; // mutations (prune/queue/replay); default: deny
 
   // --- distributed tracing ---
   otel?: { export?: boolean; ingest?: boolean };
+
+  // --- self-protection ---
+  overloadProtection?: boolean | { maxEventLoopLagMs?: number }; // default: on at 200ms p99
+
+  // --- agents ---
+  mcp?: boolean | { token?: string };       // MCP server; off by default. `true` = dev-only, `{ token }` = Bearer-gated
 
   // --- extensibility ---
   taggers?: Tagger[];
@@ -239,6 +246,7 @@ The core registers a controller at a fixed base `/telescope/api` (a configurable
 |-------|---------|
 | `GET  /telescope/api/entries` | filter by `type`, `tag`, `familyHash`, `batchId`, time, cursor-paginated |
 | `GET  /telescope/api/entries/:id` | single entry + its full batch (the correlation view) |
+| `GET  /telescope/api/entries/:id/replay` | re-issue a captured request against the local app (mutation; gated) |
 | `GET  /telescope/api/batches/:id` | all entries in a batch, ordered by `sequence` |
 | `GET  /telescope/api/tags` | tag facets for the filter UI |
 | `DELETE /telescope/api/entries` | manual clear (gated) |
@@ -250,6 +258,36 @@ the host explicitly provides an authorizer — the same safe default Telescope u
 
 The API is the only contract the UI depends on, so the dashboard is fully
 decoupled and replaceable.
+
+### 5.1 Request replay
+
+`GET /telescope/api/entries/:id/replay` re-issues a captured `request` entry
+against the local app (`127.0.0.1`) and returns the outcome. Because it actually
+hits the app — and may write — it is a **mutation**, so it sits behind the same
+default-deny `authorizeAction` gate as prune / queue actions (no `authorizeAction`
+→ `403`), not the read `authorizer`. The queue-shaped action guard can't validate
+it (no driver/queue/action), so the controller enforces the default-deny inline.
+The replayed request carries an `x-telescope-replay: 1` header (so the host can
+recognize or skip it) and strips cookie/authorization/host headers — a replay must
+not silently reuse the captured session. Replayed requests are tagged `replay`.
+
+### 5.2 MCP server (agents)
+
+A second controller serves a **stateless JSON-RPC** [MCP](https://modelcontextprotocol.io)
+endpoint over streamable HTTP at `POST /telescope/api/mcp`, so coding agents
+(Claude Code, Cursor, …) can debug straight from the captured data. JSON-RPC is
+hand-rolled (no SDK dependency) and stateless by design — there is no server
+session to track, so the transport's `GET` stream is `405` and `DELETE` is a
+`200` no-op; this keeps it horizontally scalable and trivial to reason about.
+Tools (`list_entries`, `get_entry`, `get_batch`, `get_stats`, `diagnose_exception`)
+are thin wrappers over the same storage / Pulse / diagnosis APIs as the dashboard.
+
+Auth is a **Bearer token** (`mcp: { token }`), checked by the controller itself —
+it carries no `TelescopeGuard`, since the cookie-session dashboard gate doesn't
+apply to a header-only agent client. Without a token the endpoint is open only
+when `NODE_ENV !== 'production'` (mirroring the default-open-in-dev authorizer); a
+tokenless config in production is refused. `mcp: false` (or omitting it) disables
+the controller.
 
 ---
 
@@ -321,6 +359,12 @@ Internal deps use `workspace:*`; everything is `peerDependency` against
 - **Failure isolation:** every watcher hook and the Recorder are wrapped so a
   telescope bug can never throw into the host app's request path.
 - **Graceful shutdown:** buffer drains on shutdown with a bounded timeout.
+- **Overload protection:** a guard samples the process event-loop delay histogram
+  (`perf_hooks.monitorEventLoopDelay`) on an unref'd interval and **pauses the
+  Recorder** when p99 lag crosses a threshold (default 200ms), **resuming** once it
+  recovers — so a telescope under load can never amplify an incident. Paused, the
+  Recorder drops new `record()` calls. Tunable / disablable via `overloadProtection`;
+  degrades to a no-op where `perf_hooks` lacks the monitor.
 - **Testability:** `-testing` ships an in-memory store, a controllable clock, and
   a harness that drives a watcher and asserts emitted entries — so watchers are
   unit-tested without a running Nest app.
@@ -385,5 +429,7 @@ These are committed roadmap bets (each its own plan, layered on the spine + watc
 Claude to explain/cluster exceptions and slow batches) — revisit after the above land.
 
 Other differentiators kept in mind but unscheduled: trace-waterfall view of a batch,
-request replay, entity-change diffs, threshold→Slack alerting, multi-instance
-aggregation (the data model already carries `instanceId`).
+entity-change diffs, multi-instance aggregation (the data model already carries
+`instanceId`). Several originally-deferred bets have since shipped: AI exception
+diagnosis (`-ai`), threshold→Slack alerting, request replay (§5.1), and an MCP
+server for coding agents (§5.2).

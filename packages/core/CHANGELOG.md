@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.6.0
+
+### Minor Changes
+
+- MCP server (`<path>/api/mcp`, stateless streamable-HTTP JSON-RPC) so coding agents can query captured entries; request replay endpoint (`GET entries/:id/replay`, gated by authorizeAction); overload protection (auto pause/resume of the Recorder by event-loop lag, default 200ms).
+
 ## 1.5.0
 
 ### Minor Changes

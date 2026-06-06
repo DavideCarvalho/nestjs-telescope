@@ -66,6 +66,9 @@ apps are done in under five minutes — see the
 | **Error alerting** | A genuinely *new* exception family pages you — Slack (Block Kit, route/user, deep link), a raw webhook, or a custom sink — plus rate, slow-route, and dropped-entry rules. |
 | **AI diagnosis** | `@dudousxd/nestjs-telescope-ai` turns an exception into a probable-cause / suggested-fix report (Bedrock, OpenAI, any AI-SDK model). On-demand button or auto-mode that enriches the Slack alert. |
 | **Frontend errors** | An opt-in public endpoint records browser `client_exception` reports through the same pipeline — family hashing, alerts, archive, dashboard. |
+| **Request replay** | Re-issue a captured request against the local app from the dashboard (gated by `authorizeAction`, like a queue mutation); replayed calls carry an `x-telescope-replay: 1` header and a `replay` tag. |
+| **MCP server** | A stateless JSON-RPC MCP endpoint lets coding agents (Claude Code, Cursor, …) query the captured data directly — list entries, pull a batch waterfall, read the health snapshot, diagnose an exception. |
+| **Overload protection** | Watches event-loop lag and auto-pauses capture under pressure, resuming when the loop recovers — a telescope under load can never amplify an incident (on by default). |
 | **Dashboard auth** | A read `authorizer` gates the API (default-deny in production); a separate `authorizeAction` fails closed for every mutation. |
 
 ## Dashboard
@@ -81,6 +84,37 @@ the cache reads, queries, jobs, and exceptions it caused, alongside the request
 itself.
 
 ![A request detail: the batch timeline waterfall, the correlated batch panel, and the request payload](./website/public/screenshots/request-detail.png)
+
+## MCP server
+
+Let a coding agent debug straight from the captured data. With `mcp` enabled,
+Telescope serves a stateless JSON-RPC [Model Context Protocol](https://modelcontextprotocol.io)
+server (streamable-HTTP) at `<path>/api/mcp`, so an agent can answer
+*"why is `POST /checkout` slow?"* by pulling the batch waterfall with every query
+it ran — backed by the same storage/stats/diagnosis APIs as the dashboard.
+
+```ts
+TelescopeModule.forRoot({
+  // dev-only default: open when NODE_ENV !== 'production', refused in prod
+  mcp: true,
+  // or require a Bearer token (the only way to expose it in production):
+  // mcp: { token: process.env.TELESCOPE_MCP_TOKEN },
+  // mcp: false  // (or omitting it) disables the endpoint entirely
+});
+```
+
+Register it with Claude Code:
+
+```bash
+claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp
+```
+
+Tools exposed: `list_entries` (filter by type/search/tag/time window),
+`get_entry` (one entry + its full batch), `get_batch`, `get_stats` (the last-hour
+health snapshot), and `diagnose_exception` (AI diagnosis, when `ai` is
+configured). When a `token` is set every request must carry
+`Authorization: Bearer <token>`; without one the endpoint is allowed only when
+`NODE_ENV !== 'production'`.
 
 ## Links
 

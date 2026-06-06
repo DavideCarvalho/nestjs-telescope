@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-cache",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Cache (get/set hit/miss) watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -46,5 +50,11 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["nestjs", "telescope", "cache", "cache-manager", "observability"]
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "cache",
+    "cache-manager",
+    "observability"
+  ]
 }

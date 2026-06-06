@@ -162,3 +162,61 @@ A configured `alerts` with an empty `webhookUrl` or empty `rules` is a
 For Slack, point `webhookUrl` at an incoming-webhook URL; the raw payload lands
 as the message body (wrap it in your own relay if you want a formatted message).
 `meta.alerts` reports `{ enabled, ruleCount }`.
+
+## Overload protection
+
+Telescope watches the process event-loop lag (`perf_hooks.monitorEventLoopDelay`)
+on an unref'd interval and **pauses the Recorder** when the p99 lag crosses a
+threshold, **resuming** once it recovers — so a telescope under load can never
+amplify an incident. While paused, new `record()` calls are dropped. It's **on by
+default at 200ms**; degrades to a no-op when `perf_hooks` lacks the monitor.
+
+```ts
+TelescopeModule.forRoot({
+  overloadProtection: true,                       // default — pause above 200ms p99
+  // overloadProtection: { maxEventLoopLagMs: 100 }, // tune the threshold
+  // overloadProtection: false,                      // disable entirely
+});
+```
+
+## Request replay
+
+`GET /telescope/api/entries/:id/replay` re-issues a captured `request` entry
+against the local app (`127.0.0.1`) and returns the outcome. Replaying actually
+hits the app (it may write), so it's a **mutation**: it sits behind the same
+default-deny `authorizeAction` gate as prune / queue actions (`403` until you
+supply that callback), not the read `authorizer`. The replayed request carries an
+`x-telescope-replay: 1` header (so the host can recognize or skip it) and strips
+cookie/authorization/host headers — a replay must not silently reuse the captured
+session. Replayed requests are tagged `replay`. The dashboard's request detail
+exposes a *Replay* button when `authorizeAction` is configured.
+
+## MCP server (coding agents)
+
+With `mcp` enabled, Telescope serves a **stateless JSON-RPC** [Model Context
+Protocol](https://modelcontextprotocol.io) server over streamable HTTP at
+`POST /telescope/api/mcp`, so a coding agent (Claude Code, Cursor, …) can debug
+straight from the captured data — backed by the same storage/stats/diagnosis APIs
+as the dashboard. JSON-RPC is hand-rolled (no SDK dependency); being stateless,
+the transport's `GET` stream returns `405` and `DELETE` is a `200` no-op.
+
+```ts
+TelescopeModule.forRoot({
+  mcp: true,                                       // dev-only: open when NODE_ENV !== 'production'
+  // mcp: { token: process.env.TELESCOPE_MCP_TOKEN }, // require a Bearer token (only way to expose in prod)
+  // mcp: false                                       // (or omitting it) disables the endpoint
+});
+```
+
+Register it with Claude Code:
+
+```bash
+claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp
+```
+
+Tools: `list_entries` (filter by type/search/tag/time window), `get_entry` (one
+entry + its full batch), `get_batch`, `get_stats` (last-hour health snapshot), and
+`diagnose_exception` (AI diagnosis, when `ai` is configured). Auth is enforced by
+the controller (no dashboard guard): with a `token`, every request must carry
+`Authorization: Bearer <token>`; without one the endpoint is allowed only when
+`NODE_ENV !== 'production'`, and a tokenless config in production is refused.
