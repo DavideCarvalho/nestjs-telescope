@@ -1,7 +1,7 @@
 // packages/inertia-watcher/src/inertia.watcher.ts
 import diagnostics_channel from 'node:diagnostics_channel';
 import { EntryType, type Watcher, type WatcherContext } from '@dudousxd/nestjs-telescope';
-import { buildInertiaContent, isInertiaDiagnostic } from './inertia-content.js';
+import { buildInertiaContent, isInertiaDiagnostic, isInertiaShaped } from './inertia-content.js';
 
 /**
  * The channel name is the cross-repo contract with `@dudousxd/nestjs-inertia`
@@ -9,6 +9,13 @@ import { buildInertiaContent, isInertiaDiagnostic } from './inertia-content.js';
  * import inertia at runtime. Keep this string byte-identical on both sides.
  */
 const INERTIA_CHANNEL = 'nestjs-inertia:render';
+
+/**
+ * One-time guard so an unsupported producer version (`v !== 1`) is surfaced once
+ * per process instead of every render — distinct from ordinary non-Inertia noise,
+ * which stays silent.
+ */
+let warnedUnsupportedVersion = false;
 
 /**
  * Records every Inertia response published on the `nestjs-inertia:render`
@@ -54,10 +61,21 @@ export class InertiaWatcher implements Watcher {
   /** Validate + record, swallowing any failure so a render can never break. */
   private safeRecord(ctx: WatcherContext, msg: unknown): void {
     try {
-      if (!isInertiaDiagnostic(msg)) return;
-      ctx.record(buildInertiaContent(msg));
-    } catch {
-      // swallow — telescope must never break an Inertia render
+      if (!isInertiaDiagnostic(msg)) {
+        // Inertia-shaped but an unsupported producer version: warn once so the
+        // drift is visible. Genuine non-Inertia messages fall through silently.
+        if (!warnedUnsupportedVersion && isInertiaShaped(msg)) {
+          warnedUnsupportedVersion = true;
+          console.warn(
+            `InertiaWatcher: dropping unsupported diagnostic version v=${msg.v} (expected 1) — upgrade @dudousxd/nestjs-telescope to match @dudousxd/nestjs-inertia`,
+          );
+        }
+        return;
+      }
+      ctx.record(buildInertiaContent(msg as Parameters<typeof buildInertiaContent>[0]));
+    } catch (err) {
+      // NOT rethrown — telescope must never break an Inertia render.
+      console.error('InertiaWatcher: failed to record inertia render:', err);
     }
   }
 }
