@@ -1,5 +1,6 @@
 import type { Entry } from '../../client/index.js';
 import { CacheBadge } from './cache-badge.js';
+import { InertiaBadge } from './inertia-badge.js';
 import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
 
 export function entryLabel(entry: Entry): string {
@@ -97,6 +98,7 @@ export function EntriesTable({
               <td className="max-w-md truncate text-zinc-300">
                 <span className="inline-flex items-center gap-1.5">
                   {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
+                  {entry.type === 'inertia' ? <InertiaBadge content={entry.content} /> : null}
                   <span className="truncate">{entryLabel(entry)}</span>
                 </span>
               </td>

@@ -29,6 +29,25 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
   const props = readProps(record.props);
   const excluded = unique([...partial.except, ...props.excludedKeys]);
 
+  const propRows: {
+    label: string;
+    keys: string[];
+    accent: string;
+    annotations?: Record<string, string>;
+  }[] = [
+    { label: 'Shared', keys: props.sharedKeys, accent: 'text-sky-300' },
+    { label: 'Final', keys: props.finalKeys, accent: 'text-zinc-300' },
+    { label: 'Optional', keys: props.optionalKeys, accent: 'text-indigo-300' },
+    { label: 'Once', keys: props.onceKeys, accent: 'text-fuchsia-300' },
+    { label: 'Merge', keys: props.merge, accent: 'text-teal-300', annotations: props.matchPropsOn },
+    {
+      label: 'Deep-merge',
+      keys: props.deepMerge,
+      accent: 'text-teal-300',
+      annotations: props.matchPropsOn,
+    },
+  ];
+
   return (
     <div>
       {/* 1. Header */}
@@ -89,22 +108,9 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       <div className="mb-4">
         <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Props</h3>
         <div className="flex flex-col gap-1.5">
-          <ChipRow label="Shared" keys={props.sharedKeys} accent="text-sky-300" />
-          <ChipRow label="Final" keys={props.finalKeys} accent="text-zinc-300" />
-          <ChipRow label="Optional" keys={props.optionalKeys} accent="text-indigo-300" />
-          <ChipRow label="Once" keys={props.onceKeys} accent="text-fuchsia-300" />
-          <ChipRow
-            label="Merge"
-            keys={props.merge}
-            accent="text-teal-300"
-            annotations={props.matchPropsOn}
-          />
-          <ChipRow
-            label="Deep-merge"
-            keys={props.deepMerge}
-            accent="text-teal-300"
-            annotations={props.matchPropsOn}
-          />
+          {propRows.map((r) => (
+            <ChipRow {...r} key={r.label} />
+          ))}
         </div>
       </div>
 
