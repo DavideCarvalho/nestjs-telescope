@@ -13,6 +13,7 @@ export const EntryType = {
   Log: 'log',
   Model: 'model',
   Redis: 'redis',
+  Inertia: 'inertia',
   /**
    * A browser-reported error ingested via the public `POST /api/client-errors`
    * endpoint. Distinct from a server `Exception` (which the interceptor captures

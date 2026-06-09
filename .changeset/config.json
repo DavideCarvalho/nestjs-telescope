@@ -20,6 +20,7 @@
       "@dudousxd/nestjs-telescope-logs",
       "@dudousxd/nestjs-telescope-mikro-orm-watcher",
       "@dudousxd/nestjs-telescope-redis-watcher",
+      "@dudousxd/nestjs-telescope-inertia-watcher",
       "@dudousxd/nestjs-telescope-sqs",
       "@dudousxd/nestjs-telescope-ai"
     ]
