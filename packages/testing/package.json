@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-testing",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Test utilities for @dudousxd/nestjs-telescope — FakeClock, watcher harness, InMemoryStorageProvider re-export.",
   "license": "MIT",
   "repository": {
@@ -19,10 +19,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md"
-  ],
+  "files": ["dist/", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -41,10 +38,5 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "testing",
-    "observability"
-  ]
+  "keywords": ["nestjs", "telescope", "testing", "observability"]
 }

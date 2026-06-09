@@ -1,5 +1,29 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 1.7.0
+
+### Minor Changes
+
+- [`4a610c3`](https://github.com/DavideCarvalho/nestjs-telescope/commit/4a610c3a3b71d1daa4180da0e92a88a2d7b10472) - Add the Inertia debug panel. The dashboard now renders a rich detail view for
+  `inertia` entries (`InertiaBody`): rendered component header with status/partial
+  badges, a red version-mismatch (409) callout, the partial-reload Kept/Excluded
+  columns, prop classification chips (shared/final/optional/once/merge/deep-merge
+  with `matchPropsOn` annotations), deferred groups, the resolved-props tree
+  (showing the Recorder's redaction/truncation markers verbatim), history flags and
+  page size. Adds `InertiaBadge` (409 / partial / deferred / size chips), an
+  `inertia` list summary, and an `Inertia` nav tab that self-hides until the
+  `InertiaWatcher` is installed.
+
+### Patch Changes
+
+- [`10c76f1`](https://github.com/DavideCarvalho/nestjs-telescope/commit/10c76f1c0d9c1034e5bffca2d9775cd16e553200) - Inertia panel polish: log on record failure (was silently swallowed) and warn once on
+  an unsupported diagnostic version; collapse `InertiaContent` to
+  `Omit<InertiaRenderDiagnostic, …>` with a destructure-rest copy; make the
+  `isInertiaDiagnostic` guard honest about what it proves; render the Inertia badge in
+  the entries table (parity with the cache badge); data-drive the props rows. Adds a
+  committed cross-repo wire-contract fixture (`inertia-render.v1.json`) so producer
+  drift fails a test.
+
 ## 1.6.0
 
 ## 1.5.0
