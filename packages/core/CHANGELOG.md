@@ -1,5 +1,18 @@
 # @dudousxd/nestjs-telescope
 
+## 1.7.0
+
+### Minor Changes
+
+- [`b35cc6b`](https://github.com/DavideCarvalho/nestjs-telescope/commit/b35cc6b1508e98f75f2ed78b8d08b93569f47089) - Add `@dudousxd/nestjs-telescope-inertia-watcher`: an `InertiaWatcher` that
+  subscribes to the `nestjs-inertia:render` diagnostics channel and records one
+  `inertia` entry per Inertia render (component, resolved props, deferred/merge
+  classification, partial-reload decision, asset version + 409 version-mismatch,
+  history flags, page size), correlated to the request batch. Adds the
+  `EntryType.Inertia` constant to core. Fully decoupled from `nestjs-inertia` —
+  the channel name and payload shape (`v: 1`) are the only contract; malformed or
+  wrong-version messages are dropped.
+
 ## 1.6.0
 
 ### Minor Changes

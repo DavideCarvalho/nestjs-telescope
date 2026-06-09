@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-ui",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Bundled dashboard + composable React components for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
@@ -29,11 +29,7 @@
       "default": "./dist/client/index.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.lib.json && tsc -p tsconfig.server.json",
     "test": "vitest run --passWithNoTests",
@@ -86,12 +82,5 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "dashboard",
-    "ui",
-    "observability",
-    "react"
-  ]
+  "keywords": ["nestjs", "telescope", "dashboard", "ui", "observability", "react"]
 }
