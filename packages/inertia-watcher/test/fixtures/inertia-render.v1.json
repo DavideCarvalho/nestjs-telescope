@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "component": "Dashboard",
+  "url": "/dashboard",
+  "method": "GET",
+  "isInertia": true,
+  "isPartial": false,
+  "partial": { "only": [], "except": [], "reset": [], "resetOnce": [] },
+  "props": {
+    "sharedKeys": ["auth"],
+    "finalKeys": ["auth", "stats"],
+    "deferred": { "default": ["stats"] },
+    "merge": [],
+    "deepMerge": [],
+    "matchPropsOn": {},
+    "optionalKeys": [],
+    "onceKeys": [],
+    "excludedKeys": []
+  },
+  "resolvedProps": { "auth": { "user": "x" }, "stats": null },
+  "assetVersion": "abc123",
+  "versionMismatch": false,
+  "clientVersion": null,
+  "encryptHistory": false,
+  "clearHistory": false,
+  "statusCode": 200,
+  "pageBytes": 161,
+  "ssr": false
+}
