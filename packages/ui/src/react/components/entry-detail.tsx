@@ -4,6 +4,8 @@ import { useCachedDiagnosis, useDiagnose, useExplain, useMeta } from '../use-tel
 import { BatchTimeline } from './batch-timeline.js';
 import { CacheBadge } from './cache-badge.js';
 import { ExportJsonToolbar } from './export-json-toolbar.js';
+import { InertiaBadge } from './inertia-badge.js';
+import { InertiaBody } from './inertia-body.js';
 import { RequestTimeline } from './request-timeline.js';
 import { buildTraceHref } from './trace-link.js';
 import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
@@ -22,6 +24,7 @@ export function EntryDetail({
           <h2 className="flex items-center gap-2 text-sm text-emerald-400">
             {entry.type}
             {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
+            {entry.type === 'inertia' ? <InertiaBadge content={entry.content} /> : null}
           </h2>
           <ExportJsonToolbar value={entry} filename={`telescope-entry-${entry.id}.json`} />
         </div>
@@ -41,6 +44,8 @@ export function EntryDetail({
           <ModelBody content={entry.content} />
         ) : entry.type === 'redis' ? (
           <RedisBody content={entry.content} />
+        ) : entry.type === 'inertia' ? (
+          <InertiaBody content={entry.content} />
         ) : entry.type === 'client_exception' ? (
           <>
             <ClientExceptionBody content={entry.content} />
@@ -100,7 +105,7 @@ export function EntryDetail({
 }
 
 /** Pretty-print a dump value to JSON, falling back to String() if not serializable. */
-function prettyJson(value: unknown): string {
+export function prettyJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2) ?? String(value);
   } catch {

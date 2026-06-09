@@ -26,6 +26,11 @@ export function entryLabel(entry: Entry): string {
     if (entry.type === 'redis' && typeof record.command === 'string') {
       return `${record.command} ${redisArgsPreview(record.args)}`.trim();
     }
+    if (entry.type === 'inertia' && typeof record.component === 'string') {
+      const method = typeof record.method === 'string' ? record.method : '';
+      const partial = record.isPartial === true ? ' (partial)' : '';
+      return `${method} → ${record.component}${partial}`.trim();
+    }
     if (entry.type === 'log' && typeof record.message === 'string') {
       const level = typeof record.level === 'string' ? record.level : 'log';
       return `[${level}] ${record.message}`;

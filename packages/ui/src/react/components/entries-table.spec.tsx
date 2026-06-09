@@ -56,6 +56,19 @@ describe('EntriesTable', () => {
       'PING',
     );
   });
+  it('summarizes an inertia entry as "<METHOD> → <Component>" with a partial suffix', () => {
+    expect(
+      entryLabel(entry({ type: 'inertia', content: { component: 'Dashboard', method: 'GET' } })),
+    ).toBe('GET → Dashboard');
+    expect(
+      entryLabel(
+        entry({
+          type: 'inertia',
+          content: { component: 'Users', method: 'GET', isPartial: true },
+        }),
+      ),
+    ).toBe('GET → Users (partial)');
+  });
   it('renders rows with type + summary', () => {
     render(<EntriesTable entries={[entry({ type: 'query', content: { sql: 'select 1' } })]} />);
     expect(screen.getByText('query')).toBeTruthy();

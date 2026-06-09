@@ -38,6 +38,7 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
   { id: 'log', label: 'Logs', dot: 'bg-zinc-400' },
   { id: 'model', label: 'Models', dot: 'bg-lime-400' },
   { id: 'redis', label: 'Redis', dot: 'bg-rose-400' },
+  { id: 'inertia', label: 'Inertia', dot: 'bg-cyan-400' },
 ];
 
 const FALLBACK_DOT = 'bg-zinc-500';

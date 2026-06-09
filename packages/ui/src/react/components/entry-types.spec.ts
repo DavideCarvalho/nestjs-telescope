@@ -93,4 +93,11 @@ describe('visibleEntryTypes', () => {
     const disabled = visibleEntryTypes(ENTRY_TYPES, ['request', 'exception']);
     expect(disabled.map((type) => type.id)).not.toContain('client_exception');
   });
+
+  it('shows inertia only when the inertia watcher is registered', () => {
+    const enabled = visibleEntryTypes(ENTRY_TYPES, ['request', 'exception', 'inertia']);
+    expect(enabled.map((type) => type.id)).toContain('inertia');
+    const disabled = visibleEntryTypes(ENTRY_TYPES, ['request', 'exception']);
+    expect(disabled.map((type) => type.id)).not.toContain('inertia');
+  });
 });

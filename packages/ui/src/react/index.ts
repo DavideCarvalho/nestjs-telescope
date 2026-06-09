@@ -9,6 +9,8 @@ export * from './components/export-json.js';
 export * from './components/export-json-toolbar.js';
 export * from './components/retention-indicator.js';
 export * from './components/cache-badge.js';
+export * from './components/inertia-badge.js';
+export * from './components/inertia-body.js';
 export * from './components/entry-insights.js';
 export * from './components/window-select.js';
 export * from './components/tag-autocomplete.js';
