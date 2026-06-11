@@ -1,5 +1,6 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { appName, gitConfig } from './shared';
+import { librarySwitcher } from './libraries';
 
 /**
  * Mono "status pill" wordmark — the same console branding the landing header
@@ -23,6 +24,7 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: <NavTitle />,
     },
+    links: [librarySwitcher(appName)],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };
 }
