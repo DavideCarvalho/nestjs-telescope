@@ -24,6 +24,7 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
   { id: 'exception', label: 'Exceptions', dot: 'bg-red-400' },
   { id: 'client_exception', label: 'Client errors', dot: 'bg-orange-500' },
   { id: 'job', label: 'Jobs', dot: 'bg-violet-400' },
+  { id: 'durable', label: 'Workflows', dot: 'bg-purple-400' },
   { id: 'mail', label: 'Mail', dot: 'bg-pink-400' },
   { id: 'cache', label: 'Cache', dot: 'bg-teal-400' },
   {
