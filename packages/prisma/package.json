@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-prisma",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Prisma query watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
