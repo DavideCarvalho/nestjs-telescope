@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-inertia-watcher",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Inertia.js render watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
