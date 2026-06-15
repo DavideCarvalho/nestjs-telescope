@@ -40,6 +40,9 @@ over-generalized.
 - `nestjs-durable` ships a "Workflows" dashboard (health/metrics) as the first
   extension, reusing its existing watcher, with per-run drill-down deep-linking out to
   the durable dashboard for actions and the workflow graph.
+- **User-facing documentation** in both projects' Fumadocs sites
+  (`website/content/docs/`): the extension SPI + an authoring guide in `nestjs-telescope`,
+  and the extension-based Workflows dashboard in `nestjs-durable`.
 
 ## Non-goals
 
@@ -200,6 +203,30 @@ table's deep-links.
   components; a generic "extension dashboard" page/route; dynamic nav from `/api/meta`.
 - **`nestjs-durable/packages/telescope`** — `durableTelescopeExtension()` wrapping the
   existing watcher + the new spec/providers.
+
+## Documentation (deliverable)
+
+Both projects use Fumadocs (Next.js, `website/content/docs/*.mdx`, nav via `meta.json`).
+
+**`nestjs-telescope`** (`website/content/docs/`):
+- `concepts/extensions.mdx` *(new)* — the extension model: `TelescopeExtension`, multi
+  hooks, the panel IR + how the fixed UI renders it, dynamic nav, the data-provider
+  flow, and how it relates to watchers. Mirrors the depth of `concepts/capture.mdx`.
+- `recipes/building-an-extension.mdx` *(new)* — end-to-end authoring guide using
+  `defineTelescopeExtension`, sibling to the existing `recipes/custom-watcher.mdx`.
+- `reference/configuration.mdx` *(update)* — document the `extensions: [...]` `forRoot`
+  option.
+- `packages/index.mdx` *(update)* — note the SPI / link the new concept page.
+- nav `meta.json` *(update)* — register the new pages.
+
+**`nestjs-durable`** (`website/content/docs/observability/`):
+- `telescope.mdx` *(update)* — currently documents the `DurableTelescopeWatcher`; extend
+  it to cover `durableTelescopeExtension()`, the native "Workflows" dashboard (panels,
+  metrics, current-state gauges), and the deep-link relationship to the durable
+  dashboard for actions/graph. Cross-link to the Telescope extensions concept page.
+
+Docs are written **alongside** the implementation (not after), so each phase that lands
+a capability updates the relevant page in the same change.
 
 ## Error handling
 
