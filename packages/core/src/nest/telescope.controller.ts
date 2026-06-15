@@ -455,11 +455,16 @@ export class TelescopeController {
   // why). Query params arrive as strings and are passed through verbatim.
   @Get('ext/:ext/data/:provider')
   async extData(
+    @Param('ext') ext: string,
     @Param('provider') provider: string,
     @Query() query: Record<string, unknown>,
   ): Promise<unknown> {
     const found = this.extensions.findProvider(provider);
-    if (!found) throw new NotFoundException(`Unknown data provider "${provider}".`);
+    // The `:ext` segment must name the extension that actually owns the provider —
+    // a mismatch is treated as not-found so the URL namespace can't be spoofed.
+    if (!found || this.extensions.providerOwner(provider) !== ext) {
+      throw new NotFoundException(`Unknown data provider "${provider}".`);
+    }
     const ctx = createExtensionContext(this.moduleRef, this.extConfig);
     try {
       return await found.resolve(query, ctx);

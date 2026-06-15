@@ -90,6 +90,5 @@ export * from './ai/diagnosis-cache.js';
 export * from './ai/diagnosis-coordinator.js';
 
 export * from './extension/index.js';
-export { TELESCOPE_EXTENSIONS } from './nest/telescope.options.js';
 
 export const TELESCOPE_VERSION = '0.0.0';

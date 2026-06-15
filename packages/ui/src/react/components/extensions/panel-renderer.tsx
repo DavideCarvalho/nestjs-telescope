@@ -13,7 +13,11 @@ function formatStat(value: number, format?: 'number' | 'percent' | 'duration'): 
 }
 
 function fillTemplate(href: string, row: Record<string, unknown>): string {
-  return href.replace(/\{(\w+)\}/g, (_m, k: string) => String(row[k] ?? ''));
+  const filled = href.replace(/\{(\w+)\}/g, (_m, k: string) => String(row[k] ?? ''));
+  // The template is author-controlled but the substituted values come from provider
+  // row data — never let a row turn the link into a `javascript:`/`data:` URL.
+  if (/^\s*(javascript|data|vbscript):/i.test(filled)) return '#';
+  return filled;
 }
 
 /** Pure view: render a panel from already-resolved data. */

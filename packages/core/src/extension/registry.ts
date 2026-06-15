@@ -18,11 +18,13 @@ export class ExtensionRegistry {
   private readonly _entryTypes: ExtensionEntryType[] = [];
   private readonly _dashboards: DashboardSpec[] = [];
   private readonly _providers = new Map<string, DataProvider>();
+  /** Provider name → the `name` of the extension that contributed it. */
+  private readonly _providerOwners = new Map<string, string>();
 
   constructor(extensions: readonly TelescopeExtension[], ctx: ExtensionContext) {
     const entryOwners = new Map<string, string>();
     const dashOwners = new Map<string, string>();
-    const provOwners = new Map<string, string>();
+    const provOwners = this._providerOwners;
 
     for (const ext of extensions) {
       for (const w of ext.watchers?.(ctx) ?? []) this._watchers.push(w);
@@ -73,5 +75,9 @@ export class ExtensionRegistry {
   }
   findProvider(name: string): DataProvider | undefined {
     return this._providers.get(name);
+  }
+  /** The `name` of the extension that contributed the given provider, or undefined. */
+  providerOwner(name: string): string | undefined {
+    return this._providerOwners.get(name);
   }
 }

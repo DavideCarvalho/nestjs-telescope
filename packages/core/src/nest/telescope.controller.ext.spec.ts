@@ -54,6 +54,11 @@ describe('GET /telescope/api/ext/:ext/data/:provider', () => {
     await request(app.getHttpServer()).get('/telescope/api/ext/demo/data/nope').expect(404);
   });
 
+  it('returns 404 when :ext does not own the provider', async () => {
+    app = await makeApp(() => true);
+    await request(app.getHttpServer()).get('/telescope/api/ext/wrong/data/demo.ok').expect(404);
+  });
+
   it('returns a 502 error payload when the provider throws', async () => {
     app = await makeApp(() => true);
     const res = await request(app.getHttpServer())
