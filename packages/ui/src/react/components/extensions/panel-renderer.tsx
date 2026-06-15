@@ -1,8 +1,8 @@
 import type { JSX } from 'react';
 import type { Panel } from '../../../client/types.js';
 import { AreaChartCard } from '../charts/area-chart-card.js';
-import { StackedAreaChartCard } from '../charts/stacked-area-chart-card.js';
 import { BarChartCard } from '../charts/bar-chart-card.js';
+import { StackedAreaChartCard } from '../charts/stacked-area-chart-card.js';
 import { StatCard } from './stat-card.js';
 
 function formatStat(value: number, format?: 'number' | 'percent' | 'duration'): string {
@@ -76,8 +76,11 @@ export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => (
-                <tr key={i} className="border-t border-zinc-800/60">
+              {rows.map((row) => (
+                <tr
+                  key={panel.columns.map((c) => String(row[c.key] ?? '')).join('|')}
+                  className="border-t border-zinc-800/60"
+                >
                   {panel.columns.map((c) => {
                     const text = String(row[c.key] ?? '');
                     return (

@@ -40,8 +40,8 @@ export function ExtensionDashboardPage(): JSX.Element {
   const ext = dashboardId?.split('.')[0] ?? '';
   return (
     <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
-      {dash.panels.map((panel, i) => (
-        <BoundPanel key={i} ext={ext} panel={panel} />
+      {dash.panels.map((panel) => (
+        <BoundPanel key={`${panel.kind}-${panel.title}`} ext={ext} panel={panel} />
       ))}
     </div>
   );
