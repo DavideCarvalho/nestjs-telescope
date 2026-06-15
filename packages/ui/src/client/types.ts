@@ -83,6 +83,42 @@ export type AuthMeResult =
 /** Outcome of `POST /auth/login`. */
 export type LoginResult = { ok: true } | { ok: false; message: string };
 
+/**
+ * A single dashboard panel descriptor, mirrored on the UI side from the core
+ * `Panel` extension contract. Kept UI-local (rather than imported from
+ * `@dudousxd/nestjs-telescope`) so the UI package has no value/type dependency
+ * on the core — the dashboard renderer (Task 8) consumes this shape verbatim.
+ * Each variant carries a `data` provider reference resolved via
+ * {@link TelescopeClient.extData}.
+ */
+export type Panel =
+  | {
+      kind: 'stat';
+      title: string;
+      data: { provider: string; query?: Record<string, unknown> };
+      format?: 'number' | 'percent' | 'duration';
+      accent?: string;
+    }
+  | {
+      kind: 'timeseries';
+      title: string;
+      data: { provider: string; query?: Record<string, unknown> };
+      series: string[];
+      style?: 'area' | 'stacked';
+    }
+  | {
+      kind: 'topN';
+      title: string;
+      data: { provider: string; query?: Record<string, unknown> };
+      limit?: number;
+    }
+  | {
+      kind: 'table';
+      title: string;
+      data: { provider: string; query?: Record<string, unknown> };
+      columns: { key: string; label: string; link?: { href: string; external?: boolean } }[];
+    };
+
 export interface TelescopeMeta {
   enabled: boolean;
   droppedCount: number;
@@ -116,6 +152,20 @@ export interface TelescopeMeta {
    * disabled).
    */
   ai?: { enabled: boolean; mode: 'auto' | 'on-demand' | null };
+  /**
+   * Entry types contributed by extensions, merged with the built-in types by the
+   * core. Each carries a stable `id` (the backend `type` filter), a `label`, and
+   * a Tailwind `bg-*` dot color. OPTIONAL for backward-compat with older servers
+   * that predate extension support.
+   */
+  entryTypes?: { id: string; label: string; dot: string }[];
+  /**
+   * Custom dashboards contributed by extensions. Each has a stable `id`, a nav
+   * `label`, an optional `navGroup` for grouping in the sidebar, and a list of
+   * {@link Panel}s rendered by the dashboard page (Task 9) / panel renderer
+   * (Task 8). OPTIONAL for backward-compat with older servers.
+   */
+  dashboards?: { id: string; label: string; navGroup?: string; panels: Panel[] }[];
 }
 
 /**
