@@ -18,6 +18,7 @@ import { TelescopeContext } from '../context/telescope-context.js';
 import { setTelescopeDump } from '../dump/telescope-dump.js';
 import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
+import type { ExtensionContext } from '../extension/types.js';
 import type { Panel } from '../extension/types.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -117,7 +118,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
     @Inject(TELESCOPE_DASHBOARD_AUTH)
     private readonly dashboardAuth: ResolvedDashboardAuth | null = null,
-    @Inject(TELESCOPE_EXTENSIONS) private readonly extensions: ExtensionRegistry,
+    @Inject(TELESCOPE_EXTENSIONS)
+    private readonly extensions: ExtensionRegistry = new ExtensionRegistry([], {} as ExtensionContext),
   ) {
     // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
     // dashboardAuth): no destination / empty rules / bad duration throws.
