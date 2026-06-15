@@ -79,8 +79,20 @@ export interface Column {
 }
 
 export type Panel =
-  | { kind: 'stat'; title: string; data: DataBinding; format?: 'number' | 'percent' | 'duration'; accent?: string }
-  | { kind: 'timeseries'; title: string; data: DataBinding; series: string[]; style?: 'area' | 'stacked' }
+  | {
+      kind: 'stat';
+      title: string;
+      data: DataBinding;
+      format?: 'number' | 'percent' | 'duration';
+      accent?: string;
+    }
+  | {
+      kind: 'timeseries';
+      title: string;
+      data: DataBinding;
+      series: string[];
+      style?: 'area' | 'stacked';
+    }
   | { kind: 'topN'; title: string; data: DataBinding; limit?: number }
   | { kind: 'table'; title: string; data: DataBinding; columns: Column[] };
 

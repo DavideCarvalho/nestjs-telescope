@@ -342,11 +342,7 @@ export function useMeta() {
 export function useServerStats() {
   return useQuery(serverStatsQuery(useTelescopeClient(), usePaused()));
 }
-export function useExtensionData(
-  ext: string,
-  provider: string,
-  query?: Record<string, unknown>,
-) {
+export function useExtensionData(ext: string, provider: string, query?: Record<string, unknown>) {
   return useQuery(extDataQuery(useTelescopeClient(), ext, provider, query));
 }
 export function useHealth() {

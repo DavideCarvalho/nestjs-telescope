@@ -2,9 +2,9 @@
 import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
-import type { TelescopeExtension } from '../extension/types.js';
 import type { TelescopeSessionUser } from '../auth/session-cookie.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
+import type { TelescopeExtension } from '../extension/types.js';
 import type { PulseServiceOptions } from '../pulse/pulse.service.js';
 import type { QueueActionRequest, QueueManager } from '../queue/queue-manager.js';
 import type { ScheduleManager } from '../schedule/schedule-manager.js';

@@ -22,9 +22,9 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { durationToMs } from '../config/parse-duration.js';
-import { ExtensionRegistry } from '../extension/registry.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
+import { ExtensionRegistry } from '../extension/registry.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { type ServerStats, ServerStatsService } from '../metrics/server-stats.service.js';
