@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   ENTRY_TYPES,
   RetentionIndicator,
+  allEntryTypes,
   useLiveTail,
   useMeta,
   visibleEntryTypes,
@@ -152,7 +153,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
   // `meta.watchers` is undefined until /api/meta resolves (or on older servers),
   // in which case `visibleEntryTypes` shows everything — no flash-of-hidden-nav.
   const meta = useMeta();
-  const watcherTypes = visibleEntryTypes(ENTRY_TYPES, meta.data?.watchers);
+  const watcherTypes = visibleEntryTypes(allEntryTypes(meta.data?.entryTypes), meta.data?.watchers);
   // Hide the Traces nav item when meta positively reports no traceContext: the
   // page would be permanently empty. Undefined meta → show it (same backward-
   // compatible fallback as the watcher-driven nav above).
@@ -166,6 +167,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
           {topNav.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={topLinkClass}>
               {item.label}
+            </NavLink>
+          ))}
+          {(meta.data?.dashboards ?? []).map((d) => (
+            <NavLink key={d.id} to={`/ext/${d.id}`} className={topLinkClass}>
+              {d.label}
             </NavLink>
           ))}
         </nav>
