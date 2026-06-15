@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.8.0
+
+### Minor Changes
+
+- [`b8b1c35`](https://github.com/DavideCarvalho/nestjs-telescope/commit/b8b1c3505c8d6e5487353b449f119c5d6e5fbd55) - Add a `TelescopeExtension` SPI so libraries can contribute to the dashboard. Register extensions via `TelescopeModule.forRoot({ extensions: [...] })`; each may contribute watchers, navigable entry types, declarative dashboard pages (a neutral panel IR — `stat`/`timeseries`/`topN`/`table` — rendered natively by the UI, no extension React), and named server-side data providers served behind the existing read gate at `GET <path>/api/ext/:ext/data/:provider`. Entry types and dashboards surface dynamically in the nav via `/api/meta`. Authoring uses `defineTelescopeExtension(...)`; duplicate entry-type ids, dashboard ids, or provider names across extensions fail fast at boot. See the new "Extensions" concept page and the "Building an extension" recipe.
+
 ## 1.7.1
 
 ## 1.7.0

@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-typeorm",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "TypeORM query watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {

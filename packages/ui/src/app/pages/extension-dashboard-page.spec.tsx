@@ -1,14 +1,16 @@
-import { cloneElement, isValidElement } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor } from '@testing-library/react';
+import { cloneElement, isValidElement } from 'react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('recharts', async () => {
   const actual = await vi.importActual<typeof import('recharts')>('recharts');
   function Mock({ children }: { children: React.ReactNode }): JSX.Element {
     return (
-      <div>{isValidElement(children) ? cloneElement(children, { width: 600, height: 300 }) : children}</div>
+      <div>
+        {isValidElement(children) ? cloneElement(children, { width: 600, height: 300 }) : children}
+      </div>
     );
   }
   return { ...actual, ResponsiveContainer: Mock };
@@ -22,7 +24,12 @@ vi.mock('../../react/use-telescope-queries.js', () => ({
           id: 'demo.page',
           label: 'Demo',
           panels: [
-            { kind: 'stat', title: 'Success rate', data: { provider: 'demo.rate' }, format: 'percent' },
+            {
+              kind: 'stat',
+              title: 'Success rate',
+              data: { provider: 'demo.rate' },
+              format: 'percent',
+            },
           ],
         },
       ],

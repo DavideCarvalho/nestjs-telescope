@@ -17,7 +17,14 @@ describe('extension watchers reach registration + /meta watchers', () => {
     let registered = false;
     const ext = defineTelescopeExtension({
       name: 'demo',
-      watchers: () => [{ type: 'demo', register: () => { registered = true; } }],
+      watchers: () => [
+        {
+          type: 'demo',
+          register: () => {
+            registered = true;
+          },
+        },
+      ],
       entryTypes: () => [{ id: 'demo', label: 'Demo', dot: 'bg-amber-400' }],
     });
     app = await makeApp({ extensions: [ext] });
@@ -30,11 +37,13 @@ describe('extension watchers reach registration + /meta watchers', () => {
     const ext = defineTelescopeExtension({
       name: 'demo2',
       entryTypes: () => [{ id: 'demo2', label: 'Demo2', dot: 'bg-sky-400' }],
-      dashboards: () => [{
-        id: 'demo2.page',
-        label: 'Demo2 Page',
-        panels: [{ kind: 'stat', title: 'Total', data: { provider: 'demo2.total' } }],
-      }],
+      dashboards: () => [
+        {
+          id: 'demo2.page',
+          label: 'Demo2 Page',
+          panels: [{ kind: 'stat', title: 'Total', data: { provider: 'demo2.total' } }],
+        },
+      ],
     });
     app = await makeApp({ extensions: [ext] });
     const meta = await request(app.getHttpServer()).get('/telescope/api/meta').expect(200);

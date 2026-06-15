@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ExtensionContext, TelescopeExtension } from './types.js';
 import { ExtensionRegistry } from './registry.js';
+import type { ExtensionContext, TelescopeExtension } from './types.js';
 
-const ctx = { moduleRef: {} as ExtensionContext['moduleRef'], config: {} as ExtensionContext['config'] };
+const ctx = {
+  moduleRef: {} as ExtensionContext['moduleRef'],
+  config: {} as ExtensionContext['config'],
+};
 
 function ext(over: Partial<TelescopeExtension> & { name: string }): TelescopeExtension {
   return over;

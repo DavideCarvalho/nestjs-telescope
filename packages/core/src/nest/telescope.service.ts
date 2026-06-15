@@ -119,7 +119,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Inject(TELESCOPE_DASHBOARD_AUTH)
     private readonly dashboardAuth: ResolvedDashboardAuth | null = null,
     @Inject(TELESCOPE_EXTENSIONS)
-    private readonly extensions: ExtensionRegistry = new ExtensionRegistry([], {} as ExtensionContext),
+    private readonly extensions: ExtensionRegistry = new ExtensionRegistry(
+      [],
+      {} as ExtensionContext,
+    ),
   ) {
     // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
     // dashboardAuth): no destination / empty rules / bad duration throws.

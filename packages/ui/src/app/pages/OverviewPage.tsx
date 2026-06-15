@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { StatCard } from '../../react/components/extensions/stat-card.js';
 import {
   AreaChartCard,
   type AreaChartPoint,
@@ -17,7 +18,6 @@ import {
   useServerStats,
   useTimeseries,
 } from '../../react/index.js';
-import { StatCard } from '../../react/components/extensions/stat-card.js';
 import type {
   NPlusOneHotspot,
   PulseReport,
