@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import type { Entry } from '../entry/entry.js';
+import { ExtensionRegistry } from '../extension/registry.js';
+import type { ExtensionContext } from '../extension/types.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeService } from './telescope.service.js';
@@ -27,7 +29,8 @@ function entry(over: Partial<Entry>): Entry {
 
 function setup() {
   const storage = new InMemoryStorageProvider();
-  const service = new TelescopeService(resolveConfig({}), storage, {});
+  const extensions = new ExtensionRegistry([], {} as ExtensionContext);
+  const service = new TelescopeService(resolveConfig({}), storage, {}, null, extensions);
   const controller = new TelescopeController(storage, service);
   return { storage, controller };
 }

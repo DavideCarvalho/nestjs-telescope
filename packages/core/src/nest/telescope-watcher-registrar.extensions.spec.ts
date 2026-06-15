@@ -26,6 +26,26 @@ describe('extension watchers reach registration + /meta watchers', () => {
     expect(meta.body.watchers).toContain('demo');
   });
 
+  it('exposes extension entry types and dashboards in meta', async () => {
+    const ext = defineTelescopeExtension({
+      name: 'demo2',
+      entryTypes: () => [{ id: 'demo2', label: 'Demo2', dot: 'bg-sky-400' }],
+      dashboards: () => [{
+        id: 'demo2.page',
+        label: 'Demo2 Page',
+        panels: [{ kind: 'stat', title: 'Total', data: { provider: 'demo2.total' } }],
+      }],
+    });
+    app = await makeApp({ extensions: [ext] });
+    const meta = await request(app.getHttpServer()).get('/telescope/api/meta').expect(200);
+    expect(meta.body.entryTypes).toContainEqual({ id: 'demo2', label: 'Demo2', dot: 'bg-sky-400' });
+    expect(meta.body.dashboards).toContainEqual({
+      id: 'demo2.page',
+      label: 'Demo2 Page',
+      panels: [{ kind: 'stat', title: 'Total', data: { provider: 'demo2.total' } }],
+    });
+  });
+
   async function makeApp(extra: Record<string, unknown>): Promise<INestApplication> {
     const moduleRef = await Test.createTestingModule({
       imports: [

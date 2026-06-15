@@ -17,11 +17,14 @@ import { createBatch } from '../context/batch.js';
 import { TelescopeContext } from '../context/telescope-context.js';
 import { setTelescopeDump } from '../dump/telescope-dump.js';
 import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js';
+import { ExtensionRegistry } from '../extension/registry.js';
+import type { Panel } from '../extension/types.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import {
   TELESCOPE_CONFIG,
   TELESCOPE_DASHBOARD_AUTH,
+  TELESCOPE_EXTENSIONS,
   TELESCOPE_OPTIONS,
   TELESCOPE_STORAGE,
   type TelescopeModuleOptions,
@@ -73,6 +76,10 @@ export interface TelescopeMeta {
    * default), purely informational for the UI.
    */
   ai: { enabled: boolean; mode: 'auto' | 'on-demand' | null };
+  /** Entry types contributed by extensions (id/label/dot) — feeds the UI nav. */
+  entryTypes: { id: string; label: string; dot: string }[];
+  /** Dashboards contributed by extensions — feeds the UI nav + routes + panel rendering. */
+  dashboards: { id: string; label: string; navGroup?: string; panels: Panel[] }[];
 }
 
 /**
@@ -110,6 +117,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
     @Inject(TELESCOPE_DASHBOARD_AUTH)
     private readonly dashboardAuth: ResolvedDashboardAuth | null = null,
+    @Inject(TELESCOPE_EXTENSIONS) private readonly extensions: ExtensionRegistry,
   ) {
     // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
     // dashboardAuth): no destination / empty rules / bad duration throws.
@@ -326,6 +334,13 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         enabled: this.diagnosis !== null,
         mode: this.diagnosis?.mode ?? null,
       },
+      entryTypes: this.extensions.entryTypes(),
+      dashboards: this.extensions.dashboards().map((d) => ({
+        id: d.id,
+        label: d.label,
+        panels: d.panels,
+        ...(d.navGroup ? { navGroup: d.navGroup } : {}),
+      })),
     };
   }
 
