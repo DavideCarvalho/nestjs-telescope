@@ -13,6 +13,7 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 |---|---|---|
 | `enabled` | `true` | Master switch. Compute inline (e.g. `NODE_ENV !== 'production'`). |
 | `watchers` | `[]` | Built-in + custom watchers (queries, jobs, mail, cache, …). Request and exception capture wire automatically. See [Capture](/docs/concepts/capture). |
+| `extensions` | `[]` | Installable extensions (`TelescopeExtension[]`) that bundle watchers, a navigable entry type, dashboard pages, and server-side data providers. Additive — extension watchers merge into `watchers`. See [Extensions](/docs/concepts/extensions). |
 | `sampling` | _none_ | Per-type keep-fractions for high-volume streams (e.g. `{ cache: 0.1 }`). |
 | `redact` | sensible defaults | Deep-redaction of `headers` / `query` / `body` paths plus content bounds (`maxDepth`, `maxStringLength`, …). See [Performance](/docs/concepts/performance#memory-bounds). |
 | `resolveUser` | reads `request.user` | Resolves the authenticated user recorded on a request entry. |
