@@ -10,8 +10,9 @@ import {
   type Provider,
   RequestMethod,
 } from '@nestjs/common';
-import { APP_INTERCEPTOR, DiscoveryModule } from '@nestjs/core';
+import { APP_INTERCEPTOR, DiscoveryModule, ModuleRef } from '@nestjs/core';
 import { resolveDashboardAuth } from '../auth/dashboard-auth-config.js';
+import type { ResolvedCoreConfig } from '../config/options.js';
 import { normalizeTelescopePath } from '../config/normalize-path.js';
 import { resolveConfig } from '../config/resolve-config.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
@@ -24,8 +25,10 @@ import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { ExtensionRegistry } from '../extension/registry.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { dynamicController } from './dynamic-controller.js';
+import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeAuthController } from './telescope-auth.controller.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
@@ -39,6 +42,7 @@ import { TelescopeGuard } from './telescope.guard.js';
 import {
   TELESCOPE_CONFIG,
   TELESCOPE_DASHBOARD_AUTH,
+  TELESCOPE_EXTENSIONS,
   TELESCOPE_OPTIONS,
   TELESCOPE_STORAGE,
   type TelescopeModuleOptions,
@@ -63,6 +67,16 @@ const SHARED_PROVIDERS: Provider[] = [
     provide: TELESCOPE_DASHBOARD_AUTH,
     useFactory: (options: TelescopeModuleOptions) => resolveDashboardAuth(options.dashboardAuth),
     inject: [TELESCOPE_OPTIONS],
+  },
+  {
+    provide: TELESCOPE_EXTENSIONS,
+    useFactory: (
+      options: TelescopeModuleOptions,
+      config: ResolvedCoreConfig,
+      moduleRef: ModuleRef,
+    ): ExtensionRegistry =>
+      new ExtensionRegistry(options.extensions ?? [], createExtensionContext(moduleRef, config)),
+    inject: [TELESCOPE_OPTIONS, TELESCOPE_CONFIG, ModuleRef],
   },
   TelescopeService,
   TelescopeGuard,
@@ -136,6 +150,7 @@ export class TelescopeModule implements NestModule {
       exports: [
         TelescopeService,
         TELESCOPE_STORAGE,
+        TELESCOPE_EXTENSIONS,
         QueueMetricsService,
         TimeseriesService,
         TracesService,
@@ -180,6 +195,7 @@ export class TelescopeModule implements NestModule {
       exports: [
         TelescopeService,
         TELESCOPE_STORAGE,
+        TELESCOPE_EXTENSIONS,
         QueueMetricsService,
         TimeseriesService,
         TracesService,

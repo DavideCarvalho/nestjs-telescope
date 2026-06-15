@@ -102,6 +102,21 @@ const ALWAYS_VISIBLE_TYPE_IDS = new Set(['request', 'exception']);
  * Pure and order-preserving (keeps the canonical `ENTRY_TYPES` order) so it's
  * trivially unit-testable.
  */
+/**
+ * Built-in types plus extension-contributed ones (from `/api/meta.entryTypes`).
+ * Built-ins win on id collision so an extension can't shadow a core type's
+ * label/dot. Extension types lack the optional `query` override (that's only
+ * for the few built-ins like `schedule`), which is fine — `EntryTypeDef.query`
+ * is optional. Keeps built-ins first, then extras, so the nav order is stable.
+ */
+export function allEntryTypes(
+  extension: readonly { id: string; label: string; dot: string }[] | undefined,
+): EntryTypeDef[] {
+  const extras = (extension ?? []).map((e) => ({ id: e.id, label: e.label, dot: e.dot }));
+  const builtinIds = new Set(ENTRY_TYPES.map((t) => t.id));
+  return [...ENTRY_TYPES, ...extras.filter((e) => !builtinIds.has(e.id))];
+}
+
 export function visibleEntryTypes(
   types: readonly EntryTypeDef[],
   watchers: readonly string[] | undefined,

@@ -72,6 +72,13 @@ export interface TelescopeClient {
   stats(type: string, window: string): Promise<StatsResult>;
   tags(prefix?: string): Promise<TagCount[]>;
   meta(): Promise<TelescopeMeta>;
+  /**
+   * Fetches data for an extension dashboard panel from a registered provider:
+   * `GET ext/:ext/data/:provider`. The optional `query` is serialized to the
+   * query string (panel `data.query`). Returns the raw provider payload as
+   * `unknown` — the panel renderer (Task 8) narrows it per panel `kind`.
+   */
+  extData(ext: string, provider: string, query?: Record<string, unknown>): Promise<unknown>;
   serverStats(): Promise<ServerStats>;
   health(): Promise<TelescopeHealth>;
   /** Retention/prune status for the Overview retention card. */
@@ -344,6 +351,15 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
     tags: (prefix) => get<TagCount[]>('/tags', { prefix }),
     meta: () => get<TelescopeMeta>('/meta'),
+    extData: (ext, provider, query) => {
+      const qs =
+        query && Object.keys(query).length
+          ? `?${new URLSearchParams(query as Record<string, string>).toString()}`
+          : '';
+      return get<unknown>(
+        `/ext/${encodeURIComponent(ext)}/data/${encodeURIComponent(provider)}${qs}`,
+      );
+    },
     serverStats: () => get<ServerStats>('/server-stats'),
     health: () => get<TelescopeHealth>('/health'),
     retention: () => get<RetentionInfo>('/retention'),

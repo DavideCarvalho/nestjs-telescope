@@ -1,5 +1,6 @@
 // packages/core/src/nest/telescope.controller.ts
 import {
+  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
@@ -18,7 +19,10 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import type { ResolvedCoreConfig } from '../config/options.js';
 import { durationToMs } from '../config/parse-duration.js';
+import { ExtensionRegistry } from '../extension/registry.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
@@ -49,9 +53,15 @@ import type {
   StorageProvider,
   TagCount,
 } from '../storage/storage-provider.js';
+import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeGuard } from './telescope.guard.js';
-import { TELESCOPE_OPTIONS, TELESCOPE_STORAGE } from './telescope.options.js';
+import {
+  TELESCOPE_CONFIG,
+  TELESCOPE_EXTENSIONS,
+  TELESCOPE_OPTIONS,
+  TELESCOPE_STORAGE,
+} from './telescope.options.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
 import { type TelescopeHealth, type TelescopeMeta, TelescopeService } from './telescope.service.js';
 
@@ -131,6 +141,9 @@ export class TelescopeController {
     @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
     @Inject(ScheduleManagerRegistry) private readonly scheduleManagers: ScheduleManagerRegistry,
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
+    @Inject(TELESCOPE_EXTENSIONS) private readonly extensions: ExtensionRegistry,
+    @Inject(TELESCOPE_CONFIG) private readonly extConfig: ResolvedCoreConfig,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   @Get('entries')
@@ -432,6 +445,32 @@ export class TelescopeController {
   @Get('health')
   health(): TelescopeHealth {
     return this.service.getHealth();
+  }
+
+  // ── Extension data providers ────────────────────────────────────────────────
+
+  // Read-shaped: the UI calls this per panel to fetch a named provider's data.
+  // Sits behind the class-level read guard. 404 for an unknown provider; 502
+  // when the provider throws (its message is surfaced so panel authors can see
+  // why). Query params arrive as strings and are passed through verbatim.
+  @Get('ext/:ext/data/:provider')
+  async extData(
+    @Param('ext') ext: string,
+    @Param('provider') provider: string,
+    @Query() query: Record<string, unknown>,
+  ): Promise<unknown> {
+    const found = this.extensions.findProvider(provider);
+    // The `:ext` segment must name the extension that actually owns the provider —
+    // a mismatch is treated as not-found so the URL namespace can't be spoofed.
+    if (!found || this.extensions.providerOwner(provider) !== ext) {
+      throw new NotFoundException(`Unknown data provider "${provider}".`);
+    }
+    const ctx = createExtensionContext(this.moduleRef, this.extConfig);
+    try {
+      return await found.resolve(query, ctx);
+    } catch (error) {
+      throw new BadGatewayException((error as Error).message);
+    }
   }
 
   // ── Retention / prune ──────────────────────────────────────────────────────

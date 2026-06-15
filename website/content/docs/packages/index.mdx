@@ -5,7 +5,7 @@ description: The full suite — core, the dashboard, watchers, storage adapters,
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-Telescope is a monorepo of small, single-purpose packages. You install [core](/docs/packages/core) plus whichever watchers, storage adapter, and queue managers match your stack — every built-in is implemented against the same public SPIs, so a community watcher or store is a first-class citizen, not a second-class hook.
+Telescope is a monorepo of small, single-purpose packages. You install [core](/docs/packages/core) plus whichever watchers, storage adapter, and queue managers match your stack — every built-in is implemented against the same public SPIs, so a community watcher or store is a first-class citizen, not a second-class hook. A package can go further and ship a whole dashboard surface as an [extension](/docs/concepts/extensions) (a navigable entry type + declarative dashboard pages + data providers) — `@dudousxd/nestjs-durable-telescope` is the canonical example.
 
 | Package | What it is |
 |---|---|

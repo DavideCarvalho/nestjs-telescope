@@ -1,0 +1,175 @@
+---
+title: Extensions
+description: A declarative SPI for packaging watchers, a navigable entry type, dashboard pages, and server-side data providers into one installable unit — the fixed UI renders the spec, the extension ships no React.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **watcher** captures one kind of activity (see [Capture & correlation](/docs/concepts/capture)). An **extension** is the bigger unit: it bundles watchers *and* the dashboard around them — a navigable entry type, declarative dashboard pages, and the server-side queries those pages read — into one object you register with `forRoot`. It's how a package like [`@dudousxd/nestjs-durable-telescope`](/docs/packages) adds a whole "Workflows" surface to your Telescope without shipping a line of UI code.
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { durableTelescopeExtension } from '@dudousxd/nestjs-durable-telescope';
+
+TelescopeModule.forRoot({
+  extensions: [durableTelescopeExtension()],
+});
+```
+
+`extensions` is additive and backward compatible: a watcher contributed by an extension is merged into the same `watchers` list the built-ins use, so the two options coexist.
+
+## The contract
+
+An extension is a plain object — author it with `defineTelescopeExtension` for inference. It has a `name` (used in collision errors) and four **optional** hooks, each handed an `ExtensionContext`:
+
+```ts
+interface TelescopeExtension {
+  name: string;
+  watchers?(ctx: ExtensionContext): Watcher[];
+  entryTypes?(ctx: ExtensionContext): { id: string; label: string; dot: string }[];
+  dashboards?(ctx: ExtensionContext): DashboardSpec[];
+  dataProviders?(ctx: ExtensionContext): DataProvider[];
+}
+
+interface ExtensionContext {
+  readonly moduleRef: ModuleRef;       // resolve host services
+  readonly config: ResolvedCoreConfig;
+}
+```
+
+The hooks are **multi-hooks**: every registered extension runs, and the results accumulate. They run once, eagerly, at module init — so a misconfiguration fails at boot, not on first request.
+
+- **`watchers`** — contribute watchers. Same [`Watcher` SPI](/docs/recipes/custom-watcher) as everything else; they land in the merged `watchers` list.
+- **`entryTypes`** — contribute navigable entry types. Each is `{ id, label, dot }`, where `id` is the backend `type` filter (e.g. `'durable'`), `label` is the nav label, and `dot` is a Tailwind `bg-*` class for the nav dot. This is what makes the dashboard nav *dynamic* instead of hard-coded.
+- **`dashboards`** — contribute declarative dashboard pages (the panel IR below).
+- **`dataProviders`** — named server-side queries that panels bind to.
+
+<Callout type="info">
+  Resolve host services through `ctx.moduleRef` — e.g. a durable engine, a store token, or `TELESCOPE_STORAGE`. The extension never imports the host app; it asks the Nest container for what it needs (use `{ strict: false }` so it finds providers in any module).
+</Callout>
+
+## The panel IR
+
+A dashboard page is a `DashboardSpec`, and its `panels` are a small, closed set of declarative shapes. The extension emits this spec; the **fixed UI renders it** — there is no React in an extension. That's the whole trick: the surface is data, not code.
+
+```ts
+interface DashboardSpec {
+  id: string;         // globally unique, "<extName>.<page>"
+  label: string;
+  navGroup?: string;  // optional nav grouping header
+  panels: Panel[];
+}
+```
+
+A `Panel` is one of four kinds. Each binds its `data` to a provider via a `DataBinding = { provider, query? }`:
+
+| Kind | Shape | Provider returns |
+|---|---|---|
+| `stat` | `{ kind:'stat', title, data, format?: 'number'\|'percent'\|'duration', accent? }` | `{ value: number }` |
+| `timeseries` | `{ kind:'timeseries', title, data, series: string[], style?: 'area'\|'stacked' }` | `{ rows: ({ label } & Record<string, number>)[] }` |
+| `topN` | `{ kind:'topN', title, data, limit? }` | `{ items: { label, value, id? }[] }` |
+| `table` | `{ kind:'table', title, data, columns: { key, label, link? }[] }` | `{ rows: Record<string, unknown>[] }` |
+
+A `table` column can **deep-link out** with `link.href` — a URL template with `{key}` placeholders filled from the row (set `external: true` to open in a new tab):
+
+```ts
+{ key: 'runId', label: 'Run', link: { href: '/durable/runs/{runId}' } }
+```
+
+### The dashboard-id convention
+
+A `DashboardSpec.id` **must be globally unique** and follows `"<extName>.<page>"` — e.g. `durable.workflows`. This isn't cosmetic: the UI derives the **owning extension from the id prefix** to know which extension's providers to resolve a page's panels against. Name your providers the same way (`durable.timeseries`, `durable.recentFailures`) so the mapping is obvious.
+
+## Data providers and the request flow
+
+A `DataProvider` is a named, server-side query a panel reads:
+
+```ts
+interface DataProvider {
+  name: string;
+  resolve(query: Record<string, unknown> | undefined, ctx: ExtensionContext): Promise<unknown>;
+}
+```
+
+When the UI renders a panel, it fetches that panel's binding from a single endpoint:
+
+```
+GET <path>/api/ext/:ext/data/:provider?<query>
+```
+
+The server looks up the provider by name, builds an `ExtensionContext`, and calls `resolve(query, ctx)`. Query params arrive as strings and are passed through verbatim. An unknown provider is a `404`; a provider that throws surfaces a `502` with its message (so a panel author can see *why* a panel is empty).
+
+<Callout type="warn" title="The read gate applies">
+  The data endpoint sits behind the **same read `authorizer`** as the rest of the dashboard API — which **denies in production by default** until you configure one. Extension data is never a side door: if the dashboard is gated, the panels are gated too. See [The gate](/docs/reference/configuration#the-gate).
+</Callout>
+
+## Collisions
+
+Because the hooks accumulate across every extension, the registry guards the shared namespaces. A duplicate **entry-type id**, **dashboard id**, or **provider name** across two extensions **throws at boot**, naming both extensions:
+
+```
+Telescope data provider "durable.timeseries" is contributed by both
+"durable" and "other". Provider names must be unique.
+```
+
+This is why the `<extName>.` prefix matters — it keeps your ids from colliding with another installed extension's.
+
+<Callout type="info">
+  **Single-slot hooks are reserved.** Today every hook is multi (all extensions contribute, results merge). A hook that only *one* extension may own — overriding a piece of the host UI — is intentionally **not** part of the 0.x contract. The registry is shaped to add one when a real consumer needs it.
+</Callout>
+
+## A minimal worked example
+
+A complete extension: one entry type, a one-panel dashboard, and the provider that feeds it.
+
+```ts
+import { defineTelescopeExtension } from '@dudousxd/nestjs-telescope';
+
+export function jobsTelescopeExtension() {
+  return defineTelescopeExtension({
+    name: 'jobs',
+
+    entryTypes: () => [
+      { id: 'job', label: 'Jobs', dot: 'bg-sky-400' },
+    ],
+
+    dataProviders: () => [
+      {
+        name: 'jobs.pending',
+        async resolve(_query, ctx) {
+          const store = ctx.moduleRef.get('TELESCOPE_STORAGE', { strict: false });
+          const pending = await store.countByTag('status:pending');
+          return { value: pending }; // stat → { value: number }
+        },
+      },
+    ],
+
+    dashboards: () => [
+      {
+        id: 'jobs.overview', // "<extName>.<page>"
+        label: 'Jobs',
+        panels: [
+          {
+            kind: 'stat',
+            title: 'Pending jobs',
+            format: 'number',
+            data: { provider: 'jobs.pending' },
+          },
+        ],
+      },
+    ],
+  });
+}
+```
+
+```ts
+TelescopeModule.forRoot({
+  extensions: [jobsTelescopeExtension()],
+});
+```
+
+That's it: registering the extension adds a **Jobs** nav entry, a **Jobs** dashboard page, and a stat panel that fetches `GET <path>/api/ext/jobs/data/jobs.pending` and renders the number — no UI code shipped.
+
+The canonical real-world extension is [`@dudousxd/nestjs-durable-telescope`](/docs/packages)'s `durableTelescopeExtension()`: it registers a `durable` entry type plus a `durable.workflows` dashboard (success-rate, failed, and dead-now panels) backed by `durable.state` / `durable.timeseries` / `durable.recentFailures` providers.
+
+For a step-by-step build, see [Building an extension](/docs/recipes/building-an-extension).

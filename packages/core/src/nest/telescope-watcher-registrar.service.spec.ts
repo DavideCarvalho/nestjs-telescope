@@ -2,6 +2,7 @@
 import type { ModuleRef } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
+import { ExtensionRegistry } from '../extension/registry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
@@ -24,7 +25,14 @@ describe('TelescopeWatcherRegistrar', () => {
     const setWatchers = vi.spyOn(service, 'setWatchers');
 
     const options: TelescopeModuleOptions = { watchers: [goodWatcher, throwingWatcher] };
-    const registrar = new TelescopeWatcherRegistrar(options, config, service, {} as ModuleRef);
+    const extensions = new ExtensionRegistry([], { moduleRef: {} as ModuleRef, config });
+    const registrar = new TelescopeWatcherRegistrar(
+      options,
+      config,
+      service,
+      extensions,
+      {} as ModuleRef,
+    );
 
     await expect(registrar.onApplicationBootstrap()).resolves.toBeUndefined();
 

@@ -59,6 +59,32 @@ describe('createTelescopeClient', () => {
     expect(entry).toMatchObject({ id: 'x' });
   });
 
+  it('fetches extension panel data and encodes the ext + provider path', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ value: 1 }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.extData('my ext', 'top/providers');
+    expect(fetchMock.mock.calls[0]![0] as string).toBe(
+      '/telescope/api/ext/my%20ext/data/top%2Fproviders',
+    );
+  });
+
+  it('serializes the panel data query into the query string', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ value: 1 }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.extData('billing', 'revenue', { window: '24h', limit: 5 });
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('/telescope/api/ext/billing/data/revenue?');
+    expect(url).toContain('window=24h');
+    expect(url).toContain('limit=5');
+  });
+
+  it('omits the query string when no panel query is given', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ value: 1 }));
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.extData('billing', 'revenue', {});
+    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/ext/billing/data/revenue');
+  });
+
   it('fetches pulse and queues with a window param', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({}));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });

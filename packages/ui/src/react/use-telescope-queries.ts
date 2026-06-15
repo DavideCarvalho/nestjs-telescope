@@ -42,6 +42,20 @@ export function metaQuery(client: TelescopeClient, paused = false) {
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
+// Extension panel data — fetched per (ext, provider, query) for dashboard panels.
+// No live-tail polling here; the dashboard page (Task 9) opts panels into
+// refetch as needed. React Query caches per query key so identical panels share.
+export function extDataQuery(
+  client: TelescopeClient,
+  ext: string,
+  provider: string,
+  query?: Record<string, unknown>,
+) {
+  return queryOptions({
+    queryKey: ['telescope', 'ext-data', ext, provider, query],
+    queryFn: () => client.extData(ext, provider, query),
+  });
+}
 export function serverStatsQuery(client: TelescopeClient, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'server-stats'],
@@ -327,6 +341,13 @@ export function useMeta() {
 }
 export function useServerStats() {
   return useQuery(serverStatsQuery(useTelescopeClient(), usePaused()));
+}
+export function useExtensionData(
+  ext: string,
+  provider: string,
+  query?: Record<string, unknown>,
+) {
+  return useQuery(extDataQuery(useTelescopeClient(), ext, provider, query));
 }
 export function useHealth() {
   return useQuery(healthQuery(useTelescopeClient(), usePaused()));

@@ -1,0 +1,152 @@
+---
+title: Building an extension
+description: Package a watcher, a navigable entry type, a server-side data provider, and a declarative dashboard page into one installable Telescope extension — step by step, using the durable workflows surface as the worked example.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+An [extension](/docs/concepts/extensions) bundles everything a feature needs to show up in Telescope — a navigable entry type, dashboard pages, and the server-side queries those pages read — into one object you register with `forRoot`. The extension ships **no UI**: it emits a declarative spec, and the fixed dashboard renders it. This recipe builds one end to end, using the shape of [`@dudousxd/nestjs-durable-telescope`](/docs/packages) (its `durableTelescopeExtension()`) as the worked example.
+
+See [Extensions](/docs/concepts/extensions) for the full contract and the panel IR.
+
+---
+
+## 1. Define the extension
+
+Author the object with `defineTelescopeExtension` for inference. Wrap it in a factory so consumers can pass options:
+
+```ts
+import { defineTelescopeExtension } from '@dudousxd/nestjs-telescope';
+
+export function durableTelescopeExtension() {
+  return defineTelescopeExtension({
+    name: 'durable', // used in collision errors + the "<name>." id prefix
+  });
+}
+```
+
+The `name` is the extension's identity. It shows up in collision errors and, by convention, prefixes every dashboard id and provider name you contribute.
+
+---
+
+## 2. Add an entry type
+
+`entryTypes` makes the dashboard nav dynamic. Each entry is `{ id, label, dot }`: `id` is the backend `type` filter, `label` is the nav label, and `dot` is a Tailwind `bg-*` class for the nav dot.
+
+```ts
+entryTypes: () => [
+  { id: 'durable', label: 'Workflows', dot: 'bg-amber-400' },
+],
+```
+
+Now `durable` entries (recorded by your watcher) are browsable from the nav like any built-in type.
+
+---
+
+## 3. Add a data provider
+
+A `DataProvider` is a named server-side query. It resolves a host service through `ctx.moduleRef` — never import the host app, ask the Nest container for what you need. Use `{ strict: false }` so it finds the provider in any module:
+
+```ts
+import type { DurableEngine } from 'your-durable-package';
+
+dataProviders: () => [
+  {
+    name: 'durable.state', // "<name>.<provider>"
+    async resolve(_query, ctx) {
+      const engine = ctx.moduleRef.get<DurableEngine>('DURABLE_ENGINE', {
+        strict: false,
+      });
+      const dead = await engine.countDead();
+      return { value: dead }; // stat → { value: number }
+    },
+  },
+],
+```
+
+The return shape depends on the panel kind that binds to it:
+
+| Panel kind | Provider returns |
+|---|---|
+| `stat` | `{ value: number }` |
+| `timeseries` | `{ rows: ({ label } & Record<string, number>)[] }` |
+| `topN` | `{ items: { label, value, id? }[] }` |
+| `table` | `{ rows: Record<string, unknown>[] }` |
+
+<Callout type="info">
+  The provider runs behind the dashboard's read `authorizer`, fetched at <code>GET &lt;path&gt;/api/ext/:ext/data/:provider</code>. Query params arrive as strings — coerce them inside `resolve` if you need numbers or dates.
+</Callout>
+
+---
+
+## 4. Add a dashboard spec
+
+A `DashboardSpec` is a page of declarative `panels`. Its `id` **must be globally unique** and follows `"<extName>.<page>"` — the UI derives the owning extension from the id prefix to resolve the page's providers, so the prefix is load-bearing, not cosmetic.
+
+Each panel binds its `data` to a provider via `{ provider, query? }`:
+
+```ts
+dashboards: () => [
+  {
+    id: 'durable.workflows', // "<name>.<page>" — globally unique
+    label: 'Workflows',
+    panels: [
+      {
+        kind: 'stat',
+        title: 'Dead now',
+        format: 'number',
+        data: { provider: 'durable.state' },
+      },
+      {
+        kind: 'timeseries',
+        title: 'Throughput',
+        series: ['completed', 'failed'],
+        style: 'stacked',
+        data: { provider: 'durable.timeseries', query: { window: '24h' } },
+      },
+      {
+        kind: 'table',
+        title: 'Recent failures',
+        data: { provider: 'durable.recentFailures' },
+        columns: [
+          { key: 'workflow', label: 'Workflow' },
+          {
+            key: 'runId',
+            label: 'Run',
+            link: { href: '/durable/runs/{runId}' }, // {key} filled from the row
+          },
+        ],
+      },
+    ],
+  },
+],
+```
+
+A `table` column's `link.href` is a URL template — `{runId}` is replaced with that row's `runId`. Set `external: true` to open it in a new tab.
+
+---
+
+## 5. Register it
+
+Pass the extension to `forRoot`. It's additive — `extensions` coexists with `watchers` (an extension's own watchers are merged into the same list):
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { durableTelescopeExtension } from '@dudousxd/nestjs-durable-telescope';
+
+TelescopeModule.forRoot({
+  extensions: [durableTelescopeExtension()],
+});
+```
+
+That single registration adds the **Workflows** nav entry, the **Workflows** dashboard page, and wires every panel to its provider.
+
+<Callout type="warn" title="Keep ids unique">
+  Entry-type ids, dashboard ids, and provider names are global namespaces shared across *every* installed extension. A duplicate throws at boot, naming both owners. Prefix everything with your extension's `name` (`durable.workflows`, `durable.timeseries`) so two installed extensions never collide.
+</Callout>
+
+---
+
+## What you didn't write
+
+No React, no routes, no controller. The extension is a spec plus a few async queries; the fixed UI fetches the data and renders the panels. To go deeper on the panel IR, the data request flow, and the read gate, see [Extensions](/docs/concepts/extensions).

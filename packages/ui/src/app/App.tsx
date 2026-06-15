@@ -8,6 +8,7 @@ import { OverviewPage } from './pages/OverviewPage.js';
 import { QueueManagerPage } from './pages/QueueManagerPage.js';
 import { EntriesPage } from './pages/entries-page.js';
 import { EntryPage } from './pages/entry-page.js';
+import { ExtensionDashboardPage } from './pages/extension-dashboard-page.js';
 import { PulsePage } from './pages/pulse-page.js';
 import { QueuesPage } from './pages/queues-page.js';
 import { QueuesShell } from './pages/queues-shell.js';
@@ -35,6 +36,7 @@ function Dashboard(): JSX.Element {
             <Route path="metrics" element={<QueuesPage />} />
           </Route>
           <Route path="/schedules" element={<SchedulesPage />} />
+          <Route path="/ext/:dashboardId" element={<ExtensionDashboardPage />} />
         </Routes>
       </DashboardLayout>
     </HashRouter>

@@ -3,8 +3,10 @@ import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs
 import { ModuleRef } from '@nestjs/core';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { EntryType } from '../entry/entry.js';
+import { ExtensionRegistry } from '../extension/registry.js';
 import {
   TELESCOPE_CONFIG,
+  TELESCOPE_EXTENSIONS,
   TELESCOPE_OPTIONS,
   type TelescopeModuleOptions,
 } from './telescope.options.js';
@@ -19,12 +21,13 @@ export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
     @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
     @Inject(TelescopeService) private readonly service: TelescopeService,
+    @Inject(TELESCOPE_EXTENSIONS) private readonly extensions: ExtensionRegistry,
     private readonly moduleRef: ModuleRef,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     if (!this.config.enabled) return;
-    const watchers = this.options.watchers ?? [];
+    const watchers = [...(this.options.watchers ?? []), ...this.extensions.watchers()];
     const ctx = createWatcherContext(this.service, this.config, this.moduleRef);
     const registered: string[] = [];
     for (const watcher of watchers) {
@@ -44,7 +47,14 @@ export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
     // list — so surface its type only when the public endpoint is enabled.
     const clientErrorTypes =
       this.options.clientErrors?.enabled === true ? [EntryType.ClientException] : [];
-    const types = [EntryType.Request, EntryType.Exception, ...registered, ...clientErrorTypes];
+    const extensionTypes = this.extensions.entryTypes().map((e) => e.id);
+    const types = [
+      EntryType.Request,
+      EntryType.Exception,
+      ...registered,
+      ...clientErrorTypes,
+      ...extensionTypes,
+    ];
     this.service.setWatchers(types);
     this.logger.log(`Telescope watching: ${types.join(', ')}`);
   }

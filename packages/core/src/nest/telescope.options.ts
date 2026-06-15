@@ -2,6 +2,7 @@
 import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
+import type { TelescopeExtension } from '../extension/types.js';
 import type { TelescopeSessionUser } from '../auth/session-cookie.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
 import type { PulseServiceOptions } from '../pulse/pulse.service.js';
@@ -92,6 +93,8 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   storage?: StorageProvider;
   /** Watchers to register. Empty in the host plan. */
   watchers?: Watcher[];
+  /** Extensions contributing watchers, entry types, dashboards, and data providers. */
+  extensions?: TelescopeExtension[];
   /** Live-queue managers (e.g. BullMqQueueManager). Each contributes a driver to /queues/live. */
   queueManagers?: QueueManager[];
   /**
@@ -242,3 +245,5 @@ export const TELESCOPE_CONFIG = Symbol('TELESCOPE_CONFIG');
 export const TELESCOPE_DASHBOARD_AUTH = Symbol('TELESCOPE_DASHBOARD_AUTH');
 /** Kept for future DI use; the registry reads `options.queueManagers` directly. */
 export const QUEUE_MANAGERS = Symbol('QUEUE_MANAGERS');
+/** Resolved ExtensionRegistry (built + boot-validated from options.extensions). */
+export const TELESCOPE_EXTENSIONS = Symbol('TELESCOPE_EXTENSIONS');
