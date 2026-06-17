@@ -7,9 +7,9 @@ import { type StreamStatus, useTelescopeStream } from '../../react/use-telescope
 
 /** Responsive grid column class per section `cols` value. */
 const colClass: Record<2 | 3 | 4, string> = {
-  2: 'sm:grid-cols-2',
-  3: 'sm:grid-cols-3',
-  4: 'sm:grid-cols-4',
+  2: 'md:grid-cols-2',
+  3: 'md:grid-cols-3',
+  4: 'md:grid-cols-2 lg:grid-cols-4',
 };
 
 /**

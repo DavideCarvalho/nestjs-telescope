@@ -117,6 +117,7 @@ describe('ExtensionDashboardPage', () => {
     await waitFor(() => {
       const badge = document.querySelector('[data-telescope-status]');
       expect(badge).not.toBeNull();
+      expect(badge?.getAttribute('data-telescope-status')).toBe('polling');
     });
   });
 
