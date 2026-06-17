@@ -9,3 +9,6 @@ coverage/
 
 # local dogfood pack artifacts
 *.tgz
+
+# brainstorming visual companion artifacts
+.superpowers/
