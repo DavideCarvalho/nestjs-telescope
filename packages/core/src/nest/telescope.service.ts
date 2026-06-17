@@ -5,6 +5,7 @@ import {
   Logger,
   type OnApplicationShutdown,
   type OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { v7 } from 'uuid';
 import { DiagnosisCoordinator } from '../ai/diagnosis-coordinator.js';
@@ -14,6 +15,7 @@ import type { AuthMode, ResolvedDashboardAuth } from '../auth/dashboard-auth-con
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { samplingRates } from '../config/sampling.js';
 import { createBatch } from '../context/batch.js';
+import { CONTEXT_ACCESSOR, type ContextAccessor } from '../context/context-accessor.js';
 import { TelescopeContext } from '../context/telescope-context.js';
 import { setTelescopeDump } from '../dump/telescope-dump.js';
 import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js';
@@ -123,6 +125,13 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       [],
       {} as ExtensionContext,
     ),
+    // Soft-detected `@dudousxd/nestjs-context` accessor: an OPTIONAL peer. When
+    // the app imports nestjs-context, its provider binds the shared
+    // CONTEXT_ACCESSOR symbol and DI resolves it here; otherwise it stays
+    // undefined and entries are enriched exactly as before. No hard import.
+    @Optional()
+    @Inject(CONTEXT_ACCESSOR)
+    private readonly contextAccessor: ContextAccessor | undefined = undefined,
   ) {
     // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
     // dashboardAuth): no destination / empty rules / bad duration throws.
@@ -146,6 +155,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       idFactory: () => v7(),
       ...(config.filter ? { filter: config.filter } : {}),
       ...(config.traceContext ? { traceContext: config.traceContext } : {}),
+      // Additive, opt-in context enrichment (traceId fallback + user/tenant
+      // tags). Present only when nestjs-context bound the shared accessor token.
+      ...(this.contextAccessor ? { contextAccessor: this.contextAccessor } : {}),
       // Per-flush new-exception evaluation: cheap map lookup per stored exception,
       // batch-context fetch only on a real fire. Delegates to the alerter built
       // just below; the closure reads `this.alerter` at flush time (always set by
