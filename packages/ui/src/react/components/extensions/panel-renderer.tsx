@@ -5,10 +5,11 @@ import { BarChartCard } from '../charts/bar-chart-card.js';
 import { StackedAreaChartCard } from '../charts/stacked-area-chart-card.js';
 import { StatCard } from './stat-card.js';
 
-function formatStat(value: number, format?: 'number' | 'percent' | 'duration'): string {
+function formatStat(value: number, format?: 'number' | 'percent' | 'duration' | 'rate'): string {
   if (format === 'percent') return `${Math.round(value * 100)}%`;
   if (format === 'duration')
     return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
+  if (format === 'rate') return `${new Intl.NumberFormat().format(value)}/s`;
   return new Intl.NumberFormat().format(value);
 }
 
@@ -106,5 +107,12 @@ export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX
         </div>
       );
     }
+    case 'distribution':
+    case 'gauge':
+    case 'breakdown':
+      // TODO: Implement these panel kinds in Task 8
+      return (
+        <div className="text-zinc-400 text-sm p-4">{panel.kind} panel not yet implemented</div>
+      );
   }
 }
