@@ -1,5 +1,6 @@
 export * from './telescope-context.js';
 export * from './use-telescope-queries.js';
+export * from './use-telescope-stream.js';
 export * from './components/entry-types.js';
 export * from './components/entries-table.js';
 export * from './components/user-tag.js';

@@ -63,6 +63,8 @@ export type JobActionName = 'retry' | 'remove' | 'promote';
 export type BulkActionName = 'retry-all' | 'redrive';
 
 export interface TelescopeClient {
+  /** The resolved API base URL (e.g. `/telescope/api`). Used by hooks that need to construct URLs directly (e.g. SSE EventSource). */
+  readonly baseUrl: string;
   entries(query?: EntriesQuery): Promise<Page<Entry>>;
   entry(id: string): Promise<EntryWithBatch>;
   pulse(window?: string): Promise<PulseReport>;
@@ -326,6 +328,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
   }
 
   return {
+    baseUrl,
     entries: (query = {}) =>
       get<Page<Entry>>('/entries', {
         type: query.type,
