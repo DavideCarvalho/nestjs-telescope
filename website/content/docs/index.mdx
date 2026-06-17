@@ -1,53 +1,105 @@
 ---
-title: Documentation
-description: Laravel Telescope-style observability for NestJS — requests, queries, jobs, mail, cache, and exceptions correlated under one batch, plus live queue management, a health dashboard, Slack error alerting, AI diagnosis, frontend error reporting, and archival.
+title: Introduction
+description: Laravel Telescope, redesigned for NestJS — a headless observability console that correlates every request, query, job, mail, cache hit, and exception under one batch, with a pluggable store and an optional dashboard.
 ---
 
-Welcome to the **nestjs-telescope** documentation.
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-`@dudousxd/nestjs-telescope` is an application observability console for NestJS. A set of watchers capture what happens *inside* a request — every query, queued job, sent email, cache hit, and thrown exception — correlate it all under one batch via `AsyncLocalStorage`, store it through a pluggable provider, and expose it through a headless API plus an optional dashboard. It's the missing Telescope for NestJS, designed framework-idiomatically rather than ported.
+**`@dudousxd/nestjs-telescope`** is an application observability console for NestJS. A set of *watchers* capture what happens *inside* a request — every query, queued job, sent email, cache hit, and thrown exception — correlate it all under one **batch** via `AsyncLocalStorage`, persist it through a pluggable storage provider, and expose it through a headless JSON API plus an optional dashboard. It's the missing Telescope for NestJS, designed framework-idiomatically rather than ported.
 
-Head to the [Getting Started](/docs/getting-started) guide to mount the dashboard in under five minutes, or use the sidebar to explore concepts, packages, and the dashboard tour.
+<Callout type="info" title="The unit of value is the batch">
+The thing you click into is never a lone log line — it's one **request and everything it caused**. Open an entry and you see the exact queries, jobs, mails, and exceptions it produced, in capture order, on a single waterfall.
+</Callout>
 
-## What you get
+## The problem it solves
 
-- **Correlated capture.** The unit of value is the *batch* — one request and everything it caused. Open an entry and see the exact queries, jobs, exceptions, and mails it produced, in capture order.
-- **A Horizon-style live queue console.** Browse BullMQ and SQS queues in real time — depth per state, individual jobs, and (behind a second default-deny gate) retry / remove / promote / redrive.
-- **A Pulse-style health dashboard.** Per-type entry counts, the slowest entries, the most frequent exceptions, N+1 occurrences, and a throughput sparkline — all rolled up from captured entries.
-- **Off the response path.** Request capture fires *after* the response is flushed; query capture is ~microseconds. Telescope is built so that it never slows the app it observes — and it surfaces its own cost on a `/health` card.
-- **Error alerting.** A genuinely *new* exception family pages you — Slack (Block Kit, with route/user and a deep link), a raw webhook, or your own sink — alongside rate, slow-route, and dropped-entry rules.
-- **AI diagnosis.** One click turns an exception into a probable-cause / suggested-fix report from its stack, route, and the SQL that just ran. In auto-mode it enriches the Slack alert. Bedrock, OpenAI, or any Vercel AI SDK model.
-- **Frontend error reporting.** Point a browser error handler at a public endpoint and `client_exception` reports flow through the same pipeline — family hashing, alerts, archive, the dashboard's Client errors tab.
-- **Archive before prune.** Per-type retention keeps exceptions a week and requests an hour; an `archive.sink` ships doomed entries to S3 (or any cold store) before the pruner deletes them.
-- **MCP for coding agents.** An optional Model Context Protocol server lets Claude Code, Cursor, or any MCP client debug straight from the captured data — *"why is `POST /checkout` slow?"* pulls the batch waterfall with every query.
-- **Safe under load.** Capture stays off the response path, and an overload guard pauses recording when the event loop is lagging — so a telescope under pressure never amplifies an incident.
+Backend developers reach for Telescope in two moments. **Locally**, debugging *"why did this request do 47 queries?"* — the answer lives across a dozen scattered log lines that you have to mentally stitch back together. **In production**, where an admin needs to inspect a failing flow without SSHing into a pod to `grep` logs after the fact.
 
-## Why
+Telescope answers both by recording correlated *entries you click into*, not time-series aggregates. You install core plus one adapter, add one module import, and within five minutes you're stepping through a request — in dev with full detail, in prod with redaction always on and a closed-by-default gate.
 
-Backend developers reach for Telescope in two moments: locally, debugging *"why did this request do 47 queries?"*, and in production, where an admin needs to inspect a failing flow without SSHing into a pod to grep logs. You install core plus one adapter, add one module import, and within five minutes you're clicking through a request — in dev with full detail, in prod with redaction and a gate.
+It **complements** metrics and tracing; it doesn't replace them. Metrics tell you *that* p95 latency rose. Telescope tells you *which* request, and shows you the SQL that did it.
 
-It complements metrics and tracing; it doesn't replace them. This is about *correlated entries you click into*, not time-series aggregates.
+## How it's built
 
-## Screenshot
+Four design choices define the library:
 
-The Overview lands you on Horizon-style stat cards, a throughput chart, a per-type stacked area, and the **Telescope health** card — the host-path cost of capture, straight from `/health`.
+- **Watchers, correlated under one batch.** Each watcher (request, query, job, mail, cache, schedule, HTTP-client, exception) records an entry; `AsyncLocalStorage` ties them to the request that triggered them. See [Capture & correlation](/docs/concepts/capture).
+- **Off the response path.** Request capture fires *after* the response is flushed and query capture costs microseconds, so Telescope never slows the app it observes — and it surfaces its own host-path cost on a `/health` card. See [Performance](/docs/concepts/performance).
+- **Pluggable storage.** Every store implements one `StorageProvider` SPI with a self-healing schema: zero-config SQLite by default, swap in Redis for multi-instance, or write your own. See [Storage](/docs/concepts/storage).
+- **Headless API, optional dashboard.** Everything the UI shows comes from a plain JSON API you can curl, script, or build your own admin against. The bundled React dashboard is a separate module you opt into — no frontend dependency imposed on your app.
 
-<Screenshot src="/screenshots/overview.png" alt="Telescope Overview: stat cards, server vitals, the Telescope health card, and throughput / per-type area charts" />
+## Quickstart
 
-Open any request and you get its **correlated batch** — the cache reads, queries, and dumps it caused, laid out as a waterfall next to the request itself.
+The whole loop — install, register two modules, open the dashboard — in three steps. For prerequisites, the headless API, storage adapters, and watchers, see [Getting Started](/docs/getting-started).
 
-<Screenshot src="/screenshots/request-detail.png" alt="A POST /coffee/order request detail: batch timeline waterfall on the left, the correlated batch panel on the right, plus headers and payload" />
+<Steps>
+<Step>
 
-## Quick links
+Install core and the dashboard:
 
-- [Getting Started](/docs/getting-started) — install core + ui, open `/telescope`, pick a storage adapter
-- [Capture & correlation](/docs/concepts/capture) — watchers, batches, and the ALS flow
-- [Storage](/docs/concepts/storage) — the `StorageProvider` SPI, self-healing schema, adapter table
-- [Performance](/docs/concepts/performance) — off-the-response-path capture and the `/health` endpoint
-- [Dashboard tour](/docs/dashboard) — overview, entries, traces, queues console, schedules, and [alerts](/docs/dashboard#alerts)
-- [Dashboard auth](/docs/dashboard/auth) — gate the dashboard to your admins, all the way to prod
-- [AI diagnosis](/docs/packages/ai) — turn a captured exception into a probable-cause report
-- [MCP server](/docs/concepts/mcp) — let coding agents query the captured data over Model Context Protocol
-- [Reporting frontend errors](/docs/recipes/reporting-frontend-errors) — browsers POST straight to Telescope
-- [Archiving to S3](/docs/recipes/archiving-exceptions-to-s3) — export entries before the pruner deletes them
-- [Packages](/docs/packages) — one page per watcher, storage, and queue manager
+```bash
+pnpm add @dudousxd/nestjs-telescope @dudousxd/nestjs-telescope-ui
+```
+
+</Step>
+<Step>
+
+Register both modules in your root module. `TelescopeModule.forRoot()` wires request and exception capture and turns on the zero-config SQLite store and pruner; `TelescopeUiModule.forRoot()` serves the dashboard SPA:
+
+```ts title="app.module.ts"
+import { Module } from '@nestjs/common';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      // dev: rich capture, open gate. prod: flip enabled + supply an authorizer.
+      enabled: process.env.NODE_ENV !== 'production',
+      authorizer: () => true, // gates the API; defaults to deny in production
+      prune: { after: '24h' },
+    }),
+    TelescopeUiModule.forRoot(),
+  ],
+})
+export class AppModule {}
+```
+
+</Step>
+<Step>
+
+Boot the app and open [http://localhost:3000/telescope](http://localhost:3000/telescope). The dashboard polls `/telescope/api/*`, shows captured entries with live polling, and — on any entry — the correlated batch: the request and everything it caused. Prefer JSON? Hit `GET /telescope/api/entries/:id` for the same data.
+
+</Step>
+</Steps>
+
+<Callout type="warn" title="Production gate">
+The API gate **denies in production by default**. In prod you must set `enabled: true` and supply an `authorizer` (or wire [dashboard auth](/docs/dashboard/auth)) — otherwise the dashboard returns `403`. This is a default, not an afterthought: capture runs with redaction always on, and the gate stays closed until you open it.
+</Callout>
+
+## Beyond capture
+
+Once entries are flowing, the rest of the console builds on the same pipeline:
+
+- **A Horizon-style queue console** — browse BullMQ and SQS queues in real time, and (behind a second default-deny gate) retry / remove / promote / redrive jobs.
+- **A Pulse-style health dashboard** — per-type counts, slowest entries, top exceptions, N+1 hotspots, and a throughput sparkline, rolled up from captured entries.
+- **Error alerting** — a genuinely *new* exception family pages you via Slack (Block Kit, route/user, deep link), a webhook, or your own sink, plus rate and slow-route rules.
+- **AI diagnosis** — [`@dudousxd/nestjs-telescope-ai`](/docs/packages/ai) turns an exception into a probable-cause / suggested-fix report (Bedrock, OpenAI, any Vercel AI SDK model).
+- **MCP for coding agents** — an optional [Model Context Protocol server](/docs/concepts/mcp) lets Claude Code, Cursor, or any MCP client debug straight from the captured data.
+- **Archive before prune** — per-type retention plus an `archive.sink` ships doomed entries to S3 before the pruner deletes them.
+
+## Where to go next
+
+<Cards>
+  <Card title="Getting Started" href="/docs/getting-started" description="Install core + ui, import two modules, open /telescope, hit the headless API, and pick a storage adapter." />
+  <Card title="Capture & correlation" href="/docs/concepts/capture" description="How watchers, batches, and AsyncLocalStorage turn scattered events into one navigable flow." />
+  <Card title="Storage" href="/docs/concepts/storage" description="The StorageProvider SPI, the self-healing schema, and the full adapter table." />
+  <Card title="Performance" href="/docs/concepts/performance" description="Off-the-response-path capture, and the /health card that proves the overhead." />
+  <Card title="Dashboard" href="/docs/dashboard" description="The full UI tour: overview, entries, traces, the queues console, schedules, and alerts." />
+  <Card title="Dashboard auth" href="/docs/dashboard/auth" description="Gate the dashboard to your logged-in admins, all the way to production." />
+  <Card title="Packages" href="/docs/packages" description="One page per watcher, storage, queue manager, AI diagnoser, and the testing kit." />
+  <Card title="MCP server" href="/docs/concepts/mcp" description="Let coding agents query the captured data over the Model Context Protocol." />
+  <Card title="Recipes" href="/docs/recipes" description="Custom storage and watchers, tags & redaction, S3 archiving, frontend errors, and AI diagnosis." />
+  <Card title="Configuration reference" href="/docs/reference/configuration" description="Every forRoot() option in one table." />
+</Cards>
