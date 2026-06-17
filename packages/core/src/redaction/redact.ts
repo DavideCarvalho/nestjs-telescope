@@ -104,6 +104,34 @@ export interface RedactBoundedResult {
   truncated: boolean;
 }
 
+/**
+ * The masking decision derived from {@link RedactOptions}, compiled ONCE so the
+ * per-entry hot path never rebuilds these Sets. `keySet` holds the lowercased
+ * union of {@link DEFAULT_REDACT_KEYS} and `options.keys`; `paths` holds the
+ * exact dot-paths. Build it via {@link compileRedactSpec} at boot (the Recorder
+ * does this in its constructor) and feed it to {@link redactBoundedWith}.
+ */
+export interface CompiledRedactSpec {
+  /** Lowercased union of default + configured keys, matched at any depth. */
+  keySet: ReadonlySet<string>;
+  /** Exact dot-paths to mask regardless of key name. */
+  paths: ReadonlySet<string>;
+}
+
+/**
+ * Precompiles the immutable key/path Sets from {@link RedactOptions}. Call once
+ * (config is immutable after boot) and reuse the result across every entry —
+ * this is the optimization that keeps the hottest redaction path allocation-free.
+ */
+export function compileRedactSpec(options: RedactOptions): CompiledRedactSpec {
+  return {
+    keySet: new Set(
+      [...DEFAULT_REDACT_KEYS, ...(options.keys ?? [])].map((key) => key.toLowerCase()),
+    ),
+    paths: new Set(options.paths ?? []),
+  };
+}
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -117,11 +145,25 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
  * live object graph at `record()` time — never defer it (see spec §A.1).
  */
 export function redactBounded(value: unknown, options: RedactOptions): RedactBoundedResult {
+  // Ad-hoc callers compile the spec lazily here; the hot path (Recorder) passes
+  // a prebuilt spec to redactBoundedWith() and skips this per-call allocation.
+  return redactBoundedWith(value, options, compileRedactSpec(options));
+}
+
+/**
+ * Bounded redaction using an ALREADY-COMPILED {@link CompiledRedactSpec}, so the
+ * per-entry hot path never rebuilds the key/path Sets. Identical behaviour to
+ * {@link redactBounded}; only the `keys`/`paths` of `options` are ignored in
+ * favour of the prebuilt `spec` (the remaining bound options are still read).
+ */
+export function redactBoundedWith(
+  value: unknown,
+  options: RedactOptions,
+  spec: CompiledRedactSpec,
+): RedactBoundedResult {
   const mask = options.mask ?? '[REDACTED]';
-  const keySet = new Set(
-    [...DEFAULT_REDACT_KEYS, ...(options.keys ?? [])].map((key) => key.toLowerCase()),
-  );
-  const paths = new Set(options.paths ?? []);
+  const keySet = spec.keySet;
+  const paths = spec.paths;
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
   const maxStringLength = options.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH;
   const maxArrayLength = options.maxArrayLength ?? DEFAULT_MAX_ARRAY_LENGTH;

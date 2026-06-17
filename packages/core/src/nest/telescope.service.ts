@@ -151,6 +151,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       redact: config.redact,
       sampling: config.sampling,
       bufferSize: config.recorder.bufferSize,
+      flushBatchSize: config.recorder.flushBatchSize,
       retryDelayMs: config.recorder.retryDelayMs,
       idFactory: () => v7(),
       ...(config.filter ? { filter: config.filter } : {}),

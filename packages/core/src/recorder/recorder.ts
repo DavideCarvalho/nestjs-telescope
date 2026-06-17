@@ -4,8 +4,8 @@ import type { ContextAccessor } from '../context/context-accessor.js';
 import type { TelescopeContext } from '../context/telescope-context.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
-import type { RedactOptions } from '../redaction/redact.js';
-import { redactBounded } from '../redaction/redact.js';
+import type { CompiledRedactSpec, RedactOptions } from '../redaction/redact.js';
+import { compileRedactSpec, redactBoundedWith } from '../redaction/redact.js';
 import { aggregateDeltas } from '../rollup/aggregate-deltas.js';
 import { isRollupStore } from '../rollup/rollup-store.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -85,6 +85,15 @@ export interface RecorderOptions {
    */
   sampling: SamplingConfig;
   bufferSize: number;
+  /**
+   * Maximum entries handed to a single `storage.store()` call. When set and a
+   * flush drains more than this, the drained entries are sliced into sequential
+   * chunks of at most this size, each stored (with its own bounded retry) in
+   * oldest→newest order. Bounds the per-store payload so a large flush can't
+   * spike storage memory/latency. When unset (or >= the drained count) the whole
+   * batch is stored in one call, preserving the original behaviour.
+   */
+  flushBatchSize?: number;
   /**
    * Backoff (ms) before the single bounded retry of a failed `store()` batch.
    * Defaults to 1000ms. The retry happens inside the same in-flight flush
@@ -205,12 +214,20 @@ export class Recorder {
   private readonly random: () => number;
   private readonly delay: (ms: number) => Promise<void>;
   private readonly retryDelayMs: number;
+  /**
+   * Redaction key/path Sets compiled ONCE at boot from `options.redact`. Config
+   * is immutable after construction, so rebuilding these per entry (in the
+   * hottest function) was pure waste — they are precompiled here and reused on
+   * every `enrich()` via {@link redactBoundedWith}.
+   */
+  private readonly redactSpec: CompiledRedactSpec;
 
   constructor(private readonly options: RecorderOptions) {
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
     this.retryDelayMs = options.retryDelayMs ?? 1_000;
     this.delay = options.delay ?? defaultUnrefDelay;
+    this.redactSpec = compileRedactSpec(options.redact);
     // Pre-size the ring so slot access is always O(1).
     this.ring = new Array<Entry | undefined>(options.bufferSize).fill(undefined);
   }
@@ -384,21 +401,47 @@ export class Recorder {
     const flushStartedAt = this.now();
 
     const storage = this.options.storage;
-    this.flushing = this.storeWithRetry(storage, drained)
-      .then(async (stored) => {
-        // Only pre-aggregate rollups + notify the flush hook for batches that
-        // actually persisted (an alert must never fire for a dropped batch).
-        if (stored) {
-          await this.recordRollupsAfterStore(storage, drained);
-          await this.notifyFlushStored(drained);
-        }
-      })
+    this.flushing = this.storeDrained(storage, drained)
       .finally(() => {
         this.recordFlushMetrics(drained.length, this.now() - flushStartedAt);
         this.flushing = null;
       });
 
     return this.flushing;
+  }
+
+  /**
+   * Persists a drained batch, chunked by `flushBatchSize` when that bounds the
+   * batch. Each chunk is stored sequentially (oldest→newest) with its own
+   * bounded retry; per-chunk rollups + the `onFlushStored` hook fire only for
+   * chunks that actually persisted (matching the whole-batch semantics — an
+   * alert never fires for a dropped chunk). A chunk's failure does not abort the
+   * remaining chunks.
+   */
+  private async storeDrained(storage: StorageProvider, drained: Entry[]): Promise<void> {
+    const batchSize = this.options.flushBatchSize;
+    // Only chunk when a positive batch size actually bounds the drained count;
+    // otherwise store the whole batch in one call (original behaviour).
+    if (batchSize === undefined || batchSize <= 0 || batchSize >= drained.length) {
+      await this.storeChunk(storage, drained);
+      return;
+    }
+    for (let offset = 0; offset < drained.length; offset += batchSize) {
+      await this.storeChunk(storage, drained.slice(offset, offset + batchSize));
+    }
+  }
+
+  /**
+   * Stores one chunk with bounded retry, then fires per-chunk rollups + the
+   * flush hook only when it persisted. Shared by the chunked and whole-batch
+   * paths so the post-store side effects are identical.
+   */
+  private async storeChunk(storage: StorageProvider, chunk: Entry[]): Promise<void> {
+    const stored = await this.storeWithRetry(storage, chunk);
+    if (stored) {
+      await this.recordRollupsAfterStore(storage, chunk);
+      await this.notifyFlushStored(chunk);
+    }
   }
 
   /**
@@ -491,7 +534,7 @@ export class Recorder {
     // snapshots the (possibly fat, possibly live-ORM-graph) content into a plain,
     // reference-free, size-capped clone at record() time (see spec §A.1). Track
     // when a bound clipped content so /health can surface fat-capture pressure.
-    const redacted = redactBounded(input.content, this.options.redact);
+    const redacted = redactBoundedWith(input.content, this.options.redact, this.redactSpec);
     if (redacted.truncated) {
       this.truncatedEntryCount += 1;
     }
@@ -518,7 +561,13 @@ export class Recorder {
       spanId: trace?.spanId ?? null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
-    return { ...base, tags: runTaggers(base, this.options.taggers) };
+    // Swap in the tagger-enriched tags IN PLACE rather than cloning the whole
+    // Entry just to replace one field. runTaggers reads base.tags (the original
+    // input/context tags) and other already-set fields; the call evaluates fully
+    // before the assignment, so reading base here is safe and behaviour matches
+    // the previous `{ ...base, tags }` exactly.
+    base.tags = runTaggers(base, this.options.taggers);
+    return base;
   }
 
   /**
