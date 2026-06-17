@@ -12,7 +12,7 @@ function formatStat(value: number, format?: 'number' | 'percent' | 'duration' | 
   if (format === 'percent') return `${Math.round(value * 100)}%`;
   if (format === 'duration')
     return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
-  if (format === 'rate') return `${new Intl.NumberFormat().format(value)}/s`;
+  if (format === 'rate') return `${new Intl.NumberFormat().format(Math.round(value))}/hr`;
   return new Intl.NumberFormat().format(value);
 }
 

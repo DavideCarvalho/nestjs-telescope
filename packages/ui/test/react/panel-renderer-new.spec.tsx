@@ -31,4 +31,14 @@ describe('PanelView new kinds', () => {
       ),
     ).not.toThrow();
   });
+
+  it('renders rate-format stat with /hr unit', () => {
+    render(
+      <PanelView
+        panel={{ kind: 'stat', title: 'Throughput', data: { provider: 'p' }, format: 'rate' }}
+        data={{ value: 340 }}
+      />,
+    );
+    expect(screen.getByText(/\/hr/)).toBeTruthy();
+  });
 });

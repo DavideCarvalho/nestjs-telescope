@@ -33,15 +33,8 @@ function Sparkline({ points }: { points: number[] }): JSX.Element | null {
     })
     .join(' ');
   return (
-    <svg
-      className="mt-2"
-      width="100%"
-      height="22"
-      viewBox="0 0 100 22"
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      <title>Sparkline chart</title>
+    <svg className="mt-2" width="100%" height="22" viewBox="0 0 100 22" preserveAspectRatio="none">
+      <title>Trend sparkline</title>
       <path d={d} fill="none" stroke="#52525b" strokeWidth="1.5" />
     </svg>
   );

@@ -1,5 +1,5 @@
 // packages/ui/test/react/new-charts.spec.tsx
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { BreakdownCard } from '../../src/react/components/charts/breakdown-card.js';
 import { DistributionChartCard } from '../../src/react/components/charts/distribution-chart-card.js';
@@ -31,5 +31,20 @@ describe('new chart cards', () => {
         />,
       ),
     ).not.toThrow();
+  });
+
+  it('renders percentile chip values in the DOM', () => {
+    render(
+      <DistributionChartCard
+        title="D"
+        buckets={[{ label: '0.0s', count: 1 }]}
+        p50={500}
+        p95={1400}
+        p99={2000}
+      />,
+    );
+    expect(screen.getByText(/500ms/)).toBeTruthy();
+    expect(screen.getByText(/1\.4s/)).toBeTruthy();
+    expect(screen.getByText(/2\.0s/)).toBeTruthy();
   });
 });
