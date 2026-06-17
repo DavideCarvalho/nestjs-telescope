@@ -38,6 +38,7 @@ import { TelescopeOverloadGuard } from './telescope-overload-guard.service.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
 import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
+import { StreamController } from '../sse/stream.controller.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import {
@@ -147,6 +148,7 @@ export class TelescopeModule implements NestModule {
         // token / dev-only check); mounts before the catch-all gated controller.
         dynamicController(TelescopeMcpController, `${path}/api/mcp`),
         dynamicController(TelescopeController, `${path}/api`),
+        dynamicController(StreamController, `${path}/api`),
       ],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
       exports: [
@@ -185,6 +187,7 @@ export class TelescopeModule implements NestModule {
         // token / dev-only check); mounts before the catch-all gated controller.
         dynamicController(TelescopeMcpController, `${path}/api/mcp`),
         dynamicController(TelescopeController, `${path}/api`),
+        dynamicController(StreamController, `${path}/api`),
       ],
       providers: [
         {
