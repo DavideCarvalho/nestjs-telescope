@@ -24,6 +24,7 @@ import { TracesService } from '../metrics/traces.service.js';
 import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
+import { EntryEvents } from '../sse/entry-events.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { ClientErrorController } from './client-error.controller.js';
@@ -78,6 +79,7 @@ const SHARED_PROVIDERS: Provider[] = [
       new ExtensionRegistry(options.extensions ?? [], createExtensionContext(moduleRef, config)),
     inject: [TELESCOPE_OPTIONS, TELESCOPE_CONFIG, ModuleRef],
   },
+  EntryEvents,
   TelescopeService,
   TelescopeGuard,
   TelescopeActionGuard,
