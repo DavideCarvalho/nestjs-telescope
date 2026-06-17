@@ -401,11 +401,10 @@ export class Recorder {
     const flushStartedAt = this.now();
 
     const storage = this.options.storage;
-    this.flushing = this.storeDrained(storage, drained)
-      .finally(() => {
-        this.recordFlushMetrics(drained.length, this.now() - flushStartedAt);
-        this.flushing = null;
-      });
+    this.flushing = this.storeDrained(storage, drained).finally(() => {
+      this.recordFlushMetrics(drained.length, this.now() - flushStartedAt);
+      this.flushing = null;
+    });
 
     return this.flushing;
   }

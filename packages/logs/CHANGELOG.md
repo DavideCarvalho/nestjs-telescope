@@ -1,5 +1,7 @@
 # @dudousxd/nestjs-telescope-logs
 
+## 1.9.1
+
 ## 1.9.0
 
 ## 1.8.0
