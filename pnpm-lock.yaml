@@ -291,24 +291,6 @@ importers:
         specifier: ^3.0.0
         version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
 
-  packages/inertia-watcher:
-    devDependencies:
-      '@dudousxd/nestjs-telescope':
-        specifier: workspace:*
-        version: link:../core
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.41
-      reflect-metadata:
-        specifier: ^0.2.2
-        version: 0.2.2
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
-
   packages/logs:
     devDependencies:
       '@dudousxd/nestjs-telescope':
