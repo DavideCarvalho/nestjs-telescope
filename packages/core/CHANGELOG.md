@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.9.1
+
+### Patch Changes
+
+- [`f290c02`](https://github.com/DavideCarvalho/nestjs-telescope/commit/f290c02fcc840b2c4c004346f50d1188301465b5) - perf: lighten the per-entry recorder path — compile the redaction key/path Sets once instead of rebuilding them per recorded entry, mutate tags in place in `enrich()` (dropping a full `Entry` clone), and honor the previously-dead `flushBatchSize` by chunking flushes.
+
 ## 1.9.0
 
 ### Minor Changes
