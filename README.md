@@ -1,8 +1,20 @@
-# nestjs-telescope
+<p align="center">
+  <a href="https://davidecarvalho.github.io/aviary/docs/telescope">
+    <img src="./.github/banner.svg" alt="nestjs-telescope — an Aviary library. Call sign: Owl.">
+  </a>
+</p>
 
-[![npm](https://img.shields.io/npm/v/@dudousxd/nestjs-telescope?color=cb3837&logo=npm)](https://www.npmjs.com/package/@dudousxd/nestjs-telescope)
-[![CI](https://github.com/DavideCarvalho/nestjs-telescope/actions/workflows/ci.yml/badge.svg)](https://github.com/DavideCarvalho/nestjs-telescope/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+<p align="center">
+  <a href="https://www.npmjs.com/package/@dudousxd/nestjs-telescope"><img src="https://img.shields.io/npm/v/@dudousxd/nestjs-telescope?color=E0234E&label=npm&logo=npm&logoColor=white" alt="npm"></a>
+  <a href="https://github.com/DavideCarvalho/nestjs-telescope/actions/workflows/ci.yml"><img src="https://github.com/DavideCarvalho/nestjs-telescope/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-3b82f6.svg" alt="License: MIT"></a>
+  <a href="https://davidecarvalho.github.io/aviary/docs/telescope"><img src="https://img.shields.io/badge/docs-Aviary-E0234E?logo=readthedocs&logoColor=white" alt="Documentation"></a>
+</p>
+
+<p align="center">
+  <b><a href="https://davidecarvalho.github.io/aviary/docs/telescope">📖 Documentation</a></b>
+  &nbsp;·&nbsp; part of the <a href="https://davidecarvalho.github.io/aviary/"><b>Aviary</b></a> ecosystem for NestJS 🦉
+</p>
 
 > Laravel Telescope, redesigned for NestJS. Watch every request, query, job,
 > email, cache hit, and exception — correlated under one batch, off the response

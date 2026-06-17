@@ -1,0 +1,78 @@
+<svg width="1280" height="400" viewBox="0 0 1280 400" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="nestjs-telescope — an Aviary library. Call sign: Owl.">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="-8%" r="75%">
+      <stop offset="0%" stop-color="#E0234E" stop-opacity="0.34"/>
+      <stop offset="70%" stop-color="#E0234E" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="14%" cy="12%" r="60%">
+      <stop offset="0%" stop-color="#7C3AAA" stop-opacity="0.20"/>
+      <stop offset="70%" stop-color="#7C3AAA" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ECE7E1" stop-opacity="0"/>
+      <stop offset="12%" stop-color="#ECE7E1" stop-opacity="0.16"/>
+      <stop offset="88%" stop-color="#ECE7E1" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#ECE7E1" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1280" height="400" fill="#0C0A0E"/>
+  <rect width="1280" height="400" fill="url(#glow)"/>
+  <rect width="1280" height="400" fill="url(#glow2)"/>
+  <!-- field-guide grid -->
+  <g stroke="#ECE7E1" stroke-opacity="0.05">
+    <path d="M0 100 H1280 M0 200 H1280 M0 300 H1280"/>
+    <path d="M160 0 V400 M320 0 V400 M480 0 V400 M640 0 V400 M800 0 V400 M960 0 V400"/>
+  </g>
+
+  <!-- Aviary mark (swift) + kicker -->
+  <g transform="translate(80, 74)">
+    <g transform="translate(0,-14)">
+      <path d="M3 9c6.5 1.2 11 4.8 13 11.5C13.4 18 9.2 16.4 4.6 16.2" stroke="#ECE7E1" stroke-opacity="0.55" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M29 9c-6.5 1.2-11 4.8-13 11.5C18.6 18 22.8 16.4 27.4 16.2" stroke="#E0234E" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M16 20.5c.7 2.7 1 5 .9 7.5-1 .1-1.8.1-2.8 0 .1-2.5.5-4.8 1.9-7.5Z" fill="#ECE7E1"/>
+    </g>
+    <text x="44" y="9" font-family="ui-monospace, 'SFMono-Regular', Menlo, monospace" font-size="15" letter-spacing="5" fill="#B9B2AA">AVIARY · FIELD GUIDE</text>
+  </g>
+
+  <!-- title block -->
+  <text x="80" y="218" font-family="Georgia, 'Times New Roman', serif" font-size="86" font-weight="500" fill="#ECE7E1" letter-spacing="-1">Telescope</text>
+  <text x="84" y="262" font-family="ui-monospace, 'SFMono-Regular', Menlo, monospace" font-size="20" fill="#E0234E">@dudousxd/nestjs-telescope</text>
+  <text x="84" y="312" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="22" fill="#B9B2AA">A Laravel Telescope-style observability console for NestJS.</text>
+
+  <!-- divider -->
+  <rect x="80" y="346" width="1120" height="1" fill="url(#rule)"/>
+  <text x="80" y="372" font-family="ui-monospace, 'SFMono-Regular', Menlo, monospace" font-size="13" letter-spacing="2" fill="#8A847C">WATCHERS · REQUEST CORRELATION · PLUGGABLE STORAGE · HEADLESS API</text>
+
+  <!-- specimen plate: the call sign (Owl) -->
+  <g transform="translate(980, 60)">
+    <rect x="0" y="0" width="220" height="232" rx="14" fill="#0C0A0E" fill-opacity="0.4" stroke="#E0234E" stroke-opacity="0.35"/>
+    <text x="20" y="34" font-family="ui-monospace, monospace" font-size="13" letter-spacing="2" fill="#8A847C">PLATE</text>
+    <text x="200" y="34" text-anchor="end" font-family="ui-monospace, monospace" font-size="13" letter-spacing="1" fill="#B9B2AA">No. 08</text>
+
+    <!-- owl, perched -->
+    <g transform="translate(110, 118)">
+      <!-- ear tufts -->
+      <path d="M-30 -54 L-16 -30 L-34 -34 Z" fill="#E0234E"/>
+      <path d="M30 -54 L16 -30 L34 -34 Z" fill="#E0234E"/>
+      <!-- body -->
+      <path d="M0 -52 C34 -52 50 -26 50 4 C50 40 30 60 0 60 C-30 60 -50 40 -50 4 C-50 -26 -34 -52 0 -52 Z" fill="#E0234E"/>
+      <!-- facial disc seam -->
+      <path d="M0 -30 C-16 -30 -26 -14 -26 6 M0 -30 C16 -30 26 -14 26 6" stroke="#0C0A0E" stroke-opacity="0.35" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <!-- eyes -->
+      <circle cx="-18" cy="-8" r="13" fill="#ECE7E1"/>
+      <circle cx="18" cy="-8" r="13" fill="#ECE7E1"/>
+      <circle cx="-18" cy="-8" r="5.5" fill="#0C0A0E"/>
+      <circle cx="18" cy="-8" r="5.5" fill="#0C0A0E"/>
+      <!-- beak -->
+      <path d="M0 0 L-6 10 L6 10 Z" fill="#0C0A0E"/>
+      <!-- belly feathers -->
+      <path d="M-16 24 q16 12 32 0 M-12 38 q12 9 24 0" stroke="#0C0A0E" stroke-opacity="0.28" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <!-- feet -->
+      <path d="M-12 60 v8 M12 60 v8" stroke="#0C0A0E" stroke-opacity="0.5" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <text x="110" y="214" text-anchor="middle" font-family="ui-monospace, monospace" font-size="16" letter-spacing="6" fill="#E0234E">OWL</text>
+  </g>
+</svg>
