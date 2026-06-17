@@ -25,6 +25,7 @@ import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
 import { EntryEvents } from '../sse/entry-events.js';
+import { StreamController } from '../sse/stream.controller.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { ClientErrorController } from './client-error.controller.js';
@@ -38,7 +39,6 @@ import { TelescopeOverloadGuard } from './telescope-overload-guard.service.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
 import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
-import { StreamController } from '../sse/stream.controller.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import {
