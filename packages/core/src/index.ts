@@ -7,6 +7,7 @@ export * from './trace/trace-context-provider.js';
 export * from './redaction/redact.js';
 export * from './context/batch.js';
 export * from './context/telescope-context.js';
+export * from './context/context-accessor.js';
 export * from './storage/storage-provider.js';
 export * from './storage/in-memory-storage-provider.js';
 export * from './tagging/tagger.js';

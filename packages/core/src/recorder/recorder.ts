@@ -1,5 +1,6 @@
 import type { SamplingConfig } from '../config/options.js';
 import { passesSampling } from '../config/sampling.js';
+import type { ContextAccessor } from '../context/context-accessor.js';
 import type { TelescopeContext } from '../context/telescope-context.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
@@ -116,6 +117,25 @@ export interface RecorderOptions {
   filter?: (entry: Entry) => boolean;
   /** Optional ambient trace-context source; read once per recorded entry. */
   traceContext?: TraceContextProvider;
+  /**
+   * Optional, soft-detected `@dudousxd/nestjs-context` accessor (structurally
+   * mirrored as {@link ContextAccessor}). When present it enriches each recorded
+   * entry as a SECONDARY correlation source, additive to the OTel
+   * {@link traceContext}:
+   *
+   * - **traceId precedence**: OTel wins. The context `traceId()` is used ONLY as
+   *   a FALLBACK when {@link traceContext} did not yield one for this entry. An
+   *   existing OTel trace id is never clobbered, so cross-lib correlation with
+   *   durable/notifications (which share nestjs-context) kicks in only when OTel
+   *   is absent.
+   * - **user/tenant tags**: when available, `user:<Type>#<id>` and
+   *   `tenant:<id>` tags are appended (before taggers run, so taggers/filters
+   *   can see them) — letting the dashboard group/filter by user and tenant.
+   *
+   * Read defensively once per entry; a misbehaving accessor degrades to no
+   * enrichment and never throws into `record()`.
+   */
+  contextAccessor?: ContextAccessor;
   /**
    * Best-effort hook fired with the entries a flush JUST persisted (after a
    * successful `store()`, before the next flush). Powers per-flush alert
@@ -475,22 +495,73 @@ export class Recorder {
     if (redacted.truncated) {
       this.truncatedEntryCount += 1;
     }
+    // Soft-detected nestjs-context enrichment (SECONDARY to OTel). Read once,
+    // defensively: a misbehaving accessor degrades to no enrichment, never throws.
+    const ctx = this.readContextEnrichment();
+    // traceId precedence: OTel wins. The context traceId is only a FALLBACK when
+    // the OTel provider did not yield one — never clobber an OTel trace id.
+    const traceId = trace?.traceId ?? ctx.traceId;
     const base: Entry = {
       id: this.options.idFactory(),
       batchId,
       type: input.type,
       familyHash: input.familyHash ?? null,
       content: redacted.value,
-      tags: input.tags ?? [],
+      // Prepend the context user/tenant tags before taggers run so taggers and
+      // the host `filter` can see them; runTaggers de-dupes order-preservingly.
+      tags: ctx.tags.length > 0 ? [...ctx.tags, ...(input.tags ?? [])] : (input.tags ?? []),
       sequence: this.options.context.nextSequence(),
       durationMs: input.durationMs ?? null,
       origin: batch?.origin ?? 'manual',
       instanceId: this.options.instanceId,
-      traceId: trace?.traceId ?? null,
+      traceId,
       spanId: trace?.spanId ?? null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
     return { ...base, tags: runTaggers(base, this.options.taggers) };
+  }
+
+  /**
+   * Reads the optional, soft-detected {@link ContextAccessor} once. Returns the
+   * context fallback `traceId` (or `null`) and any `user:`/`tenant:` tags. Every
+   * accessor call is wrapped so a misbehaving accessor degrades to empty
+   * enrichment and can never throw into `record()` (mirrors the OTel read).
+   */
+  private readContextEnrichment(): { traceId: string | null; tags: string[] } {
+    const accessor = this.options.contextAccessor;
+    if (accessor === undefined) {
+      return { traceId: null, tags: [] };
+    }
+    const tags: string[] = [];
+    let traceId: string | null = null;
+    try {
+      const ctxTraceId = accessor.traceId();
+      if (typeof ctxTraceId === 'string' && ctxTraceId.length > 0) {
+        traceId = ctxTraceId;
+      }
+    } catch {
+      // Degrade silently — context is a best-effort secondary source.
+    }
+    try {
+      const user = accessor.userRef();
+      if (user !== undefined && user.id !== undefined && user.id !== null) {
+        const id = String(user.id);
+        if (id.length > 0) {
+          tags.push(`user:${user.type}#${id}`);
+        }
+      }
+    } catch {
+      // Degrade silently.
+    }
+    try {
+      const tenantId = accessor.tenantId();
+      if (typeof tenantId === 'string' && tenantId.length > 0) {
+        tags.push(`tenant:${tenantId}`);
+      }
+    } catch {
+      // Degrade silently.
+    }
+    return { traceId, tags };
   }
 
   /**

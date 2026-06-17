@@ -776,4 +776,99 @@ describe('Recorder', () => {
       expect(stored[0]!.spanId).toBeNull();
     });
   });
+
+  // ── nestjs-context enrichment (soft-detected, secondary to OTel) ───────────
+
+  describe('nestjs-context enrichment', () => {
+    /** A structural ContextAccessor double (no nestjs-context import). */
+    function fakeAccessor(over: {
+      traceId?: string | undefined;
+      tenantId?: string | undefined;
+      userRef?: { type: string; id: string | number } | undefined;
+    }) {
+      return {
+        traceId: () => over.traceId,
+        tenantId: () => over.tenantId,
+        userRef: () => over.userRef,
+        get: () => undefined,
+      };
+    }
+
+    it('falls back to the context traceId + adds user/tenant tags when no OTel id', async () => {
+      const ctxTraceId = 'ctx-trace-123';
+      const { recorder, storage } = makeRecorder({
+        contextAccessor: fakeAccessor({
+          traceId: ctxTraceId,
+          tenantId: 'acme',
+          userRef: { type: 'User', id: 42 },
+        }),
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBe(ctxTraceId);
+      expect(entry.tags).toContain('user:User#42');
+      expect(entry.tags).toContain('tenant:acme');
+    });
+
+    it('does NOT clobber an existing OTel traceId (OTel precedence)', async () => {
+      const otelTraceId = 'a'.repeat(32);
+      const spanId = 'b'.repeat(16);
+      const { recorder, storage } = makeRecorder({
+        traceContext: { current: () => ({ traceId: otelTraceId, spanId }) },
+        contextAccessor: fakeAccessor({
+          traceId: 'ctx-trace-should-be-ignored',
+          tenantId: 'acme',
+          userRef: { type: 'User', id: 7 },
+        }),
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      // OTel wins for traceId; context only contributes user/tenant tags here.
+      expect(entry.traceId).toBe(otelTraceId);
+      expect(entry.spanId).toBe(spanId);
+      expect(entry.tags).toContain('user:User#7');
+      expect(entry.tags).toContain('tenant:acme');
+    });
+
+    it('adds no tags and leaves traceId null when the accessor yields nothing', async () => {
+      const { recorder, storage } = makeRecorder({
+        contextAccessor: fakeAccessor({
+          traceId: undefined,
+          tenantId: undefined,
+          userRef: undefined,
+        }),
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBeNull();
+      expect(entry.tags.some((t) => t.startsWith('user:'))).toBe(false);
+      expect(entry.tags.some((t) => t.startsWith('tenant:'))).toBe(false);
+    });
+
+    it('degrades silently when accessor methods throw (never breaks record)', async () => {
+      const { recorder, storage } = makeRecorder({
+        contextAccessor: {
+          traceId: () => {
+            throw new Error('boom');
+          },
+          tenantId: () => {
+            throw new Error('boom');
+          },
+          userRef: () => {
+            throw new Error('boom');
+          },
+          get: () => undefined,
+        },
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const stored = (await storage.get({})).data;
+      expect(stored).toHaveLength(1);
+      expect(stored[0]!.traceId).toBeNull();
+      expect(stored[0]!.tags.some((t) => t.startsWith('user:'))).toBe(false);
+    });
+  });
 });
