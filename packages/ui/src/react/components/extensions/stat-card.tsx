@@ -71,7 +71,11 @@ export function StatCard({
   const h = health(currentValue, thresholds);
   // A positive delta is "good" unless higher is bad.
   const deltaGood =
-    delta === undefined ? null : thresholds?.direction === 'up-bad' ? delta < 0 : delta > 0;
+    delta === undefined || !thresholds
+      ? null
+      : thresholds.direction === 'up-bad'
+        ? delta < 0
+        : delta > 0;
   const deltaColor = deltaGood === null ? '#a1a1aa' : deltaGood ? '#34d399' : '#f87171';
   const arrow = delta === undefined ? '' : delta > 0 ? '▲' : delta < 0 ? '▼' : '◆';
   return (

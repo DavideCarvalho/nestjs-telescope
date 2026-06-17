@@ -20,4 +20,15 @@ describe('StatCard', () => {
     );
     expect(container.querySelector('[data-health="bad"]')).toBeTruthy();
   });
+
+  it('renders delta in neutral gray when no thresholds given', () => {
+    const { container } = render(<StatCard label="x" value="1" delta={5} />);
+    const deltaSpan = Array.from(container.querySelectorAll('span')).find((el) =>
+      el.textContent?.includes('▲'),
+    );
+    expect(deltaSpan).toBeTruthy();
+    const computed = getComputedStyle(deltaSpan!).color;
+    // Should be neutral gray (#a1a1aa = rgb(161, 161, 170) when normalized)
+    expect(computed).toMatch(/rgb\(161,\s*161,\s*1[67]0\)/);
+  });
 });
