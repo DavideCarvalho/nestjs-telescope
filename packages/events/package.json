@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-events",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "@nestjs/event-emitter (EventEmitter2) event watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
