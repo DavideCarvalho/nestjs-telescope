@@ -22,7 +22,7 @@ function fillTemplate(href: string, row: Record<string, unknown>): string {
 }
 
 /** Pure view: render a panel from already-resolved data. */
-export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX.Element {
+export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX.Element | null {
   switch (panel.kind) {
     case 'stat': {
       const d = (data ?? {}) as { value?: number };
@@ -107,12 +107,7 @@ export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX
         </div>
       );
     }
-    case 'distribution':
-    case 'gauge':
-    case 'breakdown':
-      // TODO: Implement these panel kinds in Task 8
-      return (
-        <div className="text-zinc-400 text-sm p-4">{panel.kind} panel not yet implemented</div>
-      );
+    default:
+      return null;
   }
 }
