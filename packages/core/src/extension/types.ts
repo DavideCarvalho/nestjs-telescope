@@ -45,6 +45,20 @@ export interface ExtensionEntryType {
   dot: string;
 }
 
+/** Threshold coloring for a numeric panel. `direction` says which way is worse. */
+export interface PanelThresholds {
+  warn: number;
+  bad: number;
+  direction: 'up-bad' | 'down-bad';
+}
+
+/** A group of panels rendered together with its own column count. */
+export interface DashboardSection {
+  title?: string;
+  cols?: 2 | 3 | 4;
+  panels: Panel[];
+}
+
 /** A declarative dashboard page. */
 export interface DashboardSpec {
   /** Stable route id, e.g. 'durable.workflows'. Globally unique across extensions. */
@@ -53,7 +67,10 @@ export interface DashboardSpec {
   label: string;
   /** Optional nav grouping header. */
   navGroup?: string;
+  /** Flat layout (back-compat). Prefer `sections` for hierarchy. */
   panels: Panel[];
+  /** Sectioned layout. When present, the UI renders these instead of `panels`. */
+  sections?: DashboardSection[];
 }
 
 /** A bind from a panel to a named server-side provider + an opaque query object. */
@@ -83,8 +100,11 @@ export type Panel =
       kind: 'stat';
       title: string;
       data: DataBinding;
-      format?: 'number' | 'percent' | 'duration';
+      format?: 'number' | 'percent' | 'duration' | 'rate';
       accent?: string;
+      /** When true, the provider also returns `spark: number[]` and the card draws a sparkline. */
+      spark?: boolean;
+      thresholds?: PanelThresholds;
     }
   | {
       kind: 'timeseries';
@@ -94,7 +114,24 @@ export type Panel =
       style?: 'area' | 'stacked';
     }
   | { kind: 'topN'; title: string; data: DataBinding; limit?: number }
-  | { kind: 'table'; title: string; data: DataBinding; columns: Column[] };
+  | { kind: 'table'; title: string; data: DataBinding; columns: Column[] }
+  | {
+      kind: 'distribution';
+      title: string;
+      data: DataBinding;
+      markers?: Array<'p50' | 'p95' | 'p99'>;
+      format?: 'duration' | 'number';
+    }
+  | {
+      kind: 'gauge';
+      title: string;
+      data: DataBinding;
+      min?: number;
+      max?: number;
+      format?: 'number' | 'percent' | 'duration' | 'rate';
+      thresholds?: PanelThresholds;
+    }
+  | { kind: 'breakdown'; title: string; data: DataBinding; style?: 'donut' | 'bar' };
 
 /** A named server-side query a panel binds to. */
 export interface DataProvider {
@@ -103,10 +140,13 @@ export interface DataProvider {
   /**
    * Resolve a panel's data. `query` is the panel's `DataBinding.query`. Return value
    * shape is per panel kind:
-   *  - stat       → `{ value: number; delta?: number }`
-   *  - timeseries → `{ rows: Array<{ label: string } & Record<string, number>> }`
-   *  - topN       → `{ items: Array<{ label: string; value: number; id?: string }> }`
-   *  - table      → `{ rows: Array<Record<string, unknown>> }`
+   *  - stat         → `{ value: number; delta?: number; deltaLabel?: string; spark?: number[] }`
+   *  - timeseries   → `{ rows: Array<{ label: string } & Record<string, number>> }`
+   *  - topN         → `{ items: Array<{ label: string; value: number; id?: string }> }`
+   *  - table        → `{ rows: Array<Record<string, unknown>> }`
+   *  - distribution → `{ buckets: Array<{ label: string; count: number }>; p50?: number; p95?: number; p99?: number }`
+   *  - gauge        → `{ value: number; min?: number; max?: number }`
+   *  - breakdown    → `{ segments: Array<{ label: string; value: number; color?: string }> }`
    */
   resolve(query: Record<string, unknown> | undefined, ctx: ExtensionContext): Promise<unknown>;
 }
