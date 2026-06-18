@@ -62,6 +62,11 @@ export const BUILTIN_TAGGERS: readonly Tagger[] = [statusTagger, slowTagger, use
 
 /** Returns the entry's existing tags plus all tagger outputs, de-duplicated, order-preserving. */
 export function runTaggers(entry: Entry, taggers: Tagger[]): string[] {
+  // Fast path: with no taggers there is nothing to merge, so skip the Set +
+  // result array + closure allocation. entry.tags can still contain dups
+  // (the recorder merges context+input tags without de-duping), so preserve
+  // the de-dup contract — but a 0/1-element list cannot contain dups.
+  if (taggers.length === 0) return entry.tags.length <= 1 ? entry.tags : [...new Set(entry.tags)];
   const seen = new Set<string>();
   const result: string[] = [];
   const add = (tag: string): void => {
