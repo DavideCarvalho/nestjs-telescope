@@ -83,6 +83,20 @@ export type AuthMeResult =
 /** Outcome of `POST /auth/login`. */
 export type LoginResult = { ok: true } | { ok: false; message: string };
 
+/** Threshold coloring for a numeric panel. `direction` says which way is worse. */
+export interface PanelThresholds {
+  warn: number;
+  bad: number;
+  direction: 'up-bad' | 'down-bad';
+}
+
+/** A group of panels rendered together with its own column count. */
+export interface DashboardSection {
+  title?: string;
+  cols?: 2 | 3 | 4;
+  panels: Panel[];
+}
+
 /**
  * A single dashboard panel descriptor, mirrored on the UI side from the core
  * `Panel` extension contract. Kept UI-local (rather than imported from
@@ -96,8 +110,11 @@ export type Panel =
       kind: 'stat';
       title: string;
       data: { provider: string; query?: Record<string, unknown> };
-      format?: 'number' | 'percent' | 'duration';
+      format?: 'number' | 'percent' | 'duration' | 'rate';
       accent?: string;
+      /** When true, the provider also returns `spark: number[]` and the card draws a sparkline. */
+      spark?: boolean;
+      thresholds?: PanelThresholds;
     }
   | {
       kind: 'timeseries';
@@ -117,6 +134,28 @@ export type Panel =
       title: string;
       data: { provider: string; query?: Record<string, unknown> };
       columns: { key: string; label: string; link?: { href: string; external?: boolean } }[];
+    }
+  | {
+      kind: 'distribution';
+      title: string;
+      data: { provider: string; query?: Record<string, unknown> };
+      markers?: Array<'p50' | 'p95' | 'p99'>;
+      format?: 'duration' | 'number';
+    }
+  | {
+      kind: 'gauge';
+      title: string;
+      data: { provider: string; query?: Record<string, unknown> };
+      min?: number;
+      max?: number;
+      format?: 'number' | 'percent' | 'duration' | 'rate';
+      thresholds?: PanelThresholds;
+    }
+  | {
+      kind: 'breakdown';
+      title: string;
+      data: { provider: string; query?: Record<string, unknown> };
+      style?: 'donut' | 'bar';
     };
 
 export interface TelescopeMeta {
@@ -165,7 +204,13 @@ export interface TelescopeMeta {
    * {@link Panel}s rendered by the dashboard page (Task 9) / panel renderer
    * (Task 8). OPTIONAL for backward-compat with older servers.
    */
-  dashboards?: { id: string; label: string; navGroup?: string; panels: Panel[] }[];
+  dashboards?: {
+    id: string;
+    label: string;
+    navGroup?: string;
+    panels: Panel[];
+    sections?: { title?: string; cols?: 2 | 3 | 4; panels: Panel[] }[];
+  }[];
 }
 
 /**

@@ -2,13 +2,17 @@ import type { JSX } from 'react';
 import type { Panel } from '../../../client/types.js';
 import { AreaChartCard } from '../charts/area-chart-card.js';
 import { BarChartCard } from '../charts/bar-chart-card.js';
+import { BreakdownCard } from '../charts/breakdown-card.js';
+import { DistributionChartCard } from '../charts/distribution-chart-card.js';
+import { GaugeCard } from '../charts/gauge-card.js';
 import { StackedAreaChartCard } from '../charts/stacked-area-chart-card.js';
 import { StatCard } from './stat-card.js';
 
-function formatStat(value: number, format?: 'number' | 'percent' | 'duration'): string {
+function formatStat(value: number, format?: 'number' | 'percent' | 'duration' | 'rate'): string {
   if (format === 'percent') return `${Math.round(value * 100)}%`;
   if (format === 'duration')
     return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
+  if (format === 'rate') return `${new Intl.NumberFormat().format(Math.round(value))}/hr`;
   return new Intl.NumberFormat().format(value);
 }
 
@@ -21,15 +25,63 @@ function fillTemplate(href: string, row: Record<string, unknown>): string {
 }
 
 /** Pure view: render a panel from already-resolved data. */
-export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX.Element {
+export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX.Element | null {
   switch (panel.kind) {
     case 'stat': {
-      const d = (data ?? {}) as { value?: number };
+      const d = (data ?? {}) as {
+        value?: number;
+        delta?: number;
+        deltaLabel?: string;
+        spark?: number[];
+      };
       return (
         <StatCard
           label={panel.title}
           value={formatStat(d.value ?? 0, panel.format)}
+          {...(d.value !== undefined ? { currentValue: d.value } : {})}
+          {...(d.delta !== undefined ? { delta: d.delta } : {})}
+          {...(d.deltaLabel ? { deltaLabel: d.deltaLabel } : {})}
+          {...(panel.spark && d.spark ? { spark: d.spark } : {})}
+          {...(panel.thresholds ? { thresholds: panel.thresholds } : {})}
           {...(panel.accent ? { accent: panel.accent } : {})}
+        />
+      );
+    }
+    case 'distribution': {
+      const d = (data ?? {}) as {
+        buckets?: { label: string; count: number }[];
+        p50?: number;
+        p95?: number;
+        p99?: number;
+      };
+      return (
+        <DistributionChartCard
+          title={panel.title}
+          buckets={d.buckets ?? []}
+          {...(d.p50 !== undefined ? { p50: d.p50 } : {})}
+          {...(d.p95 !== undefined ? { p95: d.p95 } : {})}
+          {...(d.p99 !== undefined ? { p99: d.p99 } : {})}
+        />
+      );
+    }
+    case 'gauge': {
+      const d = (data ?? {}) as { value?: number; min?: number; max?: number };
+      return (
+        <GaugeCard
+          title={panel.title}
+          value={d.value ?? 0}
+          {...(panel.min !== undefined ? { min: panel.min } : {})}
+          {...(panel.max !== undefined ? { max: panel.max } : {})}
+        />
+      );
+    }
+    case 'breakdown': {
+      const d = (data ?? {}) as { segments?: { label: string; value: number; color?: string }[] };
+      return (
+        <BreakdownCard
+          title={panel.title}
+          segments={d.segments ?? []}
+          {...(panel.style ? { style: panel.style } : {})}
         />
       );
     }
@@ -106,5 +158,7 @@ export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX
         </div>
       );
     }
+    default:
+      return null;
   }
 }

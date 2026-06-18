@@ -23,6 +23,7 @@ import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
 import type { Panel } from '../extension/types.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
+import { EntryEvents } from '../sse/entry-events.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import {
   TELESCOPE_CONFIG,
@@ -132,6 +133,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Optional()
     @Inject(CONTEXT_ACCESSOR)
     private readonly contextAccessor: ContextAccessor | undefined = undefined,
+    @Inject(EntryEvents)
+    private readonly entryEvents: EntryEvents = new EntryEvents(),
   ) {
     // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
     // dashboardAuth): no destination / empty rules / bad duration throws.
@@ -167,6 +170,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       // forget diagnosis (no-op in on-demand mode / when AI is off).
       onFlushStored: (entries) => {
         this.diagnosis?.observeFlush(entries);
+        this.entryEvents.emitTypes(entries.map((e) => e.type));
         return this.alerter?.evaluateFlush(entries);
       },
     });

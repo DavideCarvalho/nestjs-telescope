@@ -24,6 +24,8 @@ import { TracesService } from '../metrics/traces.service.js';
 import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
+import { EntryEvents } from '../sse/entry-events.js';
+import { StreamController } from '../sse/stream.controller.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { ClientErrorController } from './client-error.controller.js';
@@ -78,6 +80,7 @@ const SHARED_PROVIDERS: Provider[] = [
       new ExtensionRegistry(options.extensions ?? [], createExtensionContext(moduleRef, config)),
     inject: [TELESCOPE_OPTIONS, TELESCOPE_CONFIG, ModuleRef],
   },
+  EntryEvents,
   TelescopeService,
   TelescopeGuard,
   TelescopeActionGuard,
@@ -145,6 +148,7 @@ export class TelescopeModule implements NestModule {
         // token / dev-only check); mounts before the catch-all gated controller.
         dynamicController(TelescopeMcpController, `${path}/api/mcp`),
         dynamicController(TelescopeController, `${path}/api`),
+        dynamicController(StreamController, `${path}/api`),
       ],
       providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
       exports: [
@@ -183,6 +187,7 @@ export class TelescopeModule implements NestModule {
         // token / dev-only check); mounts before the catch-all gated controller.
         dynamicController(TelescopeMcpController, `${path}/api/mcp`),
         dynamicController(TelescopeController, `${path}/api`),
+        dynamicController(StreamController, `${path}/api`),
       ],
       providers: [
         {
