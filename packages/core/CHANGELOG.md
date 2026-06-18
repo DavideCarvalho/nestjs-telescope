@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.11.1
+
+### Patch Changes
+
+- [`82280c8`](https://github.com/DavideCarvalho/nestjs-telescope/commit/82280c8a504378d4ba7e7116f2d1585fc8a5d805) - perf: `runTaggers` fast-paths the no-taggers case (the common high-volume path), skipping the Set + result array + closure allocation while preserving the existing tag de-dup semantics.
+
 ## 1.11.0
 
 ### Minor Changes
