@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-mail",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Nodemailer mail watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
