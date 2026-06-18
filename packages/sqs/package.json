@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-sqs",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "SQS DLQ queue manager (snapshot + redrive) for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
