@@ -21,6 +21,7 @@ import { ServerStatsService } from '../metrics/server-stats.service.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { TimeseriesService } from '../metrics/timeseries.service.js';
 import { TracesService } from '../metrics/traces.service.js';
+import { ProfilerService } from '../profiling/profiler.service.js';
 import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
@@ -99,6 +100,17 @@ const SHARED_PROVIDERS: Provider[] = [
     inject: [TELESCOPE_OPTIONS, TELESCOPE_STORAGE],
   },
   ServerStatsService,
+  {
+    // Factory so the resolved profiling config + the TelescopeService record sink
+    // reach the service. Constructed unconditionally (cheap); it NEVER builds a
+    // profiler or loads `node:inspector` while `profiling.enabled` is false.
+    provide: ProfilerService,
+    useFactory: (config: ResolvedCoreConfig, service: TelescopeService) =>
+      new ProfilerService(config.profiling, {
+        record: (input) => service.record(input),
+      }),
+    inject: [TELESCOPE_CONFIG, TelescopeService],
+  },
   TelescopeRequestMiddleware,
   TelescopeWatcherRegistrar,
   TelescopeOverloadGuard,
@@ -161,6 +173,7 @@ export class TelescopeModule implements NestModule {
         StatsService,
         PulseService,
         ServerStatsService,
+        ProfilerService,
       ],
     };
   }
@@ -207,6 +220,7 @@ export class TelescopeModule implements NestModule {
         StatsService,
         PulseService,
         ServerStatsService,
+        ProfilerService,
       ],
     };
   }

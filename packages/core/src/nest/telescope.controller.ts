@@ -27,11 +27,18 @@ import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
-import { type ServerStats, ServerStatsService } from '../metrics/server-stats.service.js';
+import {
+  type ServerStats,
+  type ServerStatsHistory,
+  ServerStatsService,
+} from '../metrics/server-stats.service.js';
 import type { StatsResult } from '../metrics/stats.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
 import { type TracesResult, TracesService } from '../metrics/traces.service.js';
+import type { Waterfall } from '../metrics/waterfall.js';
+import { CPU_PROFILE_ENTRY_TYPE, ProfilerService } from '../profiling/profiler.service.js';
+import type { CpuProfileContent } from '../profiling/types.js';
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
 import {
   type JobPage,
@@ -138,6 +145,7 @@ export class TelescopeController {
     @Inject(StatsService) private readonly statsService: StatsService,
     @Inject(ServerStatsService) private readonly serverStats: ServerStatsService,
     @Inject(PulseService) private readonly pulse: PulseService,
+    @Inject(ProfilerService) private readonly profiler: ProfilerService,
     @Inject(QueueManagerRegistry) private readonly queueManagers: QueueManagerRegistry,
     @Inject(ScheduleManagerRegistry) private readonly scheduleManagers: ScheduleManagerRegistry,
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
@@ -267,6 +275,17 @@ export class TelescopeController {
       windowMs,
       ...(limitCount !== undefined && Number.isFinite(limitCount) ? { limit: limitCount } : {}),
     });
+  }
+
+  // Nested span waterfall for ONE trace. Returns 404 when the trace has no
+  // entries (unknown / pruned) so the dashboard can render an empty state.
+  @Get('traces/:traceId/waterfall')
+  async waterfall(@Param('traceId') traceId: string): Promise<Waterfall> {
+    const waterfall = await this.tracesService.getWaterfall(traceId);
+    if (waterfall === null) {
+      throw new NotFoundException(`No entries for trace ${traceId}.`);
+    }
+    return waterfall;
   }
 
   @Get('stats')
@@ -440,6 +459,12 @@ export class TelescopeController {
   @Get('server-stats')
   serverStatsSnapshot(): ServerStats {
     return this.serverStats.getStats();
+  }
+
+  // CPU/mem history ring buffer for the dashboard's resource-history card.
+  @Get('server-stats/history')
+  serverStatsHistory(): ServerStatsHistory {
+    return this.serverStats.getHistory();
   }
 
   @Get('health')
@@ -630,11 +655,82 @@ export class TelescopeController {
     return Math.max(1, result.entries.length);
   }
 
+  // ── CPU profiling (flamegraphs) ─────────────────────────────────────────────
+
+  /**
+   * Profiler status for the dashboard's Profiles tab: whether the feature is
+   * enabled, the sample rate, and current capture activity. Read-shaped — sits
+   * behind the normal read guard. When profiling is disabled the tab shows an
+   * "enable `profiling`" empty state from this payload.
+   */
+  @Get('profiles/status')
+  profilesStatus(): ReturnType<ProfilerService['status']> {
+    return this.profiler.status();
+  }
+
+  /**
+   * List captured CPU profiles, newest-first, WITHOUT their (potentially large)
+   * frame trees — `omitContent` keeps the list cheap; the tree is fetched per
+   * profile via {@link profile}. Read-shaped.
+   */
+  @Get('profiles')
+  async profiles(@Query('limit') limit?: string): Promise<Page<Entry>> {
+    return this.storage.get({
+      type: CPU_PROFILE_ENTRY_TYPE,
+      omitContent: true,
+      ...(limit !== undefined && Number.isFinite(Number(limit)) ? { limit: Number(limit) } : {}),
+    });
+  }
+
+  /**
+   * Fetch ONE profile's full frame tree (the flamegraph payload). 404 when the
+   * id is unknown or not a cpu_profile entry. Read-shaped.
+   */
+  @Get('profiles/:id')
+  async profile(@Param('id') id: string): Promise<Entry<CpuProfileContent>> {
+    const entry = await this.storage.find(id);
+    if (entry === null || entry.type !== CPU_PROFILE_ENTRY_TYPE) {
+      throw new NotFoundException('No CPU profile with that id.');
+    }
+    return entry as Entry<CpuProfileContent>;
+  }
+
+  /**
+   * Arm an on-demand capture of the next N requests (optionally only those whose
+   * normalized route matches `label`, e.g. "GET /users/:id"). A MUTATION-shaped
+   * trigger — it incurs real profiling overhead — so it stays behind the same
+   * default-deny `authorizeAction` gate as prune/replay. 400 when profiling is
+   * disabled (so the dashboard can explain why nothing happens).
+   */
+  @Post('profiles/arm')
+  @HttpCode(200)
+  arm(@Body() body: ArmBody): { pendingManual: number } {
+    if (!this.options.authorizeAction) {
+      throw new ForbiddenException('Mutations are disabled (no authorizeAction configured).');
+    }
+    if (!this.profiler.status().enabled) {
+      throw new BadRequestException('CPU profiling is disabled (set `profiling.enabled`).');
+    }
+    const count = body?.count !== undefined ? Number(body.count) : 1;
+    if (!Number.isFinite(count) || count <= 0) {
+      throw new BadRequestException('`count` must be a positive number.');
+    }
+    return this.profiler.arm({
+      count,
+      ...(typeof body?.label === 'string' && body.label !== '' ? { label: body.label } : {}),
+    });
+  }
+
   @Delete('entries')
   async clear(): Promise<{ cleared: true }> {
     await this.storage.clear();
     return { cleared: true };
   }
+}
+
+interface ArmBody {
+  count?: number;
+  label?: string;
 }
 
 /**

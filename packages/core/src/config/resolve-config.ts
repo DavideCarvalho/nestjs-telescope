@@ -1,6 +1,7 @@
 // packages/core/src/config/resolve-config.ts
 import { hostname } from 'node:os';
 import { z } from 'zod';
+import { resolveProfilingConfig } from '../profiling/profiling-config.js';
 import { BUILTIN_TAGGERS } from '../tagging/tagger.js';
 import { normalizeTelescopePath } from './normalize-path.js';
 import type {
@@ -93,6 +94,7 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
     recorder: parsed.recorder,
     taggers: [...BUILTIN_TAGGERS, ...(options.taggers ?? [])],
     instanceId: parsed.instanceId ?? hostname(),
+    profiling: resolveProfilingConfig(options.profiling),
     ...(options.traceContext ? { traceContext: options.traceContext } : {}),
     ...(options.traceLink ? { traceLink: options.traceLink } : {}),
   };

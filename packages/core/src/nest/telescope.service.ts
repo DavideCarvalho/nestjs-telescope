@@ -80,6 +80,12 @@ export interface TelescopeMeta {
    * default), purely informational for the UI.
    */
   ai: { enabled: boolean; mode: 'auto' | 'on-demand' | null };
+  /**
+   * CPU flamegraph profiling state. `enabled` gates the dashboard's Profiles tab;
+   * `sampleRate` is surfaced as a read-only badge. Both come straight from the
+   * resolved config (off by default).
+   */
+  profiling: { enabled: boolean; sampleRate: number };
   /** Entry types contributed by extensions (id/label/dot) — feeds the UI nav. */
   entryTypes: { id: string; label: string; dot: string }[];
   /** Dashboards contributed by extensions — feeds the UI nav + routes + panel rendering. */
@@ -355,6 +361,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       ai: {
         enabled: this.diagnosis !== null,
         mode: this.diagnosis?.mode ?? null,
+      },
+      profiling: {
+        enabled: this.config.profiling.enabled,
+        sampleRate: this.config.profiling.sampleRate,
       },
       entryTypes: this.extensions.entryTypes(),
       dashboards: this.extensions.dashboards().map((d) => ({

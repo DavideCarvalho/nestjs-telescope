@@ -3,6 +3,7 @@ import type {
   AuthMode,
   AuthUser,
   CachedDiagnosis,
+  CpuProfileContent,
   DiagnoseResult,
   EntriesQuery,
   Entry,
@@ -11,6 +12,7 @@ import type {
   JobPage,
   LoginResult,
   Page,
+  ProfilerStatus,
   PulseReport,
   QueueCapabilities,
   QueueCounts,
@@ -21,6 +23,7 @@ import type {
   RetentionInfo,
   ScheduledTask,
   ServerStats,
+  ServerStatsHistory,
   StatsResult,
   TagCount,
   TelescopeHealth,
@@ -28,6 +31,7 @@ import type {
   TimeseriesQuery,
   TimeseriesReport,
   TracesResult,
+  Waterfall,
 } from './types.js';
 
 declare global {
@@ -71,6 +75,8 @@ export interface TelescopeClient {
   queues(window?: string): Promise<QueueMetricsReport>;
   timeseries(query?: TimeseriesQuery): Promise<TimeseriesReport>;
   traces(window?: string, limit?: number): Promise<TracesResult>;
+  /** Nested span waterfall for one trace (`GET traces/:traceId/waterfall`). */
+  waterfall(traceId: string): Promise<Waterfall>;
   stats(type: string, window: string): Promise<StatsResult>;
   tags(prefix?: string): Promise<TagCount[]>;
   meta(): Promise<TelescopeMeta>;
@@ -82,6 +88,8 @@ export interface TelescopeClient {
    */
   extData(ext: string, provider: string, query?: Record<string, unknown>): Promise<unknown>;
   serverStats(): Promise<ServerStats>;
+  /** CPU/mem history ring buffer for the resource-history card. */
+  serverStatsHistory(): Promise<ServerStatsHistory>;
   health(): Promise<TelescopeHealth>;
   /** Retention/prune status for the Overview retention card. */
   retention(): Promise<RetentionInfo>;
@@ -106,6 +114,17 @@ export interface TelescopeClient {
    * call. Never throws on those expected outcomes.
    */
   cachedDiagnosis(entryId: string): Promise<CachedDiagnosis>;
+  /** CPU profiler runtime status (`GET /profiles/status`). */
+  profilerStatus(): Promise<ProfilerStatus>;
+  /** List captured CPU profiles, newest-first, WITHOUT their frame trees (`GET /profiles`). */
+  profiles(limit?: number): Promise<Page<Entry>>;
+  /** Fetch one profile's full frame tree (`GET /profiles/:id`). */
+  profile(id: string): Promise<Entry & { content: CpuProfileContent }>;
+  /**
+   * Arm an on-demand capture of the next `count` requests (optionally only those
+   * matching `label`). Gated server-side by the default-deny mutation guard.
+   */
+  armProfile(count: number, label?: string): Promise<{ pendingManual: number }>;
   liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>;
   schedulesLive(): Promise<{ tasks: ScheduledTask[] }>;
   queueCounts(driver: string, queue: string): Promise<QueueCounts>;
@@ -351,6 +370,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         tag: query.tag,
       }),
     traces: (window, limit) => get<TracesResult>('/traces', { window, limit }),
+    waterfall: (traceId) => get<Waterfall>(`/traces/${encodeURIComponent(traceId)}/waterfall`),
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
     tags: (prefix) => get<TagCount[]>('/tags', { prefix }),
     meta: () => get<TelescopeMeta>('/meta'),
@@ -364,12 +384,22 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
       );
     },
     serverStats: () => get<ServerStats>('/server-stats'),
+    serverStatsHistory: () => get<ServerStatsHistory>('/server-stats/history'),
     health: () => get<TelescopeHealth>('/health'),
     retention: () => get<RetentionInfo>('/retention'),
     prune: () => post<{ pruned: number }>('/retention/prune'),
     explain,
     diagnose,
     cachedDiagnosis,
+    profilerStatus: () => get<ProfilerStatus>('/profiles/status'),
+    profiles: (limit) => get<Page<Entry>>('/profiles', { limit }),
+    profile: (id) =>
+      get<Entry & { content: CpuProfileContent }>(`/profiles/${encodeURIComponent(id)}`),
+    armProfile: (count, label) =>
+      post<{ pendingManual: number }>('/profiles/arm', undefined, {
+        count,
+        ...(label ? { label } : {}),
+      }),
     liveQueues: () =>
       get<{ queues: QueueSummary[]; capabilities: QueueCapabilities }>('/queues/live'),
     schedulesLive: () => get<{ tasks: ScheduledTask[] }>('/schedules/live'),

@@ -135,6 +135,19 @@ export class InMemoryStorageProvider implements StorageProvider, RollupStore {
   async clear(): Promise<void> {
     this.entries = [];
     this.rollups.clear();
+    this.seenFamilies.clear();
+  }
+
+  /** Last-seen wall time (ms) per error family, backing the shared new-exception
+   *  dedup. In a single process this is exactly the per-replica behaviour; the
+   *  real cross-pod win comes from the SQLite/Redis providers that share a store. */
+  private readonly seenFamilies = new Map<string, number>();
+
+  async markFamilySeen(familyHash: string, nowMs: number, windowMs: number): Promise<boolean> {
+    const last = this.seenFamilies.get(familyHash);
+    const isNew = last === undefined || nowMs - last >= windowMs;
+    this.seenFamilies.set(familyHash, nowMs);
+    return isNew;
   }
 
   // ── RollupStore SPI ────────────────────────────────────────────────────────

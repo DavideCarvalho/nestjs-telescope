@@ -415,7 +415,16 @@ describe('TelescopeAlerter', () => {
     });
 
     it('evicts oldest families beyond the cap, re-firing an evicted family', async () => {
-      const storage = new InMemoryStorageProvider();
+      // This exercises the in-memory PER-REPLICA tracker (the fallback path), so
+      // use a storage WITHOUT markFamilySeen — otherwise the shared-store dedup
+      // (which has no cap) would be used and nothing would ever be evicted.
+      const backing = new InMemoryStorageProvider();
+      const storage = new Proxy(backing, {
+        get(target, prop, receiver) {
+          if (prop === 'markFamilySeen') return undefined;
+          return Reflect.get(target, prop, receiver);
+        },
+      });
       const sent: AlertPayload[] = [];
       const current = NOW;
       const alerter = new TelescopeAlerter({
@@ -453,6 +462,134 @@ describe('TelescopeAlerter', () => {
       const a2 = await storeException(storage, 'fam-A', 'ba2', NOW + 3);
       await alerter.evaluateFlush([a2]);
       expect(sent).toHaveLength(4);
+    });
+
+    it('uses the storage shared dedup when the provider implements markFamilySeen', async () => {
+      // Two alerters share ONE store with an atomic markFamilySeen (simulating two
+      // pods). The brand-new family must page exactly ONCE across both.
+      const shared = new InMemoryStorageProvider();
+      const seen = new Map<string, number>();
+      const marker = async (familyHash: string, nowMs: number, windowMs: number) => {
+        const last = seen.get(familyHash);
+        const isNew = last === undefined || nowMs - last >= windowMs;
+        seen.set(familyHash, nowMs);
+        return isNew;
+      };
+      (shared as unknown as { markFamilySeen: typeof marker }).markFamilySeen = marker;
+
+      const sentA: AlertPayload[] = [];
+      const sentB: AlertPayload[] = [];
+      const make = (sink: AlertPayload[]) =>
+        new TelescopeAlerter({
+          alerts: {
+            channels: [customChannel(async (a) => void sink.push(a), 'cap')],
+            dashboardUrl: null,
+            intervalMs: 60_000,
+            cooldownMs: 900_000,
+            rules: [{ type: 'new-exception', window: '1h' }],
+          },
+          storage: shared,
+          instanceId: 'shared',
+          droppedCount: () => 0,
+          now: () => NOW,
+          logger: new Logger('test'),
+        });
+      const alerterA = make(sentA);
+      const alerterB = make(sentB);
+
+      const ex = entry('exception', {
+        id: 'ex-shared',
+        batchId: 'bs',
+        familyHash: 'fam-SHARED',
+        content: { class: 'E', message: 'm' },
+      });
+      await shared.store([ex]);
+
+      await alerterA.evaluateFlush([ex]);
+      await alerterB.evaluateFlush([ex]);
+
+      // Exactly one of the two pods fired — shared dedup, not once-per-pod.
+      expect(sentA.length + sentB.length).toBe(1);
+    });
+  });
+
+  describe('metric-threshold rule', () => {
+    it('fires when request p95 latency crosses the threshold (gte)', async () => {
+      const { alerter, sent, storage } = makeAlerter([
+        {
+          type: 'metric-threshold',
+          metric: 'request-p95-ms',
+          window: '5m',
+          comparator: 'gte',
+          threshold: 500,
+        },
+      ]);
+      await storage.store([
+        entry('request', { durationMs: 100 }),
+        entry('request', { durationMs: 200 }),
+        entry('request', { durationMs: 900 }),
+      ]);
+      await alerter.evaluate();
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.rule.type).toBe('metric-threshold');
+      expect(sent[0]?.value).toBe(900);
+      expect(sent[0]?.threshold).toBe(500);
+    });
+
+    it('does NOT fire when p95 is under the threshold', async () => {
+      const { alerter, sent, storage } = makeAlerter([
+        {
+          type: 'metric-threshold',
+          metric: 'request-p95-ms',
+          window: '5m',
+          comparator: 'gte',
+          threshold: 500,
+        },
+      ]);
+      await storage.store([
+        entry('request', { durationMs: 100 }),
+        entry('request', { durationMs: 50 }),
+      ]);
+      await alerter.evaluate();
+      expect(sent).toHaveLength(0);
+    });
+
+    it('fires when cache hit-rate drops BELOW the threshold (lte)', async () => {
+      const { alerter, sent, storage } = makeAlerter([
+        {
+          type: 'metric-threshold',
+          metric: 'cache-hit-rate',
+          window: '5m',
+          comparator: 'lte',
+          threshold: 0.8,
+        },
+      ]);
+      // 1 hit, 3 misses => hit-rate 0.25 (<= 0.8).
+      await storage.store([
+        entry('cache', { content: { operation: 'get', key: 'a', hit: true } }),
+        entry('cache', { content: { operation: 'get', key: 'b', hit: false } }),
+        entry('cache', { content: { operation: 'get', key: 'c', hit: false } }),
+        entry('cache', { content: { operation: 'get', key: 'd', hit: false } }),
+      ]);
+      await alerter.evaluate();
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.value).toBeCloseTo(0.25, 5);
+    });
+
+    it('respects minSamples (a single slow request does not page p95)', async () => {
+      const { alerter, sent, storage } = makeAlerter([
+        {
+          type: 'metric-threshold',
+          metric: 'request-p95-ms',
+          window: '5m',
+          comparator: 'gte',
+          threshold: 500,
+          minSamples: 5,
+        },
+      ]);
+      await storage.store([entry('request', { durationMs: 5000 })]);
+      await alerter.evaluate();
+      expect(sent).toHaveLength(0);
     });
   });
 });

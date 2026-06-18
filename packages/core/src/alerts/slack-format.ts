@@ -92,6 +92,8 @@ function ruleLabel(rule: AlertPayload['rule']): string {
       return 'Slow request rate';
     case 'dropped-entries':
       return 'Dropped entries';
+    case 'metric-threshold':
+      return `Metric threshold (${rule.metric})`;
   }
 }
 

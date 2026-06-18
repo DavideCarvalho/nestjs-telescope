@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import type { EntriesQuery, Entry, Page, TelescopeClient } from '../../client/index.js';
+import type { EntriesQuery, Entry, Page, TelescopeClient, Waterfall } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { TracePage } from './trace-page.js';
 
@@ -28,8 +28,14 @@ function mockClient(rows: Entry[]) {
     data: rows,
     nextCursor: null,
   }));
-  const client: TelescopeClient = {
+  const waterfall = vi.fn<(traceId: string) => Promise<Waterfall>>(async () => ({
+    traceStartMs: 0,
+    totalDurationMs: 0,
+    spans: [],
+  }));
+  const client = {
     entries,
+    waterfall,
     entry: async () => {
       throw new Error('not used');
     },
@@ -67,7 +73,7 @@ function mockClient(rows: Entry[]) {
     },
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
-  };
+  } as unknown as TelescopeClient;
   return { client, entries };
 }
 
@@ -99,6 +105,10 @@ describe('TracePage', () => {
       expect(entries).toHaveBeenCalledWith({ traceId: 'trace-1' });
     });
 
+    // The default view is the waterfall; switch to the Entries table for the
+    // entry-row assertions below.
+    fireEvent.click(screen.getByText('Entries'));
+
     expect(await screen.findByText('GET /users')).toBeTruthy();
     expect(screen.getByText('select 1')).toBeTruthy();
     expect(screen.getByText('hit user:1')).toBeTruthy();
@@ -114,6 +124,7 @@ describe('TracePage', () => {
     const { client } = mockClient([]);
     renderAt('/traces/trace-empty', client);
 
+    fireEvent.click(screen.getByText('Entries'));
     expect(await screen.findByText('No entries in this trace')).toBeTruthy();
   });
 });

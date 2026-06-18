@@ -211,6 +211,49 @@ export interface TelescopeMeta {
     panels: Panel[];
     sections?: { title?: string; cols?: 2 | 3 | 4; panels: Panel[] }[];
   }[];
+  /**
+   * CPU flamegraph profiling state. `enabled` gates the Profiles nav item;
+   * `sampleRate` is shown as a read-only badge. OPTIONAL for backward-compat with
+   * older servers that predate profiling (treated as disabled → nav hidden).
+   */
+  profiling?: { enabled: boolean; sampleRate: number };
+}
+
+/** A node in the aggregated flamegraph tree (mirrors core's `FlameNode`). */
+export interface FlameNode {
+  name: string;
+  file: string;
+  totalMs: number;
+  selfMs: number;
+  totalSamples: number;
+  children: FlameNode[];
+}
+
+/** A hottest-by-self frame (mirrors core's `HotFrame`). */
+export interface HotFrame {
+  name: string;
+  file: string;
+  selfMs: number;
+  selfPct: number;
+}
+
+/** The content of a `cpu_profile` entry (mirrors core's `CpuProfileContent`). */
+export interface CpuProfileContent {
+  durationMs: number;
+  sampleCount: number;
+  reason: 'manual' | 'sampled';
+  label: string | null;
+  tree: FlameNode;
+  hot: HotFrame[];
+}
+
+/** Profiler runtime status from `GET /profiles/status`. */
+export interface ProfilerStatus {
+  enabled: boolean;
+  sampleRate: number;
+  active: number;
+  maxConcurrent: number;
+  pendingManual: number;
 }
 
 /**
@@ -274,6 +317,8 @@ export interface NPlusOneHotspot {
   perRequest: number;
   requests: number;
   total: number;
+  /** Total ms spent across all occurrences of this loop family — the cost weight. */
+  totalDurationMs: number;
   sampleBatchId: string;
 }
 export interface SlowRouteHotspot {
@@ -295,8 +340,19 @@ export interface PulseReport {
   slowRoutes: SlowRouteHotspot[];
   /** Slowest outgoing http_client targets (method + host + normalized path). */
   slowOutgoing: SlowRouteHotspot[];
+  /** Slowest job families by p99 (optional — older servers omit it). */
+  slowJobs?: SlowRouteHotspot[];
+  /** Top users by total request time (optional — older servers omit it). */
+  loadByUser?: UserLoad[];
   scanned: number;
   truncated: boolean;
+}
+
+/** A user's share of load in the window — mirrors core's `UserLoad`. */
+export interface UserLoad {
+  user: string;
+  count: number;
+  totalDurationMs: number;
 }
 
 /**
@@ -344,6 +400,19 @@ export interface ServerStats {
   /** Mean event-loop delay in ms, or `null` when perf_hooks can't measure it. */
   eventLoopDelayMs: number | null;
   instanceId: string;
+}
+
+/** One point in the CPU/mem history. Mirrors core's `ServerStatsSample`. */
+export interface ServerStatsSample {
+  atMs: number;
+  rssMb: number;
+  heapUsedMb: number;
+  cpuPercent: number;
+  eventLoopDelayMs: number | null;
+}
+
+export interface ServerStatsHistory {
+  samples: ServerStatsSample[];
 }
 
 export interface QueueMetrics {
@@ -400,6 +469,25 @@ export interface TracesResult {
   traces: TraceSummary[];
   scanned: number;
   truncated: boolean;
+}
+
+/** One node of a trace waterfall. Mirrors core's `WaterfallSpan`. */
+export interface WaterfallSpan {
+  id: string;
+  type: string;
+  label: string;
+  offsetMs: number;
+  durationMs: number;
+  depth: number;
+  sequence: number;
+  children: WaterfallSpan[];
+}
+
+/** A trace's nested span waterfall. Mirrors core's `Waterfall`. */
+export interface Waterfall {
+  traceStartMs: number;
+  totalDurationMs: number;
+  spans: WaterfallSpan[];
 }
 
 export interface LatencyStats {

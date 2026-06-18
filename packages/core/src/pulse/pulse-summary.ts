@@ -28,6 +28,13 @@ export interface NPlusOneHotspot {
   requests: number;
   /** Sum of repetition counts across those requests. */
   total: number;
+  /**
+   * Total duration (ms) spent across ALL occurrences of this family in the
+   * window — the time "wasted" in the loop. Lets the dashboard weight an N+1 by
+   * cost, not just repetition count (a 200×1ms loop vs a 6×80ms loop). Derived
+   * from the content-less `durationMs` column, so it needs no hydration.
+   */
+  totalDurationMs: number;
   /** One batch id (the worst) to deep-link to. */
   sampleBatchId: string;
 }
@@ -45,6 +52,17 @@ export interface SlowRouteHotspot {
   p50: number;
 }
 
+/**
+ * A user's share of the load in the window — request count and the total time
+ * spent serving them. The `user` is the id from the request's `user:<id>` tag.
+ * Modelled on Laravel Pulse's "Usage" card.
+ */
+export interface UserLoad {
+  user: string;
+  count: number;
+  totalDurationMs: number;
+}
+
 export interface PulseSummary {
   windowStart: string;
   windowEnd: string;
@@ -55,6 +73,10 @@ export interface PulseSummary {
   nPlusOne: NPlusOneHotspot[];
   slowRoutes: SlowRouteHotspot[];
   slowOutgoing: SlowRouteHotspot[];
+  /** Slowest job families (by p99), the queue analogue of `slowRoutes`. */
+  slowJobs: SlowRouteHotspot[];
+  /** Top users by total request time in the window. */
+  loadByUser: UserLoad[];
 }
 
 export interface PulseOptions {
@@ -171,6 +193,7 @@ interface NPlusOneAccumulator {
   perRequest: number;
   requests: number;
   total: number;
+  totalDurationMs: number;
   sampleBatchId: string;
   /** A representative query entry id to hydrate the sql from. */
   representativeId: string;
@@ -201,6 +224,10 @@ export interface PulseAggregates {
    * content-less columns, so no hydration is required.
    */
   slowOutgoing: SlowRouteHotspot[];
+  /** Slowest job families, already final (familyHash is the label). */
+  slowJobs: SlowRouteHotspot[];
+  /** Top users by request time, already final (no hydration needed). */
+  loadByUser: UserLoad[];
   hydrationIds: PulseHydrationIds;
 }
 
@@ -224,9 +251,37 @@ export function aggregatePulse(
   const routeDurations = new Map<string, number[]>();
   // Outgoing http_client durations grouped by target family — slow-outgoing source.
   const outgoingDurations = new Map<string, number[]>();
+  // Job durations grouped by job family — slow-jobs source.
+  const jobDurations = new Map<string, number[]>();
+  // Per-user request load (count + total duration) from the user:<id> tag.
+  const userLoad = new Map<string, { count: number; totalDurationMs: number }>();
 
   for (const entry of entries) {
     counts[entry.type] = (counts[entry.type] ?? 0) + 1;
+
+    if (
+      entry.type === EntryType.Job &&
+      entry.familyHash !== null &&
+      typeof entry.durationMs === 'number'
+    ) {
+      const existing = jobDurations.get(entry.familyHash);
+      if (existing) existing.push(entry.durationMs);
+      else jobDurations.set(entry.familyHash, [entry.durationMs]);
+    }
+
+    if (entry.type === EntryType.Request) {
+      const user = userFromTags(entry.tags);
+      if (user !== null) {
+        const existing = userLoad.get(user);
+        const duration = typeof entry.durationMs === 'number' ? entry.durationMs : 0;
+        if (existing) {
+          existing.count += 1;
+          existing.totalDurationMs += duration;
+        } else {
+          userLoad.set(user, { count: 1, totalDurationMs: duration });
+        }
+      }
+    }
 
     if (
       entry.type === EntryType.Request &&
@@ -294,20 +349,29 @@ export function aggregatePulse(
   const hotspots = new Map<string, NPlusOneAccumulator>();
   const familyRepresentative = new Map<string, string>();
   for (const [batchId, batchEntries] of batches) {
+    // Sum query durations per family WITHIN this batch (content-less column) so a
+    // tripped N+1 family can be weighted by the time it actually cost.
+    const batchFamilyDuration = new Map<string, number>();
     for (const entry of batchEntries) {
-      if (
-        entry.type === EntryType.Query &&
-        entry.familyHash !== null &&
-        !familyRepresentative.has(entry.familyHash)
-      ) {
-        familyRepresentative.set(entry.familyHash, entry.id);
+      if (entry.type === EntryType.Query && entry.familyHash !== null) {
+        if (!familyRepresentative.has(entry.familyHash)) {
+          familyRepresentative.set(entry.familyHash, entry.id);
+        }
+        if (typeof entry.durationMs === 'number') {
+          batchFamilyDuration.set(
+            entry.familyHash,
+            (batchFamilyDuration.get(entry.familyHash) ?? 0) + entry.durationMs,
+          );
+        }
       }
     }
     for (const insight of detectNPlusOne(batchEntries, options.nPlusOneThreshold)) {
+      const loopDuration = batchFamilyDuration.get(insight.familyHash) ?? 0;
       const existing = hotspots.get(insight.familyHash);
       if (existing) {
         existing.requests += 1;
         existing.total += insight.count;
+        existing.totalDurationMs += loopDuration;
         if (insight.count > existing.perRequest) {
           existing.perRequest = insight.count;
           existing.sampleBatchId = batchId;
@@ -318,16 +382,22 @@ export function aggregatePulse(
           perRequest: insight.count,
           requests: 1,
           total: insight.count,
+          totalDurationMs: loopDuration,
           sampleBatchId: batchId,
           representativeId: familyRepresentative.get(insight.familyHash) ?? '',
         });
       }
     }
   }
+  // Rank by total time WASTED in the loop first (cost-weighted, the actionable
+  // signal), then by repetition totals as the tie-break.
   const nPlusOne = [...hotspots.values()]
     .sort(
       (a, b) =>
-        b.total - a.total || b.requests - a.requests || a.familyHash.localeCompare(b.familyHash),
+        b.totalDurationMs - a.totalDurationMs ||
+        b.total - a.total ||
+        b.requests - a.requests ||
+        a.familyHash.localeCompare(b.familyHash),
     )
     .slice(0, options.topN);
 
@@ -336,6 +406,18 @@ export function aggregatePulse(
   const slowRoutes = toHotspots(routeDurations, options);
   // Slow outgoing-HTTP hotspots: same aggregation over http_client durations.
   const slowOutgoing = toHotspots(outgoingDurations, options);
+  // Slow-job hotspots: rank job families by p99. Unlike routes/outgoing, jobs
+  // are NOT gated by the slow-request p99 threshold — a queue's slowest jobs are
+  // always worth surfacing — so they rank by p99 over the min-count gate only.
+  const slowJobs = toJobHotspots(jobDurations, options);
+  // Load-by-user: top users by total request time spent serving them.
+  const loadByUser = [...userLoad.entries()]
+    .map(([user, load]) => ({ user, count: load.count, totalDurationMs: load.totalDurationMs }))
+    .sort(
+      (a, b) =>
+        b.totalDurationMs - a.totalDurationMs || b.count - a.count || a.user.localeCompare(b.user),
+    )
+    .slice(0, options.topN);
 
   return {
     windowStart,
@@ -347,12 +429,46 @@ export function aggregatePulse(
     nPlusOne,
     slowRoutes,
     slowOutgoing,
+    slowJobs,
+    loadByUser,
     hydrationIds: {
       slowest: slowest.map((candidate) => candidate.id),
       exceptions: exceptions.map((group) => group.representativeId),
       nPlusOne: nPlusOne.map((hotspot) => hotspot.representativeId),
     },
   };
+}
+
+/**
+ * Rank job families by p99 over a min-count gate (no slow-ms threshold — the
+ * slowest jobs are always worth showing). Shares the {@link SlowRouteHotspot}
+ * shape so the dashboard renders it with the same hotspot card. Pure.
+ */
+function toJobHotspots(
+  durationsByFamily: Map<string, number[]>,
+  options: PulseOptions,
+): SlowRouteHotspot[] {
+  return [...durationsByFamily.entries()]
+    .map(([route, durations]) => {
+      const sorted = [...durations].sort((a, b) => a - b);
+      return {
+        route,
+        count: sorted.length,
+        p99: percentile(sorted, 0.99),
+        p50: percentile(sorted, 0.5),
+      };
+    })
+    .filter((hotspot) => hotspot.count >= options.slowRouteMinCount)
+    .sort((a, b) => b.p99 - a.p99 || b.count - a.count || a.route.localeCompare(b.route))
+    .slice(0, options.topN);
+}
+
+/** Extract the user id from a `user:<id>` tag, or `null` when none is present. */
+function userFromTags(tags: string[]): string | null {
+  for (const tag of tags) {
+    if (tag.startsWith('user:')) return tag.slice('user:'.length);
+  }
+  return null;
 }
 
 /** detectNPlusOne re-derives sql from a hydrated representative's content. */
@@ -402,6 +518,7 @@ export function finalizePulse(aggregates: PulseAggregates, hydrate: HydrateConte
     perRequest: hotspot.perRequest,
     requests: hotspot.requests,
     total: hotspot.total,
+    totalDurationMs: hotspot.totalDurationMs,
     sampleBatchId: hotspot.sampleBatchId,
   }));
 
@@ -416,6 +533,8 @@ export function finalizePulse(aggregates: PulseAggregates, hydrate: HydrateConte
     // Slow routes are already final (familyHash is the label) — pass through.
     slowRoutes: aggregates.slowRoutes,
     slowOutgoing: aggregates.slowOutgoing,
+    slowJobs: aggregates.slowJobs,
+    loadByUser: aggregates.loadByUser,
   };
 }
 

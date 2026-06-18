@@ -110,6 +110,15 @@ describe('DashboardLayout', () => {
     expect(shown.map((item) => item.to)).toEqual(['/', '/traces', '/pulse']);
   });
 
+  it('hides the Profiles nav unless profiling is positively enabled', () => {
+    const nav = [...TOP_NAV, { to: '/profiles', label: 'Profiles', end: false }];
+    // Off / undefined → hidden (feature is off by default, page has no fallback).
+    expect(visibleTopNav(nav, true, false).map((i) => i.to)).not.toContain('/profiles');
+    expect(visibleTopNav(nav, true, undefined).map((i) => i.to)).not.toContain('/profiles');
+    // Positively enabled → shown.
+    expect(visibleTopNav(nav, true, true).map((i) => i.to)).toContain('/profiles');
+  });
+
   it('defaults the live-tail toggle to Live and flips to Paused on click', () => {
     renderLayout();
     const toggle = screen.getByRole('button', { name: /live/i });

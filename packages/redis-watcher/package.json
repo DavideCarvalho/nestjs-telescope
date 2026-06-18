@@ -10,6 +10,7 @@
   },
   "author": "Davi Carvalho <davi@goflip.ai>",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

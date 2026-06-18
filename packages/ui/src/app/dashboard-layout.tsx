@@ -25,6 +25,7 @@ const NAV: TopNavItem[] = [
   { to: '/pulse', label: 'Pulse', end: false },
   { to: '/queues', label: 'Queues', end: false },
   { to: '/schedules', label: 'Schedules', end: false },
+  { to: '/profiles', label: 'Profiles', end: false },
 ];
 
 /**
@@ -43,9 +44,17 @@ const NAV: TopNavItem[] = [
 export function visibleTopNav(
   items: readonly TopNavItem[],
   tracesEnabled: boolean | undefined,
+  profilingEnabled?: boolean | undefined,
 ): TopNavItem[] {
-  if (tracesEnabled !== false) return [...items];
-  return items.filter((item) => item.to !== '/traces');
+  return items.filter((item) => {
+    // Only a POSITIVE `false` hides Traces (page would be permanently empty).
+    if (item.to === '/traces' && tracesEnabled === false) return false;
+    // Profiles is hidden unless profiling is POSITIVELY enabled — unlike Traces,
+    // the page has no fallback content and the feature is off by default, so we
+    // hide on undefined too (older servers without the field never show it).
+    if (item.to === '/profiles' && profilingEnabled !== true) return false;
+    return true;
+  });
 }
 
 function topLinkClass({ isActive }: { isActive: boolean }): string {
@@ -157,7 +166,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
   // Hide the Traces nav item when meta positively reports no traceContext: the
   // page would be permanently empty. Undefined meta → show it (same backward-
   // compatible fallback as the watcher-driven nav above).
-  const topNav = visibleTopNav(NAV, meta.data?.tracesEnabled);
+  const topNav = visibleTopNav(NAV, meta.data?.tracesEnabled, meta.data?.profiling?.enabled);
   return (
     <div className="flex min-h-screen bg-zinc-950 font-mono text-sm text-zinc-200">
       <CommandPalette open={open} onClose={() => setOpen(false)} />

@@ -63,6 +63,13 @@ export function serverStatsQuery(client: TelescopeClient, paused = false) {
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
+export function serverStatsHistoryQuery(client: TelescopeClient, paused = false) {
+  return queryOptions({
+    queryKey: ['telescope', 'server-stats-history'],
+    queryFn: () => client.serverStatsHistory(),
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+  });
+}
 export function healthQuery(client: TelescopeClient, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'health'],
@@ -123,6 +130,14 @@ export function tracesQuery(
     queryKey: ['telescope', 'traces', window, limit],
     queryFn: () => client.traces(window, limit),
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+  });
+}
+
+export function waterfallQuery(client: TelescopeClient, traceId: string) {
+  return queryOptions({
+    queryKey: ['telescope', 'waterfall', traceId],
+    queryFn: () => client.waterfall(traceId),
+    enabled: traceId !== '',
   });
 }
 
@@ -342,6 +357,9 @@ export function useMeta() {
 export function useServerStats() {
   return useQuery(serverStatsQuery(useTelescopeClient(), usePaused()));
 }
+export function useServerStatsHistory() {
+  return useQuery(serverStatsHistoryQuery(useTelescopeClient(), usePaused()));
+}
 export function useExtensionData(ext: string, provider: string, query?: Record<string, unknown>) {
   return useQuery(extDataQuery(useTelescopeClient(), ext, provider, query));
 }
@@ -370,4 +388,52 @@ export function useTimeseries(query: {
 }
 export function useTraces(window: string, limit?: number) {
   return useQuery(tracesQuery(useTelescopeClient(), window, limit, usePaused()));
+}
+export function useWaterfall(traceId: string) {
+  return useQuery(waterfallQuery(useTelescopeClient(), traceId));
+}
+
+// ── CPU profiling (flamegraphs) ───────────────────────────────────────────────
+
+export function profilerStatusQuery(client: TelescopeClient, paused = false) {
+  return queryOptions({
+    queryKey: ['telescope', 'profiler-status'],
+    queryFn: () => client.profilerStatus(),
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+  });
+}
+export function profilesQuery(client: TelescopeClient, limit?: number, paused = false) {
+  return queryOptions({
+    queryKey: ['telescope', 'profiles', limit],
+    queryFn: () => client.profiles(limit),
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+  });
+}
+export function profileQuery(client: TelescopeClient, id: string) {
+  return queryOptions({
+    queryKey: ['telescope', 'profile', id],
+    queryFn: () => client.profile(id),
+    enabled: id !== '',
+  });
+}
+
+export function useProfilerStatus() {
+  return useQuery(profilerStatusQuery(useTelescopeClient(), usePaused()));
+}
+export function useProfiles(limit?: number) {
+  return useQuery(profilesQuery(useTelescopeClient(), limit, usePaused()));
+}
+export function useProfile(id: string) {
+  return useQuery(profileQuery(useTelescopeClient(), id));
+}
+export function useArmProfile() {
+  const client = useTelescopeClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { count: number; label?: string }) =>
+      client.armProfile(vars.count, vars.label),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['telescope', 'profiler-status'] });
+    },
+  });
 }

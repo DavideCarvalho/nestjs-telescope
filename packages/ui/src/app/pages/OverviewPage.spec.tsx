@@ -43,6 +43,8 @@ const pulse: PulseReport = {
   nPlusOne: [],
   slowRoutes: [],
   slowOutgoing: [],
+  slowJobs: [{ route: 'mail:send', count: 3, p99: 540, p50: 100 }],
+  loadByUser: [{ user: 'alice', count: 9, totalDurationMs: 1200 }],
 };
 
 const serverStats = {
@@ -126,6 +128,7 @@ function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
       sampling: {},
     }),
     serverStats: async () => serverStats,
+    serverStatsHistory: async () => ({ samples: [] }),
     health: async () => healthOverride,
     retention: async () => ({
       retention: { afterMs: 3_600_000, keepLast: null },
@@ -300,6 +303,14 @@ describe('OverviewPage', () => {
     expect(screen.getByText('128.5 MB')).toBeTruthy();
     expect(screen.getByText('1.25 ms')).toBeTruthy();
     expect(screen.getByText('instance instance-abc')).toBeTruthy();
+  });
+
+  it('renders the slowest-jobs and load-by-user rollup cards', async () => {
+    renderOverview();
+    expect(await screen.findByText('Slowest jobs')).toBeTruthy();
+    expect(await screen.findByText('mail:send')).toBeTruthy();
+    expect(await screen.findByText('Load by user')).toBeTruthy();
+    expect(await screen.findByText('alice')).toBeTruthy();
   });
 
   it('renders the Telescope health card with capture cost, buffer, flush, and dropped figures', async () => {

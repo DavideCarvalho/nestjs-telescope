@@ -4,6 +4,7 @@ import { StatCard } from '../../react/components/extensions/stat-card.js';
 import {
   AreaChartCard,
   type AreaChartPoint,
+  Sparkline,
   StackedAreaChartCard,
   type StackedAreaRow,
   WindowSelect,
@@ -16,6 +17,7 @@ import {
   useQueues,
   useRetention,
   useServerStats,
+  useServerStatsHistory,
   useTimeseries,
 } from '../../react/index.js';
 import type {
@@ -25,8 +27,11 @@ import type {
   QueueMetricsReport,
   RetentionInfo,
   ServerStats,
+  ServerStatsHistory,
+  SlowRouteHotspot,
   TelescopeHealth,
   TimeseriesReport,
+  UserLoad,
 } from '../../react/index.js';
 
 function formatUptime(seconds: number): string {
@@ -396,6 +401,7 @@ function NPlusOneCard({
                 </span>
                 <span className="shrink-0 tabular-nums text-zinc-500">
                   {hotspot.requests} req · {hotspot.total} total
+                  {hotspot.totalDurationMs > 0 ? ` · ${Math.round(hotspot.totalDurationMs)}ms` : ''}
                 </span>
               </button>
             </li>
@@ -470,6 +476,114 @@ function QueuesAttentionCard({
   );
 }
 
+/** Slowest job families by p99 — the queue analogue of the slow-route hotspots. */
+function SlowJobsCard({ hotspots }: { hotspots: SlowRouteHotspot[] }): JSX.Element {
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+        Slowest jobs
+      </h3>
+      {hotspots.length > 0 ? (
+        <ul className="space-y-1 text-xs">
+          {hotspots.map((hotspot) => (
+            <li
+              key={hotspot.route}
+              className="flex items-center justify-between gap-3 border-t border-zinc-900 pt-1 first:border-0 first:pt-0"
+            >
+              <span className="min-w-0 truncate text-zinc-300">{hotspot.route}</span>
+              <span className="shrink-0 tabular-nums text-zinc-500">
+                <span className="text-amber-400">{Math.round(hotspot.p99)}ms</span> p99 ·{' '}
+                {hotspot.count}×
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-zinc-600">No jobs in window.</p>
+      )}
+    </section>
+  );
+}
+
+/** Top users by total request time in the window (Laravel Pulse "Usage" card). */
+function LoadByUserCard({
+  users,
+  onSelectUser,
+}: {
+  users: UserLoad[];
+  onSelectUser: (user: string) => void;
+}): JSX.Element {
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+        Load by user
+      </h3>
+      {users.length > 0 ? (
+        <ul className="space-y-1 text-xs">
+          {users.map((load) => (
+            <li key={load.user}>
+              <button
+                type="button"
+                onClick={() => onSelectUser(load.user)}
+                className="flex w-full items-center justify-between gap-3 border-t border-zinc-900 pt-1 text-left hover:text-zinc-100 first:border-0 first:pt-0"
+              >
+                <span className="min-w-0 truncate text-zinc-300">{load.user}</span>
+                <span className="shrink-0 tabular-nums text-zinc-500">
+                  {load.count} req · {Math.round(load.totalDurationMs)}ms
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-zinc-600">No identified users in window.</p>
+      )}
+    </section>
+  );
+}
+
+/** CPU and memory history sparklines from the server-stats ring buffer. */
+function ResourceHistoryCard({
+  history,
+}: { history: ServerStatsHistory | undefined }): JSX.Element {
+  const samples = history?.samples ?? [];
+  const cpu = samples.map((s) => s.cpuPercent);
+  const rss = samples.map((s) => s.rssMb);
+  const heap = samples.map((s) => s.heapUsedMb);
+  const last = samples[samples.length - 1];
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+        Resource history
+      </h3>
+      {samples.length > 1 ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <div className="mb-1 text-[11px] text-zinc-500">
+              CPU {last ? `${last.cpuPercent}%` : ''}
+            </div>
+            <Sparkline values={cpu} />
+          </div>
+          <div>
+            <div className="mb-1 text-[11px] text-zinc-500">
+              RSS {last ? `${last.rssMb}MB` : ''}
+            </div>
+            <Sparkline values={rss} />
+          </div>
+          <div>
+            <div className="mb-1 text-[11px] text-zinc-500">
+              Heap {last ? `${last.heapUsedMb}MB` : ''}
+            </div>
+            <Sparkline values={heap} />
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-600">Collecting samples…</p>
+      )}
+    </section>
+  );
+}
+
 export function OverviewPage(): JSX.Element {
   const [window, setWindow] = useState('1h');
   const navigate = useNavigate();
@@ -477,6 +591,7 @@ export function OverviewPage(): JSX.Element {
   const queues = useQueues(window);
   const series = useTimeseries({ window, buckets: 60 });
   const serverStats = useServerStats();
+  const serverStatsHistory = useServerStatsHistory();
   const health = useHealth();
   const retention = useRetention();
   const meta = useMeta();
@@ -545,6 +660,20 @@ export function OverviewPage(): JSX.Element {
 
         <QueuesAttentionCard queues={attentionQueues} onOpenQueues={() => navigate('/queues')} />
       </div>
+
+      {/*
+        OUTLIER ROLLUPS — Pulse-style cost cards: slowest jobs and load-by-user
+        over the window, plus the CPU/mem resource history.
+      */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SlowJobsCard hotspots={pulse.data?.slowJobs ?? []} />
+        <LoadByUserCard
+          users={pulse.data?.loadByUser ?? []}
+          onSelectUser={(user) => navigate(`/entries?tag=${encodeURIComponent(`user:${user}`)}`)}
+        />
+      </div>
+
+      <ResourceHistoryCard history={serverStatsHistory.data} />
 
       {/*
         BOTTOM — trends & self-health: throughput, composition by type, and

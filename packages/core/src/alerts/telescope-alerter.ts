@@ -4,9 +4,11 @@ import { durationToMs } from '../config/parse-duration.js';
 import type { ClientExceptionContent, ExceptionContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
+import { percentile } from '../metrics/stats.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { AlertChannel } from './alert-channel.js';
 import type {
+  AlertMetric,
   AlertPayload,
   AlertRule,
   ExceptionAlertContext,
@@ -144,7 +146,7 @@ export class TelescopeAlerter {
           continue;
         }
         if (entry.familyHash === null) continue;
-        const isNew = this.newExceptionTracker.observe(entry.familyHash, nowMs, windowMs);
+        const isNew = await this.observeFamily(entry.familyHash, nowMs, windowMs);
         if (!isNew) continue;
         if (this.familyInCooldown(entry.familyHash, nowMs)) continue;
         this.lastFiredFamily.set(entry.familyHash, nowMs);
@@ -158,6 +160,32 @@ export class TelescopeAlerter {
     }
   }
 
+  /**
+   * "Is this a NEW error family for the window?" — using the SHARED store dedup
+   * when the provider implements `markFamilySeen` (so a family pages once across a
+   * multi-replica deployment), and the in-memory per-replica tracker otherwise.
+   * A shared-store failure falls back to the local tracker rather than dropping
+   * the alert, so a transient store hiccup degrades to once-per-pod, never to
+   * silent.
+   */
+  private async observeFamily(
+    familyHash: string,
+    nowMs: number,
+    windowMs: number,
+  ): Promise<boolean> {
+    const markFamilySeen = this.deps.storage.markFamilySeen;
+    if (markFamilySeen !== undefined) {
+      try {
+        return await markFamilySeen.call(this.deps.storage, familyHash, nowMs, windowMs);
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Telescope shared new-exception dedup failed, falling back to per-replica: ${(error as Error).message}`,
+        );
+      }
+    }
+    return this.newExceptionTracker.observe(familyHash, nowMs, windowMs);
+  }
+
   /** Returns `{ value, threshold }` when an interval rule is firing, else `null`. */
   private async measure(
     rule: Exclude<AlertRule, { type: 'new-exception' }>,
@@ -169,6 +197,9 @@ export class TelescopeAlerter {
     if (rule.type === 'slow-request-rate') {
       const value = await this.countSlowRequests(rule.window, rule.thresholdMs);
       return value >= rule.count ? { value, threshold: rule.count } : null;
+    }
+    if (rule.type === 'metric-threshold') {
+      return this.measureMetric(rule);
     }
     // dropped-entries: delta since the previous evaluation.
     const current = this.deps.droppedCount();
@@ -193,6 +224,70 @@ export class TelescopeAlerter {
       }
     }
     return slow;
+  }
+
+  /**
+   * Compute a `metric-threshold` rule's metric over its window and return
+   * `{ value, threshold }` when it crosses in the comparator direction, else
+   * `null`. Latency metrics read `durationMs` only (content-less); the cache
+   * hit-rate needs the cache content, so it reads WITH content for that metric.
+   */
+  private async measureMetric(rule: {
+    metric: AlertMetric;
+    window: string;
+    comparator: 'gte' | 'lte';
+    threshold: number;
+    minSamples?: number;
+  }): Promise<{ value: number; threshold: number } | null> {
+    const minSamples = rule.minSamples ?? 1;
+    const computed = await this.computeMetric(rule.metric, rule.window);
+    if (computed === null || computed.samples < minSamples) return null;
+    const crosses =
+      rule.comparator === 'gte'
+        ? computed.value >= rule.threshold
+        : computed.value <= rule.threshold;
+    return crosses ? { value: computed.value, threshold: rule.threshold } : null;
+  }
+
+  /** Aggregate a metric over the window, or `null` when there are no samples. */
+  private async computeMetric(
+    metric: AlertMetric,
+    window: string,
+  ): Promise<{ value: number; samples: number } | null> {
+    if (metric === 'cache-hit-rate') {
+      const after = new Date(this.now() - durationToMs(window));
+      const result = await collectEntriesInWindow(
+        this.deps.storage,
+        { type: EntryType.Cache, after },
+        { scanCap: ALERT_SCAN_CAP },
+      );
+      let hits = 0;
+      let misses = 0;
+      for (const entry of result.entries) {
+        const record =
+          typeof entry.content === 'object' && entry.content !== null
+            ? (entry.content as Record<string, unknown>)
+            : null;
+        if (record === null || record.operation !== 'get') continue;
+        if (record.hit === true) hits += 1;
+        else if (record.hit === false) misses += 1;
+      }
+      const total = hits + misses;
+      if (total === 0) return null;
+      return { value: hits / total, samples: total };
+    }
+
+    // Latency percentile metrics: read durations for the metric's type.
+    const type = metric.startsWith('request') ? EntryType.Request : EntryType.Query;
+    const entries = await this.readWindow(window, type);
+    const durations: number[] = [];
+    for (const entry of entries) {
+      if (typeof entry.durationMs === 'number') durations.push(entry.durationMs);
+    }
+    if (durations.length === 0) return null;
+    durations.sort((a, b) => a - b);
+    const q = metric.endsWith('p99-ms') ? 0.99 : 0.95;
+    return { value: percentile(durations, q), samples: durations.length };
   }
 
   /**
