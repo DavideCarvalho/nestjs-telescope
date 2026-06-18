@@ -1,5 +1,15 @@
 # @dudousxd/nestjs-telescope
 
+## 1.10.0
+
+### Minor Changes
+
+- [#15](https://github.com/DavideCarvalho/nestjs-telescope/pull/15) [`64ada5e`](https://github.com/DavideCarvalho/nestjs-telescope/commit/64ada5e485cdf31bdc3e72da354fc0cec8fd8781) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Rich extension dashboards: the panel IR gains delta/sparkline/threshold on `stat`
+  and new `distribution`, `gauge`, and `breakdown` panel kinds, plus a `sections`
+  layout. Dashboards update in realtime over a new `@Sse` invalidation stream
+  (falling back to polling), with a LIVE indicator. Fully backward compatible —
+  existing extensions and flat `stat` panels render unchanged.
+
 ## 1.9.1
 
 ### Patch Changes

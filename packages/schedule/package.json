@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-schedule",
-  "version": "1.9.1",
+  "version": "1.10.0",
   "description": "@nestjs/schedule cron/interval watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {

@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-mikro-orm-watcher",
-  "version": "1.9.1",
+  "version": "1.10.0",
   "description": "MikroORM entity lifecycle (model) watcher for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
