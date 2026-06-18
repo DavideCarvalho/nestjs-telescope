@@ -23,6 +23,13 @@ export const EntryType = {
    * the exception groupings compose over both.
    */
   ClientException: 'client_exception',
+  /**
+   * An on-demand CPU flamegraph capture, recorded by the opt-in profiler around a
+   * sampled/triggered request. Its `content` is the AGGREGATED frame tree (see
+   * {@link CpuProfileContent}), not the raw `.cpuprofile` — keeping the entry body
+   * bounded. Associated to its request by `batchId`/`traceId` like any entry.
+   */
+  CpuProfile: 'cpu_profile',
 } as const;
 
 export type BuiltinEntryType = (typeof EntryType)[keyof typeof EntryType];

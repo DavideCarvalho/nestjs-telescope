@@ -1,6 +1,8 @@
 // packages/core/src/nest/telescope-request.middleware.ts
-import { Inject, Injectable, type NestMiddleware } from '@nestjs/common';
+import { Inject, Injectable, type NestMiddleware, Optional } from '@nestjs/common';
 import { EntryType } from '../entry/entry.js';
+import type { ProfileHandle } from '../profiling/profiler.service.js';
+import { ProfilerService } from '../profiling/profiler.service.js';
 import { normalizeRoute } from '../query/normalize-route.js';
 import { normalizeRequest } from './platform-request.js';
 import { TelescopeService } from './telescope.service.js';
@@ -59,7 +61,16 @@ function readUser(request: unknown, resolveUser?: (request: unknown) => unknown)
 
 @Injectable()
 export class TelescopeRequestMiddleware implements NestMiddleware {
-  constructor(@Inject(TelescopeService) private readonly service: TelescopeService) {}
+  constructor(
+    @Inject(TelescopeService) private readonly service: TelescopeService,
+    // ProfilerService is OPTIONAL so hosts/tests constructing the middleware
+    // directly (e.g. `telescopeRequestCapture`) keep working unchanged. When the
+    // module DI provides it (the normal path), it's injected; otherwise profiling
+    // is simply inert. The service itself is a no-op while profiling is disabled.
+    @Optional()
+    @Inject(ProfilerService)
+    private readonly profiler: ProfilerService | undefined = undefined,
+  ) {}
 
   use(req: unknown, res: unknown, next: (error?: unknown) => void): void {
     const request = normalizeRequest(req);
@@ -76,6 +87,15 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
 
     const startedAt = Date.now();
     const response = asFinishable(res);
+    const route = normalizeRoute(request.method, request.url);
+
+    // Opt-in CPU profiling: a single cheap boolean gate when disabled. When a
+    // request is selected, begin the capture now and stop it on finish; the
+    // recorded `cpu_profile` entry inherits the active batch/trace context.
+    let profile: ProfileHandle | null = null;
+    if (this.profiler?.shouldProfile(route)) {
+      profile = this.profiler.begin(route);
+    }
 
     // A replay (re-issued from the dashboard) carries `x-telescope-replay: 1`.
     // Tag its captured entry so the dashboard/agent can tell replays apart from
@@ -89,7 +109,7 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
           // A readable normalized route (e.g. "GET /api/base/:id/mel") groups
           // request entries by endpoint via the indexed family_hash column and
           // doubles as the human label — no content hydration needed.
-          familyHash: normalizeRoute(request.method, request.url),
+          familyHash: route,
           ...(isReplay ? { tags: ['replay'] } : {}),
           content: {
             method: request.method,
@@ -105,6 +125,12 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
           },
           durationMs: Date.now() - startedAt,
         });
+        // Stop + record the profile within the same async context so its
+        // `cpu_profile` entry shares this request's batchId/traceId. Fire-and-
+        // forget: `end` never throws and never blocks the response.
+        if (profile !== null) {
+          void this.profiler?.end(profile, route);
+        }
       });
     }
 

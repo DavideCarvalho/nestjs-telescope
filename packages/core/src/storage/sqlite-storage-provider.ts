@@ -107,6 +107,11 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
         primary key (metric, bucket_start)
       );
       create index if not exists ix_tr_bucket on telescope_rollups (bucket_start);
+
+      create table if not exists telescope_seen_families (
+        family_hash text primary key,
+        last_seen integer not null
+      );
     `);
 
     // Self-heal tables created before trace_id/span_id existed (additive, no migration).
@@ -370,7 +375,32 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
   }
 
   async clear(): Promise<void> {
-    this.db.exec('delete from telescope_entries; delete from telescope_rollups;');
+    this.db.exec(
+      'delete from telescope_entries; delete from telescope_rollups; delete from telescope_seen_families;',
+    );
+  }
+
+  /**
+   * SHARED new-exception dedup. Atomic check-and-update INSIDE a transaction so
+   * concurrent replicas writing to the SAME database file race safely: exactly
+   * one sees `true` for a brand-new family. Returns `true` when the family was
+   * never seen or last seen longer ago than `windowMs`.
+   */
+  async markFamilySeen(familyHash: string, nowMs: number, windowMs: number): Promise<boolean> {
+    const tx = this.db.transaction((): boolean => {
+      const row = this.db
+        .prepare('select last_seen from telescope_seen_families where family_hash = ?')
+        .get(familyHash) as { last_seen: number } | undefined;
+      const isNew = row === undefined || nowMs - row.last_seen >= windowMs;
+      this.db
+        .prepare(
+          `insert into telescope_seen_families (family_hash, last_seen) values (?, ?)
+           on conflict(family_hash) do update set last_seen = excluded.last_seen`,
+        )
+        .run(familyHash, nowMs);
+      return isNew;
+    });
+    return tx();
   }
 
   // ── RollupStore SPI ────────────────────────────────────────────────────────

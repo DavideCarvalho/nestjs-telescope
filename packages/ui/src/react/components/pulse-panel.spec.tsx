@@ -21,6 +21,7 @@ const report: PulseReport = {
       perRequest: 6,
       requests: 3,
       total: 18,
+      totalDurationMs: 240,
       sampleBatchId: 'b',
     },
   ],

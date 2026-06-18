@@ -1,6 +1,6 @@
 // packages/core/src/metrics/server-stats.service.ts
 import * as perfHooks from 'node:perf_hooks';
-import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, type OnApplicationShutdown, Optional } from '@nestjs/common';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { TELESCOPE_CONFIG } from '../nest/telescope.options.js';
 
@@ -12,6 +12,30 @@ export interface ServerStats {
   eventLoopDelayMs: number | null;
   instanceId: string;
 }
+
+/** One point in the CPU/mem history ring buffer. */
+export interface ServerStatsSample {
+  /** Wall-clock time of the sample (epoch ms). */
+  atMs: number;
+  rssMb: number;
+  heapUsedMb: number;
+  /** CPU utilisation since the previous sample, as a percent of one core (>= 0;
+   *  0 on the very first sample, where there is no previous interval). */
+  cpuPercent: number;
+  /** Mean event-loop delay (ms) at sample time, or null when unavailable. */
+  eventLoopDelayMs: number | null;
+}
+
+export interface ServerStatsHistory {
+  samples: ServerStatsSample[];
+}
+
+export interface ServerStatsServiceOptions {
+  /** Ring-buffer cap for the CPU/mem history. Default 120 (~10m at a 5s poll). */
+  maxSamples?: number;
+}
+
+const DEFAULT_MAX_SAMPLES = 120;
 
 /** A minimal monitor surface — only the bits the service touches. */
 interface EventLoopDelayMonitor {
@@ -39,9 +63,19 @@ function toMb(bytes: number): number {
 @Injectable()
 export class ServerStatsService implements OnApplicationShutdown {
   private readonly loopMonitor: EventLoopDelayMonitor | null;
+  private readonly maxSamples: number;
+  /** CPU/mem history ring buffer (oldest first). */
+  private readonly samples: ServerStatsSample[] = [];
+  /** Previous (cpuUsage, wall ms) for deriving the per-interval cpuPercent. */
+  private lastCpu: NodeJS.CpuUsage | null = null;
+  private lastSampleMs = 0;
 
-  constructor(@Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig) {
+  constructor(
+    @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
+    @Optional() options?: ServerStatsServiceOptions,
+  ) {
     this.loopMonitor = startEventLoopMonitor();
+    this.maxSamples = Math.max(1, Math.floor(options?.maxSamples ?? DEFAULT_MAX_SAMPLES));
   }
 
   onApplicationShutdown(): void {
@@ -53,6 +87,7 @@ export class ServerStatsService implements OnApplicationShutdown {
     const cpu = process.cpuUsage();
     const eventLoopDelayMs =
       this.loopMonitor === null ? null : roundMs(this.loopMonitor.mean / NS_PER_MS);
+    this.recordSample(memory, cpu, eventLoopDelayMs);
     return {
       uptimeSec: Math.round(process.uptime() * 100) / 100,
       memory: {
@@ -67,6 +102,49 @@ export class ServerStatsService implements OnApplicationShutdown {
       eventLoopDelayMs,
       instanceId: this.config.instanceId,
     };
+  }
+
+  /** The CPU/mem history captured so far (oldest first), for the dashboard's
+   *  CPU/mem-history card. Cheap copy of the ring buffer. */
+  getHistory(): ServerStatsHistory {
+    return { samples: [...this.samples] };
+  }
+
+  /**
+   * Append one history sample, deriving cpuPercent from the CPU-time delta since
+   * the previous sample over the wall-clock interval (percent of ONE core). The
+   * first sample has no prior interval, so its cpuPercent is 0. Evicts the oldest
+   * once the ring buffer exceeds its cap.
+   */
+  private recordSample(
+    memory: NodeJS.MemoryUsage,
+    cpu: NodeJS.CpuUsage,
+    eventLoopDelayMs: number | null,
+  ): void {
+    const nowMs = Date.now();
+    let cpuPercent = 0;
+    if (this.lastCpu !== null && this.lastSampleMs > 0) {
+      const cpuDeltaUs = cpu.user - this.lastCpu.user + (cpu.system - this.lastCpu.system);
+      const wallDeltaMs = nowMs - this.lastSampleMs;
+      if (wallDeltaMs > 0) {
+        // cpuDeltaUs is microseconds of CPU; wallDeltaMs*1000 is the interval in
+        // microseconds. The ratio is the fraction of one core, ×100 for percent.
+        cpuPercent = Math.max(
+          0,
+          Math.round((cpuDeltaUs / (wallDeltaMs * US_PER_MS)) * 10000) / 100,
+        );
+      }
+    }
+    this.lastCpu = cpu;
+    this.lastSampleMs = nowMs;
+    this.samples.push({
+      atMs: nowMs,
+      rssMb: toMb(memory.rss),
+      heapUsedMb: toMb(memory.heapUsed),
+      cpuPercent,
+      eventLoopDelayMs,
+    });
+    while (this.samples.length > this.maxSamples) this.samples.shift();
   }
 }
 

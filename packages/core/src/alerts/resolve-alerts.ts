@@ -45,7 +45,8 @@ export function resolveAlerts(alerts: AlertsOptions | undefined): ResolvedAlerts
     if (
       rule.type === 'exception-rate' ||
       rule.type === 'slow-request-rate' ||
-      rule.type === 'new-exception'
+      rule.type === 'new-exception' ||
+      rule.type === 'metric-threshold'
     ) {
       // Throws on an unparseable window — fail closed at boot.
       durationToMs(rule.window);

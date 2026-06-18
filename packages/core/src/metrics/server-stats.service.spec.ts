@@ -52,4 +52,37 @@ describe('ServerStatsService', () => {
       service.onApplicationShutdown();
     }).not.toThrow();
   });
+
+  describe('history', () => {
+    it('starts empty', () => {
+      const service = new ServerStatsService(config());
+      expect(service.getHistory().samples).toEqual([]);
+      service.onApplicationShutdown();
+    });
+
+    it('appends a CPU/mem sample on each getStats call', () => {
+      const service = new ServerStatsService(config());
+      service.getStats();
+      service.getStats();
+      const history = service.getHistory();
+      expect(history.samples).toHaveLength(2);
+      const sample = history.samples[0];
+      expect(Number.isFinite(sample?.atMs)).toBe(true);
+      expect(Number.isFinite(sample?.rssMb)).toBe(true);
+      expect(Number.isFinite(sample?.heapUsedMb)).toBe(true);
+      expect(Number.isFinite(sample?.cpuPercent)).toBe(true);
+      service.onApplicationShutdown();
+    });
+
+    it('caps the ring buffer at maxSamples, evicting the oldest', () => {
+      const service = new ServerStatsService(config(), { maxSamples: 3 });
+      for (let i = 0; i < 5; i++) service.getStats();
+      const history = service.getHistory();
+      expect(history.samples).toHaveLength(3);
+      // Monotonic non-decreasing timestamps (oldest first).
+      const times = history.samples.map((s) => s.atMs);
+      expect([...times].sort((a, b) => a - b)).toEqual(times);
+      service.onApplicationShutdown();
+    });
+  });
 });

@@ -17,15 +17,51 @@ import type { AlertChannel } from './alert-channel.js';
  *                         dropped a burst at boot doesn't keep re-firing).
  * - `new-exception`     — fires the FIRST time an exception's `familyHash` is
  *                         seen within `window` (a genuinely NEW error family).
- *                         Dedup is an in-memory, per-replica seen-map, so the
- *                         same family may alert ONCE PER POD in a multi-replica
- *                         deployment (acceptable for v1 — see docs).
+ *                         Dedup uses the shared {@link StorageProvider} when it
+ *                         implements `markFamilySeen` (so a family pages ONCE
+ *                         across a multi-replica deployment), falling back to an
+ *                         in-memory per-replica seen-map otherwise.
+ * - `metric-threshold`  — fires when a COMPUTED metric over the trailing
+ *                         `window` crosses `threshold` in the `comparator`
+ *                         direction. Unlike the rate rules (which count events),
+ *                         this evaluates the SAME aggregates the dashboard shows
+ *                         — e.g. request p95 latency, or cache hit-rate — so you
+ *                         can page on "p95 > 800ms" or "hit-rate < 0.8".
  */
 export type AlertRule =
   | { type: 'exception-rate'; window: string; threshold: number }
   | { type: 'slow-request-rate'; window: string; thresholdMs: number; count: number }
   | { type: 'dropped-entries'; threshold: number }
-  | { type: 'new-exception'; window: string };
+  | { type: 'new-exception'; window: string }
+  | {
+      type: 'metric-threshold';
+      /** The computed metric to evaluate (see {@link AlertMetric}). */
+      metric: AlertMetric;
+      /** Trailing window to aggregate over (e.g. `'5m'`). */
+      window: string;
+      /** `gte` fires when value >= threshold; `lte` when value <= threshold. */
+      comparator: 'gte' | 'lte';
+      /** The threshold the metric is compared against. */
+      threshold: number;
+      /**
+       * Minimum samples in the window before the rule can fire. Guards against a
+       * single slow request tripping a p95 page on a quiet host. Default 1.
+       */
+      minSamples?: number;
+    };
+
+/**
+ * The metrics a `metric-threshold` rule can evaluate. Each is derived from the
+ * SAME windowed aggregation the stats/pulse views use, so an alert means exactly
+ * what the dashboard shows. Latency metrics are in ms; `cache-hit-rate` is a
+ * ratio in [0, 1].
+ */
+export type AlertMetric =
+  | 'request-p95-ms'
+  | 'request-p99-ms'
+  | 'query-p95-ms'
+  | 'query-p99-ms'
+  | 'cache-hit-rate';
 
 /**
  * Pluggable alerting (v2). When set, {@link TelescopeAlerter} evaluates `rules`

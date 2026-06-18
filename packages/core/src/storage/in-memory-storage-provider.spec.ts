@@ -257,4 +257,13 @@ describe('InMemoryStorageProvider', () => {
       expect((await store.get({})).data.map((e) => e.id)).toEqual(['e3']);
     });
   });
+
+  describe('markFamilySeen', () => {
+    it('reports new on first sight, repeat within window, new again after window', async () => {
+      const store = new InMemoryStorageProvider();
+      expect(await store.markFamilySeen('f', 1000, 60_000)).toBe(true);
+      expect(await store.markFamilySeen('f', 2000, 60_000)).toBe(false);
+      expect(await store.markFamilySeen('f', 70_000, 60_000)).toBe(true);
+    });
+  });
 });

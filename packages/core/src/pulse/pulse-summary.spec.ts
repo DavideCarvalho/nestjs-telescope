@@ -57,6 +57,43 @@ describe('summarizePulse', () => {
     expect(summary.slowest[2]!.label).toBe('GET /a');
   });
 
+  it('ranks slow job families by p99 (slowJobs hotspots)', () => {
+    const summary = summarizePulse(
+      [
+        entry({ type: 'job', familyHash: 'mail:send', durationMs: 100 }),
+        entry({ type: 'job', familyHash: 'mail:send', durationMs: 500 }),
+        entry({ type: 'job', familyHash: 'mail:send', durationMs: 300 }),
+        entry({ type: 'job', familyHash: 'report:build', durationMs: 50 }),
+        entry({ type: 'job', familyHash: 'report:build', durationMs: 60 }),
+      ],
+      start,
+      end,
+      opts,
+    );
+    expect(summary.slowJobs.map((j) => j.route)).toEqual(['mail:send', 'report:build']);
+    expect(summary.slowJobs[0]?.count).toBe(3);
+    expect(summary.slowJobs[0]?.p99).toBe(500);
+  });
+
+  it('aggregates load by user from user:<id> tags', () => {
+    const withUser = (user: string, durationMs: number): Entry => ({
+      ...entry({ type: 'request', durationMs }),
+      tags: [`user:${user}`],
+    });
+    const summary = summarizePulse(
+      [withUser('alice', 100), withUser('alice', 200), withUser('bob', 50)],
+      start,
+      end,
+      opts,
+    );
+    expect(summary.loadByUser[0]).toMatchObject({
+      user: 'alice',
+      count: 2,
+      totalDurationMs: 300,
+    });
+    expect(summary.loadByUser[1]).toMatchObject({ user: 'bob', count: 1 });
+  });
+
   it('groups exceptions by familyHash with counts and last-seen', () => {
     const summary = summarizePulse(
       [

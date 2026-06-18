@@ -117,6 +117,22 @@ export interface StorageProvider {
   pruneScoped?(input: PruneScope): Promise<number>;
   clear(): Promise<void>;
   /**
+   * SHARED dedup for the `new-exception` alert. ADDITIVE and OPTIONAL.
+   *
+   * Atomically records that `familyHash` was observed at `nowMs` and returns
+   * `true` IFF this is a genuinely NEW occurrence for the trailing `windowMs`
+   * (never seen, or last seen longer ago than the window) — the exact signal that
+   * should fire the alert. The check-and-update MUST be atomic so that, with
+   * multiple replicas writing to the SAME store, only ONE replica sees `true` for
+   * a brand-new family (the others see `false`): a family pages ONCE across the
+   * whole deployment instead of once per pod.
+   *
+   * Providers that omit this fall back to the alerter's in-memory per-replica
+   * tracker (the documented v1 "once per pod" behaviour), so existing/3rd-party
+   * providers keep working unchanged.
+   */
+  markFamilySeen?(familyHash: string, nowMs: number, windowMs: number): Promise<boolean>;
+  /**
    * Acquire resources / ensure schema. Optional; called ONCE at application boot,
    * before any other method, and awaited by the module during startup. Providers
    * with no startup work omit it.

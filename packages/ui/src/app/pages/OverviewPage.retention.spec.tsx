@@ -71,6 +71,7 @@ function mockClient(pruneEnabled: boolean, prune: () => Promise<{ pruned: number
       eventLoopDelayMs: 0,
       instanceId: 'i',
     }),
+    serverStatsHistory: async () => ({ samples: [] }),
     health: async () => ({
       enabled: true,
       recorded: 0,

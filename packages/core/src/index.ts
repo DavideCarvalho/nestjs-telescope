@@ -56,6 +56,7 @@ export * from './schedule/schedule-manager.registry.js';
 
 export * from './query/query-family-hash.js';
 export * from './query/n-plus-one.js';
+export * from './query/n-plus-one-pattern.js';
 
 export * from './rollup/rollup-store.js';
 export * from './rollup/aggregate-deltas.js';
@@ -69,6 +70,7 @@ export * from './metrics/timeseries.js';
 export * from './metrics/timeseries.service.js';
 export * from './metrics/traces.js';
 export * from './metrics/traces.service.js';
+export * from './metrics/waterfall.js';
 export * from './metrics/stats.js';
 export * from './metrics/stats.service.js';
 export * from './metrics/server-stats.service.js';
@@ -89,6 +91,8 @@ export * from './ai/diagnoser.js';
 export * from './ai/diagnose-context-builder.js';
 export * from './ai/diagnosis-cache.js';
 export * from './ai/diagnosis-coordinator.js';
+
+export * from './profiling/index.js';
 
 export * from './extension/index.js';
 

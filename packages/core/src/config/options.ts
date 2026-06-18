@@ -1,5 +1,6 @@
 // packages/core/src/config/options.ts
 import type { Entry } from '../entry/entry.js';
+import type { ProfilingOptions, ResolvedProfilingConfig } from '../profiling/profiling-config.js';
 import type { RedactOptions } from '../redaction/redact.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
@@ -127,6 +128,13 @@ export interface TelescopeCoreOptions {
   taggers?: Tagger[];
   instanceId?: string;
   filter?: (entry: Entry) => boolean;
+  /**
+   * On-demand CPU flamegraph profiling. STRICTLY opt-in and OFF by default; when
+   * absent or `{ enabled: false }` the profiler is never constructed, the Node
+   * `inspector` module is never loaded, and the request path is untouched beyond
+   * a single boolean check. See {@link ProfilingOptions}.
+   */
+  profiling?: ProfilingOptions;
   /** Optional ambient trace-context source (e.g. OtelTraceContextProvider). */
   traceContext?: TraceContextProvider;
   /** UI trace-link URL template with {traceId}/{spanId} placeholders. */
@@ -171,6 +179,8 @@ export interface ResolvedCoreConfig {
   taggers: Tagger[];
   instanceId: string;
   filter?: (entry: Entry) => boolean;
+  /** Fully-defaulted profiling config. Always present; `enabled: false` by default. */
+  profiling: ResolvedProfilingConfig;
   traceContext?: TraceContextProvider;
   traceLink?: string;
 }

@@ -72,4 +72,22 @@ describe('GET /telescope/api/traces', () => {
   it('rejects an unparseable window with 400', async () => {
     await request(app.getHttpServer()).get('/telescope/api/traces?window=soon').expect(400);
   });
+
+  it('returns a nested waterfall for a trace', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/telescope/api/traces/t1/waterfall')
+      .expect(200);
+    const body = res.body as { spans: { id: string; type: string; children: unknown[] }[] };
+    expect(body.spans.length).toBeGreaterThanOrEqual(1);
+    // The request entry started first (older createdAt) and is longer-or-equal,
+    // so the query nests under it.
+    const root = body.spans.find((s) => s.type === 'request');
+    expect(root).toBeDefined();
+  });
+
+  it('returns 404 for an unknown trace', async () => {
+    await request(app.getHttpServer())
+      .get('/telescope/api/traces/does-not-exist/waterfall')
+      .expect(404);
+  });
 });

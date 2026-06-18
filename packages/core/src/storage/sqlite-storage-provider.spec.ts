@@ -148,6 +148,31 @@ describe('SqliteStorageProvider', () => {
     expect((await store.get({})).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  describe('markFamilySeen (shared new-exception dedup)', () => {
+    it('returns true once for a brand-new family, false on a repeat in window', async () => {
+      const now = 1_000_000;
+      expect(await store.markFamilySeen('fam', now, 60_000)).toBe(true);
+      expect(await store.markFamilySeen('fam', now + 1_000, 60_000)).toBe(false);
+    });
+
+    it('returns true again once the family is older than the window', async () => {
+      const now = 1_000_000;
+      expect(await store.markFamilySeen('fam', now, 60_000)).toBe(true);
+      expect(await store.markFamilySeen('fam', now + 60_001, 60_000)).toBe(true);
+    });
+
+    it('serializes concurrent writers so only one sees a new family', async () => {
+      // Two markFamilySeen calls on the same store (same db) for a new family —
+      // exactly one must return true (the atomic check-and-update).
+      const now = 2_000_000;
+      const [a, b] = await Promise.all([
+        store.markFamilySeen('race', now, 60_000),
+        store.markFamilySeen('race', now, 60_000),
+      ]);
+      expect([a, b].filter(Boolean)).toHaveLength(1);
+    });
+  });
+
   describe('pruneScoped', () => {
     const old = new Date('2026-01-01T00:00:00Z');
     const fresh = new Date('2026-03-01T00:00:00Z');

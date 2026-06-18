@@ -4,6 +4,7 @@ import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import type { EntryQuery, StorageProvider } from '../storage/storage-provider.js';
 import { collectEntriesInWindow } from './collect-window.js';
 import { type TraceSummary, summarizeTraces } from './traces.js';
+import { type Waterfall, buildWaterfall } from './waterfall.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
@@ -57,5 +58,16 @@ export class TracesService {
     });
 
     return { traces: summarizeTraces(entries, { limit }), scanned, truncated };
+  }
+
+  /**
+   * Build a nested span waterfall for ONE trace. Fetches the trace's entries WITH
+   * content (labels need it) and reconstructs parent/child nesting from time-
+   * interval containment — see {@link buildWaterfall}. Returns `null` when the
+   * trace has no entries (e.g. unknown / pruned trace id).
+   */
+  async getWaterfall(traceId: string): Promise<Waterfall | null> {
+    const page = await this.storage.get({ traceId, limit: MAX_LIMIT });
+    return buildWaterfall(page.data);
   }
 }
