@@ -75,7 +75,9 @@ export class MetricStore {
     const key = `${sample.counter}|${serializeLabels(sample.labels)}`;
     let entry = this.cells.get(key);
     if (entry === undefined) {
-      entry = { sample, cell: { count: 0, durSum: 0, durCount: 0, durMetric: sample.durationMetric } };
+      const cell: CounterCell = { count: 0, durSum: 0, durCount: 0 };
+      if (sample.durationMetric !== undefined) cell.durMetric = sample.durationMetric;
+      entry = { sample, cell };
       this.cells.set(key, entry);
     }
     entry.cell.count += 1;
