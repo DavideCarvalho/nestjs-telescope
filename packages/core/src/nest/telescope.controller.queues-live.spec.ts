@@ -211,3 +211,73 @@ describe('GET /telescope/api/queues/live capabilities', () => {
     }
   });
 });
+
+describe('POST /telescope/api/queues/live/:driver/:queue/jobs/:id/:action', () => {
+  let app: INestApplication;
+  const calls: Array<{ method: string; args: unknown[] }> = [];
+  // Implements retry + remove, but NOT promote (to exercise the 405 path).
+  const actionManager: QueueManager = {
+    driver: 'bull',
+    init: () => {},
+    listQueues: (): Promise<QueueSummary[]> => Promise.resolve([SUMMARY]),
+    counts: (): Promise<QueueCounts> => Promise.resolve(COUNTS),
+    listJobs: (): Promise<JobPage> => Promise.resolve(FAILED_PAGE),
+    getJob: (): Promise<QueueJobDetail | null> => Promise.resolve(JOB_DETAIL),
+    retry: (queue: string, id: string): Promise<void> => {
+      calls.push({ method: 'retry', args: [queue, id] });
+      return Promise.resolve();
+    },
+    remove: (queue: string, id: string): Promise<void> => {
+      calls.push({ method: 'remove', args: [queue, id] });
+      return Promise.resolve();
+    },
+  };
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        TelescopeModule.forRoot({
+          enabled: true,
+          authorizer: () => true,
+          authorizeAction: () => true,
+          queueManagers: [actionManager],
+        }),
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('dispatches retry to the manager method with (queue, id)', async () => {
+    calls.length = 0;
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bull/q1/jobs/7/retry')
+      .expect(200)
+      .expect({ ok: true });
+    expect(calls).toEqual([{ method: 'retry', args: ['q1', '7'] }]);
+  });
+
+  it('dispatches remove to the manager method with (queue, id)', async () => {
+    calls.length = 0;
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bull/q1/jobs/7/remove')
+      .expect(200);
+    expect(calls).toEqual([{ method: 'remove', args: ['q1', '7'] }]);
+  });
+
+  it('returns 405 when the driver does not implement the per-job action', async () => {
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bull/q1/jobs/7/promote')
+      .expect(405);
+  });
+
+  it('rejects a non-per-job action (retry-all) on the per-job route with 400', async () => {
+    await request(app.getHttpServer())
+      .post('/telescope/api/queues/live/bull/q1/jobs/7/retry-all')
+      .expect(400);
+  });
+});

@@ -89,14 +89,24 @@ export interface QueueCapabilities {
 }
 
 /** Maps a queue action to the optional QueueManager method that implements it. */
-const ACTION_METHOD: Record<QueueActionName, keyof QueueManager> = {
+const ACTION_METHOD = {
   retry: 'retry',
   remove: 'remove',
   promote: 'promote',
   'retry-all': 'retryAll',
   redrive: 'redrive',
   enqueue: 'enqueue',
-};
+} as const satisfies Record<QueueActionName, keyof QueueManager>;
+
+/**
+ * The per-job actions (those whose QueueManager method has the
+ * `(queue, id) => Promise<void>` shape). `jobAction` dispatches via
+ * {@link ACTION_METHOD}, so this subset is the route's allow-list.
+ */
+const JOB_ACTIONS = ['retry', 'remove', 'promote'] as const satisfies readonly QueueActionName[];
+type JobAction = (typeof JOB_ACTIONS)[number];
+const isJobAction = (action: string): action is JobAction =>
+  (JOB_ACTIONS as readonly string[]).includes(action);
 
 interface EnqueueBody {
   name?: string;
@@ -359,13 +369,8 @@ export class TelescopeController {
     @Param('action') action: string,
   ): Promise<{ ok: true }> {
     const manager = this.requireManager(driver);
-    if (action === 'retry') {
-      await this.callAction(manager.retry, manager, queue, id, action);
-    } else if (action === 'remove') {
-      await this.callAction(manager.remove, manager, queue, id, action);
-    } else if (action === 'promote') {
-      await this.callAction(manager.promote, manager, queue, id, action);
-    } else throw new BadRequestException(`Invalid job action: ${action}`);
+    if (!isJobAction(action)) throw new BadRequestException(`Invalid job action: ${action}`);
+    await this.callAction(manager[ACTION_METHOD[action]], manager, queue, id, action);
     return { ok: true };
   }
 
