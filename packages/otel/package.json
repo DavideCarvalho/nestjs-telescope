@@ -29,17 +29,25 @@
   },
   "peerDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:^",
+    "@nestjs/common": ">=10.0.0",
     "@opentelemetry/api": ">=1.0.0"
   },
   "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": true
+    },
     "@opentelemetry/api": {
       "optional": true
     }
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
     "@opentelemetry/api": "1.9.0",
     "@types/node": "^20.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },

@@ -429,12 +429,24 @@ importers:
       '@dudousxd/nestjs-telescope':
         specifier: workspace:*
         version: link:../core
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^11.0.0
+        version: 11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.41
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      rxjs:
+        specifier: ^7.8.1
+        version: 7.8.2
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
