@@ -46,6 +46,13 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       accent: 'text-teal-300',
       annotations: props.matchPropsOn,
     },
+    {
+      label: 'Prepend',
+      keys: props.prepend,
+      accent: 'text-teal-300',
+      annotations: props.matchPropsOn,
+    },
+    { label: 'Rescued', keys: props.rescued, accent: 'text-red-300' },
   ];
 
   return (
@@ -95,10 +102,13 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
             <KeyColumn label="Kept" keys={partial.only} accent="text-emerald-300" />
             <KeyColumn label="Excluded" keys={excluded} accent="text-red-300" />
           </div>
-          {partial.reset.length > 0 || partial.resetOnce.length > 0 ? (
+          {partial.reset.length > 0 ||
+          partial.resetOnce.length > 0 ||
+          partial.exceptOnce.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-3">
               <ChipRow label="reset" keys={partial.reset} accent="text-amber-300" />
               <ChipRow label="reset-once" keys={partial.resetOnce} accent="text-amber-300" />
+              <ChipRow label="except-once" keys={partial.exceptOnce} accent="text-amber-300" />
             </div>
           ) : null}
         </div>
@@ -136,6 +146,52 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
         </div>
       ) : null}
 
+      {/* 4b. Once props cache metadata */}
+      {Object.keys(props.once).length > 0 ? (
+        <div className="mb-4">
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Once cache</h3>
+          <div className="flex flex-col gap-1.5">
+            {Object.entries(props.once).map(([cacheKey, meta]) => (
+              <div key={cacheKey} className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-fuchsia-300">
+                  {cacheKey}
+                </span>
+                <span className="text-[10px] text-zinc-500">→ {meta.prop}</span>
+                <span className="text-[10px] text-zinc-600">
+                  {meta.expiresAt == null ? 'no expiry' : `expires ${meta.expiresAt}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 4c. Infinite-scroll cursors */}
+      {Object.keys(props.scroll).length > 0 ? (
+        <div className="mb-4">
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Scroll</h3>
+          <div className="flex flex-col gap-1.5">
+            {Object.entries(props.scroll).map(([path, cursor]) => (
+              <div key={path} className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-teal-300">
+                  {path}
+                </span>
+                <span className="text-[10px] text-zinc-500">page «{cursor.pageName}»</span>
+                <span className="text-[10px] text-zinc-400">
+                  {fmtCursor(cursor.previousPage)} ← {fmtCursor(cursor.currentPage)} →{' '}
+                  {fmtCursor(cursor.nextPage)}
+                </span>
+                {cursor.reset ? (
+                  <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-amber-300">
+                    reset
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {/* 5. Resolved props tree */}
       <div className="mb-4">
         <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Resolved props</h3>
@@ -164,6 +220,7 @@ interface PartialDecision {
   except: string[];
   reset: string[];
   resetOnce: string[];
+  exceptOnce: string[];
 }
 
 function readPartial(value: unknown): PartialDecision {
@@ -174,7 +231,20 @@ function readPartial(value: unknown): PartialDecision {
     except: strArray(record.except),
     reset: strArray(record.reset),
     resetOnce: strArray(record.resetOnce),
+    exceptOnce: strArray(record.exceptOnce),
   };
+}
+
+interface OnceMeta {
+  prop: string;
+  expiresAt: number | null;
+}
+interface ScrollCursor {
+  pageName: string;
+  currentPage: unknown;
+  nextPage: unknown;
+  previousPage: unknown;
+  reset: boolean;
 }
 
 interface PropClassification {
@@ -183,9 +253,13 @@ interface PropClassification {
   deferred: Record<string, string[]>;
   merge: string[];
   deepMerge: string[];
+  prepend: string[];
   matchPropsOn: Record<string, string>;
   optionalKeys: string[];
   onceKeys: string[];
+  once: Record<string, OnceMeta>;
+  scroll: Record<string, ScrollCursor>;
+  rescued: string[];
   excludedKeys: string[];
 }
 
@@ -196,9 +270,21 @@ function readProps(value: unknown): PropClassification {
     typeof record.deferred === 'object' && record.deferred !== null
       ? (record.deferred as Record<string, string[]>)
       : {};
-  const matchPropsOn =
-    typeof record.matchPropsOn === 'object' && record.matchPropsOn !== null
-      ? (record.matchPropsOn as Record<string, string>)
+  // matchPropsOn values may be a string or string[] on the wire — normalize to a
+  // display string so it can annotate the merge/prepend chips.
+  const matchPropsOn: Record<string, string> = {};
+  if (typeof record.matchPropsOn === 'object' && record.matchPropsOn !== null) {
+    for (const [k, v] of Object.entries(record.matchPropsOn as Record<string, unknown>)) {
+      matchPropsOn[k] = Array.isArray(v) ? v.join(', ') : String(v);
+    }
+  }
+  const once =
+    typeof record.once === 'object' && record.once !== null
+      ? (record.once as Record<string, OnceMeta>)
+      : {};
+  const scroll =
+    typeof record.scroll === 'object' && record.scroll !== null
+      ? (record.scroll as Record<string, ScrollCursor>)
       : {};
   return {
     sharedKeys: strArray(record.sharedKeys),
@@ -206,15 +292,25 @@ function readProps(value: unknown): PropClassification {
     deferred,
     merge: strArray(record.merge),
     deepMerge: strArray(record.deepMerge),
+    prepend: strArray(record.prepend),
     matchPropsOn,
     optionalKeys: strArray(record.optionalKeys),
     onceKeys: strArray(record.onceKeys),
+    once,
+    scroll,
+    rescued: strArray(record.rescued),
     excludedKeys: strArray(record.excludedKeys),
   };
 }
 
 function strArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/** Render a scroll cursor page identifier (number, opaque string, or absent). */
+function fmtCursor(value: unknown): string {
+  if (value === null || value === undefined) return '∅';
+  return String(value);
 }
 
 function unique(values: string[]): string[] {

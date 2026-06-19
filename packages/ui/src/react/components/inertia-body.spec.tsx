@@ -16,16 +16,20 @@ function content(over: Record<string, unknown> = {}): Record<string, unknown> {
     clearHistory: false,
     pageBytes: 2048,
     ssr: false,
-    partial: { only: [], except: [], reset: [], resetOnce: [] },
+    partial: { only: [], except: [], reset: [], resetOnce: [], exceptOnce: [] },
     props: {
       sharedKeys: [],
       finalKeys: ['user'],
       deferred: {},
       merge: [],
       deepMerge: [],
+      prepend: [],
       matchPropsOn: {},
       optionalKeys: [],
       onceKeys: [],
+      once: {},
+      scroll: {},
+      rescued: [],
       excludedKeys: [],
     },
     resolvedProps: { user: { name: 'Ada' } },
@@ -93,6 +97,78 @@ describe('InertiaBody', () => {
     expect(screen.getByText('encryptHistory: on')).toBeTruthy();
     expect(screen.getByText('clearHistory: on')).toBeTruthy();
     expect(screen.getByText('SSR: yes')).toBeTruthy();
+  });
+
+  it('renders prepend and rescued prop rows', () => {
+    render(
+      <InertiaBody
+        content={content({
+          props: {
+            ...(content().props as object),
+            prepend: ['feed'],
+            rescued: ['stats'],
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText('Prepend')).toBeTruthy();
+    expect(screen.getByText('feed')).toBeTruthy();
+    expect(screen.getByText('Rescued')).toBeTruthy();
+    expect(screen.getByText('stats')).toBeTruthy();
+  });
+
+  it('renders the once-cache section with cache key, prop and expiry', () => {
+    render(
+      <InertiaBody
+        content={content({
+          props: {
+            ...(content().props as object),
+            once: { enums: { prop: 'lookups', expiresAt: null } },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText('Once cache')).toBeTruthy();
+    expect(screen.getByText('enums')).toBeTruthy();
+    expect(screen.getByText('→ lookups')).toBeTruthy();
+    expect(screen.getByText('no expiry')).toBeTruthy();
+  });
+
+  it('renders the infinite-scroll cursor section', () => {
+    render(
+      <InertiaBody
+        content={content({
+          props: {
+            ...(content().props as object),
+            scroll: {
+              users: {
+                pageName: 'page',
+                currentPage: 2,
+                nextPage: 3,
+                previousPage: 1,
+                reset: false,
+              },
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText('Scroll')).toBeTruthy();
+    expect(screen.getByText('users')).toBeTruthy();
+    expect(screen.getByText('page «page»')).toBeTruthy();
+  });
+
+  it('renders the except-once chips on a partial reload', () => {
+    render(
+      <InertiaBody
+        content={content({
+          isPartial: true,
+          partial: { only: ['x'], except: [], reset: [], resetOnce: [], exceptOnce: ['enums'] },
+        })}
+      />,
+    );
+    expect(screen.getByText('except-once')).toBeTruthy();
+    expect(screen.getByText('enums')).toBeTruthy();
   });
 
   it('reads fields defensively for malformed content', () => {
