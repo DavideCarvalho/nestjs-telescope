@@ -133,6 +133,23 @@ function isQueryContentWithSql(content: unknown): content is QueryContent {
   );
 }
 
+/**
+ * Parse the `window` query param (default `1h`) into milliseconds, or throw 400.
+ * Shared by every windowed metrics route (queues/pulse/timeseries/traces/stats).
+ */
+function parseWindowMs(window: string | undefined): number {
+  let windowMs: number;
+  try {
+    windowMs = durationToMs(window ?? '1h');
+  } catch {
+    throw new BadRequestException(`Invalid window: ${window}`);
+  }
+  if (!Number.isFinite(windowMs) || windowMs <= 0) {
+    throw new BadRequestException(`Window must be positive: ${window}`);
+  }
+  return windowMs;
+}
+
 @UseGuards(TelescopeGuard)
 @Controller('telescope/api')
 export class TelescopeController {
@@ -206,29 +223,13 @@ export class TelescopeController {
 
   @Get('queues')
   queues(@Query('window') window?: string): Promise<QueueMetricsResult> {
-    let windowMs: number;
-    try {
-      windowMs = durationToMs(window ?? '1h');
-    } catch {
-      throw new BadRequestException(`Invalid window: ${window}`);
-    }
-    if (!Number.isFinite(windowMs) || windowMs <= 0) {
-      throw new BadRequestException(`Window must be positive: ${window}`);
-    }
+    const windowMs = parseWindowMs(window);
     return this.queueMetrics.getQueueMetrics(windowMs);
   }
 
   @Get('pulse')
   pulseHealth(@Query('window') window?: string): Promise<PulseResult> {
-    let windowMs: number;
-    try {
-      windowMs = durationToMs(window ?? '1h');
-    } catch {
-      throw new BadRequestException(`Invalid window: ${window}`);
-    }
-    if (!Number.isFinite(windowMs) || windowMs <= 0) {
-      throw new BadRequestException(`Window must be positive: ${window}`);
-    }
+    const windowMs = parseWindowMs(window);
     return this.pulse.getHealth(windowMs);
   }
 
@@ -239,15 +240,7 @@ export class TelescopeController {
     @Query('type') type?: string,
     @Query('tag') tag?: string,
   ): Promise<TimeseriesResult> {
-    let windowMs: number;
-    try {
-      windowMs = durationToMs(window ?? '1h');
-    } catch {
-      throw new BadRequestException(`Invalid window: ${window}`);
-    }
-    if (!Number.isFinite(windowMs) || windowMs <= 0) {
-      throw new BadRequestException(`Window must be positive: ${window}`);
-    }
+    const windowMs = parseWindowMs(window);
     const bucketCount = buckets !== undefined ? Number(buckets) : undefined;
     return this.timeseriesService.getTimeseries({
       windowMs,
@@ -261,15 +254,7 @@ export class TelescopeController {
 
   @Get('traces')
   traces(@Query('window') window?: string, @Query('limit') limit?: string): Promise<TracesResult> {
-    let windowMs: number;
-    try {
-      windowMs = durationToMs(window ?? '1h');
-    } catch {
-      throw new BadRequestException(`Invalid window: ${window}`);
-    }
-    if (!Number.isFinite(windowMs) || windowMs <= 0) {
-      throw new BadRequestException(`Window must be positive: ${window}`);
-    }
+    const windowMs = parseWindowMs(window);
     const limitCount = limit !== undefined ? Number(limit) : undefined;
     return this.tracesService.getTraces({
       windowMs,
@@ -297,15 +282,7 @@ export class TelescopeController {
     if (type === undefined || type === '') {
       throw new BadRequestException('Query parameter "type" is required.');
     }
-    let windowMs: number;
-    try {
-      windowMs = durationToMs(window ?? '1h');
-    } catch {
-      throw new BadRequestException(`Invalid window: ${window}`);
-    }
-    if (!Number.isFinite(windowMs) || windowMs <= 0) {
-      throw new BadRequestException(`Window must be positive: ${window}`);
-    }
+    const windowMs = parseWindowMs(window);
     const bucketCount = buckets !== undefined ? Number(buckets) : undefined;
     return this.statsService.getStats({
       type,
