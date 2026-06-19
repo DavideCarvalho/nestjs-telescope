@@ -1,6 +1,7 @@
 // packages/core/src/extension/types.ts
 import type { ModuleRef } from '@nestjs/core';
 import type { ResolvedCoreConfig } from '../config/options.js';
+import type { Entry, RecordInput } from '../entry/entry.js';
 import type { Watcher } from '../nest/watcher.js';
 
 /**
@@ -26,6 +27,18 @@ export interface TelescopeExtension {
   dashboards?(ctx: ExtensionContext): DashboardSpec[];
   /** Named server-side queries that panels bind to via `{ provider, query }`. */
   dataProviders?(ctx: ExtensionContext): DataProvider[];
+  /**
+   * Observe EVERY recorded input (pre-sampling, complete counts) — drives metrics
+   * export. Fired synchronously on the hot path; keep it cheap. Isolated by the
+   * host: a throw is swallowed and never affects capture.
+   */
+  observeRecord?(input: RecordInput): void;
+  /**
+   * Observe each just-persisted (post-sampling) batch — drives span/trace export.
+   * Awaited off the host path inside the flush chain; a throw/rejection is
+   * swallowed and never breaks the flush.
+   */
+  observeFlush?(entries: Entry[]): void | Promise<void>;
 }
 
 /** Read-only context handed to every extension hook, resolved at module init. */
