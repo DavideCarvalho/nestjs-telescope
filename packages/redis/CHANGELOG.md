@@ -1,5 +1,15 @@
 # @dudousxd/nestjs-telescope-redis
 
+## 1.11.1
+
+### Patch Changes
+
+- [`ba64ffb`](https://github.com/DavideCarvalho/nestjs-telescope/commit/ba64ffb13437661f6cf6e2432608a6651210dce1) - Fix (redis): make rollup merges atomic via a per-bucket Lua script (`HINCRBY` count/sum/histogram cells + max CAS + `ZADD`), removing the read-modify-write race that could drop concurrent rollup writes; `readHistogram` still merges any legacy JSON blob.
+
+  Fix (mikro-orm): honor empty-string entry-query filters (switched truthy checks to `!== undefined` for type/familyHash/batchId/tag), matching the in-memory/sqlite/redis providers.
+
+  Internal refactors (behavior-preserving): drive `jobAction` off an `ACTION_METHOD` dispatch map, extract a module-level `parseWindowMs` (deduping 5 identical parsers), and move the request-replay subsystem out of the controller into `nest/request-replay.ts`.
+
 ## 1.11.0
 
 ### Minor Changes
