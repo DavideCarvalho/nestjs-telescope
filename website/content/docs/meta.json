@@ -3,15 +3,10 @@
   "pages": [
     "index",
     "getting-started",
-    "---Concepts---",
     "concepts",
-    "---Dashboard---",
     "dashboard",
-    "---Packages---",
     "packages",
-    "---Recipes---",
     "recipes",
-    "---Reference---",
     "reference"
   ]
 }
