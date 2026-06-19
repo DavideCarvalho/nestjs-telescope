@@ -284,11 +284,14 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
       }
       where.id = { $in: query.ids };
     }
-    if (query.type) where.type = query.type;
-    if (query.familyHash) where.familyHash = query.familyHash;
-    if (query.batchId) where.batchId = query.batchId;
+    // Presence-based, not truthy: an explicit empty-string filter must still
+    // apply (matching the in-memory/sqlite/redis providers, which all use
+    // `!== undefined`). A truthy check would silently drop a `type: ''` filter.
+    if (query.type !== undefined) where.type = query.type;
+    if (query.familyHash !== undefined) where.familyHash = query.familyHash;
+    if (query.batchId !== undefined) where.batchId = query.batchId;
     if (query.traceId !== undefined) where.traceId = query.traceId;
-    if (query.tag) where.tagsText = { $like: `% ${query.tag} %` };
+    if (query.tag !== undefined) where.tagsText = { $like: `% ${query.tag} %` };
 
     if (query.before || query.after) {
       where.createdAt = {
