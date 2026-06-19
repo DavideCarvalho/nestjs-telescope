@@ -239,6 +239,23 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(beforeT2.data.map((e) => e.id).sort()).toEqual(['q1', 'r1']);
   });
 
+  it('honors an explicit empty-string filter (presence, not truthiness)', async () => {
+    // Regression: the provider used truthy checks (`if (query.familyHash)`),
+    // which silently dropped an explicit `familyHash: ''` filter — diverging
+    // from the in-memory/sqlite/redis providers, which filter on `!== undefined`.
+    await provider.init();
+    await provider.store([
+      makeEntry({ id: 'blank', familyHash: '' }),
+      makeEntry({ id: 'set', familyHash: 'q:x' }),
+    ]);
+
+    const byBlank = await provider.get({ familyHash: '' });
+    expect(byBlank.data.map((e) => e.id)).toEqual(['blank']);
+
+    const bySet = await provider.get({ familyHash: 'q:x' });
+    expect(bySet.data.map((e) => e.id)).toEqual(['set']);
+  });
+
   it('fetches an ids set for batched hydration (AND with type; empty/absent ids)', async () => {
     await provider.init();
     await provider.store([
