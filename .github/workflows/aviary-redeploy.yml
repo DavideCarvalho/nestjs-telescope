@@ -1,0 +1,28 @@
+name: Aviary redeploy
+
+# When this library's docs change, tell the Aviary site (DavideCarvalho/aviary)
+# to rebuild — it pulls each library's docs at build time. No-ops gracefully
+# until AVIARY_DISPATCH_TOKEN (a PAT that can POST dispatches to the aviary repo)
+# is set as a secret.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/content/docs/**"
+      - ".github/workflows/aviary-redeploy.yml"
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch lib-docs-updated to Aviary
+        env:
+          GH_TOKEN: ${{ secrets.AVIARY_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "AVIARY_DISPATCH_TOKEN not set — skipping (set the secret to enable instant Aviary redeploys)."
+            exit 0
+          fi
+          gh api -X POST repos/DavideCarvalho/aviary/dispatches -f event_type=lib-docs-updated
+          echo "Dispatched lib-docs-updated to DavideCarvalho/aviary."
