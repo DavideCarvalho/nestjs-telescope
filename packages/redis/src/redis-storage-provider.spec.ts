@@ -536,5 +536,58 @@ describe('RedisStorageProvider', () => {
       expect(merged?.count).toBe(5);
       expect(merged?.histogram).toEqual(histogramAt(5));
     });
+
+    it('merges a legacy JSON histogram blob with newly-recorded cell counts', async () => {
+      // A pre-migration bucket stored its histogram as one JSON field. New writes
+      // accumulate per-cell counters instead; a read must merge both so a bucket
+      // straddling the format change reports the full total (no double counting:
+      // each event lives in exactly one of the two representations).
+      const key = 'telescope:r:request:60000';
+      await redis.hset(
+        key,
+        'count',
+        '2',
+        'sum',
+        '20',
+        'max',
+        '20',
+        'histogram',
+        JSON.stringify(histogramAt(20)),
+      );
+      await redis.zadd('telescope:rz:request', 60_000, '60000');
+
+      await store.recordRollups([
+        rollupDelta({ count: 1, sum: 5, max: 5, histogram: histogramAt(5) }),
+      ]);
+
+      const expected = emptyHistogram();
+      incrementHistogram(expected, 20); // legacy JSON blob
+      incrementHistogram(expected, 5); // newly-recorded cell
+      const [bucket] = await store.queryRollups(['request'], 0, 120_000);
+      expect(bucket?.count).toBe(3);
+      expect(bucket?.histogram).toEqual(expected);
+    });
+
+    it('does not lose concurrent increments to the same bucket (atomic merge)', async () => {
+      // Regression: the old client-side HGET→merge→HSET lost updates when
+      // concurrent writers to the same (metric, bucket) interleaved at their
+      // awaits. Each delta is now a single atomic Lua script, so every increment
+      // must survive. Fire many at once and assert nothing was dropped.
+      const concurrency = 50;
+      await Promise.all(
+        Array.from({ length: concurrency }, () =>
+          store.recordRollups([
+            rollupDelta({ count: 1, sum: 10, max: 10, histogram: histogramAt(10) }),
+          ]),
+        ),
+      );
+
+      const expected = emptyHistogram();
+      for (let i = 0; i < concurrency; i += 1) incrementHistogram(expected, 10);
+      const [bucket] = await store.queryRollups(['request'], 0, 120_000);
+      expect(bucket?.count).toBe(concurrency);
+      expect(bucket?.sum).toBe(10 * concurrency);
+      expect(bucket?.histogram).toEqual(expected);
+    });
   });
 });

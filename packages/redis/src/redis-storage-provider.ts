@@ -2,6 +2,7 @@ import {
   type Entry,
   type EntryQuery,
   type EntryWithBatch,
+  HISTOGRAM_BUCKET_COUNT,
   type Page,
   type PruneScope,
   type RollupBucket,
@@ -9,6 +10,7 @@ import {
   type RollupStore,
   type StorageProvider,
   type TagCount,
+  emptyHistogram,
   isBatchOrigin,
   mergeHistograms,
   normalizeHistogram,
@@ -27,6 +29,41 @@ const SCAN_COUNT = 200;
 const DEFAULT_LIMIT = 50;
 
 /**
+ * Atomically merge one rollup delta into its `(metric, bucket)` hash, server-side.
+ * count/sum and each histogram cell accumulate via HINCRBY; `max` is a
+ * compare-and-set (HINCRBY can't do max); the bucket registers in its per-metric
+ * index. Doing it in one script removes the read-then-set race the old
+ * client-side HGET→merge→HSET had — concurrent writers to the same bucket no
+ * longer lose each other's histogram increments or clobber a higher `max`.
+ *
+ * KEYS: [rollupKey, rollupIndexKey]
+ * ARGV: [bucketStart, count, sum, max, ...histogramCells]
+ *
+ * The histogram is stored as one field per cell (`h0`..`h{N-1}`) rather than a
+ * JSON blob, so each cell is an atomic counter. Reads merge these with any
+ * legacy JSON `histogram` field still present on pre-migration buckets. Uses
+ * only numeric commands (no cjson) so it runs identically on ioredis-mock.
+ */
+const RECORD_ROLLUP_LUA = `
+local key = KEYS[1]
+redis.call('HINCRBY', key, 'count', ARGV[2])
+redis.call('HINCRBY', key, 'sum', ARGV[3])
+local cur = redis.call('HGET', key, 'max')
+if (not cur) or (tonumber(ARGV[4]) > tonumber(cur)) then
+  redis.call('HSET', key, 'max', ARGV[4])
+end
+local cells = #ARGV - 4
+for i = 0, cells - 1 do
+  local d = tonumber(ARGV[5 + i])
+  if d ~= 0 then
+    redis.call('HINCRBY', key, 'h' .. i, d)
+  end
+end
+redis.call('ZADD', KEYS[2], ARGV[1], ARGV[1])
+return 1
+`;
+
+/**
  * Redis-backed shared storage provider (ioredis). Suitable for multi-replica
  * deployments where every instance reads/writes the same store.
  *
@@ -38,7 +75,9 @@ const DEFAULT_LIMIT = 50;
  * - `idx:family:<fh>`      ZSET    — same encoding, one per family hash
  * - `batch:<batchId>`      ZSET    — score = sequence, member = id
  * - `tags`                 HASH    — tag → count
- * - `r:<metric>:<bucket>`  HASH    — rollup fields `count`/`sum`/`max`
+ * - `r:<metric>:<bucket>`  HASH    — rollup fields `count`/`sum`/`max` + one
+ *                                    atomic histogram cell per bucket (`h0`..`h13`);
+ *                                    legacy rows may instead carry a JSON `histogram`
  * - `rz:<metric>`          ZSET    — score = bucketStart, member = bucketStart
  *
  * The host owns the injected ioredis connection; {@link close} is a no-op.
@@ -361,49 +400,31 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
   // ── RollupStore SPI ────────────────────────────────────────────────────────
 
   /**
-   * Additively merge deltas into the rollup hashes: `count`/`sum` accumulate via
-   * HINCRBY, and `max` keeps a running max. HINCRBY cannot do max, so we read the
-   * current field and HSET only when the incoming `max` is larger (HGET → compare
-   * → HSET). ioredis-mock has no Lua/EVAL, so this read-then-set is the portable
-   * choice; it accepts a tiny race on `max` under concurrent writers to the same
-   * (metric, bucket), which is acceptable for an observability rollup.
+   * Additively merge deltas into their rollup hashes. Each delta is applied by a
+   * single atomic Lua script ({@link RECORD_ROLLUP_LUA}): count/sum and every
+   * histogram cell accumulate via HINCRBY, `max` is a compare-and-set, and the
+   * bucket registers in its per-metric index — all server-side, so concurrent
+   * writers to the same (metric, bucket) can't lose each other's increments.
+   * Deltas target independent buckets, so they run concurrently.
    */
   async recordRollups(deltas: RollupDelta[]): Promise<void> {
     if (deltas.length === 0) return;
-
-    // First, atomically accumulate count/sum and register each bucket in its
-    // per-metric index, in one pipeline.
-    const pipeline = this.redis.multi();
-    for (const delta of deltas) {
-      const key = this.rollupKey(delta.metric, delta.bucketStart);
-      pipeline.hincrby(key, 'count', delta.count);
-      pipeline.hincrby(key, 'sum', delta.sum);
-      pipeline.zadd(
-        this.rollupIndexKey(delta.metric),
-        delta.bucketStart,
-        String(delta.bucketStart),
-      );
-    }
-    await pipeline.exec();
-
-    // Then reconcile the running max AND the latency histogram per (metric,
-    // bucket): read current, merge, write. HINCRBY can't do max, and a histogram
-    // is a JSON field merged element-wise — both are read-then-set (ioredis-mock
-    // has no Lua/EVAL). This accepts a tiny race under concurrent writers to the
-    // same (metric, bucket), acceptable for an observability rollup.
-    for (const delta of deltas) {
-      const key = this.rollupKey(delta.metric, delta.bucketStart);
-      const existingMax = await this.redis.hget(key, 'max');
-      const current = existingMax === null ? Number.NEGATIVE_INFINITY : Number(existingMax);
-      if (delta.max > current) {
-        await this.redis.hset(key, 'max', String(delta.max));
-      }
-
-      const existingHistogram = await this.redis.hget(key, 'histogram');
-      const base = normalizeHistogram(this.parseHistogram(existingHistogram));
-      const merged = mergeHistograms(base, delta.histogram);
-      await this.redis.hset(key, 'histogram', JSON.stringify(merged));
-    }
+    await Promise.all(
+      deltas.map((delta) => {
+        const cells = normalizeHistogram(delta.histogram);
+        return this.redis.eval(
+          RECORD_ROLLUP_LUA,
+          2,
+          this.rollupKey(delta.metric, delta.bucketStart),
+          this.rollupIndexKey(delta.metric),
+          String(delta.bucketStart),
+          String(delta.count),
+          String(delta.sum),
+          String(delta.max),
+          ...cells.map((cell) => String(cell)),
+        );
+      }),
+    );
   }
 
   /**
@@ -435,8 +456,7 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
           count: Number(hash.count ?? 0),
           sum: Number(hash.sum ?? 0),
           max: Number(hash.max ?? 0),
-          // Legacy hashes have no `histogram` field → normalized to zeros.
-          histogram: normalizeHistogram(this.parseHistogram(hash.histogram ?? null)),
+          histogram: this.readHistogram(hash),
         });
       }
     }
@@ -595,6 +615,23 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
 
   private rollupIndexKey(metric: string): string {
     return `${this.prefix}rz:${metric}`;
+  }
+
+  /**
+   * Reconstruct a bucket's latency histogram from a rollup hash. Current writes
+   * store one atomic counter per cell (`h0`..`h{N-1}`); pre-migration buckets
+   * stored a single JSON `histogram` blob. Merge both so a bucket that straddles
+   * the format change (legacy events in the blob, newer events in the cells)
+   * reports the correct total. A given event is only ever recorded in one of the
+   * two, so the merge never double-counts.
+   */
+  private readHistogram(hash: Record<string, string>): number[] {
+    const cells = emptyHistogram();
+    for (let i = 0; i < HISTOGRAM_BUCKET_COUNT; i += 1) {
+      const raw = hash[`h${i}`];
+      if (raw !== undefined) cells[i] = Number(raw);
+    }
+    return mergeHistograms(cells, this.parseHistogram(hash.histogram ?? null));
   }
 
   /**
