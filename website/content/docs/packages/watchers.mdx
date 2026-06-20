@@ -51,14 +51,26 @@ Queries recorded this way inherit the active ALS batch, so each one correlates t
 TypeORM lets you supply a custom `Logger` at `DataSource` construction; this package ships one whose `logQuery` records each statement. Because the logger runs in the query's async context, queries correlate to the active batch via ALS — exactly like MikroORM.
 
 ```ts
-import { DataSource } from 'typeorm';
+import { TelescopeModule, TelescopeService } from '@dudousxd/nestjs-telescope';
 import { telescopeTypeOrmLogger } from '@dudousxd/nestjs-telescope-typeorm';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
-const dataSource = new DataSource({
-  // ...your connection options
-  logging: true, // or ['query'] — required, else TypeORM never calls logQuery
-  logger: telescopeTypeOrmLogger((input) => telescopeService.record(input)),
-});
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      authorizer: () => true, // restrict in production
+    }),
+    TypeOrmModule.forRootAsync({
+      inject: [TelescopeService],
+      useFactory: (telescope: TelescopeService) => ({
+        // ...your connection options, entities
+        logging: true, // or ['query'] — required, else TypeORM never calls logQuery
+        logger: telescopeTypeOrmLogger((input) => telescope.record(input)),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
 ```
 
 TypeORM's `logQuery` carries no execution time, so normal queries record `durationMs: null`; slow queries surfaced via `logQuerySlow` (gated by `maxQueryExecutionTime`) record a real duration and a `slow` tag. Pass `{ slowMs }` to set the threshold the package uses.
