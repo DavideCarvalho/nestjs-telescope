@@ -1,12 +1,23 @@
+import type { Entry } from '@dudousxd/nestjs-telescope';
 import { describe, expect, it } from 'vitest';
 import { entryToSpan } from './entry-to-span.js';
-import type { Entry } from '@dudousxd/nestjs-telescope';
 
 function entry(over: Partial<Entry>): Entry {
   return {
-    id: 'e1', batchId: 'b1', type: 'request', familyHash: null, content: {},
-    tags: [], sequence: 0, durationMs: 20, origin: 'http', instanceId: 'pod-1',
-    traceId: 'abc', spanId: 'def', createdAt: new Date(1_000), ...over,
+    id: 'e1',
+    batchId: 'b1',
+    type: 'request',
+    familyHash: null,
+    content: {},
+    tags: [],
+    sequence: 0,
+    durationMs: 20,
+    origin: 'http',
+    instanceId: 'pod-1',
+    traceId: 'abc',
+    spanId: 'def',
+    createdAt: new Date(1_000),
+    ...over,
   } as Entry;
 }
 

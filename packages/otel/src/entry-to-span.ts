@@ -19,5 +19,12 @@ export function entryToSpan(entry: Entry): SpanShape {
   };
   if (entry.durationMs !== null) attributes['telescope.duration_ms'] = entry.durationMs;
   for (const tag of entry.tags) attributes[`telescope.tag.${tag}`] = 1;
-  return { name: `telescope.${entry.type}`, startMs, endMs, attributes, traceId: entry.traceId, spanId: entry.spanId };
+  return {
+    name: `telescope.${entry.type}`,
+    startMs,
+    endMs,
+    attributes,
+    traceId: entry.traceId,
+    spanId: entry.spanId,
+  };
 }

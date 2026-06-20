@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TelescopeOtelExporter } from './telescope-otel-exporter.js';
 import { TelescopeOtelMetricsController } from './metrics.controller.js';
+import { TelescopeOtelExporter } from './telescope-otel-exporter.js';
 
 describe('TelescopeOtelMetricsController', () => {
   it('serves the exporter Prometheus text', () => {

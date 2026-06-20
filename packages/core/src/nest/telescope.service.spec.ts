@@ -3,9 +3,9 @@ import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import { telescopeDump } from '../dump/telescope-dump.js';
+import type { Entry, RecordInput } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext, TelescopeExtension } from '../extension/types.js';
-import type { Entry, RecordInput } from '../entry/entry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
@@ -523,8 +523,12 @@ describe('TelescopeService', () => {
     const flushed: number[] = [];
     const ext: TelescopeExtension = {
       name: 'probe',
-      observeRecord: (i: RecordInput) => { recorded.push(i.type); },
-      observeFlush: (e: Entry[]) => { flushed.push(e.length); },
+      observeRecord: (i: RecordInput) => {
+        recorded.push(i.type);
+      },
+      observeFlush: (e: Entry[]) => {
+        flushed.push(e.length);
+      },
     };
     const registry = new ExtensionRegistry([ext], {} as ExtensionContext);
     const config = resolveConfig({ recorder: { flushIntervalMs: 5 } });
