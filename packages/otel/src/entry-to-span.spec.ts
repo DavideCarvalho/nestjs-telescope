@@ -24,4 +24,15 @@ describe('entryToSpan', () => {
     const s = entryToSpan(entry({ durationMs: null, createdAt: new Date(2_000) }));
     expect(s.endMs).toBe(2_000);
   });
+
+  it('carries duration_ms and batch_id as span attribute values', () => {
+    const s = entryToSpan(entry({ durationMs: 7, batchId: 'batch-xyz' }));
+    expect(s.attributes['telescope.duration_ms']).toBe(7);
+    expect(s.attributes['telescope.batch_id']).toBe('batch-xyz');
+  });
+
+  it('omits duration_ms when the entry has no duration', () => {
+    const s = entryToSpan(entry({ durationMs: null }));
+    expect(s.attributes['telescope.duration_ms']).toBeUndefined();
+  });
 });

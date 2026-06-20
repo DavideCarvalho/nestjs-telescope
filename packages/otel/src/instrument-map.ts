@@ -65,45 +65,144 @@ export function mapInput(input: RecordInput): MetricSample | null {
   }
 }
 
-interface CounterCell { count: number; durSum: number; durCount: number; durMetric?: string }
+/**
+ * Default cumulative histogram upper bounds (milliseconds) for duration metrics.
+ * Shared with the OTel Meter side so the Prometheus scrape and OTLP push agree.
+ */
+export const DEFAULT_DURATION_BUCKETS_MS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
+export interface MetricStoreOptions {
+  /**
+   * Max distinct label-series kept per metric name. Once a metric reaches this
+   * many series, NEW label combinations are dropped (existing series keep
+   * updating — counters must never reset) and counted under
+   * `telescope_metrics_dropped_series_total{metric}` so the loss is visible in
+   * the scrape instead of becoming a silent unbounded-memory leak. Default 2000.
+   */
+  maxSeriesPerMetric?: number;
+  /** Cumulative histogram upper bounds (ms) for duration metrics. */
+  durationBucketsMs?: number[];
+}
+
+interface CounterSeries { labels: Record<string, string>; count: number }
+interface HistogramSeries { labels: Record<string, string>; sum: number; count: number; buckets: number[] }
 
 /** Dependency-free internal aggregation for the Prometheus `/metrics` scrape. */
 export class MetricStore {
-  private readonly cells = new Map<string, { sample: MetricSample; cell: CounterCell }>();
+  private readonly counters = new Map<string, Map<string, CounterSeries>>();
+  private readonly histograms = new Map<string, Map<string, HistogramSeries>>();
+  private readonly dropped = new Map<string, number>();
+  private readonly maxSeries: number;
+  private readonly bounds: number[];
+
+  constructor(options: MetricStoreOptions = {}) {
+    this.maxSeries = options.maxSeriesPerMetric ?? 2000;
+    this.bounds = options.durationBucketsMs ?? DEFAULT_DURATION_BUCKETS_MS;
+  }
 
   add(sample: MetricSample): void {
-    const key = `${sample.counter}|${serializeLabels(sample.labels)}`;
-    let entry = this.cells.get(key);
-    if (entry === undefined) {
-      const cell: CounterCell = { count: 0, durSum: 0, durCount: 0 };
-      if (sample.durationMetric !== undefined) cell.durMetric = sample.durationMetric;
-      entry = { sample, cell };
-      this.cells.set(key, entry);
+    const labelKey = serializeLabels(sample.labels);
+    this.addCounter(sample.counter, labelKey, sample.labels);
+    if (sample.durationMetric && sample.durationMs !== null) {
+      this.addHistogram(sample.durationMetric, labelKey, sample.labels, sample.durationMs);
     }
-    entry.cell.count += 1;
-    if (sample.durationMs !== null && sample.durationMetric) {
-      entry.cell.durSum += sample.durationMs;
-      entry.cell.durCount += 1;
+  }
+
+  private addCounter(metric: string, labelKey: string, labels: Record<string, string>): void {
+    let series = this.counters.get(metric);
+    if (series === undefined) {
+      series = new Map();
+      this.counters.set(metric, series);
     }
+    let cell = series.get(labelKey);
+    if (cell === undefined) {
+      if (series.size >= this.maxSeries) return this.drop(metric);
+      cell = { labels, count: 0 };
+      series.set(labelKey, cell);
+    }
+    cell.count += 1;
+  }
+
+  private addHistogram(
+    metric: string,
+    labelKey: string,
+    labels: Record<string, string>,
+    value: number,
+  ): void {
+    let series = this.histograms.get(metric);
+    if (series === undefined) {
+      series = new Map();
+      this.histograms.set(metric, series);
+    }
+    let cell = series.get(labelKey);
+    if (cell === undefined) {
+      if (series.size >= this.maxSeries) return this.drop(metric);
+      cell = { labels, sum: 0, count: 0, buckets: new Array(this.bounds.length).fill(0) };
+      series.set(labelKey, cell);
+    }
+    cell.sum += value;
+    cell.count += 1;
+    for (let i = 0; i < this.bounds.length; i++) {
+      const bound = this.bounds[i];
+      if (bound !== undefined && value <= bound) {
+        cell.buckets[i] = (cell.buckets[i] ?? 0) + 1;
+      }
+    }
+  }
+
+  private drop(metric: string): void {
+    this.dropped.set(metric, (this.dropped.get(metric) ?? 0) + 1);
   }
 
   prometheus(): string {
-    const lines: string[] = [];
-    for (const { sample, cell } of this.cells.values()) {
-      const labels = serializeLabels(sample.labels);
-      lines.push(`${sample.counter}${labels} ${cell.count}`);
-      if (cell.durMetric && cell.durCount > 0) {
-        lines.push(`${cell.durMetric}_sum${labels} ${cell.durSum}`);
-        lines.push(`${cell.durMetric}_count${labels} ${cell.durCount}`);
+    const out: string[] = [];
+    for (const [metric, series] of this.counters) {
+      out.push(`# HELP ${metric} Telescope counter.`);
+      out.push(`# TYPE ${metric} counter`);
+      for (const cell of series.values()) {
+        out.push(`${metric}${serializeLabels(cell.labels)} ${cell.count}`);
       }
     }
-    return lines.join('\n') + (lines.length ? '\n' : '');
+    for (const [metric, series] of this.histograms) {
+      out.push(`# HELP ${metric} Telescope duration histogram (milliseconds).`);
+      out.push(`# TYPE ${metric} histogram`);
+      for (const cell of series.values()) {
+        this.bounds.forEach((bound, i) => {
+          out.push(`${metric}_bucket${labelsWith(cell.labels, 'le', String(bound))} ${cell.buckets[i] ?? 0}`);
+        });
+        out.push(`${metric}_bucket${labelsWith(cell.labels, 'le', '+Inf')} ${cell.count}`);
+        out.push(`${metric}_sum${serializeLabels(cell.labels)} ${cell.sum}`);
+        out.push(`${metric}_count${serializeLabels(cell.labels)} ${cell.count}`);
+      }
+    }
+    if (this.dropped.size > 0) {
+      const dm = 'telescope_metrics_dropped_series_total';
+      out.push(`# HELP ${dm} New label-series dropped after hitting the per-metric cardinality cap.`);
+      out.push(`# TYPE ${dm} counter`);
+      for (const [metric, n] of this.dropped) {
+        out.push(`${dm}{metric="${escapeLabelValue(metric)}"} ${n}`);
+      }
+    }
+    return out.length ? out.join('\n') + '\n' : '';
   }
+}
+
+function escapeLabelValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function serializeLabels(labels: Record<string, string>): string {
   const parts = Object.entries(labels)
     .filter(([, v]) => v !== '')
-    .map(([k, v]) => `${k}="${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
+    .map(([k, v]) => `${k}="${escapeLabelValue(v)}"`);
   return parts.length ? `{${parts.join(',')}}` : '';
+}
+
+/** Serialize labels plus one extra label (e.g. `le`) — always emits braces. */
+function labelsWith(labels: Record<string, string>, extraKey: string, extraVal: string): string {
+  const parts = Object.entries(labels)
+    .filter(([, v]) => v !== '')
+    .map(([k, v]) => `${k}="${escapeLabelValue(v)}"`);
+  parts.push(`${extraKey}="${escapeLabelValue(extraVal)}"`);
+  return `{${parts.join(',')}}`;
 }

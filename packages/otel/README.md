@@ -84,6 +84,16 @@ export class AppModule {}
 - **Spans** go through the OTel Tracer; point your SDK's OTLP exporter at Tempo/
   Jaeger. Without an OTel SDK, both degrade to no-op — the Prometheus scrape still
   works.
+- **Durations** export as real Prometheus **histograms** (`_bucket{le}` + `_sum`/
+  `_count`), so `histogram_quantile(0.95, ...)` works in Grafana. Default bucket
+  bounds (ms): `5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000` — the same
+  boundaries feed the OTLP histogram so push and scrape agree.
+- **Cardinality is bounded.** Each metric keeps at most `maxSeriesPerMetric`
+  (default 2000) distinct label-series; beyond that, new label combinations are
+  dropped (existing series keep counting — counters never reset) and surfaced as
+  `telescope_metrics_dropped_series_total{metric}` so the loss is visible in the
+  scrape rather than a silent memory leak. Keep high-cardinality labels (e.g.
+  outbound `host`, exception `class`) in mind when sizing this.
 
 ## License
 

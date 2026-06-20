@@ -1,6 +1,6 @@
 import { type Counter, type Histogram, type Meter, metrics, type Tracer, trace } from '@opentelemetry/api';
 import type { Entry, RecordInput, TelescopeExtension } from '@dudousxd/nestjs-telescope';
-import { mapInput, MetricStore } from './instrument-map.js';
+import { DEFAULT_DURATION_BUCKETS_MS, mapInput, MetricStore } from './instrument-map.js';
 import { entryToSpan } from './entry-to-span.js';
 
 export interface TelescopeOtelExporterOptions {
@@ -68,7 +68,10 @@ export class TelescopeOtelExporter implements TelescopeExtension {
   private histogram(name: string): Histogram {
     let h = this.histograms.get(name);
     if (h === undefined) {
-      h = this.meter.createHistogram(name, { unit: 'ms' });
+      h = this.meter.createHistogram(name, {
+        unit: 'ms',
+        advice: { explicitBucketBoundaries: DEFAULT_DURATION_BUCKETS_MS },
+      });
       this.histograms.set(name, h);
     }
     return h;

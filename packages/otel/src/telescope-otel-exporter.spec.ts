@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { TelescopeOtelExporter } from './telescope-otel-exporter.js';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { trace } from '@opentelemetry/api';
+import { type Meter, trace } from '@opentelemetry/api';
 import type { Entry } from '@dudousxd/nestjs-telescope';
 
 describe('TelescopeOtelExporter.observeRecord', () => {
@@ -23,6 +23,32 @@ describe('TelescopeOtelExporter.observeRecord', () => {
     const exporter = new TelescopeOtelExporter();
     exporter.observeRecord({ type: 'dump', content: {} });
     expect(exporter.prometheus()).toBe('');
+  });
+});
+
+describe('TelescopeOtelExporter OTLP meter path', () => {
+  it('writes to the injected OTel meter (counter.add + histogram.record)', () => {
+    const counterAdds: Array<[number, Record<string, string>]> = [];
+    const histRecords: Array<[number, Record<string, string>]> = [];
+    const created = { counters: [] as string[], histograms: [] as string[] };
+    const meter = {
+      createCounter: (name: string) => {
+        created.counters.push(name);
+        return { add: (v: number, a: Record<string, string>) => counterAdds.push([v, a]) };
+      },
+      createHistogram: (name: string) => {
+        created.histograms.push(name);
+        return { record: (v: number, a: Record<string, string>) => histRecords.push([v, a]) };
+      },
+    } as unknown as Meter;
+
+    const exporter = new TelescopeOtelExporter({ meter });
+    exporter.observeRecord({ type: 'request', content: { method: 'GET', statusCode: 200 }, durationMs: 12 });
+
+    expect(created.counters).toContain('telescope_requests_total');
+    expect(created.histograms).toContain('telescope_request_duration_ms');
+    expect(counterAdds).toEqual([[1, { method: 'GET', status: '200' }]]);
+    expect(histRecords).toEqual([[12, { method: 'GET', status: '200' }]]);
   });
 });
 

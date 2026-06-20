@@ -50,3 +50,43 @@ describe('MetricStore.prometheus', () => {
     expect(text).toContain('telescope_request_duration_ms_count{method="GET",status="200"} 2');
   });
 });
+
+describe('MetricStore Prometheus histogram + headers', () => {
+  it('emits # TYPE/# HELP and cumulative histogram buckets for durations', () => {
+    const store = new MetricStore({ durationBucketsMs: [10, 100] });
+    store.add({ counter: 'telescope_requests_total', labels: { method: 'GET', status: '200' }, durationMs: 5, durationMetric: 'telescope_request_duration_ms' });
+    store.add({ counter: 'telescope_requests_total', labels: { method: 'GET', status: '200' }, durationMs: 50, durationMetric: 'telescope_request_duration_ms' });
+    const text = store.prometheus();
+    expect(text).toContain('# TYPE telescope_requests_total counter');
+    expect(text).toContain('# TYPE telescope_request_duration_ms histogram');
+    // 5 <= 10 and <= 100; 50 > 10 but <= 100 -> le=10:1, le=100:2, +Inf:2 (cumulative)
+    expect(text).toContain('telescope_request_duration_ms_bucket{method="GET",status="200",le="10"} 1');
+    expect(text).toContain('telescope_request_duration_ms_bucket{method="GET",status="200",le="100"} 2');
+    expect(text).toContain('telescope_request_duration_ms_bucket{method="GET",status="200",le="+Inf"} 2');
+    expect(text).toContain('telescope_request_duration_ms_sum{method="GET",status="200"} 55');
+    expect(text).toContain('telescope_request_duration_ms_count{method="GET",status="200"} 2');
+  });
+
+  it('emits buckets with only le when the series carries no other labels', () => {
+    const store = new MetricStore({ durationBucketsMs: [10] });
+    store.add({ counter: 'x_total', labels: {}, durationMs: 5, durationMetric: 'x_ms' });
+    const text = store.prometheus();
+    expect(text).toContain('x_ms_bucket{le="10"} 1');
+    expect(text).toContain('x_ms_bucket{le="+Inf"} 1');
+  });
+});
+
+describe('MetricStore cardinality cap', () => {
+  it('drops new series past the per-metric cap and surfaces the drop count', () => {
+    const store = new MetricStore({ maxSeriesPerMetric: 2 });
+    store.add({ counter: 'telescope_http_client_total', labels: { host: 'a' }, durationMs: null });
+    store.add({ counter: 'telescope_http_client_total', labels: { host: 'b' }, durationMs: null });
+    store.add({ counter: 'telescope_http_client_total', labels: { host: 'c' }, durationMs: null }); // over cap -> dropped
+    store.add({ counter: 'telescope_http_client_total', labels: { host: 'a' }, durationMs: null }); // existing -> still counts
+    const text = store.prometheus();
+    expect(text).toContain('telescope_http_client_total{host="a"} 2');
+    expect(text).toContain('telescope_http_client_total{host="b"} 1');
+    expect(text).not.toContain('host="c"');
+    expect(text).toContain('telescope_metrics_dropped_series_total{metric="telescope_http_client_total"} 1');
+  });
+});
