@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TelescopeOtelExporter } from './telescope-otel-exporter.js';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { trace } from '@opentelemetry/api';
@@ -27,6 +27,10 @@ describe('TelescopeOtelExporter.observeRecord', () => {
 });
 
 describe('TelescopeOtelExporter.observeFlush', () => {
+  afterEach(() => {
+    trace.disable();
+  });
+
   it('emits one span per entry through the OTel tracer', () => {
     const memory = new InMemorySpanExporter();
     const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(memory)] });
@@ -43,6 +47,5 @@ describe('TelescopeOtelExporter.observeFlush', () => {
     expect(spans).toHaveLength(1);
     expect(spans[0].name).toBe('telescope.request');
     expect(spans[0].attributes['telescope.type']).toBe('request');
-    trace.disable();
   });
 });

@@ -5,6 +5,11 @@ Telescope sees third-party libraries through dedicated watchers. For libraries
 generic watcher records it, and the OTel exporter forwards it to Grafana as
 `telescope_diagnostic_total{lib,event}`.
 
+**Prerequisites:** install `@dudousxd/nestjs-diagnostics` and register its
+generic Telescope watcher (`@dudousxd/nestjs-diagnostics-telescope`) in your
+app so that emitted diagnostic events are recorded by Telescope and subsequently
+exported by `TelescopeOtelExporter`.
+
 ```ts
 import { emit, getChannel } from '@dudousxd/nestjs-diagnostics';
 
