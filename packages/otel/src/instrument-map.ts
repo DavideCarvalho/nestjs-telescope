@@ -123,7 +123,10 @@ export class MetricStore {
     }
     let cell = series.get(labelKey);
     if (cell === undefined) {
-      if (series.size >= this.maxSeries) return this.drop(metric);
+      if (series.size >= this.maxSeries) {
+        this.drop(metric);
+        return;
+      }
       cell = { labels, count: 0 };
       series.set(labelKey, cell);
     }
@@ -143,7 +146,10 @@ export class MetricStore {
     }
     let cell = series.get(labelKey);
     if (cell === undefined) {
-      if (series.size >= this.maxSeries) return this.drop(metric);
+      if (series.size >= this.maxSeries) {
+        this.drop(metric);
+        return;
+      }
       cell = { labels, sum: 0, count: 0, buckets: new Array(this.bounds.length).fill(0) };
       series.set(labelKey, cell);
     }
@@ -193,7 +199,7 @@ export class MetricStore {
         out.push(`${dm}{metric="${escapeLabelValue(metric)}"} ${n}`);
       }
     }
-    return out.length ? out.join('\n') + '\n' : '';
+    return out.length ? `${out.join('\n')}\n` : '';
   }
 }
 
