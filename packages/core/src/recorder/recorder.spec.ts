@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBatch } from '../context/batch.js';
 import { TelescopeContext } from '../context/telescope-context.js';
-import type { Entry } from '../entry/entry.js';
+import type { Entry, RecordInput } from '../entry/entry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { Recorder } from './recorder.js';
@@ -869,6 +869,41 @@ describe('Recorder', () => {
       expect(stored).toHaveLength(1);
       expect(stored[0]!.traceId).toBeNull();
       expect(stored[0]!.tags.some((t) => t.startsWith('user:'))).toBe(false);
+    });
+  });
+
+  // ── onRecorded hook ────────────────────────────────────────────────────────
+
+  describe('onRecorded hook', () => {
+    it('fires for every record() with the raw input, before sampling', () => {
+      const seen: RecordInput[] = [];
+      const { recorder } = makeRecorder({
+        sampling: { query: 0 }, // sample OUT every query
+        onRecorded: (input) => seen.push(input),
+      });
+      recorder.record({ type: 'query', content: { sql: 'select 1', bindings: [], took: 1 } });
+      // Sampling dropped it from storage, but the metrics tap still saw it.
+      expect(seen).toHaveLength(1);
+      expect(seen[0].type).toBe('query');
+    });
+
+    it('fires even while paused (so counts stay complete under overload)', () => {
+      const seen: RecordInput[] = [];
+      const { recorder } = makeRecorder({ onRecorded: (input) => seen.push(input) });
+      recorder.pause();
+      recorder.record({ type: 'request', content: { method: 'GET', statusCode: 200 } });
+      expect(seen).toHaveLength(1);
+      expect(recorder.overflowDropped).toBe(1); // still dropped from storage
+    });
+
+    it('swallows a throwing hook without counting a drop or breaking record()', () => {
+      const { recorder, storage } = makeRecorder({
+        onRecorded: () => {
+          throw new Error('hook boom');
+        },
+      });
+      expect(() => recorder.record({ type: 'log', content: { message: 'x' } })).not.toThrow();
+      expect(recorder.droppedCount).toBe(0); // hook error is isolated, not a record-error
     });
   });
 });

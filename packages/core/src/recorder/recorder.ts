@@ -153,6 +153,14 @@ export interface RecorderOptions {
    * break the flush or the host. NOT called for a batch that failed to store.
    */
   onFlushStored?: (entries: Entry[]) => void | Promise<void>;
+  /**
+   * Best-effort hook fired with the RAW input of EVERY `record()` call, BEFORE
+   * the pause check and sampling — so a metrics consumer sees complete counts
+   * even when the entry is sampled out or dropped under overload. Called inside
+   * its own try/catch; a throw is swallowed and never counted as a drop, never
+   * breaks the synchronous record path. Powers the OTel/Prometheus metrics tap.
+   */
+  onRecorded?: (input: RecordInput) => void;
 }
 
 /**
@@ -352,6 +360,9 @@ export class Recorder {
 
   /** Synchronous, O(1), never throws into the caller. */
   record(input: RecordInput): void {
+    // Complete-count metrics tap: fires before pause/sampling so counters never
+    // under-report under overload. Isolated so a tap bug can't affect capture.
+    this.notifyRecorded(input);
     try {
       // Overload guard: while paused, drop new entries (counted as overflow) so
       // a telescope under load can never amplify an incident. Flushing still
@@ -503,6 +514,19 @@ export class Recorder {
       await this.options.onFlushStored(drained);
     } catch {
       // Best-effort observability hook; never break the flush.
+    }
+  }
+
+  /**
+   * Invoke the `onRecorded` tap with the raw input. Isolated try/catch: a tap
+   * failure is swallowed and is NOT a drop — capture continues unaffected.
+   */
+  private notifyRecorded(input: RecordInput): void {
+    if (this.options.onRecorded === undefined) return;
+    try {
+      this.options.onRecorded(input);
+    } catch {
+      // Best-effort metrics tap; never break record().
     }
   }
 

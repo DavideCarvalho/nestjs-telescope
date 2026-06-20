@@ -1,3 +1,4 @@
+import type { Entry, RecordInput } from '../entry/entry.js';
 import type { Watcher } from '../nest/watcher.js';
 import type {
   DashboardSpec,
@@ -20,6 +21,8 @@ export class ExtensionRegistry {
   private readonly _providers = new Map<string, DataProvider>();
   /** Provider name → the `name` of the extension that contributed it. */
   private readonly _providerOwners = new Map<string, string>();
+  private readonly _recordObservers: Array<(input: RecordInput) => void> = [];
+  private readonly _flushObservers: Array<(entries: Entry[]) => void | Promise<void>> = [];
 
   constructor(extensions: readonly TelescopeExtension[], ctx: ExtensionContext) {
     const entryOwners = new Map<string, string>();
@@ -60,6 +63,31 @@ export class ExtensionRegistry {
         }
         provOwners.set(p.name, ext.name);
         this._providers.set(p.name, p);
+      }
+
+      if (ext.observeRecord) this._recordObservers.push(ext.observeRecord.bind(ext));
+      if (ext.observeFlush) this._flushObservers.push(ext.observeFlush.bind(ext));
+    }
+  }
+
+  /** Fan out a recorded input to every observer; isolate throwers (hot path). */
+  notifyRecord(input: RecordInput): void {
+    for (const observe of this._recordObservers) {
+      try {
+        observe(input);
+      } catch {
+        // Best-effort; one observer's bug must not affect capture or the others.
+      }
+    }
+  }
+
+  /** Await every flush observer; isolate throwers/rejections (off the host path). */
+  async notifyFlush(entries: Entry[]): Promise<void> {
+    for (const observe of this._flushObservers) {
+      try {
+        await observe(entries);
+      } catch {
+        // Best-effort; never break the flush.
       }
     }
   }

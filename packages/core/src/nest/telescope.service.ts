@@ -168,6 +168,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       // Additive, opt-in context enrichment (traceId fallback + user/tenant
       // tags). Present only when nestjs-context bound the shared accessor token.
       ...(this.contextAccessor ? { contextAccessor: this.contextAccessor } : {}),
+      // Complete-count metrics tap: fan every record out to extension observers
+      // (e.g. the OTel exporter) before sampling, so exported counters are honest.
+      onRecorded: (input) => this.extensions.notifyRecord(input),
       // Per-flush new-exception evaluation: cheap map lookup per stored exception,
       // batch-context fetch only on a real fire. Delegates to the alerter built
       // just below; the closure reads `this.alerter` at flush time (always set by
@@ -177,7 +180,11 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       onFlushStored: (entries) => {
         this.diagnosis?.observeFlush(entries);
         this.entryEvents.emitTypes(entries.map((e) => e.type));
-        return this.alerter?.evaluateFlush(entries);
+        // Span/trace export and any other extension flush consumers. Awaited so
+        // the flush chain settles them; the registry isolates each (never throws).
+        const observers = this.extensions.notifyFlush(entries);
+        const alert = this.alerter?.evaluateFlush(entries);
+        return Promise.all([observers, alert]).then(() => undefined);
       },
     });
     // Construct the alerter AFTER the Recorder so its `droppedCount` baseline can
