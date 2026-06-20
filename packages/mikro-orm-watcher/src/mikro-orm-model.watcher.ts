@@ -17,6 +17,13 @@ export interface MikroOrmEventArgs {
   changeSet?: { payload?: Record<string, unknown> };
 }
 
+/** Flush / transaction event args (MikroORM's `FlushEventArgs` /
+ *  `TransactionEventArgs`). Both carry the `em` driving the operation, used to
+ *  key per-operation timing so concurrent forks never share a start slot. */
+export interface MikroOrmTimedEventArgs {
+  em: object;
+}
+
 /** The structural surface we need from a resolved `MikroORM` instance: an
  *  `EntityManager` whose event manager accepts a subscriber registration. */
 export interface MikroOrmLike {
@@ -131,11 +138,13 @@ export class MikroOrmModelWatcher implements Watcher {
 
     const watcher = this;
 
-    // Mutable timing state — one slot per event type since MikroORM dispatches
-    // these serially within a single async context (flush and transaction don't
-    // interleave their own begin/end hooks).
-    let flushStartMs: number | null = null;
-    let txStartMs: number | null = null;
+    // Timing is keyed by the EntityManager from the event args, NOT a single
+    // shared slot: the subscriber is registered on the shared EventManager, so
+    // concurrent flushes/transactions from different forked EMs interleave their
+    // begin/end hooks. A WeakMap keyed by the per-operation `em` correlates each
+    // end with its own start, races nothing, and never leaks (the EM is GC'd).
+    const flushStartByEm = new WeakMap<object, number>();
+    const txStartByEm = new WeakMap<object, number>();
 
     const subscriber = {
       afterCreate(args: MikroOrmEventArgs): void {
@@ -148,32 +157,32 @@ export class MikroOrmModelWatcher implements Watcher {
         watcher.safeRecord(ctx, 'delete', args);
       },
 
-      onFlush(): void {
-        flushStartMs = Date.now();
+      onFlush(args: MikroOrmTimedEventArgs): void {
+        flushStartByEm.set(args.em, Date.now());
       },
 
-      afterFlush(): void {
-        const start = flushStartMs;
-        flushStartMs = null;
-        const durationMs = start !== null ? Date.now() - start : null;
+      afterFlush(args: MikroOrmTimedEventArgs): void {
+        const start = flushStartByEm.get(args.em);
+        flushStartByEm.delete(args.em);
+        const durationMs = start !== undefined ? Date.now() - start : null;
         watcher.safeRecordFlush(ctx, durationMs);
       },
 
-      beforeTransactionStart(): void {
-        txStartMs = Date.now();
+      beforeTransactionStart(args: MikroOrmTimedEventArgs): void {
+        txStartByEm.set(args.em, Date.now());
       },
 
-      afterTransactionCommit(): void {
-        const start = txStartMs;
-        txStartMs = null;
-        const durationMs = start !== null ? Date.now() - start : null;
+      afterTransactionCommit(args: MikroOrmTimedEventArgs): void {
+        const start = txStartByEm.get(args.em);
+        txStartByEm.delete(args.em);
+        const durationMs = start !== undefined ? Date.now() - start : null;
         watcher.safeRecordTransaction(ctx, 'committed', durationMs);
       },
 
-      afterTransactionRollback(): void {
-        const start = txStartMs;
-        txStartMs = null;
-        const durationMs = start !== null ? Date.now() - start : null;
+      afterTransactionRollback(args: MikroOrmTimedEventArgs): void {
+        const start = txStartByEm.get(args.em);
+        txStartByEm.delete(args.em);
+        const durationMs = start !== undefined ? Date.now() - start : null;
         watcher.safeRecordTransaction(ctx, 'rolled-back', durationMs);
       },
     };
