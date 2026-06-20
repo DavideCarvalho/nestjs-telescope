@@ -97,10 +97,17 @@ export class MetricStore {
 
   constructor(options: MetricStoreOptions = {}) {
     this.maxSeries = options.maxSeriesPerMetric ?? 2000;
-    this.bounds = options.durationBucketsMs ?? DEFAULT_DURATION_BUCKETS_MS;
+    // Copy + sort ascending: Prometheus rejects a histogram whose `le` series are
+    // non-monotonic, so we never trust the caller's ordering, and the copy keeps
+    // the exported default constant immutable.
+    this.bounds = [...(options.durationBucketsMs ?? DEFAULT_DURATION_BUCKETS_MS)].sort((a, b) => a - b);
   }
 
   add(sample: MetricSample): void {
+    // The counter and its companion duration-histogram are distinct metric names,
+    // so each enforces the cap over its OWN series map. Under extreme cardinality
+    // one may start dropping a beat before the other; both drops are attributed to
+    // the right metric name, so the scrape stays internally consistent.
     const labelKey = serializeLabels(sample.labels);
     this.addCounter(sample.counter, labelKey, sample.labels);
     if (sample.durationMetric && sample.durationMs !== null) {
@@ -177,7 +184,10 @@ export class MetricStore {
     }
     if (this.dropped.size > 0) {
       const dm = 'telescope_metrics_dropped_series_total';
-      out.push(`# HELP ${dm} New label-series dropped after hitting the per-metric cardinality cap.`);
+      // Counts dropped SAMPLES (not distinct series) — tracking distinct dropped
+      // keys would itself be unbounded, defeating the cap. The rate of this
+      // counter is the signal that a metric is over its cardinality budget.
+      out.push(`# HELP ${dm} Samples dropped because their metric hit the per-metric cardinality cap.`);
       out.push(`# TYPE ${dm} counter`);
       for (const [metric, n] of this.dropped) {
         out.push(`${dm}{metric="${escapeLabelValue(metric)}"} ${n}`);
@@ -188,7 +198,7 @@ export class MetricStore {
 }
 
 function escapeLabelValue(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
 
 function serializeLabels(labels: Record<string, string>): string {

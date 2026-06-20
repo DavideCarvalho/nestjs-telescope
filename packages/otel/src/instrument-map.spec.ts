@@ -74,6 +74,18 @@ describe('MetricStore Prometheus histogram + headers', () => {
     expect(text).toContain('x_ms_bucket{le="10"} 1');
     expect(text).toContain('x_ms_bucket{le="+Inf"} 1');
   });
+
+  it('sorts caller-provided buckets so the le series stay monotonic', () => {
+    const store = new MetricStore({ durationBucketsMs: [100, 10] }); // out of order on purpose
+    store.add({ counter: 'x_total', labels: {}, durationMs: 50, durationMetric: 'x_ms' });
+    const text = store.prometheus();
+    const idx10 = text.indexOf('x_ms_bucket{le="10"}');
+    const idx100 = text.indexOf('x_ms_bucket{le="100"}');
+    expect(idx10).toBeGreaterThanOrEqual(0);
+    expect(idx10).toBeLessThan(idx100); // ascending le in the exposition
+    expect(text).toContain('x_ms_bucket{le="10"} 0'); // 50 > 10
+    expect(text).toContain('x_ms_bucket{le="100"} 1'); // 50 <= 100
+  });
 });
 
 describe('MetricStore cardinality cap', () => {
