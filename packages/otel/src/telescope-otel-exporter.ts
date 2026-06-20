@@ -1,7 +1,14 @@
-import { type Counter, type Histogram, type Meter, metrics, type Tracer, trace } from '@opentelemetry/api';
 import type { Entry, RecordInput, TelescopeExtension } from '@dudousxd/nestjs-telescope';
-import { DEFAULT_DURATION_BUCKETS_MS, mapInput, MetricStore } from './instrument-map.js';
+import {
+  type Counter,
+  type Histogram,
+  type Meter,
+  type Tracer,
+  metrics,
+  trace,
+} from '@opentelemetry/api';
 import { entryToSpan } from './entry-to-span.js';
+import { DEFAULT_DURATION_BUCKETS_MS, MetricStore, mapInput } from './instrument-map.js';
 
 export interface TelescopeOtelExporterOptions {
   /** OTel Meter for OTLP push. Defaults to the global meter (no-op without an SDK). */

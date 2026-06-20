@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ExtensionRegistry } from './registry.js';
 import type { Entry, RecordInput } from '../entry/entry.js';
+import { ExtensionRegistry } from './registry.js';
 import type { ExtensionContext, TelescopeExtension } from './types.js';
 
 const ctx = {
@@ -82,13 +82,16 @@ describe('ExtensionRegistry', () => {
       const reg = new ExtensionRegistry(
         [
           { name: 'a', observeRecord: (i) => seenA.push(i.type) },
-          { name: 'b', observeRecord: () => { throw new Error('boom'); } },
+          {
+            name: 'b',
+            observeRecord: () => {
+              throw new Error('boom');
+            },
+          },
         ],
         {} as ExtensionContext,
       );
-      expect(() =>
-        reg.notifyRecord({ type: 'query', content: {} }),
-      ).not.toThrow();
+      expect(() => reg.notifyRecord({ type: 'query', content: {} })).not.toThrow();
       expect(seenA).toEqual(['query']);
     });
 
@@ -96,7 +99,12 @@ describe('ExtensionRegistry', () => {
       const seen: number[] = [];
       const reg = new ExtensionRegistry(
         [
-          { name: 'a', observeFlush: (e) => { seen.push(e.length); } },
+          {
+            name: 'a',
+            observeFlush: (e) => {
+              seen.push(e.length);
+            },
+          },
           { name: 'b', observeFlush: () => Promise.reject(new Error('boom')) },
         ],
         {} as ExtensionContext,

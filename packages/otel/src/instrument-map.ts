@@ -84,8 +84,16 @@ export interface MetricStoreOptions {
   durationBucketsMs?: number[];
 }
 
-interface CounterSeries { labels: Record<string, string>; count: number }
-interface HistogramSeries { labels: Record<string, string>; sum: number; count: number; buckets: number[] }
+interface CounterSeries {
+  labels: Record<string, string>;
+  count: number;
+}
+interface HistogramSeries {
+  labels: Record<string, string>;
+  sum: number;
+  count: number;
+  buckets: number[];
+}
 
 /** Dependency-free internal aggregation for the Prometheus `/metrics` scrape. */
 export class MetricStore {
@@ -100,7 +108,9 @@ export class MetricStore {
     // Copy + sort ascending: Prometheus rejects a histogram whose `le` series are
     // non-monotonic, so we never trust the caller's ordering, and the copy keeps
     // the exported default constant immutable.
-    this.bounds = [...(options.durationBucketsMs ?? DEFAULT_DURATION_BUCKETS_MS)].sort((a, b) => a - b);
+    this.bounds = [...(options.durationBucketsMs ?? DEFAULT_DURATION_BUCKETS_MS)].sort(
+      (a, b) => a - b,
+    );
   }
 
   add(sample: MetricSample): void {
@@ -181,7 +191,9 @@ export class MetricStore {
       out.push(`# TYPE ${metric} histogram`);
       for (const cell of series.values()) {
         this.bounds.forEach((bound, i) => {
-          out.push(`${metric}_bucket${labelsWith(cell.labels, 'le', String(bound))} ${cell.buckets[i] ?? 0}`);
+          out.push(
+            `${metric}_bucket${labelsWith(cell.labels, 'le', String(bound))} ${cell.buckets[i] ?? 0}`,
+          );
         });
         out.push(`${metric}_bucket${labelsWith(cell.labels, 'le', '+Inf')} ${cell.count}`);
         out.push(`${metric}_sum${serializeLabels(cell.labels)} ${cell.sum}`);
@@ -193,7 +205,9 @@ export class MetricStore {
       // Counts dropped SAMPLES (not distinct series) — tracking distinct dropped
       // keys would itself be unbounded, defeating the cap. The rate of this
       // counter is the signal that a metric is over its cardinality budget.
-      out.push(`# HELP ${dm} Samples dropped because their metric hit the per-metric cardinality cap.`);
+      out.push(
+        `# HELP ${dm} Samples dropped because their metric hit the per-metric cardinality cap.`,
+      );
       out.push(`# TYPE ${dm} counter`);
       for (const [metric, n] of this.dropped) {
         out.push(`${dm}{metric="${escapeLabelValue(metric)}"} ${n}`);
