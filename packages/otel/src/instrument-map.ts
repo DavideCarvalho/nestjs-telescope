@@ -16,21 +16,21 @@ export function mapInput(input: RecordInput): MetricSample | null {
     case EntryType.Request:
       return {
         counter: 'telescope_requests_total',
-        labels: { method: String(c['method'] ?? ''), status: String(c['statusCode'] ?? '') },
+        labels: { method: String(c.method ?? ''), status: String(c.statusCode ?? '') },
         durationMs: dur,
         durationMetric: 'telescope_request_duration_ms',
       };
     case EntryType.Query:
       return {
         counter: 'telescope_queries_total',
-        labels: { db: String(c['connection'] ?? c['db'] ?? 'default') },
+        labels: { db: String(c.connection ?? c.db ?? 'default') },
         durationMs: dur,
         durationMetric: 'telescope_query_duration_ms',
       };
     case EntryType.Job:
       return {
         counter: 'telescope_jobs_total',
-        labels: { status: String(c['status'] ?? (c['failed'] ? 'failed' : 'completed')) },
+        labels: { status: String(c.status ?? (c.failed ? 'failed' : 'completed')) },
         durationMs: dur,
         durationMetric: 'telescope_job_duration_ms',
       };
@@ -38,26 +38,26 @@ export function mapInput(input: RecordInput): MetricSample | null {
     case EntryType.ClientException:
       return {
         counter: 'telescope_exceptions_total',
-        labels: { class: String(c['class'] ?? c['name'] ?? 'Error') },
+        labels: { class: String(c.class ?? c.name ?? 'Error') },
         durationMs: null,
       };
     case EntryType.Cache:
       return {
         counter: 'telescope_cache_total',
-        labels: { result: c['hit'] === true ? 'hit' : c['hit'] === false ? 'miss' : 'write' },
+        labels: { result: c.hit === true ? 'hit' : c.hit === false ? 'miss' : 'write' },
         durationMs: null,
       };
     case EntryType.HttpClient:
       return {
         counter: 'telescope_http_client_total',
-        labels: { host: String(c['host'] ?? ''), status: String(c['statusCode'] ?? '') },
+        labels: { host: String(c.host ?? ''), status: String(c.statusCode ?? '') },
         durationMs: dur,
         durationMetric: 'telescope_http_client_duration_ms',
       };
     case 'diagnostic':
       return {
         counter: 'telescope_diagnostic_total',
-        labels: { lib: String(c['lib'] ?? ''), event: String(c['event'] ?? '') },
+        labels: { lib: String(c.lib ?? ''), event: String(c.event ?? '') },
         durationMs: null,
       };
     default:
