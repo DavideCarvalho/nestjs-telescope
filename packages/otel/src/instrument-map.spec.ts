@@ -130,3 +130,96 @@ describe('MetricStore cardinality cap', () => {
     );
   });
 });
+
+describe('mapInput — MikroORM flush entries', () => {
+  it('maps a flush entry to counter + duration histogram', () => {
+    const s = mapInput({
+      type: 'model',
+      content: { kind: 'flush' },
+      durationMs: 42,
+    });
+    expect(s).toEqual({
+      counter: 'telescope_mikroorm_flush_total',
+      labels: {},
+      durationMs: 42,
+      durationMetric: 'telescope_mikroorm_flush_duration_ms',
+    });
+  });
+
+  it('maps a flush entry with null durationMs', () => {
+    const s = mapInput({
+      type: 'model',
+      content: { kind: 'flush' },
+    });
+    expect(s?.counter).toBe('telescope_mikroorm_flush_total');
+    expect(s?.durationMs).toBeNull();
+    expect(s?.durationMetric).toBe('telescope_mikroorm_flush_duration_ms');
+  });
+
+  it('returns null for a model entity entry (kind "entity")', () => {
+    const s = mapInput({
+      type: 'model',
+      content: { kind: 'entity', action: 'create', entity: 'User', id: '1', changes: null },
+    });
+    expect(s).toBeNull();
+  });
+});
+
+describe('mapInput — MikroORM transaction entries', () => {
+  it('maps a committed transaction to counter + duration histogram with outcome label', () => {
+    const s = mapInput({
+      type: 'model',
+      content: { kind: 'transaction', outcome: 'committed' },
+      durationMs: 15,
+    });
+    expect(s).toEqual({
+      counter: 'telescope_mikroorm_transaction_total',
+      labels: { outcome: 'committed' },
+      durationMs: 15,
+      durationMetric: 'telescope_mikroorm_transaction_duration_ms',
+    });
+  });
+
+  it('maps a rolled-back transaction to counter + duration histogram with outcome label', () => {
+    const s = mapInput({
+      type: 'model',
+      content: { kind: 'transaction', outcome: 'rolled-back' },
+      durationMs: 8,
+    });
+    expect(s).toEqual({
+      counter: 'telescope_mikroorm_transaction_total',
+      labels: { outcome: 'rolled-back' },
+      durationMs: 8,
+      durationMetric: 'telescope_mikroorm_transaction_duration_ms',
+    });
+  });
+});
+
+describe('mapInput — diagnostic entries with durationMs', () => {
+  it('maps a diagnostic entry WITHOUT durationMs to counter only (no durationMetric)', () => {
+    const s = mapInput({
+      type: 'diagnostic',
+      content: { lib: 'authz', event: 'decision' },
+    });
+    expect(s).toEqual({
+      counter: 'telescope_diagnostic_total',
+      labels: { lib: 'authz', event: 'decision' },
+      durationMs: null,
+    });
+    expect(s).not.toHaveProperty('durationMetric');
+  });
+
+  it('maps a diagnostic entry WITH durationMs to counter + duration histogram', () => {
+    const s = mapInput({
+      type: 'diagnostic',
+      content: { lib: 'redis', event: 'command' },
+      durationMs: 3,
+    });
+    expect(s).toEqual({
+      counter: 'telescope_diagnostic_total',
+      labels: { lib: 'redis', event: 'command' },
+      durationMs: 3,
+      durationMetric: 'telescope_diagnostic_duration_ms',
+    });
+  });
+});

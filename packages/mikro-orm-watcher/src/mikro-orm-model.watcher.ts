@@ -27,6 +27,29 @@ export interface MikroOrmLike {
   };
 }
 
+/** Content shape for model-entity lifecycle entries (create/update/delete). */
+export interface ModelEntryContent {
+  kind: 'entity';
+  action: 'create' | 'update' | 'delete';
+  entity: string;
+  id: string | null;
+  changes: Record<string, unknown> | null;
+}
+
+/** Content shape for flush lifecycle entries. */
+export interface FlushEntryContent {
+  kind: 'flush';
+}
+
+/** Content shape for transaction lifecycle entries. */
+export interface TransactionEntryContent {
+  kind: 'transaction';
+  outcome: 'committed' | 'rolled-back';
+}
+
+/** Union of all content shapes this watcher emits. */
+export type MikroOrmEntryContent = ModelEntryContent | FlushEntryContent | TransactionEntryContent;
+
 /** Telescope's own storage entities — never recorded, to avoid a feedback loop
  *  where persisting an entry triggers another model entry. */
 const TELESCOPE_ENTITY_NAMES = new Set(['TelescopeEntry', 'TelescopeRollup']);
@@ -60,20 +83,24 @@ function resolvePrimaryKey(entity: object): string | null {
 }
 
 /**
- * Captures MikroORM entity lifecycle changes (create / update / delete) and
- * records a `model` entry per change, correlated to the active request/job
- * batch.
+ * Captures MikroORM entity lifecycle changes (create / update / delete) as well
+ * as flush and transaction lifecycle events with durations, recording telescope
+ * entries correlated to the active request/job batch.
  *
- * ## How it works
- * At registration the watcher resolves the host's `MikroORM` from the Nest
- * container (`ctx.moduleRef.get(MikroORM, { strict: false })`) and registers an
- * `EventSubscriber` on the EntityManager's event manager
- * (`orm.em.getEventManager().registerSubscriber(...)`). On each `afterCreate` /
- * `afterUpdate` / `afterDelete` hook it records
- * `{ action, entity, id, changes }`. The subscriber runs in the flushing async
- * context, so each entry lands in the request/job batch that triggered the
- * flush — no batch is opened here. Payload (`changes`) redaction is applied
- * downstream by the Recorder.
+ * ## Entity changes
+ * On each `afterCreate` / `afterUpdate` / `afterDelete` hook it records
+ * `{ kind: 'entity', action, entity, id, changes }`. The subscriber runs in the
+ * flushing async context, so each entry lands in the request/job batch that
+ * triggered the flush — no batch is opened here.
+ *
+ * ## Flush lifecycle
+ * On `onFlush` the start time is captured. On `afterFlush` the elapsed
+ * `durationMs` is set and a `{ kind: 'flush' }` entry is recorded.
+ *
+ * ## Transaction lifecycle
+ * On `beforeTransactionStart` the start time is captured. On
+ * `afterTransactionCommit` / `afterTransactionRollback` the elapsed `durationMs`
+ * is set and a `{ kind: 'transaction', outcome }` entry is recorded.
  *
  * ## Feedback-loop guard
  * Telescope's own storage entities (`TelescopeEntry` / `TelescopeRollup`) are
@@ -103,6 +130,13 @@ export class MikroOrmModelWatcher implements Watcher {
     }
 
     const watcher = this;
+
+    // Mutable timing state — one slot per event type since MikroORM dispatches
+    // these serially within a single async context (flush and transaction don't
+    // interleave their own begin/end hooks).
+    let flushStartMs: number | null = null;
+    let txStartMs: number | null = null;
+
     const subscriber = {
       afterCreate(args: MikroOrmEventArgs): void {
         watcher.safeRecord(ctx, 'create', args);
@@ -112,6 +146,35 @@ export class MikroOrmModelWatcher implements Watcher {
       },
       afterDelete(args: MikroOrmEventArgs): void {
         watcher.safeRecord(ctx, 'delete', args);
+      },
+
+      onFlush(): void {
+        flushStartMs = Date.now();
+      },
+
+      afterFlush(): void {
+        const start = flushStartMs;
+        flushStartMs = null;
+        const durationMs = start !== null ? Date.now() - start : null;
+        watcher.safeRecordFlush(ctx, durationMs);
+      },
+
+      beforeTransactionStart(): void {
+        txStartMs = Date.now();
+      },
+
+      afterTransactionCommit(): void {
+        const start = txStartMs;
+        txStartMs = null;
+        const durationMs = start !== null ? Date.now() - start : null;
+        watcher.safeRecordTransaction(ctx, 'committed', durationMs);
+      },
+
+      afterTransactionRollback(): void {
+        const start = txStartMs;
+        txStartMs = null;
+        const durationMs = start !== null ? Date.now() - start : null;
+        watcher.safeRecordTransaction(ctx, 'rolled-back', durationMs);
       },
     };
 
@@ -134,8 +197,9 @@ export class MikroOrmModelWatcher implements Watcher {
     }
   }
 
-  /** Build + record a model entry, skipping Telescope's own entities and
-   *  swallowing any failure so a telescope error can never break a flush. */
+  /** Build + record a model entity-change entry, skipping Telescope's own
+   *  entities and swallowing any failure so a telescope error can never break
+   *  a flush. */
   private safeRecord(
     ctx: WatcherContext,
     action: 'create' | 'update' | 'delete',
@@ -145,21 +209,63 @@ export class MikroOrmModelWatcher implements Watcher {
       const entity = resolveEntityName(args);
       if (TELESCOPE_ENTITY_NAMES.has(entity)) return;
 
-      const input: RecordInput = {
+      const content: ModelEntryContent = {
+        kind: 'entity',
+        action,
+        entity,
+        id: resolvePrimaryKey(args.entity),
+        changes: args.changeSet?.payload ?? null,
+      };
+      const input: RecordInput<ModelEntryContent> = {
         type: EntryType.Model,
         familyHash: `model:${entity}:${action}`,
         tags: ['model', `model:${action}`, `entity:${entity}`],
-        content: {
-          action,
-          entity,
-          id: resolvePrimaryKey(args.entity),
-          changes: args.changeSet?.payload ?? null,
-        },
+        content,
       };
       ctx.record(input);
     } catch (recordError) {
       const message = recordError instanceof Error ? recordError.message : String(recordError);
       this.logger.error(`MikroOrmModelWatcher: failed to record model change: ${message}`);
+    }
+  }
+
+  /** Record a flush lifecycle entry with measured duration. */
+  private safeRecordFlush(ctx: WatcherContext, durationMs: number | null): void {
+    try {
+      const content: FlushEntryContent = { kind: 'flush' };
+      const input: RecordInput<FlushEntryContent> = {
+        type: EntryType.Model,
+        familyHash: 'model:flush',
+        tags: ['model', 'model:flush'],
+        content,
+        durationMs,
+      };
+      ctx.record(input);
+    } catch (recordError) {
+      const message = recordError instanceof Error ? recordError.message : String(recordError);
+      this.logger.error(`MikroOrmModelWatcher: failed to record flush: ${message}`);
+    }
+  }
+
+  /** Record a transaction lifecycle entry with measured duration and outcome. */
+  private safeRecordTransaction(
+    ctx: WatcherContext,
+    outcome: 'committed' | 'rolled-back',
+    durationMs: number | null,
+  ): void {
+    try {
+      const content: TransactionEntryContent = { kind: 'transaction', outcome };
+      const input: RecordInput<TransactionEntryContent> = {
+        type: EntryType.Model,
+        familyHash: `model:transaction:${outcome}`,
+        tags: ['model', 'model:transaction', `transaction:${outcome}`],
+        content,
+        durationMs,
+      };
+      ctx.record(input);
+    } catch (recordError) {
+      const message = recordError instanceof Error ? recordError.message : String(recordError);
+      this.logger.error(`MikroOrmModelWatcher: failed to record transaction: ${message}`);
     }
   }
 }

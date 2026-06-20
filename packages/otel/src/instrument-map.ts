@@ -54,11 +54,32 @@ export function mapInput(input: RecordInput): MetricSample | null {
         durationMs: dur,
         durationMetric: 'telescope_http_client_duration_ms',
       };
+    case EntryType.Model: {
+      const kind = c.kind;
+      if (kind === 'flush') {
+        return {
+          counter: 'telescope_mikroorm_flush_total',
+          labels: {},
+          durationMs: dur,
+          durationMetric: 'telescope_mikroorm_flush_duration_ms',
+        };
+      }
+      if (kind === 'transaction') {
+        return {
+          counter: 'telescope_mikroorm_transaction_total',
+          labels: { outcome: String(c.outcome ?? '') },
+          durationMs: dur,
+          durationMetric: 'telescope_mikroorm_transaction_duration_ms',
+        };
+      }
+      return null;
+    }
     case 'diagnostic':
       return {
         counter: 'telescope_diagnostic_total',
         labels: { lib: String(c.lib ?? ''), event: String(c.event ?? '') },
-        durationMs: null,
+        durationMs: dur,
+        ...(dur !== null ? { durationMetric: 'telescope_diagnostic_duration_ms' } : {}),
       };
     default:
       return null;
