@@ -68,6 +68,23 @@ Queries recorded via `telescopeMikroOrmLogger` automatically inherit the active
 ALS batch opened by the request middleware, so each query entry is correlated to
 the request that triggered it.
 
+### Capturing without console noise
+
+Capture only works while MikroORM's `debug` is enabled — that's what makes it
+call the logger. But `debug` also echoes every query to stdout, which drowns your
+logs. To feed Telescope **without** the console spam, pass `silent: true`:
+
+```ts
+loggerFactory: telescopeMikroOrmLogger(
+  (input) => telescope.record(input),
+  { slowMs: 100, silent: true },   // record into Telescope, but no stdout echo
+),
+```
+
+Keep `debug: ['query']` enabled — `silent` swaps MikroORM's writer for a no-op,
+so queries still flow into Telescope while nothing is printed. Leave `silent`
+off (the default) if you want queries in both Telescope and the console.
+
 ## N+1 detection
 
 ```ts
@@ -152,7 +169,7 @@ How it works:
 | Export | Description |
 |--------|-------------|
 | `MikroOrmQueryWatcher` | Watcher marker — add to `TelescopeModule.forRoot({ watchers })` |
-| `telescopeMikroOrmLogger(record, opts?)` | `loggerFactory`-compatible factory; `opts.slowMs` defaults to `100` |
+| `telescopeMikroOrmLogger(record, opts?)` | `loggerFactory`-compatible factory; `opts.slowMs` defaults to `100`, `opts.silent` (default `false`) suppresses MikroORM's console output while still recording |
 | `TelescopeMikroOrmLogger` | `DefaultLogger` subclass (advanced: extend or instantiate directly) |
 | `MikroOrmStorageProvider` | `StorageProvider` persisting entries to MySQL/SQLite; owns a dedicated scoped connection and self-heals its schema at boot |
 | `TelescopeEntry` | `EntitySchema` for table `telescope_entries` (owned internally by the provider; exported for advanced use — you don't register it) |
