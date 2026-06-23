@@ -130,6 +130,10 @@ TelescopeModule.forRoot({ watchers: [new CacheWatcher()] }); // auto-discovers C
 
 The philosophy: official libraries are auto-instrumented out of the box; any other cache becomes instrumentable through `instrument` — Telescope never has to special-case every cache library. If `CACHE_MANAGER` isn't registered, the watcher logs a one-line warning and no-ops.
 
+<Callout type="info" title="@nestjs/cache-manager is optional">
+  `@nestjs/cache-manager` is an **optional** peer dependency. It is imported lazily, on demand, only on the zero-config auto-discovery path that resolves `CACHE_MANAGER`. So BentoCache-only (and any other custom-cache-only) hosts that use the `instrument(emit, ctx)` escape hatch — or that pass an explicit `Cache` — do **not** need to install `@nestjs/cache-manager` at all. Loading the watcher never triggers a runtime resolution of the peer.
+</Callout>
+
 ### Schedule — `@dudousxd/nestjs-telescope-schedule`
 
 Wraps `@nestjs/schedule` `@Cron` / `@Interval` / `@Timeout` handlers so each run opens a `schedule` batch — correlating the queries and exceptions that task emits — and records a job entry for the run itself (outcome + duration).
@@ -220,3 +224,12 @@ TelescopeModule.forRoot({ watchers: [new MikroOrmModelWatcher()] });
 ```
 
 Telescope's own storage entities (`TelescopeEntry` / `TelescopeRollup`) are skipped by class name, so persisting an entry never records another `model` entry.
+
+Beyond per-entity changes, the watcher also records the **flush and transaction lifecycle** with measured durations, keyed per `EntityManager` so concurrent units of work stay isolated:
+
+- On `onFlush` / `afterFlush` it records a `{ kind: 'flush' }` entry carrying the elapsed `durationMs`.
+- On `beforeTransactionStart` + `afterTransactionCommit` / `afterTransactionRollback` it records a `{ kind: 'transaction', outcome }` entry (`outcome` is `'committed'` or `'rolled-back'`) with the elapsed `durationMs`.
+
+<Callout type="info">
+  When you also run `@dudousxd/nestjs-telescope-otel`, these flush and transaction entries map to the `telescope_mikroorm_flush_total` / `telescope_mikroorm_flush_duration_ms` and `telescope_mikroorm_transaction_total` / `telescope_mikroorm_transaction_duration_ms` metrics.
+</Callout>
