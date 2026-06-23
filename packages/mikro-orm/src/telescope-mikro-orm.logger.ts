@@ -5,6 +5,12 @@ import { DefaultLogger, type LogContext, type LoggerOptions } from '@mikro-orm/c
 export interface TelescopeLoggerOptions {
   /** Queries at/above this many ms get a 'slow' tag. Default 100. */
   slowMs?: number;
+  /**
+   * Suppress MikroORM's own console output while still recording into Telescope.
+   * Enable this when `debug` is only turned on to feed Telescope and you don't
+   * want every query echoed to stdout. Default false.
+   */
+  silent?: boolean;
 }
 
 /** A MikroORM DefaultLogger subclass that tees every executed query into
@@ -46,7 +52,8 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
  * ```ts
  * MikroORM.init({
  *   debug: ['query'],
- *   loggerFactory: telescopeMikroOrmLogger(record, { slowMs: 100 }),
+ *   // Capture queries for Telescope without spamming the console:
+ *   loggerFactory: telescopeMikroOrmLogger(record, { slowMs: 100, silent: true }),
  * });
  * ```
  */
@@ -55,6 +62,14 @@ export function telescopeMikroOrmLogger(
   options: TelescopeLoggerOptions = {},
 ): (loggerOptions: LoggerOptions) => TelescopeMikroOrmLogger {
   const slowMs = options.slowMs ?? 100;
+  const silent = options.silent ?? false;
+  // When silent, swap MikroORM's writer for a no-op so `super.logQuery` records
+  // into Telescope but never echoes to stdout. Queries still flow because the
+  // host keeps `debug` enabled — only the console output is dropped.
   return (loggerOptions: LoggerOptions) =>
-    new TelescopeMikroOrmLogger(loggerOptions, record, slowMs);
+    new TelescopeMikroOrmLogger(
+      silent ? { ...loggerOptions, writer: () => undefined } : loggerOptions,
+      record,
+      slowMs,
+    );
 }

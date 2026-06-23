@@ -38,4 +38,28 @@ describe('telescopeMikroOrmLogger', () => {
     logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
     expect(records[0]?.tags ?? []).not.toContain('slow');
   });
+
+  it('tees to the MikroORM writer by default when the query namespace is enabled', () => {
+    const records: RecordInput[] = [];
+    const writes: string[] = [];
+    const logger = telescopeMikroOrmLogger((i) => records.push(i))({
+      debugMode: ['query'],
+      writer: (msg) => writes.push(msg),
+    } as never);
+    logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
+    expect(records).toHaveLength(1); // recorded
+    expect(writes.length).toBeGreaterThan(0); // and echoed to console writer
+  });
+
+  it('silent suppresses the MikroORM writer while still recording', () => {
+    const records: RecordInput[] = [];
+    const writes: string[] = [];
+    const logger = telescopeMikroOrmLogger((i) => records.push(i), { silent: true })({
+      debugMode: ['query'],
+      writer: (msg) => writes.push(msg),
+    } as never);
+    logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
+    expect(records).toHaveLength(1); // still captured for Telescope
+    expect(writes).toHaveLength(0); // console output suppressed
+  });
 });
