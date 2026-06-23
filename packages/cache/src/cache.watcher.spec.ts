@@ -233,7 +233,7 @@ describe('CacheWatcher', () => {
       const { ctx, recorded } = makeHarness({
         moduleRefGet: (token) => (token === CACHE_MANAGER ? cache : undefined),
       });
-      new CacheWatcher().register(ctx);
+      await new CacheWatcher().register(ctx);
 
       const value = await cache.get('user');
 
@@ -247,18 +247,18 @@ describe('CacheWatcher', () => {
       const { ctx, recorded } = makeHarness({
         moduleRefGet: (token) => (token === CACHE_MANAGER ? cache : undefined),
       });
-      new CacheWatcher().register(ctx);
+      await new CacheWatcher().register(ctx);
 
       await cache.set('k', 'v', 60);
 
       expect(recorded[0]!.content).toEqual({ operation: 'set', key: 'k', hit: null });
     });
 
-    it('warns and no-ops when CACHE_MANAGER is not found (never throws)', () => {
+    it('warns and no-ops when CACHE_MANAGER is not found (never throws)', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { ctx, recorded } = makeHarness({ moduleRefGet: () => undefined });
 
-      expect(() => new CacheWatcher().register(ctx)).not.toThrow();
+      await expect(new CacheWatcher().register(ctx)).resolves.toBeUndefined();
       expect(recorded).toHaveLength(0);
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn.mock.calls[0]![0]).toContain('CACHE_MANAGER not found');
@@ -266,20 +266,20 @@ describe('CacheWatcher', () => {
       warn.mockRestore();
     });
 
-    it('warns when the resolved CACHE_MANAGER is not a CacheLike', () => {
+    it('warns when the resolved CACHE_MANAGER is not a CacheLike', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { ctx, recorded } = makeHarness({
         moduleRefGet: (token) => (token === CACHE_MANAGER ? { notACache: true } : undefined),
       });
 
-      expect(() => new CacheWatcher().register(ctx)).not.toThrow();
+      await expect(new CacheWatcher().register(ctx)).resolves.toBeUndefined();
       expect(recorded).toHaveLength(0);
       expect(warn).toHaveBeenCalledTimes(1);
 
       warn.mockRestore();
     });
 
-    it('survives a moduleRef.get that throws (no throw, warns)', () => {
+    it('survives a moduleRef.get that throws (no throw, warns)', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { ctx } = makeHarness({
         moduleRefGet: () => {
@@ -287,10 +287,34 @@ describe('CacheWatcher', () => {
         },
       });
 
-      expect(() => new CacheWatcher().register(ctx)).not.toThrow();
+      await expect(new CacheWatcher().register(ctx)).resolves.toBeUndefined();
       expect(warn).toHaveBeenCalledTimes(1);
 
       warn.mockRestore();
+    });
+  });
+
+  describe('optional-peer safety (Bento-only path)', () => {
+    it('constructs and registers the { instrument } path without touching @nestjs/cache-manager', () => {
+      // Bento-only consumers don't install @nestjs/cache-manager. The custom
+      // source path must neither import it (top-level import is gone) nor hit
+      // the dynamic-import auto-discovery branch — register() returns void here.
+      let emit: ((event: CacheEventInput) => void) | undefined;
+      const source: CustomCacheSource = {
+        instrument: (emitFn) => {
+          emit = emitFn;
+        },
+      };
+      const { ctx, recorded } = makeHarness();
+
+      const result = new CacheWatcher(source).register(ctx);
+
+      // Custom path is synchronous (no dynamic import), so register returns void.
+      expect(result).toBeUndefined();
+      expect(emit).toBeDefined();
+      emit!({ operation: 'get', key: 'k', hit: true });
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]!.content).toEqual({ operation: 'get', key: 'k', hit: true });
     });
   });
 });

@@ -5,7 +5,14 @@ import {
   type Watcher,
   type WatcherContext,
 } from '@dudousxd/nestjs-telescope';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
+// NOTE: `@nestjs/cache-manager` is an OPTIONAL peer dependency, so it must never
+// be imported at module-evaluation time — a top-level value import would make
+// merely loading this module crash any consumer that doesn't install it (e.g.
+// Bento-only hosts using the `{ instrument }` path). The CACHE_MANAGER token is
+// therefore loaded lazily, on demand, inside `resolveStandardCache` (the only
+// code path that needs it). The type-only import below is erased at compile
+// time and triggers no runtime resolution.
+import type { CACHE_MANAGER as CacheManagerToken } from '@nestjs/cache-manager';
 
 /** The structural cache surface we wrap — covers `cache-manager` v5 /
  *  `@nestjs/cache-manager` `Cache`. Kept minimal so signature drift between
@@ -92,20 +99,13 @@ export class CacheWatcher implements Watcher {
     this.source = source;
   }
 
-  register(ctx: WatcherContext): void {
+  register(ctx: WatcherContext): void | Promise<void> {
     // No-arg form: auto-discover the standard `@nestjs/cache-manager`
-    // CACHE_MANAGER from the Nest container and patch it.
+    // CACHE_MANAGER from the Nest container and patch it. This is the ONLY path
+    // that touches `@nestjs/cache-manager`, so the import is deferred to here —
+    // the Bento `{ instrument }` and explicit-cache paths below never load it.
     if (this.source === undefined) {
-      const discovered = this.resolveStandardCache(ctx);
-      if (!discovered) {
-        console.warn(
-          'CacheWatcher: no cache provided and CACHE_MANAGER not found — ' +
-            'set a cache or use { instrument }',
-        );
-        return;
-      }
-      this.patchCache(discovered, ctx);
-      return;
+      return this.registerStandard(ctx);
     }
 
     if (isCustomCacheSource(this.source)) {
@@ -122,12 +122,33 @@ export class CacheWatcher implements Watcher {
     this.patchCache(this.source, ctx);
   }
 
+  /** No-arg auto-discovery path: lazily load the optional `@nestjs/cache-manager`
+   *  peer, resolve its `CACHE_MANAGER` provider from the Nest container, and
+   *  patch it. Kept off the constructor/Bento path so Bento-only hosts never
+   *  load `@nestjs/cache-manager` (it's an optional peer dependency). */
+  private async registerStandard(ctx: WatcherContext): Promise<void> {
+    const discovered = await this.resolveStandardCache(ctx);
+    if (!discovered) {
+      console.warn(
+        'CacheWatcher: no cache provided and CACHE_MANAGER not found — ' +
+          'set a cache or use { instrument }',
+      );
+      return;
+    }
+    this.patchCache(discovered, ctx);
+  }
+
   /** Resolve the standard `@nestjs/cache-manager` `CACHE_MANAGER` provider from
    *  the Nest container, narrowed to a {@link CacheLike}. Returns null when the
    *  provider is absent or isn't a CacheLike. Defensive: a strict-resolution
-   *  throw degrades to null (never propagates). */
-  private resolveStandardCache(ctx: WatcherContext): CacheLike | null {
+   *  throw (or a missing optional `@nestjs/cache-manager` peer) degrades to null
+   *  (never propagates). The `@nestjs/cache-manager` import is dynamic so it's
+   *  only loaded when a host actually uses this auto-discovery path. */
+  private async resolveStandardCache(ctx: WatcherContext): Promise<CacheLike | null> {
     try {
+      const { CACHE_MANAGER }: { CACHE_MANAGER: typeof CacheManagerToken } = await import(
+        '@nestjs/cache-manager'
+      );
       const found = ctx.moduleRef.get(CACHE_MANAGER, { strict: false });
       return isCacheLike(found) ? found : null;
     } catch {
