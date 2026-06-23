@@ -1,5 +1,22 @@
 # @dudousxd/nestjs-telescope-mikro-orm
 
+## 1.12.0
+
+### Minor Changes
+
+- [#25](https://github.com/DavideCarvalho/nestjs-telescope/pull/25) [`b8b6dcd`](https://github.com/DavideCarvalho/nestjs-telescope/commit/b8b6dcd3bb2fc29d6c287b00d4d75c0a149a4b56) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add a `silent` option to `telescopeMikroOrmLogger` so queries can be captured without spamming the console.
+
+  MikroORM only calls the logger while `debug` is enabled, but `debug` also echoes every query to stdout — which makes local debugging painful once Telescope is wired in. Passing `{ silent: true }` swaps MikroORM's writer for a no-op so queries still flow into Telescope (correlated to the active ALS batch, slow-tagged, hashed for N+1) while nothing is printed:
+
+  ```ts
+  loggerFactory: telescopeMikroOrmLogger(
+    (input) => telescope.record(input),
+    { slowMs: 100, silent: true },
+  ),
+  ```
+
+  `silent` defaults to `false`, preserving the previous tee-to-console behavior.
+
 ## 1.11.1
 
 ### Patch Changes
