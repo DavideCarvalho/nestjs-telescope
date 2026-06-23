@@ -46,6 +46,15 @@ export class AppModule {}
 
 Queries recorded this way inherit the active ALS batch, so each one correlates to its request. The package also exports `detectNPlusOne(batchEntries, threshold)` — a pure function (no I/O) that returns every query template run at least `threshold` times in a batch.
 
+Capture only happens while `debug` is on, but `debug` also echoes every query to stdout. To feed Telescope without the console noise, keep `debug: ['query']` and pass `silent: true` (since `@dudousxd/nestjs-telescope-mikro-orm@1.12.0`) — it swaps MikroORM's writer for a no-op so queries still flow into Telescope while nothing is printed:
+
+```ts
+loggerFactory: telescopeMikroOrmLogger(
+  (input) => telescope.record(input),
+  { slowMs: 100, silent: true },   // record into Telescope, no stdout echo
+),
+```
+
 ### TypeORM — `@dudousxd/nestjs-telescope-typeorm`
 
 TypeORM lets you supply a custom `Logger` at `DataSource` construction; this package ships one whose `logQuery` records each statement. Because the logger runs in the query's async context, queries correlate to the active batch via ALS — exactly like MikroORM.
