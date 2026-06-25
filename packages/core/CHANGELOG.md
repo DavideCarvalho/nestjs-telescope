@@ -1,5 +1,13 @@
 # @dudousxd/nestjs-telescope
 
+## 1.13.0
+
+### Minor Changes
+
+- [`5ea9b03`](https://github.com/DavideCarvalho/nestjs-telescope/commit/5ea9b032427a375ef7cf36bca831c5de00a1386a) - Add a startup grace to the overload guard so the synchronous bootstrap stall (DI wiring, migrations, codegen blocking the event loop) no longer trips overload protection on a transient. The guard now discards its first measurement windows after arming and only judges live load once the loop settles.
+
+  Configurable via `overloadProtection.startupGraceMs` (default ~5000ms; set `0` to arm immediately).
+
 ## 1.12.0
 
 ### Minor Changes
