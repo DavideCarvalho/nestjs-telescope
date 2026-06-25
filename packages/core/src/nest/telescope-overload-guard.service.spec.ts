@@ -24,17 +24,57 @@ function sample(guard: TelescopeOverloadGuard, p99Ms: number): void {
 
 describe('TelescopeOverloadGuard', () => {
   it('pauses capture when p99 lag crosses the threshold and resumes on recovery', () => {
-    const svc = service({ overloadProtection: { maxEventLoopLagMs: 200 } });
-    const guard = new TelescopeOverloadGuard(
-      { overloadProtection: { maxEventLoopLagMs: 200 } },
-      svc,
-    );
+    const options: TelescopeModuleOptions = {
+      overloadProtection: { maxEventLoopLagMs: 200, startupGraceMs: 0 },
+    };
+    const svc = service(options);
+    const guard = new TelescopeOverloadGuard(options, svc);
 
     expect(svc.isPaused).toBe(false);
     sample(guard, 250); // over threshold
     expect(svc.isPaused).toBe(true);
     sample(guard, 10); // recovered
     expect(svc.isPaused).toBe(false);
+  });
+
+  it('startup grace discards the leading windows so a bootstrap stall never pauses', () => {
+    // Default grace (~5s) over a 1s sample interval ⇒ 5 windows discarded.
+    const options: TelescopeModuleOptions = { overloadProtection: { maxEventLoopLagMs: 200 } };
+    const svc = service(options);
+    const guard = new TelescopeOverloadGuard(options, svc);
+
+    // Five huge "bootstrap" windows are all swallowed by the grace.
+    for (let i = 0; i < 5; i++) {
+      sample(guard, 1131);
+      expect(svc.isPaused).toBe(false);
+    }
+    // Sixth window is now judged: a real sustained overload pauses.
+    sample(guard, 1131);
+    expect(svc.isPaused).toBe(true);
+  });
+
+  it('startupGraceMs: 0 arms immediately', () => {
+    const options: TelescopeModuleOptions = {
+      overloadProtection: { maxEventLoopLagMs: 200, startupGraceMs: 0 },
+    };
+    const svc = service(options);
+    const guard = new TelescopeOverloadGuard(options, svc);
+
+    sample(guard, 250);
+    expect(svc.isPaused).toBe(true);
+  });
+
+  it('sub-interval startupGraceMs still discards at least the first window', () => {
+    const options: TelescopeModuleOptions = {
+      overloadProtection: { maxEventLoopLagMs: 200, startupGraceMs: 100 },
+    };
+    const svc = service(options);
+    const guard = new TelescopeOverloadGuard(options, svc);
+
+    sample(guard, 250); // first window swallowed by grace
+    expect(svc.isPaused).toBe(false);
+    sample(guard, 250); // armed
+    expect(svc.isPaused).toBe(true);
   });
 
   it('paused recorder drops new records but keeps flushing', async () => {

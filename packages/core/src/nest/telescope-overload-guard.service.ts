@@ -12,6 +12,15 @@ import { TelescopeService } from './telescope.service.js';
 
 /** Default p99 event-loop lag (ms) that pauses capture when crossed. */
 const DEFAULT_MAX_EVENT_LOOP_LAG_MS = 200;
+/**
+ * Default startup grace (ms): how long after the guard arms it discards its
+ * measurement windows without pausing/logging. Bootstrap blocks the event loop
+ * synchronously (DI wiring, migrations, codegen) and that stall accumulates in
+ * the very first window — without a grace the guard would trip on a transient
+ * that has nothing to do with live load. ~5s covers a typical Nest bootstrap;
+ * during it there is little traffic to protect anyway.
+ */
+const DEFAULT_STARTUP_GRACE_MS = 5_000;
 /** How often the guard samples the lag histogram. */
 const SAMPLE_INTERVAL_MS = 1_000;
 const NS_PER_MS = 1e6;
@@ -46,11 +55,22 @@ function resolveMaxLagMs(option: TelescopeModuleOptions['overloadProtection']): 
   return option.maxEventLoopLagMs ?? DEFAULT_MAX_EVENT_LOOP_LAG_MS;
 }
 
+/** Resolve the startup grace (ms), defaulting when unset. Never negative. */
+function resolveStartupGraceMs(option: TelescopeModuleOptions['overloadProtection']): number {
+  if (option === false) return 0;
+  if (option === undefined || option === true) return DEFAULT_STARTUP_GRACE_MS;
+  return Math.max(0, option.startupGraceMs ?? DEFAULT_STARTUP_GRACE_MS);
+}
+
 /**
  * Overhead guard / overload protection. Samples the process event-loop delay
  * histogram (`perf_hooks.monitorEventLoopDelay`) on an interval and PAUSES the
  * Recorder when the p99 lag exceeds the configured threshold, resuming once it
  * recovers — so a telescope under load can never amplify an incident.
+ *
+ * A startup grace (default ~5s) discards the first measurement windows so the
+ * synchronous bootstrap stall (DI wiring, migrations, codegen blocking the loop)
+ * never trips the guard on a transient — protection arms once the loop settles.
  *
  * Degrades to a no-op when `perf_hooks.monitorEventLoopDelay` is unavailable or
  * when `overloadProtection: false`. The sampling interval is unref'd so it never
@@ -60,6 +80,12 @@ function resolveMaxLagMs(option: TelescopeModuleOptions['overloadProtection']): 
 export class TelescopeOverloadGuard implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(TelescopeOverloadGuard.name);
   private readonly maxLagMs: number | null;
+  /**
+   * Number of leading sample windows still to discard for the startup grace.
+   * Derived from `startupGraceMs` over the sample interval; counts down on every
+   * sample taken while still warming up, after which the guard judges normally.
+   */
+  private warmupSamplesRemaining: number;
   private monitor: EventLoopDelayMonitor | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -68,6 +94,11 @@ export class TelescopeOverloadGuard implements OnModuleInit, OnApplicationShutdo
     @Inject(TelescopeService) private readonly service: TelescopeService,
   ) {
     this.maxLagMs = resolveMaxLagMs(this.options.overloadProtection);
+    // Round UP so a sub-interval grace still discards at least one window (the
+    // one that holds the bootstrap stall). 0ms ⇒ 0 windows ⇒ no grace.
+    this.warmupSamplesRemaining = Math.ceil(
+      resolveStartupGraceMs(this.options.overloadProtection) / SAMPLE_INTERVAL_MS,
+    );
   }
 
   onModuleInit(): void {
@@ -101,6 +132,13 @@ export class TelescopeOverloadGuard implements OnModuleInit, OnApplicationShutdo
     // Reset the histogram each cycle so the decision reflects the RECENT window
     // (a per-process accumulation would never recover once lag spiked).
     monitor.reset();
+    // Startup grace: discard the leading window(s) — they carry the bootstrap
+    // event-loop stall (DI/migrations/codegen), not live load. Reset above still
+    // ran, so the NEXT judged window starts clean.
+    if (this.warmupSamplesRemaining > 0) {
+      this.warmupSamplesRemaining -= 1;
+      return;
+    }
     if (p99Ms >= maxLagMs) {
       if (!this.service.isPaused) {
         this.logger.warn(

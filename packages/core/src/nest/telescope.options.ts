@@ -230,8 +230,13 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    *
    * Pass `true` (the default) for the 200ms threshold, `false` to disable, or
    * `{ maxEventLoopLagMs }` to tune it. ON by default at 200ms.
+   *
+   * `startupGraceMs` (default ~5000) is a window after the guard arms during
+   * which it samples but never pauses/logs — so the synchronous bootstrap stall
+   * (DI wiring, migrations, codegen blocking the event loop) can't trip the guard
+   * on a transient. Set `0` to arm immediately. Ignored when protection is off.
    */
-  overloadProtection?: boolean | { maxEventLoopLagMs?: number };
+  overloadProtection?: boolean | { maxEventLoopLagMs?: number; startupGraceMs?: number };
 }
 
 export interface TelescopeOptionsFactory {
