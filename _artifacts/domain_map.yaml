@@ -1,0 +1,137 @@
+# Domain map for nestjs-telescope (TanStack Intent agent skills)
+# Generated autonomously by mining README, docs/, website/content/docs, and source.
+# ONE domain map for the whole monorepo; skills scoped to the client-facing packages.
+
+library: nestjs-telescope
+description: >-
+  Laravel Telescope-style observability console for NestJS. Watchers capture what
+  happens inside a request (queries, jobs, mail, cache, exceptions, outbound HTTP),
+  correlate them under one batch via AsyncLocalStorage, store through a pluggable
+  StorageProvider SPI, and expose a headless JSON API plus an optional React dashboard.
+
+# Versions read from package.json at scaffolding time.
+versions:
+  "@dudousxd/nestjs-telescope": "1.12.0"
+  "@dudousxd/nestjs-telescope-ui": "1.12.0"
+
+# Client-facing PUBLIC packages a consumer actually imports. Skills target these.
+primary_packages:
+  - name: "@dudousxd/nestjs-telescope"
+    dir: packages/core
+    role: Core NestJS module — TelescopeModule.forRoot/forRootAsync, watchers SPI,
+      StorageProvider SPI, alerts, AI hook, dashboard auth, MCP, headless API.
+  - name: "@dudousxd/nestjs-telescope-ui"
+    dir: packages/ui
+    role: Dashboard module (TelescopeUiModule) serving the bundled React SPA, plus
+      the framework-agnostic createTelescopeClient and composable React components/hooks.
+
+# Public packages NOT covered (watcher/storage/adapter add-ons) — listed in gaps.
+secondary_packages:
+  - "@dudousxd/nestjs-telescope-mikro-orm"
+  - "@dudousxd/nestjs-telescope-mikro-orm-watcher"
+  - "@dudousxd/nestjs-telescope-typeorm"
+  - "@dudousxd/nestjs-telescope-prisma"
+  - "@dudousxd/nestjs-telescope-bullmq"
+  - "@dudousxd/nestjs-telescope-mail"
+  - "@dudousxd/nestjs-telescope-cache"
+  - "@dudousxd/nestjs-telescope-schedule"
+  - "@dudousxd/nestjs-telescope-events"
+  - "@dudousxd/nestjs-telescope-logs"
+  - "@dudousxd/nestjs-telescope-redis"
+  - "@dudousxd/nestjs-telescope-redis-watcher"
+  - "@dudousxd/nestjs-telescope-sqs"
+  - "@dudousxd/nestjs-telescope-ai"
+  - "@dudousxd/nestjs-telescope-otel"
+  - "@dudousxd/nestjs-telescope-testing"
+
+domains:
+  - id: setup
+    title: Module setup & configuration
+    package: "@dudousxd/nestjs-telescope"
+    surface:
+      - TelescopeModule.forRoot(options)
+      - TelescopeModule.forRootAsync({ useFactory, inject, imports, path })
+      - "options: enabled, authorizer, path, prune, storage, sampling, redact"
+    key_facts:
+      - Request + exception capture wire themselves automatically; SQLite in-memory store is the default.
+      - API gate DENIES in production unless enabled:true AND an authorizer (or dashboardAuth) is supplied.
+      - path must match between TelescopeModule and TelescopeUiModule; in forRootAsync path is static, not from the factory.
+      - Under setGlobalPrefix, set registerRequestMiddleware:false and app.use(telescopeRequestCapture(...)).
+
+  - id: watchers
+    title: Watchers & correlation
+    package: "@dudousxd/nestjs-telescope"
+    surface:
+      - "Watcher interface { type, register(ctx), shouldRecord? }"
+      - "WatcherContext: record(input), runInBatch, beginBatch, config, moduleRef"
+      - HttpClientWatcher
+      - "RecordInput { type, content, familyHash?, tags?, durationMs?, startedAt? }"
+    key_facts:
+      - Core captures only request + exception; every other source is a watcher added to the watchers[] array.
+      - ctx.record() is fire-and-forget and correlates to the active request/job batch via ALS — do not await it.
+      - Only entry-point watchers open batches (runInBatch/beginBatch); ordinary watchers just record().
+      - Guard content-building in try/catch (safeRecord) so a watcher never breaks the host code path.
+
+  - id: storage
+    title: Storage, retention, redaction
+    package: "@dudousxd/nestjs-telescope"
+    surface:
+      - StorageProvider SPI (store/get/find/batch/prune/pruneScoped?/markFamilySeen?/init?/close?)
+      - "prune: { after, intervalMs, perType, keepLast }"
+      - "archive: { types, sink, batchSize }"
+      - "redact: { keys, paths, mask }; sampling"
+    key_facts:
+      - Default SQLite store is per-process; multi-instance needs a shared adapter (Redis / MikroORM).
+      - Redaction is always on; keys merge with DEFAULT_REDACT_KEYS, paths are exact dot-paths.
+      - archive streams doomed entries to a host sink BEFORE prune deletes them (archive then delete, per type).
+      - Sampling can be a bare rate or a SamplingRule that always keeps errors / slow entries.
+
+  - id: alerts_ai
+    title: Alerting & AI diagnosis
+    package: "@dudousxd/nestjs-telescope"
+    surface:
+      - "alerts: { channels, rules, dashboardUrl, every, cooldown }"
+      - "channel helpers: slackChannel, webhookChannel, customChannel"
+      - "AlertRule types: exception-rate, slow-request-rate, dropped-entries, new-exception, metric-threshold"
+      - "ai: { diagnoser, mode } + createAiSdkDiagnoser({ model }) from -ai"
+      - "exceptions.captureHttp4xx; clientErrors"
+    key_facts:
+      - 4xx HttpExceptions are NOT recorded as exception entries by default (control flow, not incidents).
+      - alerts with no destination or empty rules is a fail-closed boot error.
+      - AI diagnoser is provider-agnostic via the Vercel AI SDK; mode 'auto' enriches new-exception alerts.
+
+  - id: access
+    title: Dashboard access control & MCP
+    package: "@dudousxd/nestjs-telescope"
+    surface:
+      - "authorizer(ctx) — gates reads (default-deny in prod)"
+      - "authorizeAction(ctx, action) — gates queue mutations (default-deny always)"
+      - "dashboardAuth: { secret, ttl, session?, login? }"
+      - "mcp: true | { token }"
+    key_facts:
+      - authorizer and authorizeAction are separate; mutations fail closed until authorizeAction is supplied.
+      - dashboardAuth requires a non-empty secret and at least one of session/login or it is a boot error.
+      - MCP without a token is allowed only when NODE_ENV !== 'production'; in prod a token is required.
+
+  - id: ui
+    title: Dashboard UI & client
+    package: "@dudousxd/nestjs-telescope-ui"
+    surface:
+      - TelescopeUiModule.forRoot({ path?, assetsDir? }) / forRootAsync
+      - createTelescopeClient({ baseUrl?, fetch? }) from "@dudousxd/nestjs-telescope-ui/client"
+      - React components/hooks from "@dudousxd/nestjs-telescope-ui/react"
+    key_facts:
+      - The UI module serves a bundled SPA; it imposes no frontend dependency on the host app.
+      - UI path must match the core module path; in forRootAsync the path is static.
+      - createTelescopeClient defaults baseUrl to window.__TELESCOPE_BASE__ + /api, else /telescope/api.
+
+gaps:
+  # What a maintainer interview would have answered but could not be confirmed autonomously.
+  - Priority ranking among the secondary watcher/storage/adapter packages is unknown; skills cover only core + ui.
+  - AI-agent-specific failure modes were inferred from source JSDoc/docs, not from real issue reports
+    (gh issue search was not run / not available in this session).
+  - No GitHub issues mined, so the "most common real-world misconfiguration" is a best-effort guess
+    (production gate 403 and path mismatch are the strongest signals from docs).
+  - Whether forRootAsync path/static-binding trips up users in practice is assumed from code comments, not telemetry.
+  - Per-watcher-package setup (mikro-orm logger, bullmq queue manager, prisma $on) is only summarized in
+    the watchers skill; dedicated skills for each add-on package were intentionally out of scope.

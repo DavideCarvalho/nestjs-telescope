@@ -1,0 +1,42 @@
+# Skill tree for nestjs-telescope. Flat structure (skills/<name>/SKILL.md), no router.
+# Every skill is type `core`. Each entry carries its owning `package`.
+
+structure: flat
+router: false
+
+skills:
+  - name: telescope-setup
+    type: core
+    package: "@dudousxd/nestjs-telescope"
+    path: packages/core/skills/telescope-setup/SKILL.md
+    summary: Mount TelescopeModule (forRoot/forRootAsync), the production gate, path, prune, storage default.
+
+  - name: telescope-watchers
+    type: core
+    package: "@dudousxd/nestjs-telescope"
+    path: packages/core/skills/telescope-watchers/SKILL.md
+    summary: Watcher SPI, ctx.record correlation, HttpClientWatcher, adding watcher packages, instrument().
+
+  - name: telescope-storage-retention
+    type: core
+    package: "@dudousxd/nestjs-telescope"
+    path: packages/core/skills/telescope-storage-retention/SKILL.md
+    summary: StorageProvider SPI, prune.perType, archive sink, redaction, sampling, shared store.
+
+  - name: telescope-alerts-ai
+    type: core
+    package: "@dudousxd/nestjs-telescope"
+    path: packages/core/skills/telescope-alerts-ai/SKILL.md
+    summary: Alert channels/rules, the 4xx capture default, AI diagnoser, client-error ingestion.
+
+  - name: telescope-access-mcp
+    type: core
+    package: "@dudousxd/nestjs-telescope"
+    path: packages/core/skills/telescope-access-mcp/SKILL.md
+    summary: authorizer vs authorizeAction, dashboardAuth modes, MCP token gating.
+
+  - name: telescope-ui-dashboard
+    type: core
+    package: "@dudousxd/nestjs-telescope-ui"
+    path: packages/ui/skills/telescope-ui-dashboard/SKILL.md
+    summary: TelescopeUiModule, path matching, createTelescopeClient, /react and /client exports.

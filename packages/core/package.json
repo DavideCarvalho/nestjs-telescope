@@ -19,7 +19,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": ["dist/", "README.md", "CHANGELOG.md", "skills"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@nestjs/common": "^11.0.0",
+    "@tanstack/intent": "^0.3.2",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
@@ -64,5 +65,13 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["nestjs", "telescope", "observability", "debugging", "apm", "tracing"]
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "observability",
+    "debugging",
+    "apm",
+    "tracing",
+    "tanstack-intent"
+  ]
 }
