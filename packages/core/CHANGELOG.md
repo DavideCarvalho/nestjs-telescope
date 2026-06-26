@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.13.1
+
+### Patch Changes
+
+- [#29](https://github.com/DavideCarvalho/nestjs-telescope/pull/29) [`a79c3fa`](https://github.com/DavideCarvalho/nestjs-telescope/commit/a79c3fa6f77c8d02a4150325f082d66d9fdc9227) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Ship TanStack Intent agent skills (SKILL.md) inside the package.
+
 ## 1.13.0
 
 ### Minor Changes
