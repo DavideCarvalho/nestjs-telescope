@@ -28,7 +28,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   examples/basic-app:
     dependencies:
@@ -105,7 +105,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/ai:
     devDependencies:
@@ -126,7 +126,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/bullmq:
     devDependencies:
@@ -171,7 +171,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/cache:
     devDependencies:
@@ -192,7 +192,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/core:
     dependencies:
@@ -224,6 +224,9 @@ importers:
       '@nestjs/testing':
         specifier: ^11.0.0
         version: 11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24))
+      '@tanstack/intent':
+        specifier: ^0.3.2
+        version: 0.3.2
       '@types/better-sqlite3':
         specifier: ^7.6.0
         version: 7.6.13
@@ -256,7 +259,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/events:
     devDependencies:
@@ -289,7 +292,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/logs:
     devDependencies:
@@ -316,7 +319,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/mail:
     dependencies:
@@ -335,7 +338,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/mikro-orm:
     devDependencies:
@@ -386,7 +389,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/mikro-orm-watcher:
     devDependencies:
@@ -422,7 +425,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/otel:
     devDependencies:
@@ -455,7 +458,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/prisma:
     dependencies:
@@ -474,7 +477,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/redis:
     devDependencies:
@@ -495,7 +498,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/redis-watcher:
     devDependencies:
@@ -516,7 +519,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/schedule:
     devDependencies:
@@ -546,7 +549,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/sqs:
     devDependencies:
@@ -573,7 +576,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/testing:
     devDependencies:
@@ -588,7 +591,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/typeorm:
     devDependencies:
@@ -609,7 +612,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/ui:
     devDependencies:
@@ -628,6 +631,9 @@ importers:
       '@nestjs/testing':
         specifier: ^11.0.0
         version: 11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24))
+      '@tanstack/intent':
+        specifier: ^0.3.2
+        version: 0.3.2
       '@tanstack/react-query':
         specifier: ^5.0.0
         version: 5.101.0(react@18.3.1)
@@ -678,7 +684,7 @@ importers:
         version: 7.2.2
       tailwindcss:
         specifier: ^3.4.0
-        version: 3.4.19
+        version: 3.4.19(yaml@2.9.0)
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -687,7 +693,7 @@ importers:
         version: 5.4.21(@types/node@20.19.41)(lightningcss@1.32.0)
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@1.21.7)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@1.21.7)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
   website:
     dependencies:
@@ -3046,6 +3052,10 @@ packages:
   '@tailwindcss/postcss@4.3.0':
     resolution: {integrity: sha512-Jm05Tjx+9yCLGv5qw1c+84Psds8MnyrEQYCB+FFk2lgGiUjlRqdxke4mVTuYrj2xnVZqKim2Apr5ySuQRYAw/w==}
 
+  '@tanstack/intent@0.3.2':
+    resolution: {integrity: sha512-Apyfkf0O8QqHQJjy/cB1QW2GpYTOyjf98nFAaYtzjBc0V5YzJoy0wnmZSLvwBJxE8/Hhy0Bsa+EPt/fdeJyXkw==}
+    hasBin: true
+
   '@tanstack/query-core@5.101.0':
     resolution: {integrity: sha512-cQetA74EB+seWySv1TTKr828TnP0u39m6LykwDXIo84SNortpDkp30TMEjkqtYCNP9c40uT/iwl6MLiufEt0Ow==}
 
@@ -4723,6 +4733,9 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
+  jsonc-parser@3.3.1:
+    resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
+
   jsonfile@4.0.0:
     resolution: {integrity: sha512-m6F1R3z8jjlf2imQHS2Qez5sjKWQzbuuhuJ/FKYFRZvPE3PuHcSMVZzfsLhGVOkfd20obL5SWEBew5ShlquNxg==}
 
@@ -5835,6 +5848,11 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  semver@7.8.5:
+    resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
+    engines: {node: '>=10'}
+    hasBin: true
+
   send@0.19.2:
     resolution: {integrity: sha512-VMbMxbDeehAxpOtWJXlcUS5E8iXh6QmN+BkRX1GARS3wRaXEEgzCcB10gTQazO42tpNIya8xIyNx8fll1OFPrg==}
     engines: {node: '>= 0.8.0'}
@@ -5972,6 +5990,9 @@ packages:
 
   std-env@3.10.0:
     resolution: {integrity: sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg==}
+
+  std-env@4.1.0:
+    resolution: {integrity: sha512-Rq7ybcX2RuC55r9oaPVEW7/xu3tj8u4GeBYHBWCychFtzMIr86A7e3PPEBPT37sHStKX3+TiX/Fr/ACmJLVlLQ==}
 
   streamsearch@1.1.0:
     resolution: {integrity: sha512-Mcc5wHehp9aXz1ax6bZUyY5afg9u2rv5cqQI3mRrYkGC8rW2hM02jWuwjtL++LS5qinSyhj2QfLyNsuc+VsExg==}
@@ -6568,6 +6589,11 @@ packages:
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
+
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
@@ -8788,6 +8814,14 @@ snapshots:
       postcss: 8.5.15
       tailwindcss: 4.3.0
 
+  '@tanstack/intent@0.3.2':
+    dependencies:
+      cac: 6.7.14
+      jsonc-parser: 3.3.1
+      semver: 7.8.5
+      std-env: 4.1.0
+      yaml: 2.9.0
+
   '@tanstack/query-core@5.101.0': {}
 
   '@tanstack/react-query@5.101.0(react@18.3.1)':
@@ -9050,21 +9084,21 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 2.0.0
 
-  '@vitest/mocker@3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0))':
+  '@vitest/mocker@3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 3.2.6
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0)
+      vite: 7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0)
 
-  '@vitest/mocker@3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0))':
+  '@vitest/mocker@3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 3.2.6
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)
+      vite: 7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.6':
     dependencies:
@@ -10698,6 +10732,8 @@ snapshots:
 
   json5@2.2.3: {}
 
+  jsonc-parser@3.3.1: {}
+
   jsonfile@4.0.0:
     optionalDependencies:
       graceful-fs: 4.2.11
@@ -11566,12 +11602,13 @@ snapshots:
       camelcase-css: 2.0.1
       postcss: 8.5.15
 
-  postcss-load-config@6.0.1(jiti@1.21.7)(postcss@8.5.15):
+  postcss-load-config@6.0.1(jiti@1.21.7)(postcss@8.5.15)(yaml@2.9.0):
     dependencies:
       lilconfig: 3.1.3
     optionalDependencies:
       jiti: 1.21.7
       postcss: 8.5.15
+      yaml: 2.9.0
 
   postcss-nested@6.2.0(postcss@8.5.15):
     dependencies:
@@ -12061,6 +12098,8 @@ snapshots:
 
   semver@7.8.1: {}
 
+  semver@7.8.5: {}
+
   send@0.19.2:
     dependencies:
       debug: 2.6.9
@@ -12284,6 +12323,8 @@ snapshots:
 
   std-env@3.10.0: {}
 
+  std-env@4.1.0: {}
+
   streamsearch@1.1.0: {}
 
   string-width@4.2.3:
@@ -12386,7 +12427,7 @@ snapshots:
 
   tailwind-merge@3.6.0: {}
 
-  tailwindcss@3.4.19:
+  tailwindcss@3.4.19(yaml@2.9.0):
     dependencies:
       '@alloc/quick-lru': 5.2.0
       arg: 5.0.2
@@ -12405,7 +12446,7 @@ snapshots:
       postcss: 8.5.15
       postcss-import: 15.1.0(postcss@8.5.15)
       postcss-js: 4.1.0(postcss@8.5.15)
-      postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.15)
+      postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.15)(yaml@2.9.0)
       postcss-nested: 6.2.0(postcss@8.5.15)
       postcss-selector-parser: 6.1.2
       resolve: 1.22.12
@@ -12735,7 +12776,7 @@ snapshots:
       lightningcss: 1.32.0
     optional: true
 
-  vite@7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0):
+  vite@7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0):
     dependencies:
       esbuild: 0.27.7
       fdir: 6.5.0(picomatch@4.0.4)
@@ -12748,8 +12789,9 @@ snapshots:
       fsevents: 2.3.3
       jiti: 1.21.7
       lightningcss: 1.32.0
+      yaml: 2.9.0
 
-  vite@7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0):
+  vite@7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0):
     dependencies:
       esbuild: 0.27.7
       fdir: 6.5.0(picomatch@4.0.4)
@@ -12762,12 +12804,13 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
       lightningcss: 1.32.0
+      yaml: 2.9.0
 
-  vitest@3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@1.21.7)(jsdom@25.0.1)(lightningcss@1.32.0):
+  vitest@3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@1.21.7)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.6
-      '@vitest/mocker': 3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0))
+      '@vitest/mocker': 3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.6
       '@vitest/runner': 3.2.6
       '@vitest/snapshot': 3.2.6
@@ -12785,7 +12828,7 @@ snapshots:
       tinyglobby: 0.2.17
       tinypool: 1.1.1
       tinyrainbow: 2.0.0
-      vite: 7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0)
+      vite: 7.3.5(@types/node@20.19.41)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0)
       vite-node: 3.2.4(@types/node@20.19.41)(lightningcss@1.32.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
@@ -12806,11 +12849,11 @@ snapshots:
       - tsx
       - yaml
 
-  vitest@3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0):
+  vitest@3.2.6(@types/debug@4.1.13)(@types/node@20.19.41)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.6
-      '@vitest/mocker': 3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0))
+      '@vitest/mocker': 3.2.6(vite@7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.6
       '@vitest/runner': 3.2.6
       '@vitest/snapshot': 3.2.6
@@ -12828,7 +12871,7 @@ snapshots:
       tinyglobby: 0.2.17
       tinypool: 1.1.1
       tinyrainbow: 2.0.0
-      vite: 7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)
+      vite: 7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
       vite-node: 3.2.4(@types/node@20.19.41)(lightningcss@1.32.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
@@ -12923,6 +12966,8 @@ snapshots:
   y18n@5.0.8: {}
 
   yallist@3.1.1: {}
+
+  yaml@2.9.0: {}
 
   yargs-parser@21.1.1: {}
 
