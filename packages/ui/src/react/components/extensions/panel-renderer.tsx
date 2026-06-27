@@ -24,6 +24,19 @@ function fillTemplate(href: string, row: Record<string, unknown>): string {
   return filled;
 }
 
+/** Shared empty-state card so a provider that resolves with no rows reads as
+ *  "nothing happened in this window" rather than a blank/broken panel. */
+function EmptyPanel({ title }: { title: string }): JSX.Element {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40">
+      <p className="border-b border-zinc-800 px-4 py-2 text-xs font-medium text-zinc-300">
+        {title}
+      </p>
+      <p className="px-4 py-8 text-center text-xs text-zinc-600">No data in this window.</p>
+    </div>
+  );
+}
+
 /** Pure view: render a panel from already-resolved data. */
 export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX.Element | null {
   switch (panel.kind) {
@@ -105,6 +118,7 @@ export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX
       const items =
         (data as { items?: Array<{ label: string; value: number; id?: string }> })?.items ?? [];
       const limited = panel.limit ? items.slice(0, panel.limit) : items;
+      if (limited.length === 0) return <EmptyPanel title={panel.title} />;
       return <BarChartCard title={panel.title} data={limited} horizontal truncateLabel={32} />;
     }
     case 'table': {
@@ -128,6 +142,16 @@ export function PanelView({ panel, data }: { panel: Panel; data: unknown }): JSX
               </tr>
             </thead>
             <tbody>
+              {rows.length === 0 ? (
+                <tr className="border-t border-zinc-800/60">
+                  <td
+                    colSpan={panel.columns.length}
+                    className="px-4 py-6 text-center text-xs text-zinc-600"
+                  >
+                    No data in this window.
+                  </td>
+                </tr>
+              ) : null}
               {rows.map((row) => (
                 <tr
                   key={panel.columns.map((c) => String(row[c.key] ?? '')).join('|')}

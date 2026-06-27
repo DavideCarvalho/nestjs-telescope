@@ -95,11 +95,60 @@ export function EntryDetail({
             />
           </div>
         ) : null}
+        <RelatedLinks entry={entry} />
         <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
           Batch ({entry.batch.length})
         </h3>
         <BatchTimeline batch={entry.batch} currentId={entry.id} onSelect={onSelect} />
       </aside>
+    </div>
+  );
+}
+
+/**
+ * Quick navigation from an entry to the things it relates to — the debugging
+ * web the dashboard is built around. Every link uses an existing hash route and
+ * data already on the entry (no extra fetch):
+ *  - `All <type> like this` — every entry sharing this familyHash (this route's
+ *    other requests, this query's other executions, this exception's recurrences).
+ *  - `Originating request` — for a non-request entry recorded inside a request
+ *    batch (an exception/query/log/cache during a request), jump to that request.
+ *  - `Open queue console` — jobs are managed on the Queues page.
+ */
+function RelatedLinks({ entry }: { entry: EntryWithBatch }): JSX.Element | null {
+  const links: { label: string; href: string }[] = [];
+  if (entry.familyHash) {
+    links.push({
+      label: `All ${entry.type} like this`,
+      href: `#/entries/${encodeURIComponent(entry.type)}?familyHash=${encodeURIComponent(
+        entry.familyHash,
+      )}`,
+    });
+  }
+  if (entry.type !== 'request') {
+    const request = entry.batch.find((e) => e.type === 'request' && e.id !== entry.id);
+    if (request) {
+      links.push({ label: 'Originating request', href: `#/entries/view/${request.id}` });
+    }
+  }
+  if (entry.type === 'job') {
+    links.push({ label: 'Open queue console', href: '#/queues' });
+  }
+  if (links.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Related</h3>
+      <div className="flex flex-col gap-1">
+        {links.map((link) => (
+          <a
+            key={`${link.href}:${link.label}`}
+            href={link.href}
+            className="text-[11px] text-emerald-400 hover:underline"
+          >
+            {link.label} →
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
