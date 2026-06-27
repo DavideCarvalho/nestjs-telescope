@@ -44,6 +44,10 @@ type DiscoveryLike = { getProviders(): ProviderWrapper[] };
 interface CronJobLike {
   cronTime?: { source?: unknown };
   nextDate?: () => unknown;
+  /** The `cron` package's started/stopped flag; absent on older versions. */
+  running?: unknown;
+  /** Some `cron` versions expose `isActive` instead of/alongside `running`. */
+  isActive?: unknown;
 }
 /** Structural view of `SchedulerRegistry` (resolved via moduleRef). All methods
  *  optional so a missing/partial registry degrades gracefully (never throws). */
@@ -72,6 +76,17 @@ function cronSource(job: CronJobLike): string {
 function hasToJsDate(value: unknown): value is { toJSDate: () => unknown } {
   if (typeof value !== 'object' || value === null || !('toJSDate' in value)) return false;
   return typeof Reflect.get(value, 'toJSDate') === 'function';
+}
+
+/**
+ * Read a CronJob's active (started) state. The `cron` package exposes this as the
+ * boolean `running` (newer builds also `isActive`). Returns `null` when neither is
+ * a boolean, so the console renders "unknown" rather than guessing a state.
+ */
+function cronRunning(job: CronJobLike): boolean | null {
+  if (typeof job.running === 'boolean') return job.running;
+  if (typeof job.isActive === 'boolean') return job.isActive;
+  return null;
 }
 
 /** Read a CronJob's next fire time as an ISO string, or null if unavailable. */
@@ -322,18 +337,22 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
     const cronJobs = this.callSafe(() => registry.getCronJobs?.());
     if (cronJobs && typeof cronJobs.forEach === 'function') {
       for (const [name, job] of cronJobs) {
-        tasks.push(this.buildTask(name, 'cron', cronSource(job), cronNextRunAt(job)));
+        tasks.push(
+          this.buildTask(name, 'cron', cronSource(job), cronNextRunAt(job), cronRunning(job)),
+        );
       }
     }
 
+    // Intervals/timeouts: SchedulerRegistry exposes only their names, so neither a
+    // next-fire time nor a running flag is knowable — both stay null.
     const intervals = this.callSafe(() => registry.getIntervals?.());
     for (const name of Array.isArray(intervals) ? intervals : []) {
-      tasks.push(this.buildTask(name, 'interval', 'interval', null));
+      tasks.push(this.buildTask(name, 'interval', 'interval', null, null));
     }
 
     const timeouts = this.callSafe(() => registry.getTimeouts?.());
     for (const name of Array.isArray(timeouts) ? timeouts : []) {
-      tasks.push(this.buildTask(name, 'timeout', 'timeout', null));
+      tasks.push(this.buildTask(name, 'timeout', 'timeout', null, null));
     }
 
     return tasks;
@@ -365,6 +384,7 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
     kind: ScheduleKind,
     schedule: string,
     nextRunAt: string | null,
+    running: boolean | null,
   ): ScheduledTask {
     const last = this.lastRuns.get(name);
     const safeKind: ScheduleKind = isScheduleKind(kind) ? kind : 'cron';
@@ -373,6 +393,7 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
       kind: safeKind,
       schedule,
       nextRunAt,
+      running,
       lastRunAt: last?.at ?? null,
       lastDurationMs: last?.durationMs ?? null,
       lastStatus: last?.status ?? null,

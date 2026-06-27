@@ -55,6 +55,43 @@ describe('extension watchers reach registration + /meta watchers', () => {
     });
   });
 
+  it('forwards the sectioned layout in meta (a sections-only dashboard is not blanked)', async () => {
+    // Regression: dashboards that declare panels under `sections` with a flat
+    // `panels: []` (the durable Workflows dashboard's shape) were rendering blank
+    // because getMeta dropped `sections`, so the UI fell back to the empty `panels`.
+    const ext = defineTelescopeExtension({
+      name: 'sect',
+      dashboards: () => [
+        {
+          id: 'sect.page',
+          label: 'Sectioned',
+          navGroup: 'Group',
+          panels: [],
+          sections: [
+            {
+              title: 'Signals',
+              cols: 3,
+              panels: [{ kind: 'stat', title: 'A', data: { provider: 'sect.a' } }],
+            },
+          ],
+        },
+      ],
+    });
+    app = await makeApp({ extensions: [ext] });
+    const meta = await request(app.getHttpServer()).get('/telescope/api/meta').expect(200);
+    const dash = (meta.body.dashboards as Array<{ id: string; sections?: unknown }>).find(
+      (d) => d.id === 'sect.page',
+    );
+    expect(dash).toBeDefined();
+    expect(dash?.sections).toEqual([
+      {
+        title: 'Signals',
+        cols: 3,
+        panels: [{ kind: 'stat', title: 'A', data: { provider: 'sect.a' } }],
+      },
+    ]);
+  });
+
   async function makeApp(extra: Record<string, unknown>): Promise<INestApplication> {
     const moduleRef = await Test.createTestingModule({
       imports: [

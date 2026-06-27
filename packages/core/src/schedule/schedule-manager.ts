@@ -24,6 +24,14 @@ export interface ScheduledTask {
   schedule: string;
   /** ISO timestamp of the next fire, or null when unknown (intervals/timeouts). */
   nextRunAt: string | null;
+  /**
+   * Whether the task is currently active (started/enabled). For crons this is the
+   * underlying `CronJob.running` flag — `false` means the cron is registered but
+   * stopped, so it WON'T fire even though it has a schedule. `null` when the
+   * source can't report it (intervals/timeouts expose only their name through
+   * `SchedulerRegistry`, so their running state is unknowable).
+   */
+  running: boolean | null;
   /** ISO timestamp of the last observed run, or null. */
   lastRunAt: string | null;
   lastDurationMs: number | null;
