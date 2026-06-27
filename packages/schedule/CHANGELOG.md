@@ -1,5 +1,15 @@
 # @dudousxd/nestjs-telescope-schedule
 
+## 1.12.0
+
+### Minor Changes
+
+- [#31](https://github.com/DavideCarvalho/nestjs-telescope/pull/31) [`bdc2198`](https://github.com/DavideCarvalho/nestjs-telescope/commit/bdc21987bc90eae6fc95995c99d3de46f0f4fc89) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Surface whether a scheduled cron is currently active. `ScheduledTask` gains a
+  `running: boolean | null` field; the `@nestjs/schedule` watcher reads the
+  `CronJob.running` flag (null for intervals/timeouts, which expose no state), and
+  the Schedules console renders an Active/Stopped badge plus an active/stopped
+  summary so a registered-but-stopped cron is obvious at a glance.
+
 ## 1.11.0
 
 ### Minor Changes
