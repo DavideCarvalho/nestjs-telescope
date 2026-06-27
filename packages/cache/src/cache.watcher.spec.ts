@@ -96,8 +96,29 @@ describe('CacheWatcher', () => {
     await cache.set('k', 'v', 60);
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0]!.content).toEqual({ operation: 'set', key: 'k', hit: null });
+    expect(recorded[0]!.content).toEqual({ operation: 'set', key: 'k', hit: null, ttlMs: 60 });
     expect(recorded[0]!.tags).toContain('cache:set');
+  });
+
+  it('records a delete via a wrapped del() when the cache exposes one', async () => {
+    const store = new Map<string, unknown>([['k', 'v']]);
+    const cache = {
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      del: async (key: string) => {
+        store.delete(key);
+      },
+    };
+    const { ctx, recorded } = makeHarness();
+    new CacheWatcher(cache).register(ctx);
+
+    await cache.del('k');
+
+    expect(store.has('k')).toBe(false); // delete still happened
+    expect(recorded[0]!.content).toEqual({ operation: 'delete', key: 'k', hit: null });
+    expect(recorded[0]!.tags).toEqual(['cache:delete']);
   });
 
   it('re-throws errors from the underlying cache', async () => {
@@ -157,6 +178,59 @@ describe('CacheWatcher', () => {
       expect(recorded[1]!.content).toEqual({ operation: 'set', key: 'k', hit: null });
       expect(recorded[1]!.familyHash).toBe('set:k');
       expect(recorded[1]!.tags).toEqual(['cache:set']);
+    });
+
+    it('carries optional store/tier/stale/ttlMs/metadata and surfaces them as tags', () => {
+      const source: CustomCacheSource = {
+        instrument: (emit) => {
+          // A BentoCache-style L2 hit served from grace, on a named store.
+          emit({ operation: 'get', key: 'k', hit: true, tier: 'l2', store: 'cache', stale: true });
+          emit({ operation: 'set', key: 'k', ttlMs: 86_400_000, store: 'cache' });
+          emit({ operation: 'delete', key: 'k', store: 'cache', metadata: { reason: 'evict' } });
+        },
+      };
+      const { ctx, recorded } = makeHarness();
+      new CacheWatcher(source).register(ctx);
+
+      expect(recorded[0]!.content).toEqual({
+        operation: 'get',
+        key: 'k',
+        hit: true,
+        tier: 'l2',
+        store: 'cache',
+        stale: true,
+      });
+      // store/tier/stale become tags so the dashboard can filter by them.
+      expect(recorded[0]!.tags).toEqual(['cache:get', 'store:cache', 'tier:l2', 'stale']);
+
+      expect(recorded[1]!.content).toEqual({
+        operation: 'set',
+        key: 'k',
+        hit: null,
+        store: 'cache',
+        ttlMs: 86_400_000,
+      });
+      expect(recorded[1]!.tags).toEqual(['cache:set', 'store:cache']);
+
+      expect(recorded[2]!.content).toEqual({
+        operation: 'delete',
+        key: 'k',
+        hit: null,
+        store: 'cache',
+        metadata: { reason: 'evict' },
+      });
+      expect(recorded[2]!.familyHash).toBe('delete:k');
+    });
+
+    it('omits optional dimensions a simple cache does not supply', () => {
+      const source: CustomCacheSource = {
+        instrument: (emit) => emit({ operation: 'get', key: 'k', hit: false }),
+      };
+      const { ctx, recorded } = makeHarness();
+      new CacheWatcher(source).register(ctx);
+      // No tier/store/stale/ttlMs/metadata keys at all — stays a clean minimal entry.
+      expect(recorded[0]!.content).toEqual({ operation: 'get', key: 'k', hit: false });
+      expect(recorded[0]!.tags).toEqual(['cache:get']);
     });
 
     it('normalizes an explicit null hit and a get false hit', () => {
@@ -251,7 +325,7 @@ describe('CacheWatcher', () => {
 
       await cache.set('k', 'v', 60);
 
-      expect(recorded[0]!.content).toEqual({ operation: 'set', key: 'k', hit: null });
+      expect(recorded[0]!.content).toEqual({ operation: 'set', key: 'k', hit: null, ttlMs: 60 });
     });
 
     it('warns and no-ops when CACHE_MANAGER is not found (never throws)', async () => {

@@ -119,8 +119,20 @@ function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
   );
 }
 
+/** One bar per cache tier (e.g. l1/l2), value = hits — only for layered caches. */
+function tierHitBars(byTier: Record<string, { hits: number; misses: number }>): BarChartDatum[] {
+  return Object.entries(byTier)
+    .map(([tier, c]) => ({ label: tier, value: c.hits }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
   const cache = stats.cache;
+  // `byTier`/`staleHits`/`deletes` are optional (older servers omit them); guard.
+  const byTier = cache?.byTier ?? {};
+  const tiers = Object.keys(byTier);
+  const staleHits = cache?.staleHits ?? 0;
+  const deletes = cache?.deletes ?? 0;
   return (
     <>
       <StatRow>
@@ -132,6 +144,11 @@ function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
         <StatCard label="Hits" value={cache ? cache.hits.toLocaleString() : '—'} />
         <StatCard label="Misses" value={cache ? cache.misses.toLocaleString() : '—'} />
         <StatCard label="Sets" value={cache ? cache.sets.toLocaleString() : '—'} />
+        {/* Surfaced only when the cache reports them, so a simple cache stays clean. */}
+        {deletes > 0 ? <StatCard label="Deletes" value={deletes.toLocaleString()} /> : null}
+        {staleHits > 0 ? (
+          <StatCard label="Stale hits" value={staleHits.toLocaleString()} accent="text-amber-400" />
+        ) : null}
       </StatRow>
       <ChartRow>
         {cache ? (
@@ -143,6 +160,10 @@ function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
               { label: 'misses', value: cache.misses, color: '#f87171' },
             ]}
           />
+        ) : null}
+        {/* L1 vs L2 (etc) hit split — the payoff for a layered cache like BentoCache. */}
+        {tiers.length > 0 ? (
+          <BarChartCard title="Hits by tier" valueLabel="hits" data={tierHitBars(byTier)} />
         ) : null}
         <AreaChartCard
           title="Cache over time"

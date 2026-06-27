@@ -224,6 +224,36 @@ describe('summarizeStats cache', () => {
     expect(result.cache?.topKeys[1]).toEqual({ key: 'k2', count: 1 });
   });
 
+  it('splits hits/misses by tier and counts stale hits and deletes', () => {
+    const entries = [
+      entry<CacheContent>({
+        type: EntryType.Cache,
+        content: { operation: 'get', key: 'k1', hit: true, tier: 'l1' },
+      }),
+      entry<CacheContent>({
+        type: EntryType.Cache,
+        content: { operation: 'get', key: 'k2', hit: true, tier: 'l2', stale: true },
+      }),
+      entry<CacheContent>({
+        type: EntryType.Cache,
+        content: { operation: 'get', key: 'k3', hit: false, tier: 'l2' },
+      }),
+      entry<CacheContent>({
+        type: EntryType.Cache,
+        content: { operation: 'delete', key: 'k1', hit: null },
+      }),
+    ];
+    const result = summarizeStats({ ...baseInput(EntryType.Cache), entries });
+    expect(result.cache?.hits).toBe(2);
+    expect(result.cache?.misses).toBe(1);
+    expect(result.cache?.deletes).toBe(1);
+    expect(result.cache?.staleHits).toBe(1);
+    expect(result.cache?.byTier).toEqual({
+      l1: { hits: 1, misses: 0 },
+      l2: { hits: 1, misses: 1 },
+    });
+  });
+
   it('hitRatio is 0 when there are only sets', () => {
     const entries = [
       entry<CacheContent>({ type: EntryType.Cache, content: cacheContent('set', 'k1', null) }),

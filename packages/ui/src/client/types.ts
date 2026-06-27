@@ -544,8 +544,13 @@ export interface CacheStats {
   hits: number;
   misses: number;
   sets: number;
+  deletes: number;
   hitRatio: number;
   topKeys: { key: string; count: number }[];
+  /** Gets served from a stale/grace value (subset of `hits`); 0 for caches without SWR. */
+  staleHits: number;
+  /** Per-tier hit/miss split for layered caches (e.g. `l1`/`l2`); `{}` for single-tier. */
+  byTier: Record<string, { hits: number; misses: number }>;
 }
 export interface StatusBreakdown {
   '2xx': number;
