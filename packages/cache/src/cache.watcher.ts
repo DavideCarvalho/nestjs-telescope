@@ -1,5 +1,6 @@
 // packages/cache/src/cache.watcher.ts
 import {
+  type CacheContent,
   EntryType,
   type RecordInput,
   type Watcher,
@@ -22,12 +23,22 @@ export interface CacheLike {
   set(key: string, value: unknown, ttl?: number): Promise<unknown>;
 }
 
-/** An event a custom cache emits into Telescope. `hit` is `true`/`false` for
- *  reads and `null` (or omitted) for writes. */
+/**
+ * An event a custom cache emits into Telescope. `operation`/`key` are required;
+ * `hit` is `true`/`false` for reads and `null`/omitted for writes/deletes. The
+ * rest are OPTIONAL cache-agnostic dimensions (see {@link CacheContent}) — a host
+ * maps its native event onto them (BentoCache `layer`→`tier`, `graced`→`stale`,
+ * `store`→`store`), and omits what its cache doesn't have.
+ */
 export interface CacheEventInput {
-  operation: 'get' | 'set';
+  operation: 'get' | 'set' | 'delete' | 'clear';
   key: string;
   hit?: boolean | null;
+  store?: string;
+  tier?: string;
+  stale?: boolean;
+  ttlMs?: number;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -110,11 +121,7 @@ export class CacheWatcher implements Watcher {
 
     if (isCustomCacheSource(this.source)) {
       this.source.instrument((event) => {
-        this.safeRecord(ctx, {
-          operation: event.operation,
-          key: event.key,
-          hit: event.hit ?? null,
-        });
+        this.safeRecord(ctx, event);
       }, ctx);
       return;
     }
@@ -183,23 +190,59 @@ export class CacheWatcher implements Watcher {
       value: unknown,
       ttl?: number,
     ): Promise<unknown> {
-      watcher.safeRecord(ctx, { operation: 'set', key, hit: null });
+      // cache-manager v5 ttl is milliseconds — surface it as the generic ttlMs.
+      watcher.safeRecord(ctx, {
+        operation: 'set',
+        key,
+        hit: null,
+        ...(ttl === undefined ? {} : { ttlMs: ttl }),
+      });
       return ttl === undefined ? originalSet(key, value) : originalSet(key, value, ttl);
     };
+
+    // Many cache-manager-style caches also expose a delete (`del` in v5, `delete`
+    // in some wrappers). Wrap it when present so deletes are recorded as their own
+    // operation instead of being invisible — purely additive, skipped if absent.
+    const deletable = target as CacheLike & {
+      del?: (key: string) => Promise<unknown>;
+      delete?: (key: string) => Promise<unknown>;
+    };
+    const deleteName = typeof deletable.del === 'function' ? 'del' : 'delete';
+    const originalDelete = deletable[deleteName];
+    if (typeof originalDelete === 'function') {
+      const boundDelete = originalDelete.bind(deletable);
+      deletable[deleteName] = async function patchedDelete(key: string): Promise<unknown> {
+        watcher.safeRecord(ctx, { operation: 'delete', key, hit: null });
+        return boundDelete(key);
+      };
+    }
   }
 
   /** Hand a cache entry to the Recorder, swallowing any record failure so a
-   *  telescope error can never alter the cache operation's outcome. */
-  private safeRecord(
-    ctx: WatcherContext,
-    content: { operation: 'get' | 'set'; key: string; hit: boolean | null },
-  ): void {
+   *  telescope error can never alter the cache operation's outcome. Builds the
+   *  canonical {@link CacheContent}, carrying only the optional dimensions the
+   *  event actually supplied (so a simple cache stays `{operation,key,hit}`), and
+   *  surfaces store/tier/stale as tags so the dashboard can filter by them. */
+  private safeRecord(ctx: WatcherContext, event: CacheEventInput): void {
     try {
+      const content: CacheContent = { operation: event.operation, key: event.key, hit: null };
+      if (event.hit !== undefined) content.hit = event.hit;
+      if (event.store !== undefined) content.store = event.store;
+      if (event.tier !== undefined) content.tier = event.tier;
+      if (event.stale !== undefined) content.stale = event.stale;
+      if (event.ttlMs !== undefined) content.ttlMs = event.ttlMs;
+      if (event.metadata !== undefined) content.metadata = event.metadata;
+
+      const tags = [`cache:${event.operation}`];
+      if (event.store !== undefined) tags.push(`store:${event.store}`);
+      if (event.tier !== undefined) tags.push(`tier:${event.tier}`);
+      if (event.stale === true) tags.push('stale');
+
       const input: RecordInput = {
         type: EntryType.Cache,
-        familyHash: `${content.operation}:${content.key}`,
+        familyHash: `${event.operation}:${event.key}`,
         content,
-        tags: [`cache:${content.operation}`],
+        tags,
       };
       ctx.record(input);
     } catch (recordError) {

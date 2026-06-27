@@ -61,11 +61,29 @@ export interface HttpClientContent {
   durationMs: number;
 }
 
+/**
+ * A cache operation. The first three fields are the universal core every cache
+ * exposes; the rest are OPTIONAL, cache-agnostic dimensions that richer caches
+ * (multi-tier, stale-while-revalidate, named-store) can populate and simpler ones
+ * omit — so this stays a generic contract, not a BentoCache/cache-manager-specific
+ * one. Producers map their native shape onto these (e.g. BentoCache `layer`→`tier`,
+ * `graced`→`stale`, `store`→`store`); anything that doesn't fit goes in `metadata`.
+ */
 export interface CacheContent {
-  operation: 'get' | 'set';
+  operation: 'get' | 'set' | 'delete' | 'clear';
   key: string;
-  /** `true`/`false` for a get (hit vs miss); `null` for a set (not applicable). */
+  /** `true`/`false` for a get (hit vs miss); `null` when not applicable (set/delete/clear). */
   hit: boolean | null;
+  /** Named store/namespace the op targeted, when the cache exposes one. */
+  store?: string;
+  /** Tier that served/handled the op in a layered cache — e.g. `'l1'`/`'l2'`/`'memory'`/`'redis'`. Single-tier caches omit it. */
+  tier?: string;
+  /** A get served from a stale/grace-period value (stale-while-revalidate, BentoCache `graced`). */
+  stale?: boolean;
+  /** TTL applied on a set, in milliseconds, when known. */
+  ttlMs?: number;
+  /** Escape hatch for cache-specific fields the dimensions above don't model. */
+  metadata?: Record<string, unknown>;
 }
 
 /**

@@ -21,6 +21,21 @@ describe('cacheBadge', () => {
     expect(badge?.className).toContain('zinc');
   });
 
+  it('labels delete and clear operations', () => {
+    expect(cacheBadge({ operation: 'delete', hit: null, key: 'k' })?.label).toBe('DEL');
+    expect(cacheBadge({ operation: 'clear', hit: null, key: 'k' })?.label).toBe('CLEAR');
+  });
+
+  it('marks a grace-served hit as stale (amber) and appends the tier', () => {
+    const stale = cacheBadge({ operation: 'get', hit: true, key: 'k', stale: true, tier: 'l2' });
+    expect(stale?.label).toBe('HIT·STALE L2');
+    expect(stale?.className).toContain('amber');
+
+    const fresh = cacheBadge({ operation: 'get', hit: true, key: 'k', tier: 'l1' });
+    expect(fresh?.label).toBe('HIT L1');
+    expect(fresh?.className).toContain('emerald');
+  });
+
   it('returns null for non-cache content', () => {
     expect(cacheBadge({ sql: 'select 1' })).toBeNull();
     expect(cacheBadge(null)).toBeNull();

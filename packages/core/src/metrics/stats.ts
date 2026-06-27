@@ -29,8 +29,15 @@ export interface CacheStats {
   hits: number;
   misses: number;
   sets: number;
+  deletes: number;
   hitRatio: number;
   topKeys: { key: string; count: number }[];
+  /** Gets served from a stale/grace value (subset of `hits`). Caches without a
+   *  stale-while-revalidate concept leave this 0. */
+  staleHits: number;
+  /** Per-tier hit/miss split for layered caches (e.g. `l1`/`l2`). Empty `{}` for
+   *  single-tier caches that don't report a tier. */
+  byTier: Record<string, { hits: number; misses: number }>;
 }
 
 export interface StatusBreakdown {
@@ -134,13 +141,22 @@ function asQueryContent(content: unknown): QueryContent | null {
   };
 }
 
+const CACHE_OPERATIONS = new Set<CacheContent['operation']>(['get', 'set', 'delete', 'clear']);
+
 function asCacheContent(content: unknown): CacheContent | null {
   if (!isRecord(content)) return null;
-  if (content.operation !== 'get' && content.operation !== 'set') return null;
+  if (!CACHE_OPERATIONS.has(content.operation as CacheContent['operation'])) return null;
   if (typeof content.key !== 'string') return null;
   const hit = content.hit;
   if (hit !== true && hit !== false && hit !== null) return null;
-  return { operation: content.operation, key: content.key, hit };
+  const result: CacheContent = {
+    operation: content.operation as CacheContent['operation'],
+    key: content.key,
+    hit,
+  };
+  if (typeof content.tier === 'string') result.tier = content.tier;
+  if (typeof content.stale === 'boolean') result.stale = content.stale;
+  return result;
 }
 
 function asExceptionContent(content: unknown): Pick<ExceptionContent, 'class' | 'message'> | null {
@@ -218,11 +234,26 @@ function computeFamilies(entries: Entry[], topFamilies: number): FamilyLatency[]
   return families.slice(0, topFamilies);
 }
 
+/** Get-or-create the mutable hit/miss counter for a tier. */
+function tierCounts(
+  byTier: Record<string, { hits: number; misses: number }>,
+  tier: string,
+): { hits: number; misses: number } {
+  const existing = byTier[tier];
+  if (existing !== undefined) return existing;
+  const created = { hits: 0, misses: 0 };
+  byTier[tier] = created;
+  return created;
+}
+
 function computeCache(entries: Entry[], topKeys: number): CacheStats {
   let hits = 0;
   let misses = 0;
   let sets = 0;
+  let deletes = 0;
+  let staleHits = 0;
   const keyCounts = new Map<string, number>();
+  const byTier: Record<string, { hits: number; misses: number }> = {};
 
   for (const entry of entries) {
     const cache = asCacheContent(entry.content);
@@ -230,10 +261,15 @@ function computeCache(entries: Entry[], topKeys: number): CacheStats {
     keyCounts.set(cache.key, (keyCounts.get(cache.key) ?? 0) + 1);
     if (cache.operation === 'set') {
       sets += 1;
+    } else if (cache.operation === 'delete' || cache.operation === 'clear') {
+      deletes += 1;
     } else if (cache.hit === true) {
       hits += 1;
+      if (cache.stale === true) staleHits += 1;
+      if (cache.tier !== undefined) tierCounts(byTier, cache.tier).hits += 1;
     } else if (cache.hit === false) {
       misses += 1;
+      if (cache.tier !== undefined) tierCounts(byTier, cache.tier).misses += 1;
     }
   }
 
@@ -247,8 +283,11 @@ function computeCache(entries: Entry[], topKeys: number): CacheStats {
     hits,
     misses,
     sets,
+    deletes,
     hitRatio: denominator === 0 ? 0 : hits / denominator,
     topKeys: ranked,
+    staleHits,
+    byTier,
   };
 }
 
