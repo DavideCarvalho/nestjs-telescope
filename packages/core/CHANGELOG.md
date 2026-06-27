@@ -1,5 +1,31 @@
 # @dudousxd/nestjs-telescope
 
+## 1.14.0
+
+### Minor Changes
+
+- [#31](https://github.com/DavideCarvalho/nestjs-telescope/pull/31) [`6e66ec3`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6e66ec355487c488c8290a13acb99b619895f28d) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add Prunes and Exports screens. The pruner now records every prune run (trigger,
+  duration, total deleted and real per-type deletions) in a bounded in-memory ring
+  exposed at `GET /prunes` alongside the resolved retention config and the predicted
+  next run; a new Prunes page surfaces that activity with per-type chips and a gated
+  "Prune now". A new Exports page exports filtered entries (by type / window /
+  search) to JSON or CSV entirely client-side, with a session export history and a
+  dependency-free CSV serializer.
+
+- [#31](https://github.com/DavideCarvalho/nestjs-telescope/pull/31) [`bdc2198`](https://github.com/DavideCarvalho/nestjs-telescope/commit/bdc21987bc90eae6fc95995c99d3de46f0f4fc89) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Surface whether a scheduled cron is currently active. `ScheduledTask` gains a
+  `running: boolean | null` field; the `@nestjs/schedule` watcher reads the
+  `CronJob.running` flag (null for intervals/timeouts, which expose no state), and
+  the Schedules console renders an Active/Stopped badge plus an active/stopped
+  summary so a registered-but-stopped cron is obvious at a glance.
+
+### Patch Changes
+
+- [#31](https://github.com/DavideCarvalho/nestjs-telescope/pull/31) [`bdc2198`](https://github.com/DavideCarvalho/nestjs-telescope/commit/bdc21987bc90eae6fc95995c99d3de46f0f4fc89) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Fix extension dashboards that use the sectioned layout rendering blank. The
+  `GET /telescope/api/meta` serializer dropped the `sections` field, so a dashboard
+  that declares its panels under `sections` (with a flat `panels: []`) — e.g. the
+  durable Workflows dashboard — arrived with no panels and the UI fell back to the
+  empty `panels` array. `sections` is now forwarded in meta.
+
 ## 1.13.1
 
 ### Patch Changes
