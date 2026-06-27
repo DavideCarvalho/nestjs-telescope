@@ -13,6 +13,7 @@ import type {
   LoginResult,
   Page,
   ProfilerStatus,
+  PrunesInfo,
   PulseReport,
   QueueCapabilities,
   QueueCounts,
@@ -93,6 +94,8 @@ export interface TelescopeClient {
   health(): Promise<TelescopeHealth>;
   /** Retention/prune status for the Overview retention card. */
   retention(): Promise<RetentionInfo>;
+  /** Prune-run activity + retention config for the Prunes screen (`GET /prunes`). */
+  prunes(): Promise<PrunesInfo>;
   /** Runs on-demand prune (gated server-side by the default-deny mutation guard). */
   prune(): Promise<{ pruned: number }>;
   /**
@@ -387,6 +390,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     serverStatsHistory: () => get<ServerStatsHistory>('/server-stats/history'),
     health: () => get<TelescopeHealth>('/health'),
     retention: () => get<RetentionInfo>('/retention'),
+    prunes: () => get<PrunesInfo>('/prunes'),
     prune: () => post<{ pruned: number }>('/retention/prune'),
     explain,
     diagnose,

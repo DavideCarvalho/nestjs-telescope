@@ -290,6 +290,41 @@ export interface RetentionInfo {
 /** Outcome of `POST /queries/explain`: the plan, or a clean error message. */
 export type ExplainResult = { ok: true; plan: unknown } | { ok: false; message: string };
 
+/** What kicked off a prune cycle. Mirrors core's `PruneTrigger`. */
+export type PruneTrigger = 'scheduled' | 'manual';
+
+/**
+ * One recorded prune cycle from `GET /prunes`. Mirrors core's `PruneRun`. The
+ * ring is PER-POD (each replica records its own cycles), like server-stats
+ * history. `deletedByType` carries real per-type counts only for the
+ * individually-handled scopes (per-type overrides / archived types); the global
+ * bulk delete is folded into `deletedTotal`.
+ */
+export interface PruneRun {
+  at: string;
+  trigger: PruneTrigger;
+  durationMs: number;
+  deletedTotal: number;
+  deletedByType: Record<string, number>;
+  archivedTotal?: number;
+  error?: string;
+}
+
+/** Resolved retention config surfaced to the Prunes screen. Mirrors core's `PrunesConfig`. */
+export interface PrunesConfig {
+  afterMs: number;
+  intervalMs: number;
+  keepLast: number | null;
+  perType?: Record<string, number>;
+}
+
+/** Prune-run activity returned by `GET /prunes`. Mirrors core's `PrunesInfo`. */
+export interface PrunesInfo {
+  runs: PruneRun[];
+  config: PrunesConfig | null;
+  nextRunAt: string | null;
+}
+
 export interface DurationStats {
   avg: number;
   p50: number;

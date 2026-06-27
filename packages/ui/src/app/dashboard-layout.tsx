@@ -25,6 +25,8 @@ const NAV: TopNavItem[] = [
   { to: '/pulse', label: 'Pulse', end: false },
   { to: '/queues', label: 'Queues', end: false },
   { to: '/schedules', label: 'Schedules', end: false },
+  { to: '/prunes', label: 'Prunes', end: false },
+  { to: '/exports', label: 'Exports', end: false },
   { to: '/profiles', label: 'Profiles', end: false },
 ];
 

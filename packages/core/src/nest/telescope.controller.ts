@@ -63,6 +63,7 @@ import type {
 import { createExtensionContext } from './extension-context.factory.js';
 import { type ReplayResult, replayRequest } from './request-replay.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
+import { type PruneRun, TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeGuard } from './telescope.guard.js';
 import {
   TELESCOPE_CONFIG,
@@ -133,6 +134,26 @@ export interface RetentionInfo {
   pruneSupported: true;
 }
 
+/** Resolved retention config surfaced to the Prunes screen. `null` when unset. */
+export interface PrunesConfig {
+  afterMs: number;
+  intervalMs: number;
+  keepLast: number | null;
+  /** Per-type retention overrides (ms), omitted when none are configured. */
+  perType?: Record<string, number>;
+}
+
+/**
+ * Prune-run activity for the dashboard's Prunes screen: the in-memory ring of
+ * recent cycles (newest-first, PER-POD), the resolved retention config, and the
+ * predicted next scheduled run (`null` when no `prune` window is configured).
+ */
+export interface PrunesInfo {
+  runs: PruneRun[];
+  config: PrunesConfig | null;
+  nextRunAt: string | null;
+}
+
 /** Type guard: a query entry carries a non-empty SQL string to explain. */
 function isQueryContentWithSql(content: unknown): content is QueryContent {
   return (
@@ -179,6 +200,7 @@ export class TelescopeController {
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
     @Inject(TELESCOPE_EXTENSIONS) private readonly extensions: ExtensionRegistry,
     @Inject(TELESCOPE_CONFIG) private readonly extConfig: ResolvedCoreConfig,
+    @Inject(TelescopePruner) private readonly pruner: TelescopePruner,
     private readonly moduleRef: ModuleRef,
   ) {}
 
@@ -502,26 +524,44 @@ export class TelescopeController {
     };
   }
 
+  // Prune-run activity / retention status for the Prunes screen. Read-shaped —
+  // sits behind the class-level read guard like the other GETs. The runs come
+  // from the pruner's in-memory ring (PER-POD), the config from the resolved
+  // config, and nextRunAt is the pruner's predicted next scheduled cycle.
+  @Get('prunes')
+  prunes(): PrunesInfo {
+    const prune = this.extConfig.prune;
+    const nextRunAtMs = this.pruner.getNextRunAtMs();
+    return {
+      runs: this.pruner.getRuns(),
+      config: prune
+        ? {
+            afterMs: prune.afterMs,
+            intervalMs: prune.intervalMs,
+            keepLast: prune.keepLast ?? null,
+            ...(Object.keys(prune.perTypeMs).length > 0 ? { perType: prune.perTypeMs } : {}),
+          }
+        : null,
+      nextRunAt: nextRunAtMs !== null ? new Date(nextRunAtMs).toISOString() : null,
+    };
+  }
+
   // Prune is a MUTATION (deletes entries), so it stays behind the default-deny
   // authorizeAction gate. The queue-shaped TelescopeActionGuard can't validate
   // it (no driver/queue/action params), so we enforce the same default-deny
-  // here directly: no `authorizeAction` configured → 403.
+  // here directly: no `authorizeAction` configured → 403. The cycle runs through
+  // the pruner so it is recorded as a `manual` run (and honours per-type +
+  // archive retention identically to the scheduled cycle).
   @Post('retention/prune')
   @HttpCode(200)
   async prune(): Promise<{ pruned: number }> {
     if (!this.options.authorizeAction) {
       throw new ForbiddenException('Mutations are disabled (no authorizeAction configured).');
     }
-    const prune = this.options.prune;
-    if (!prune) {
+    if (!this.options.prune) {
       throw new BadRequestException('No `prune` retention window is configured.');
     }
-    const olderThan = new Date(Date.now() - durationToMs(prune.after));
-    const pruned =
-      prune.keepLast !== undefined
-        ? await this.storage.prune(olderThan, prune.keepLast)
-        : await this.storage.prune(olderThan);
-    return { pruned };
+    return { pruned: await this.pruner.pruneNow() };
   }
 
   // ── Query EXPLAIN ──────────────────────────────────────────────────────────

@@ -229,14 +229,20 @@ describe('ScheduleWatcher', () => {
 });
 
 // A fake SchedulerRegistry exposing a cron + an interval (structurally typed).
-function fakeRegistry(next: Date): {
-  getCronJobs: () => Map<string, { cronTime: { source: string }; nextDate: () => Date }>;
+function fakeRegistry(
+  next: Date,
+  running = true,
+): {
+  getCronJobs: () => Map<
+    string,
+    { cronTime: { source: string }; nextDate: () => Date; running: boolean }
+  >;
   getIntervals: () => string[];
   getTimeouts: () => string[];
 } {
   return {
     getCronJobs: () =>
-      new Map([['nightly', { cronTime: { source: '0 0 * * *' }, nextDate: () => next }]]),
+      new Map([['nightly', { cronTime: { source: '0 0 * * *' }, nextDate: () => next, running }]]),
     getIntervals: () => ['heartbeat'],
     getTimeouts: () => [],
   };
@@ -260,9 +266,27 @@ describe('ScheduleWatcher.listTasks (ScheduleManager)', () => {
       kind: 'cron',
       schedule: '0 0 * * *',
       nextRunAt: next.toISOString(),
+      running: true,
     });
     const interval = tasks.find((t) => t.name === 'heartbeat');
-    expect(interval).toMatchObject({ kind: 'interval', nextRunAt: null });
+    // Intervals expose no running state through SchedulerRegistry → null, not a guess.
+    expect(interval).toMatchObject({ kind: 'interval', nextRunAt: null, running: null });
+  });
+
+  it('reports a stopped cron as running:false (registered but will not fire)', async () => {
+    const next = new Date('2026-06-04T00:00:00.000Z');
+    class CronTasks {
+      @Cron('0 0 * * *', { name: 'nightly' })
+      async run(): Promise<void> {}
+    }
+    const { ctx } = makeHarness([{ instance: new CronTasks() }], {
+      registry: fakeRegistry(next, false),
+    });
+    const watcher = new ScheduleWatcher();
+    watcher.register(ctx);
+
+    const cron = (await watcher.listTasks()).find((t) => t.name === 'nightly');
+    expect(cron?.running).toBe(false);
   });
 
   it('merges last-run info recorded by a simulated run', async () => {

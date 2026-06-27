@@ -47,4 +47,30 @@ describe('PanelView (pure render from resolved data)', () => {
     const link = screen.getByRole('link', { name: 'r1' });
     expect(link.getAttribute('href')).toBe('/durable/runs/r1');
   });
+
+  it('shows an explicit empty state for a table panel with no rows', () => {
+    render(
+      <PanelView
+        panel={{
+          kind: 'table',
+          title: 'Recent events',
+          data: { provider: 'p' },
+          columns: [{ key: 'lib', label: 'Library' }],
+        }}
+        data={{ rows: [] }}
+      />,
+    );
+    expect(screen.getByText('No data in this window.')).toBeTruthy();
+  });
+
+  it('shows an explicit empty state for a topN panel with no items', () => {
+    render(
+      <PanelView
+        panel={{ kind: 'topN', title: 'Busiest events', data: { provider: 'p' }, limit: 10 }}
+        data={{ items: [] }}
+      />,
+    );
+    expect(screen.getByText('Busiest events')).toBeTruthy();
+    expect(screen.getByText('No data in this window.')).toBeTruthy();
+  });
 });

@@ -14,6 +14,7 @@ const TASKS: ScheduledTask[] = [
     kind: 'cron',
     schedule: '0 0 * * *',
     nextRunAt: '2099-06-04T00:00:00.000Z',
+    running: true,
     lastRunAt: new Date(Date.now() - 5000).toISOString(),
     lastDurationMs: 1234,
     lastStatus: 'completed',
@@ -23,6 +24,17 @@ const TASKS: ScheduledTask[] = [
     kind: 'interval',
     schedule: 'interval',
     nextRunAt: null,
+    running: null,
+    lastRunAt: null,
+    lastDurationMs: null,
+    lastStatus: null,
+  },
+  {
+    name: 'paused-sweep',
+    kind: 'cron',
+    schedule: '*/5 * * * *',
+    nextRunAt: null,
+    running: false,
     lastRunAt: null,
     lastDurationMs: null,
     lastStatus: null,
@@ -103,6 +115,12 @@ describe('SchedulesPage', () => {
     expect(screen.getByText(/ago/)).toBeTruthy();
     // last status badge
     expect(screen.getByText('completed')).toBeTruthy();
+    // active/stopped state surfaced (a stopped cron is the thing to spot)
+    expect(screen.getByText('active')).toBeTruthy();
+    expect(screen.getByText('stopped')).toBeTruthy();
+    // summary line counts active vs stopped
+    expect(screen.getByText('1 active')).toBeTruthy();
+    expect(screen.getByText('1 stopped')).toBeTruthy();
   });
 
   it('shows an empty state when there are no tasks', async () => {

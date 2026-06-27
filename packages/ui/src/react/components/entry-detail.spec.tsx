@@ -80,8 +80,9 @@ async function renderDetail(entryValue: EntryWithBatch, traceLink: string | null
       </QueryClientProvider>
     </TelescopeProvider>,
   );
-  // let the meta query resolve
-  await screen.findByText(entryValue.type);
+  // let the meta query resolve (the type label can appear more than once once a
+  // batch is present — the header plus each matching batch row — so tolerate ≥1)
+  await screen.findAllByText(entryValue.type);
   return result;
 }
 
@@ -113,6 +114,32 @@ describe('EntryDetail trace row', () => {
   it('omits the trace row entirely when traceId is null', async () => {
     await renderDetail(entry({ traceId: null, spanId: null }), 'https://tracing.example/{traceId}');
     expect(screen.queryByText('Trace')).toBeNull();
+  });
+});
+
+describe('EntryDetail related links', () => {
+  it('links an exception to its family and its originating request', async () => {
+    await renderDetail(
+      entry({
+        id: 'exc1',
+        type: 'exception',
+        familyHash: 'BoomError:nope',
+        batch: [
+          entry({ id: 'req1', type: 'request' }),
+          entry({ id: 'exc1', type: 'exception', familyHash: 'BoomError:nope' }),
+        ],
+      }),
+      null,
+    );
+    const family = await screen.findByRole('link', { name: /All exception like this/ });
+    expect(family.getAttribute('href')).toBe('#/entries/exception?familyHash=BoomError%3Anope');
+    const request = screen.getByRole('link', { name: 'Originating request →' });
+    expect(request.getAttribute('href')).toBe('#/entries/view/req1');
+  });
+
+  it('omits the Related block for a bare entry with no family or correlations', async () => {
+    await renderDetail(entry({ type: 'request', familyHash: null, batch: [] }), null);
+    expect(screen.queryByText('Related')).toBeNull();
   });
 });
 

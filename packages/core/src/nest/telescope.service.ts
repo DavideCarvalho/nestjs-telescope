@@ -21,7 +21,7 @@ import { setTelescopeDump } from '../dump/telescope-dump.js';
 import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
-import type { Panel } from '../extension/types.js';
+import type { DashboardSection, Panel } from '../extension/types.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -89,7 +89,13 @@ export interface TelescopeMeta {
   /** Entry types contributed by extensions (id/label/dot) — feeds the UI nav. */
   entryTypes: { id: string; label: string; dot: string }[];
   /** Dashboards contributed by extensions — feeds the UI nav + routes + panel rendering. */
-  dashboards: { id: string; label: string; navGroup?: string; panels: Panel[] }[];
+  dashboards: {
+    id: string;
+    label: string;
+    navGroup?: string;
+    panels: Panel[];
+    sections?: DashboardSection[];
+  }[];
 }
 
 /**
@@ -379,6 +385,12 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         label: d.label,
         panels: d.panels,
         ...(d.navGroup ? { navGroup: d.navGroup } : {}),
+        // Forward the sectioned layout too: extensions that declare their panels
+        // under `sections` (with a flat `panels: []`) — e.g. the durable Workflows
+        // dashboard — would otherwise render blank, because the UI only falls back
+        // to `panels` when `sections` is absent. Dropping `sections` here was why
+        // those dashboards showed nothing.
+        ...(d.sections ? { sections: d.sections } : {}),
       })),
     };
   }
