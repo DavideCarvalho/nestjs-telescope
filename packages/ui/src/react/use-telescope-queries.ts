@@ -87,6 +87,13 @@ export function retentionQuery(client: TelescopeClient, paused = false) {
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
+export function prunesQuery(client: TelescopeClient, paused = false) {
+  return queryOptions({
+    queryKey: ['telescope', 'prunes'],
+    queryFn: () => client.prunes(),
+    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+  });
+}
 export function pulseQuery(client: TelescopeClient, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'pulse', window],
@@ -297,6 +304,10 @@ export function useRetention() {
   return useQuery(retentionQuery(useTelescopeClient(), usePaused()));
 }
 
+export function usePrunes() {
+  return useQuery(prunesQuery(useTelescopeClient(), usePaused()));
+}
+
 export function usePrune() {
   const client = useTelescopeClient();
   const queryClient = useQueryClient();
@@ -304,6 +315,7 @@ export function usePrune() {
     mutationFn: () => client.prune(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: retentionKey() });
+      queryClient.invalidateQueries({ queryKey: ['telescope', 'prunes'] });
       queryClient.invalidateQueries({ queryKey: ['telescope', 'entries'] });
     },
   });

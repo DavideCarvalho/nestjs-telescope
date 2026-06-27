@@ -11,6 +11,7 @@ export * from './components/flamegraph-view.js';
 export * from './components/entry-detail.js';
 export * from './components/export-json.js';
 export * from './components/export-json-toolbar.js';
+export * from './components/to-csv.js';
 export * from './components/retention-indicator.js';
 export * from './components/cache-badge.js';
 export * from './components/inertia-badge.js';

@@ -18,11 +18,11 @@
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "typecheck": "turbo run typecheck",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
+    "lint": "biome check --max-diagnostics=none .",
+    "lint:fix": "biome check --write --max-diagnostics=none .",
     "format": "biome format --write .",
     "changeset": "changeset",
-    "version-packages": "changeset version && biome check --write .",
+    "version-packages": "changeset version && biome check --write --max-diagnostics=none .",
     "release": "pnpm --filter './packages/*' build && changeset publish"
   },
   "devDependencies": {
