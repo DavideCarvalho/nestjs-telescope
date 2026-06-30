@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 // packages/mikro-orm/src/mikro-orm-storage.provider.ts
 //
 // A StorageProvider that persists Telescope entries to MySQL/SQLite via MikroORM.
@@ -68,12 +69,40 @@ import {
   mergeHistograms,
   normalizeHistogram,
 } from '@dudousxd/nestjs-telescope';
-import type { EntityManager, FilterQuery, Options } from '@mikro-orm/core';
+import type { EntityManager, EntityMetadata, FilterQuery, Options } from '@mikro-orm/core';
 import { MikroORM, raw } from '@mikro-orm/core';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
 import { TelescopeRollup, type TelescopeRollupRow } from './telescope-rollup.entity.js';
+import { TelescopeSchemaMeta } from './telescope-schema-meta.entity.js';
 
 const DEFAULT_LIMIT = 50;
+
+/**
+ * Hand-bump escape hatch for DDL changes that are NOT visible in entity metadata
+ * (e.g. a collation tweak, an index expression, anything `schema.update` would
+ * emit but the fingerprint inputs below can't see). Incrementing this forces
+ * every pod to re-run the additive `schema.update` once, then re-cache.
+ */
+const SCHEMA_REVISION = 1;
+
+/** Stable PK of the single fingerprint marker row. */
+const SCHEMA_META_ID = 'mikro-orm';
+
+/**
+ * Cross-driver DDL for the fingerprint marker table. `if not exists` keeps it
+ * idempotent and introspection-free (no `information_schema` round-trip), and
+ * the unquoted lowercase identifiers + portable `varchar`/`bigint` types parse
+ * on MySQL, PostgreSQL, and SQLite alike. Mirrors `TelescopeSchemaMeta`.
+ */
+const CREATE_SCHEMA_META_TABLE_SQL =
+  'create table if not exists telescope_schema_meta (' +
+  'id varchar(32) not null, ' +
+  'fingerprint varchar(64) not null, ' +
+  'applied_at bigint not null, ' +
+  'primary key (id))';
+
+/** A shared advisory-lock name/key both lock dialects derive from. */
+const SCHEMA_LOCK_NAME = 'telescope_schema';
 
 /**
  * Every persisted column EXCEPT `content`, used as the MikroORM `fields`
@@ -176,6 +205,224 @@ function pickHostConnection(hostConfig: Options): Partial<Options> {
   return connection;
 }
 
+// ── Schema fingerprint gate ──────────────────────────────────────────────────
+//
+// `schema.update({ safe: true })` introspects the WHOLE database's
+// `information_schema` to diff it against telescope's two entities, emitting zero
+// DDL in steady state — ~1.5–3s of round-trips on a remote DB on EVERY boot. The
+// gate replaces that with: (1) ensure the `telescope_schema_meta` marker exists,
+// (2) read its one fingerprint row, (3) compute the expected fingerprint purely
+// in memory from entity metadata. When they match we SKIP `schema.update`
+// entirely; only an absent/mismatched fingerprint (fresh DB, entity change, or
+// SCHEMA_REVISION bump) pays for the introspection, then re-caches the marker.
+
+/** One column's identity inside the fingerprint. Keys authored alphabetically so
+ * `JSON.stringify` (insertion-order) emits a canonical, sorted-key string. */
+interface ColumnFingerprint {
+  autoincrement: boolean;
+  default: string | number | boolean | null;
+  name: string;
+  nullable: boolean;
+  primary: boolean;
+  type: string;
+}
+
+/** One index's identity. `properties` is the sorted list of indexed columns. */
+interface IndexFingerprint {
+  name: string;
+  properties: string[];
+}
+
+/** One table's identity: name plus its sorted columns and sorted indexes. */
+interface TableFingerprint {
+  columns: ColumnFingerprint[];
+  indexes: IndexFingerprint[];
+  tableName: string;
+}
+
+/** The full canonical payload hashed into the fingerprint. */
+interface SchemaFingerprintPayload {
+  collate: string | null;
+  platform: string;
+  revision: number;
+  tables: TableFingerprint[];
+}
+
+/**
+ * Table names the gate owns and fingerprints — `telescope_entries` and
+ * `telescope_rollups`. Derived from metadata (never hardcoded) so a future
+ * tableName rename flows through automatically. Deliberately EXCLUDES the marker
+ * table, whose own shape must never invalidate the gate.
+ */
+function collectOwnedTableNames(orm: MikroORM): string[] {
+  const metadata = orm.getMetadata();
+  return [metadata.get(TelescopeEntry).tableName, metadata.get(TelescopeRollup).tableName];
+}
+
+function compareStrings(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+/** Maps an entity's properties to per-column fingerprints, expanding any
+ * multi-column property by its `fieldNames`. Columns are sorted by name. */
+function columnsOf(meta: EntityMetadata): ColumnFingerprint[] {
+  const columns: ColumnFingerprint[] = [];
+  for (const prop of meta.props) {
+    prop.fieldNames.forEach((fieldName, index) => {
+      columns.push({
+        autoincrement: prop.autoincrement === true,
+        default: prop.default ?? null,
+        name: fieldName,
+        nullable: prop.nullable === true,
+        primary: prop.primary === true,
+        type: prop.columnTypes[index] ?? prop.columnTypes[0] ?? prop.type,
+      });
+    });
+  }
+  return columns.sort((left, right) => compareStrings(left.name, right.name));
+}
+
+function indexNameFromFlag(flag: boolean | string | undefined): string {
+  return typeof flag === 'string' ? flag : '';
+}
+
+/**
+ * Index fingerprints from BOTH property-level flags (`{ index: true }` /
+ * `{ unique: true }`, which is how the telescope entities declare every index)
+ * AND any entity-level `meta.indexes`. Without the property-level pass, flipping
+ * an existing column to indexed (no new column) would slip past the gate. Sorted
+ * by name then properties for determinism.
+ */
+function indexesOf(meta: EntityMetadata): IndexFingerprint[] {
+  const indexes: IndexFingerprint[] = [];
+  for (const prop of meta.props) {
+    if (prop.index) {
+      indexes.push({
+        name: indexNameFromFlag(prop.index),
+        properties: [...prop.fieldNames].sort(),
+      });
+    }
+    if (prop.unique) {
+      indexes.push({
+        name: indexNameFromFlag(prop.unique),
+        properties: [...prop.fieldNames].sort(),
+      });
+    }
+  }
+  for (const index of meta.indexes) {
+    const declared = index.properties;
+    const properties = Array.isArray(declared)
+      ? [...declared]
+      : declared !== undefined
+        ? [declared]
+        : [];
+    indexes.push({ name: index.name ?? '', properties: properties.map(String).sort() });
+  }
+  return indexes.sort(
+    (left, right) =>
+      compareStrings(left.name, right.name) ||
+      compareStrings(left.properties.join(','), right.properties.join(',')),
+  );
+}
+
+/**
+ * Pure, in-memory sha256 of a CANONICAL serialization of the owned tables' shape
+ * (sorted tables, sorted columns, sorted indexes; object keys authored
+ * alphabetically so `JSON.stringify` is order-stable). The platform name is
+ * folded in so a SQLite CI marker can never satisfy a MySQL boot, the configured
+ * collation so a collation change re-heals, and SCHEMA_REVISION as the manual
+ * escape hatch. Never reads enumeration order — everything is sorted.
+ */
+function computeExpectedFingerprint(orm: MikroORM, ownedTableNames: string[]): string {
+  const owned = new Set(ownedTableNames);
+  const tables: TableFingerprint[] = [];
+  for (const meta of orm.getMetadata()) {
+    if (!owned.has(meta.tableName)) continue;
+    tables.push({ columns: columnsOf(meta), indexes: indexesOf(meta), tableName: meta.tableName });
+  }
+  tables.sort((left, right) => compareStrings(left.tableName, right.tableName));
+
+  const collate = orm.config.get('collate');
+  const payload: SchemaFingerprintPayload = {
+    collate: collate ?? null,
+    platform: orm.em.getPlatform().constructor.name,
+    revision: SCHEMA_REVISION,
+    tables,
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+/** Reads the single stored fingerprint, or null when the marker row is absent. */
+async function readStoredFingerprint(orm: MikroORM): Promise<string | null> {
+  const em = orm.em.fork();
+  const row = await em.findOne(TelescopeSchemaMeta, { id: SCHEMA_META_ID });
+  return row ? row.fingerprint : null;
+}
+
+/** Driver-agnostic upsert of the single marker row with the reconciled fingerprint. */
+async function writeStoredFingerprint(orm: MikroORM, fingerprint: string): Promise<void> {
+  const em = orm.em.fork();
+  await em.upsert(TelescopeSchemaMeta, {
+    id: SCHEMA_META_ID,
+    fingerprint,
+    appliedAt: Date.now(),
+  });
+}
+
+/** Releasable handle for the best-effort schema advisory lock. */
+interface SchemaLock {
+  release: () => Promise<void>;
+}
+
+/**
+ * Best-effort advisory lock so concurrent pods serialize the one-time heal
+ * instead of all introspecting at once. MySQL/MariaDB use `GET_LOCK`,
+ * PostgreSQL `pg_advisory_lock(hashtext(...))`; SQLite and unknown drivers get a
+ * no-op (single-writer or unsupported). Acquisition failures (permissions,
+ * timeout) degrade to a no-op so the heal still proceeds — the re-SELECT after
+ * locking is what actually prevents duplicate work, the lock just reduces it.
+ */
+async function acquireSchemaLock(orm: MikroORM): Promise<SchemaLock> {
+  const platform = orm.em.getPlatform().constructor.name.toLowerCase();
+  const connection = orm.em.getConnection();
+  const noop: SchemaLock = {
+    release: async () => {
+      /* nothing acquired */
+    },
+  };
+  try {
+    if (platform.includes('mysql') || platform.includes('maria')) {
+      await connection.execute(`select get_lock('${SCHEMA_LOCK_NAME}', 10) as locked`);
+      return {
+        release: async () => {
+          try {
+            await connection.execute(`select release_lock('${SCHEMA_LOCK_NAME}')`);
+          } catch {
+            /* lock auto-releases on connection close */
+          }
+        },
+      };
+    }
+    if (platform.includes('postgre')) {
+      await connection.execute(`select pg_advisory_lock(hashtext('${SCHEMA_LOCK_NAME}'))`);
+      return {
+        release: async () => {
+          try {
+            await connection.execute(`select pg_advisory_unlock(hashtext('${SCHEMA_LOCK_NAME}'))`);
+          } catch {
+            /* lock auto-releases on connection close */
+          }
+        },
+      };
+    }
+  } catch {
+    /* advisory lock unavailable → proceed without it */
+  }
+  return noop;
+}
+
 export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
   private readonly source: MikroORM | MikroOrmStorageProviderOptions;
   private readonly ensureSchema: boolean;
@@ -200,7 +447,7 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
       const connection = pickHostConnection(this.source.config.getAll());
       return {
         ...connection,
-        entities: [TelescopeEntry, TelescopeRollup],
+        entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta],
         contextName: TELESCOPE_CONTEXT_NAME,
         allowGlobalContext: true,
       };
@@ -209,7 +456,7 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
     const { ensureSchema: _ensureSchema, entities: _entities, ...rest } = this.source;
     return {
       ...rest,
-      entities: [TelescopeEntry, TelescopeRollup],
+      entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta],
       contextName: TELESCOPE_CONTEXT_NAME,
       allowGlobalContext: true,
     };
@@ -219,11 +466,56 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
     if (this.orm) return;
     this.orm = await MikroORM.init(this.buildOrmOptions());
     if (this.ensureSchema) {
-      await this.orm.schema.ensureDatabase();
+      await this.reconcileSchema(this.orm);
+    }
+  }
+
+  /**
+   * Fingerprint-gated schema reconciliation. Replaces a bare
+   * `ensureDatabase(); schema.update()` so steady-state boots skip the
+   * whole-database introspection (see the gate notes above the helpers).
+   *
+   * FRESH-DB ORDERING: `ensureDatabase()` runs FIRST, before the marker table is
+   * touched. The provider owns a DEDICATED connection, so on a brand-new DB the
+   * database itself may not exist yet — a `create table telescope_schema_meta`
+   * issued before `ensureDatabase()` would hit "unknown database" on MySQL/PG.
+   * `ensureDatabase()` creates it when missing and is a single cheap existence
+   * check when it already exists (the common case: the host app is already
+   * connected to that database), so paying for it every boot is negligible next
+   * to the multi-second `schema.update` introspection the gate eliminates.
+   */
+  private async reconcileSchema(orm: MikroORM): Promise<void> {
+    // (0) Create the database if the owned connection points at one that does
+    //     not exist yet. MUST precede any statement on the connection.
+    await orm.schema.ensureDatabase();
+
+    const ownedTableNames = collectOwnedTableNames(orm);
+
+    // (1) Idempotent, introspection-free marker table (empty-DB safe).
+    await orm.em.getConnection().execute(CREATE_SCHEMA_META_TABLE_SQL);
+
+    // (2) One PK read + (3) in-memory expected fingerprint.
+    const stored = await readStoredFingerprint(orm);
+    const expected = computeExpectedFingerprint(orm, ownedTableNames);
+
+    // (4) Steady state: identical fingerprint ⇒ skip the whole-DB schema.update.
+    if (stored === expected) return;
+
+    // (5) Absent/mismatch ⇒ heal once, under a best-effort advisory lock so
+    //     concurrent pods don't all introspect.
+    const lock = await acquireSchemaLock(orm);
+    try {
+      // Another pod may have healed between our SELECT and the lock; re-check.
+      const reStored = await readStoredFingerprint(orm);
+      if (reStored === expected) return;
+
       // `{ safe: true }` disables BOTH table and column dropping, so the update
-      // is additive-only: it creates the table and adds missing columns/indexes
-      // but never drops anything that already exists.
-      await this.orm.schema.update({ safe: true });
+      // is additive-only: it creates tables and adds missing columns/indexes but
+      // never drops anything that already exists.
+      await orm.schema.update({ safe: true });
+      await writeStoredFingerprint(orm, expected);
+    } finally {
+      await lock.release();
     }
   }
 
