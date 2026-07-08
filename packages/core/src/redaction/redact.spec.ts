@@ -217,9 +217,7 @@ describe('redact binary blobs (large Buffer/TypedArray)', () => {
     const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 
     expect(result.truncated).toBe(true);
-    expect((result.value as { body: string }).body).toBe(
-      `[Buffer: ${8 * 1024 * 1024} bytes]`,
-    );
+    expect((result.value as { body: string }).body).toBe(`[Buffer: ${8 * 1024 * 1024} bytes]`);
     // The whole point is that this is cheap. Object.entries() on 8 MiB would be
     // multi-second; the marker path is sub-millisecond, so a generous ceiling
     // still proves the byte-walk never happened.
