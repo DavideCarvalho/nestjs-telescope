@@ -198,6 +198,25 @@ export function redactBoundedWith(
       return node;
     }
 
+    // Binary blobs (Buffer, TypedArrays, DataView, ArrayBuffer) are opaque
+    // bytes, not a traversable graph — summarize them as a bounded marker
+    // instead of walking them. This is load-bearing: a Buffer is `typeof
+    // 'object'` and not an Array, so without this it falls into the plain-object
+    // branch and `Object.entries()` EAGERLY materializes one [index, byte] pair
+    // per byte BEFORE the node/byte budget is ever consulted. On a multi-MB body
+    // (e.g. a raw file-upload chunk) that is seconds of synchronous CPU and
+    // hundreds of MB allocated on the event loop — the budgets never get a
+    // chance to bite. Charged as a single node above; O(1) here.
+    if (ArrayBuffer.isView(node)) {
+      truncated = true;
+      const name = node.constructor?.name ?? 'Binary';
+      return `[${name}: ${node.byteLength} bytes]`;
+    }
+    if (node instanceof ArrayBuffer) {
+      truncated = true;
+      return `[ArrayBuffer: ${node.byteLength} bytes]`;
+    }
+
     // `seen` tracks only the current ancestor path (added on the way down,
     // removed on the way up), so genuine cycles are caught while a non-cyclic
     // shared reference appearing in two sibling positions is NOT a false hit.

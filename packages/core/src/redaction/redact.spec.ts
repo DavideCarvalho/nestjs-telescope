@@ -203,3 +203,36 @@ describe('redact maxContentBytes (incident-class payloads)', () => {
     expect(raised.value).toEqual({ user: wide });
   });
 });
+
+describe('redact binary blobs (large Buffer/TypedArray)', () => {
+  it('summarizes a multi-MB Buffer as an O(1) marker instead of walking its bytes', () => {
+    // A Buffer is `typeof 'object'` and not an Array, so without the binary
+    // guard it falls into the plain-object branch and `Object.entries()` eagerly
+    // builds one [index, byte] pair per byte — seconds of sync CPU on an 8 MiB
+    // body (a raw file-upload chunk) that stalls the event loop. This asserts
+    // the guard: an 8 MiB Buffer clones to a tiny marker, fast and bounded.
+    const eightMiB = Buffer.alloc(8 * 1024 * 1024, 1);
+    const startedAt = process.hrtime.bigint();
+    const result = redactBounded({ body: eightMiB }, {});
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+
+    expect(result.truncated).toBe(true);
+    expect((result.value as { body: string }).body).toBe(
+      `[Buffer: ${8 * 1024 * 1024} bytes]`,
+    );
+    // The whole point is that this is cheap. Object.entries() on 8 MiB would be
+    // multi-second; the marker path is sub-millisecond, so a generous ceiling
+    // still proves the byte-walk never happened.
+    expect(elapsedMs).toBeLessThan(100);
+  });
+
+  it('summarizes a Uint8Array with its constructor name and byte length', () => {
+    const result = redactBounded({ chunk: new Uint8Array(2048) }, {});
+    expect((result.value as { chunk: string }).chunk).toBe('[Uint8Array: 2048 bytes]');
+  });
+
+  it('summarizes a raw ArrayBuffer', () => {
+    const result = redactBounded({ raw: new ArrayBuffer(4096) }, {});
+    expect((result.value as { raw: string }).raw).toBe('[ArrayBuffer: 4096 bytes]');
+  });
+});
