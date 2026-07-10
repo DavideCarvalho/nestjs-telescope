@@ -17,7 +17,12 @@ import type { CacheEventInput, CustomCacheSource } from './cache.watcher.js';
  * even a dev dependency.
  */
 export interface BentoCacheEmitterLike {
-  on(event: string, listener: (payload: never) => void): unknown;
+  // The listener rest-param is `any[]` ON PURPOSE — it mirrors Node's own
+  // EventEmitter listener signature. Stricter variants (`never`, `unknown`)
+  // are NOT assignable from the generic `EventEmitter<any>` modern
+  // @types/node exposes, which is exactly what consumers pass here.
+  // biome-ignore lint/suspicious/noExplicitAny: structural boundary matching Node's EventEmitter
+  on(event: string, listener: (...args: any[]) => void): unknown;
 }
 
 /**
