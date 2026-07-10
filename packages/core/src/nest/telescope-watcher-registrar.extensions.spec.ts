@@ -31,6 +31,10 @@ describe('extension watchers reach registration + /meta watchers', () => {
     const meta = await request(app.getHttpServer()).get('/telescope/api/meta').expect(200);
     expect(registered).toBe(true);
     expect(meta.body.watchers).toContain('demo');
+    // An extension whose watcher `type` equals its declared entry-type id must appear ONCE in the
+    // meta list — it lands in both `registered` and `extensionTypes`, so the list is de-duped (else
+    // the dashboard renders a duplicate nav tab).
+    expect((meta.body.watchers as string[]).filter((w) => w === 'demo')).toHaveLength(1);
   });
 
   it('exposes extension entry types and dashboards in meta', async () => {

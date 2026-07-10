@@ -48,12 +48,18 @@ export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
     const clientErrorTypes =
       this.options.clientErrors?.enabled === true ? [EntryType.ClientException] : [];
     const extensionTypes = this.extensions.entryTypes().map((e) => e.id);
+    // De-dupe: an extension that ships a watcher whose `type` equals its declared entry-type id
+    // (e.g. durable/agent/diagnostic) lands in BOTH `registered` and `extensionTypes`. The meta
+    // list is a set of watched types for the dashboard nav, so a repeat would render a duplicate
+    // tab (and read as double-recording in the boot log). Set preserves first-seen order.
     const types = [
-      EntryType.Request,
-      EntryType.Exception,
-      ...registered,
-      ...clientErrorTypes,
-      ...extensionTypes,
+      ...new Set([
+        EntryType.Request,
+        EntryType.Exception,
+        ...registered,
+        ...clientErrorTypes,
+        ...extensionTypes,
+      ]),
     ];
     this.service.setWatchers(types);
     this.logger.log(`Telescope watching: ${types.join(', ')}`);
