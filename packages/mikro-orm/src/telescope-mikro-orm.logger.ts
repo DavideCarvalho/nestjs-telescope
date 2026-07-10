@@ -72,18 +72,32 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
  * Zero-config usage — omit `record` entirely and the logger resolves the
  * boot-time global sink (`telescopeRecord`) at call time, so it works even
  * when `MikroORM.init()` runs before `TelescopeModule` has wired anything
- * (entries are simply dropped until it does):
+ * (entries are simply dropped until it does). Options can be passed FIRST in
+ * that case — no `undefined` placeholder needed:
  * ```ts
  * MikroORM.init({
  *   debug: ['query'],
- *   loggerFactory: telescopeMikroOrmLogger(),
+ *   loggerFactory: telescopeMikroOrmLogger({ slowMs: 100, silent: true }),
  * });
  * ```
  */
 export function telescopeMikroOrmLogger(
-  record?: (input: RecordInput) => void,
-  options: TelescopeLoggerOptions = {},
+  options?: TelescopeLoggerOptions,
+): (loggerOptions: LoggerOptions) => TelescopeMikroOrmLogger;
+export function telescopeMikroOrmLogger(
+  record: ((input: RecordInput) => void) | undefined,
+  options?: TelescopeLoggerOptions,
+): (loggerOptions: LoggerOptions) => TelescopeMikroOrmLogger;
+export function telescopeMikroOrmLogger(
+  recordOrOptions?: ((input: RecordInput) => void) | TelescopeLoggerOptions,
+  maybeOptions: TelescopeLoggerOptions = {},
 ): (loggerOptions: LoggerOptions) => TelescopeMikroOrmLogger {
+  // Options-first overload: a non-function first arg IS the options bag.
+  const record = typeof recordOrOptions === 'function' ? recordOrOptions : undefined;
+  const options =
+    typeof recordOrOptions === 'function' || recordOrOptions === undefined
+      ? maybeOptions
+      : recordOrOptions;
   const slowMs = options.slowMs ?? 100;
   const silent = options.silent ?? false;
   // When silent, swap MikroORM's writer for a no-op so `super.logQuery` records
