@@ -1,9 +1,14 @@
 // packages/mikro-orm/src/telescope-mikro-orm.logger.spec.ts
+import { setTelescopeRecordSink } from '@dudousxd/nestjs-telescope';
 import type { RecordInput } from '@dudousxd/nestjs-telescope';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { telescopeMikroOrmLogger } from './telescope-mikro-orm.logger.js';
 
 describe('telescopeMikroOrmLogger', () => {
+  afterEach(() => {
+    setTelescopeRecordSink(null);
+  });
+
   it('records a query entry with sql, bindings, duration, familyHash, and slow tag', () => {
     const records: RecordInput[] = [];
     const record = (input: RecordInput) => records.push(input);
@@ -61,5 +66,33 @@ describe('telescopeMikroOrmLogger', () => {
     logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
     expect(records).toHaveLength(1); // still captured for Telescope
     expect(writes).toHaveLength(0); // console output suppressed
+  });
+
+  it('with an omitted record fn and a bound global sink, records via telescopeRecord', () => {
+    const records: RecordInput[] = [];
+    setTelescopeRecordSink((input) => records.push(input));
+    const logger = telescopeMikroOrmLogger()({ writer: () => undefined } as never);
+    logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.type).toBe('query');
+  });
+
+  it('with an omitted record fn and no bound global sink, is a silent no-op', () => {
+    const logger = telescopeMikroOrmLogger()({ writer: () => undefined } as never);
+    expect(() =>
+      logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never),
+    ).not.toThrow();
+  });
+
+  it('an explicit record fn still wins even when a global sink is bound', () => {
+    const explicitRecords: RecordInput[] = [];
+    const globalRecords: RecordInput[] = [];
+    setTelescopeRecordSink((input) => globalRecords.push(input));
+    const logger = telescopeMikroOrmLogger((input) => explicitRecords.push(input))({
+      writer: () => undefined,
+    } as never);
+    logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
+    expect(explicitRecords).toHaveLength(1);
+    expect(globalRecords).toHaveLength(0);
   });
 });

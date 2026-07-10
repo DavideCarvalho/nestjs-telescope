@@ -166,4 +166,22 @@ describe('ClientErrorController', () => {
     app = built.app;
     await request(app.getHttpServer()).post(ENDPOINT).send({ message: 'boom' }).expect(403);
   });
+
+  it('authorize hook reads headers/user directly (typed request, no structural cast)', async () => {
+    const built = await makeApp({
+      clientErrors: {
+        enabled: true,
+        // `request` is typed `TelescopeHttpRequest` (not `unknown`) — headers
+        // are readable without a hand-rolled guard.
+        authorize: (req) => req.headers?.['x-allow'] === 'yes',
+      },
+    });
+    app = built.app;
+    await request(app.getHttpServer()).post(ENDPOINT).send({ message: 'boom' }).expect(403);
+    await request(app.getHttpServer())
+      .post(ENDPOINT)
+      .set('x-allow', 'yes')
+      .send({ message: 'boom' })
+      .expect(204);
+  });
 });

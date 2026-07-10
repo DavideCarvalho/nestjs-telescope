@@ -3,6 +3,7 @@ export * from './entry/entry.js';
 export * from './entry/content.js';
 export * from './entry/exception-family-hash.js';
 export * from './dump/telescope-dump.js';
+export * from './record/telescope-record.js';
 export * from './trace/trace-context-provider.js';
 export * from './redaction/redact.js';
 export * from './context/batch.js';
@@ -47,6 +48,7 @@ export * from './nest/watcher-context.factory.js';
 export * from './nest/telescope-request.middleware.js';
 export * from './nest/telescope-exception.interceptor.js';
 export * from './nest/telescope-watcher-registrar.service.js';
+export * from './nest/telescope-mount-paths.js';
 
 export * from './queue/queue-manager.js';
 export * from './queue/queue-manager.registry.js';

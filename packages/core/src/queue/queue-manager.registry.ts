@@ -7,11 +7,36 @@ import {
   TELESCOPE_OPTIONS,
   type TelescopeModuleOptions,
 } from '../nest/telescope.options.js';
+import type { Watcher } from '../nest/watcher.js';
 import { redact } from '../redaction/redact.js';
 import type { QueueManager, QueueManagerContext } from './queue-manager.js';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Duck-types the `QueueManager` SPI (see {@link QueueManager}) against a
+ * `watchers` entry so a watcher class that ALSO implements `QueueManager`
+ * doesn't need to be listed in both `watchers` and `queueManagers` — mirrors
+ * the same footgun `ScheduleManagerRegistry` closes for `ScheduleManager`.
+ *
+ * Matches the FULL required SPI shape (every non-optional member: `driver`,
+ * `init`, `listQueues`, `counts`, `listJobs`, `getJob`) so an unrelated watcher
+ * that happens to expose e.g. its own `listQueues` doesn't false-positive. The
+ * Phase-2 action methods (`retry`/`remove`/`promote`/`retryAll`/`redrive`/
+ * `enqueue`) are optional on the SPI and intentionally not part of the check.
+ */
+function isQueueManager(watcher: Watcher): watcher is Watcher & QueueManager {
+  const candidate = watcher as Partial<QueueManager>;
+  return (
+    typeof candidate.driver === 'string' &&
+    typeof candidate.init === 'function' &&
+    typeof candidate.listQueues === 'function' &&
+    typeof candidate.counts === 'function' &&
+    typeof candidate.listJobs === 'function' &&
+    typeof candidate.getJob === 'function'
+  );
 }
 
 @Injectable()
@@ -34,10 +59,25 @@ export class QueueManagerRegistry implements OnApplicationBootstrap {
     };
   }
 
+  /**
+   * Explicit `queueManagers` plus any `watchers` entry that structurally
+   * implements the `QueueManager` SPI (see {@link isQueueManager}), deduped by
+   * identity — a watcher instance listed in BOTH `watchers` and
+   * `queueManagers` is only inited/registered once.
+   */
+  private candidates(): QueueManager[] {
+    const explicit = this.options.queueManagers ?? [];
+    const seen = new Set<QueueManager>(explicit);
+    const fromWatchers = (this.options.watchers ?? []).filter(
+      (watcher): watcher is Watcher & QueueManager => isQueueManager(watcher) && !seen.has(watcher),
+    );
+    return [...explicit, ...fromWatchers];
+  }
+
   async onApplicationBootstrap(): Promise<void> {
     if (!this.config.enabled) return;
     const ctx = this.context();
-    for (const manager of this.options.queueManagers ?? []) {
+    for (const manager of this.candidates()) {
       try {
         await manager.init(ctx);
         this.managers.set(manager.driver, manager);

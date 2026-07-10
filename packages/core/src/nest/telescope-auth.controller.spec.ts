@@ -101,8 +101,10 @@ describe('TelescopeAuthController', () => {
       app = await makeApp({
         dashboardAuth: {
           secret: SECRET,
+          // `req` is typed `TelescopeHttpRequest` (not `unknown`) — headers are
+          // readable directly, no hand-rolled structural cast needed.
           session: (req) => {
-            const auth = (req as { headers?: Record<string, unknown> }).headers?.authorization;
+            const auth = req.headers?.authorization;
             return auth === 'Bearer good' ? { id: 'host-user', roles: ['admin'] } : null;
           },
         },

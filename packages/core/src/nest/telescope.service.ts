@@ -22,6 +22,7 @@ import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
 import type { DashboardSection, Panel } from '../extension/types.js';
+import { setTelescopeRecordSink } from '../record/telescope-record.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -215,6 +216,11 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     // Wire the global dump sink so `telescopeDump(value, label)` can be called
     // anywhere without injecting this service. Cleared on shutdown.
     setTelescopeDump((value, label) => this.dump(value, label));
+    // Wire the global record sink so `telescopeRecord(input)` can be called
+    // from boot-time integrations (e.g. a MikroORM query logger, constructed
+    // at `MikroORM.init()` before Nest DI has this service) without
+    // injecting it. Cleared on shutdown.
+    setTelescopeRecordSink((input) => this.record(input));
   }
 
   /**
@@ -280,6 +286,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   async onApplicationShutdown(): Promise<void> {
     // Detach the global dump sink so stray post-shutdown calls become no-ops.
     setTelescopeDump(null);
+    // Detach the global record sink so stray post-shutdown calls become no-ops.
+    setTelescopeRecordSink(null);
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;

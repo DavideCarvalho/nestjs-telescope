@@ -1,5 +1,10 @@
 // packages/mikro-orm/src/telescope-mikro-orm.logger.ts
-import { EntryType, type RecordInput, queryFamilyHash } from '@dudousxd/nestjs-telescope';
+import {
+  EntryType,
+  type RecordInput,
+  queryFamilyHash,
+  telescopeRecord,
+} from '@dudousxd/nestjs-telescope';
 import { DefaultLogger, type LogContext, type LoggerOptions } from '@mikro-orm/core';
 
 export interface TelescopeLoggerOptions {
@@ -14,11 +19,13 @@ export interface TelescopeLoggerOptions {
 }
 
 /** A MikroORM DefaultLogger subclass that tees every executed query into
- *  `record`, while preserving MikroORM's own logging behavior via super. */
+ *  `record`, while preserving MikroORM's own logging behavior via super.
+ *  When `record` is omitted, each `logQuery` lazily resolves the boot-time
+ *  `telescopeRecord` global sink instead — see {@link telescopeMikroOrmLogger}. */
 export class TelescopeMikroOrmLogger extends DefaultLogger {
   constructor(
     options: LoggerOptions,
-    private readonly _record: (input: RecordInput) => void,
+    private readonly _record: ((input: RecordInput) => void) | undefined,
     private readonly slowMs: number,
   ) {
     super(options);
@@ -30,7 +37,12 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
     if (sql) {
       const took = typeof context.took === 'number' ? context.took : null;
       const tags: string[] = took !== null && took >= this.slowMs ? ['slow'] : [];
-      this._record({
+      // Resolved AT CALL TIME (not captured at construction) so that when no
+      // explicit `record` was supplied, binding order doesn't matter: MikroORM
+      // can construct this logger (via `MikroORM.init()`) before Nest DI has
+      // wired `TelescopeService`, and `telescopeRecord` is a no-op until then.
+      const record = this._record ?? telescopeRecord;
+      record({
         type: EntryType.Query,
         content: {
           sql,
@@ -56,9 +68,20 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
  *   loggerFactory: telescopeMikroOrmLogger(record, { slowMs: 100, silent: true }),
  * });
  * ```
+ *
+ * Zero-config usage — omit `record` entirely and the logger resolves the
+ * boot-time global sink (`telescopeRecord`) at call time, so it works even
+ * when `MikroORM.init()` runs before `TelescopeModule` has wired anything
+ * (entries are simply dropped until it does):
+ * ```ts
+ * MikroORM.init({
+ *   debug: ['query'],
+ *   loggerFactory: telescopeMikroOrmLogger(),
+ * });
+ * ```
  */
 export function telescopeMikroOrmLogger(
-  record: (input: RecordInput) => void,
+  record?: (input: RecordInput) => void,
   options: TelescopeLoggerOptions = {},
 ): (loggerOptions: LoggerOptions) => TelescopeMikroOrmLogger {
   const slowMs = options.slowMs ?? 100;

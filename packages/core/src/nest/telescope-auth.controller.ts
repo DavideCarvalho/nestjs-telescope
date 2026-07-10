@@ -23,7 +23,11 @@ import {
 } from '../auth/session-cookie-io.js';
 import { type TelescopeSessionUser, verifySessionCookie } from '../auth/session-cookie.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
-import { TELESCOPE_CONFIG, TELESCOPE_DASHBOARD_AUTH } from './telescope.options.js';
+import {
+  TELESCOPE_CONFIG,
+  TELESCOPE_DASHBOARD_AUTH,
+  toTelescopeHttpRequest,
+} from './telescope.options.js';
 
 interface LoginBody {
   username?: unknown;
@@ -64,7 +68,10 @@ export class TelescopeAuthController {
       // Mode A not configured => the endpoint doesn't exist for this host.
       throw new NotFoundException();
     }
-    const user = await this.runHook('session', () => auth.session?.(request) ?? null);
+    const user = await this.runHook(
+      'session',
+      () => auth.session?.(toTelescopeHttpRequest(request)) ?? null,
+    );
     if (!user) throw new UnauthorizedException();
     this.mint(user, request, response);
   }
