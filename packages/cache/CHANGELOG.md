@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-cache
 
+## 1.13.1
+
+### Patch Changes
+
+- [#41](https://github.com/DavideCarvalho/nestjs-telescope/pull/41) [`80b7648`](https://github.com/DavideCarvalho/nestjs-telescope/commit/80b7648610debcf327abaee154b5f48048f16e70) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `BentoCacheEmitterLike` accepts Node's generic `EventEmitter<any>` — the listener signature now mirrors Node's own (`(...args: any[]) => void`); the previous `(payload: never)` shape rejected every real emitter under strict consumers.
+
 ## 1.13.0
 
 ### Minor Changes
