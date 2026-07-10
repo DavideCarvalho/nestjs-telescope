@@ -1,5 +1,56 @@
 # @dudousxd/nestjs-telescope-mikro-orm
 
+## 1.14.0
+
+### Minor Changes
+
+- [#37](https://github.com/DavideCarvalho/nestjs-telescope/pull/37) [`3969c33`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3969c338dd6c360fb08bb68e6b279f06cdf7ab77) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add `telescopeManagedTables()`, returning the three tables
+  (`telescope_entries`, `telescope_rollups`, `telescope_schema_meta`) the
+  `MikroOrmStorageProvider` boot-manages. Consumers running their own MikroORM
+  CLI migrations against a shared database previously had to hand-maintain a
+  `/^telescope_/` regex (or an explicit list) in `skipTables` so a migration
+  diff never tried to drop telescope's tables — including the boot fingerprint
+  marker, which is easy to forget. `telescopeManagedTables()` derives the list
+  straight from the entities' own `tableName` metadata (never a hardcoded
+  parallel literal), so a future rename flows through automatically:
+
+  ```ts
+  import { telescopeManagedTables } from "@dudousxd/nestjs-telescope-mikro-orm";
+
+  await MikroORM.init({
+    // ...your entities/driver config
+    schemaGenerator: { skipTables: telescopeManagedTables() },
+  });
+  ```
+
+- [#37](https://github.com/DavideCarvalho/nestjs-telescope/pull/37) [`3969c33`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3969c338dd6c360fb08bb68e6b279f06cdf7ab77) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add a first-class deferred record sink, `telescopeRecord`/`setTelescopeRecordSink`
+  (exported from core), mirroring `telescopeDump`'s pattern. It exists for
+  boot-time integrations — most notably a MikroORM query logger — that need to
+  emit Telescope entries before Nest DI has constructed `TelescopeService`:
+  MikroORM builds (and can start calling) its logger at `MikroORM.init()`, well
+  before `TelescopeModule` wires anything. `TelescopeService`'s constructor binds
+  the global sink automatically and `onApplicationShutdown` clears it; calls made
+  before binding (or after shutdown) are dropped, not buffered — there is no
+  unbounded queue waiting to replay boot noise.
+
+  This removes the need for host apps to hand-roll their own module-global
+  bridge (`let telescopeRecord; export function setTelescopeRecord()` filled in
+  from `onModuleInit`) just to wire the MikroORM logger before DI is ready.
+
+  `telescopeMikroOrmLogger`'s `record` parameter is now optional. When omitted,
+  the logger lazily resolves `telescopeRecord` from core at each `logQuery` call
+  (not at construction), so binding order no longer matters:
+
+  ```ts
+  MikroORM.init({
+    debug: ["query"],
+    loggerFactory: telescopeMikroOrmLogger(),
+  });
+  ```
+
+  An explicit `record` function, when passed, still takes precedence over the
+  global sink.
+
 ## 1.13.0
 
 ### Minor Changes
