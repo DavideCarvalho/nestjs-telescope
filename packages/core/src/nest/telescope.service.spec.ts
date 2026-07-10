@@ -6,6 +6,7 @@ import { telescopeDump } from '../dump/telescope-dump.js';
 import type { Entry, RecordInput } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext, TelescopeExtension } from '../extension/types.js';
+import { telescopeRecord } from '../record/telescope-record.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
@@ -107,6 +108,26 @@ describe('TelescopeService', () => {
     expect(
       all.some((e) => e.type === 'dump' && JSON.stringify(e.content).includes('after-shutdown')),
     ).toBe(false);
+  });
+
+  it('wires the global telescopeRecord sink (no DI needed at call site)', async () => {
+    const { service, storage } = makeService();
+    active = service;
+    telescopeRecord({ type: 'query', content: { sql: 'select 1' } });
+    await service.flush();
+    const all = (await storage.get({})).data;
+    expect(all).toHaveLength(1);
+    expect(all[0]?.type).toBe('query');
+  });
+
+  it('detaches the global telescopeRecord sink on shutdown', async () => {
+    const { service, storage } = makeService();
+    service.record({ type: 'query', content: { sql: 'pre' } });
+    await service.onApplicationShutdown();
+    // After shutdown the sink is null; this call must be a no-op (not recorded).
+    telescopeRecord({ type: 'query', content: { sql: 'post-shutdown' } });
+    const all = (await storage.get({})).data;
+    expect(all.some((e) => JSON.stringify(e.content).includes('post-shutdown'))).toBe(false);
   });
 
   it('warns at boot when no prune is configured', async () => {

@@ -18,6 +18,54 @@ export interface AuthorizerContext {
 }
 
 /**
+ * The minimal structural request the telescope hooks receive — enough for
+ * header/user checks without coupling to Express/Fastify types. A real Express
+ * `Request` or Fastify `FastifyRequest` satisfies this shape, so a host can
+ * pass its platform request straight through with no hand-rolled guard.
+ */
+export interface TelescopeHttpRequest {
+  method?: string;
+  url?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  /** Whatever upstream auth middleware attached; shape is the host app's. */
+  user?: unknown;
+  [key: string]: unknown;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isStringArray(value: unknown[]): value is string[] {
+  return value.every((item) => typeof item === 'string');
+}
+
+/**
+ * Narrows a raw platform request (typed `unknown` at the framework boundary,
+ * e.g. `@Req() request: unknown`) into a {@link TelescopeHttpRequest} without an
+ * unsafe cast. Every own-enumerable field passes through via the index
+ * signature; `headers` entries that aren't `string | string[] | undefined` are
+ * dropped rather than force-cast. A non-object input yields `{}`.
+ */
+export function toTelescopeHttpRequest(request: unknown): TelescopeHttpRequest {
+  if (!isPlainRecord(request)) return {};
+  const result: TelescopeHttpRequest = { ...request };
+  const headers = request.headers;
+  if (isPlainRecord(headers)) {
+    const normalizedHeaders: Record<string, string | string[] | undefined> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      if (typeof value === 'string' || value === undefined) {
+        normalizedHeaders[key] = value;
+      } else if (Array.isArray(value) && isStringArray(value)) {
+        normalizedHeaders[key] = value;
+      }
+    }
+    result.headers = normalizedHeaders;
+  }
+  return result;
+}
+
+/**
  * Tuning for how thrown server-side exceptions become `exception` entries.
  *
  * WHY this exists: by default Telescope does NOT record a NestJS `HttpException`
@@ -85,7 +133,47 @@ export interface ClientErrorsOptions {
    * header on the public endpoint. A throw is treated as a denial (fail closed)
    * and never crashes the request.
    */
-  authorize?: (request: unknown) => boolean | Promise<boolean>;
+  authorize?: (request: TelescopeHttpRequest) => boolean | Promise<boolean>;
+}
+
+/**
+ * Tuning for the pre-record request-body capture gate (see
+ * {@link TelescopeModuleOptions.requestCapture}).
+ */
+export interface RequestCaptureOptions {
+  /**
+   * Bodies larger than this are not captured — the request entry still records
+   * method/path/status/duration, only `payload` becomes
+   * `'[Skipped: N bytes > maxBodyBytes]'`. Size comes from the `content-length`
+   * header when present; otherwise, for a string/Buffer body, its own length —
+   * NEVER from `JSON.stringify`-ing a parsed body (that IS the synchronous walk
+   * this gate exists to avoid), so a parsed object body without a
+   * `content-length` header passes the size gate untouched. Default `131_072`
+   * (128 KiB). Set `false` to disable the size gate entirely.
+   *
+   * This is the safe-by-default fix for event-loop stalls from giant bodies: the
+   * gate runs in the middleware BEFORE `TelescopeService.record()`, so the
+   * synchronous redaction walk never even sees a skipped body.
+   */
+  maxBodyBytes?: number | false;
+  /**
+   * Content types whose bodies are never captured — matched against the
+   * request's `content-type` header. A `string` pattern matches as a
+   * case-insensitive PREFIX (e.g. `'multipart/form-data'` matches
+   * `'multipart/form-data; boundary=...'`); a `RegExp` is `.test()`-ed against
+   * the raw header value. Payload becomes `'[Skipped: <content-type>]'`.
+   * Default: `['application/offset+octet-stream', 'application/octet-stream',
+   * 'multipart/form-data']` (binary/upload bodies).
+   */
+  skipBodyContentTypes?: (string | RegExp)[];
+  /**
+   * Skip body capture entirely for matching requests (e.g. an upload route) —
+   * checked in addition to (not instead of) the content-type/size gates. The
+   * request entry is still recorded (method/path/status/duration/user/headers);
+   * only `payload` becomes `'[Skipped: skipBody predicate]'`. Runs synchronously
+   * and is never awaited — return a plain `boolean`, not a `Promise`.
+   */
+  skipBody?: (request: TelescopeHttpRequest) => boolean;
 }
 
 export interface TelescopeModuleOptions extends TelescopeCoreOptions {
@@ -95,11 +183,17 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   watchers?: Watcher[];
   /** Extensions contributing watchers, entry types, dashboards, and data providers. */
   extensions?: TelescopeExtension[];
-  /** Live-queue managers (e.g. BullMqQueueManager). Each contributes a driver to /queues/live. */
+  /** Live-queue managers (e.g. BullMqQueueManager). Each contributes a driver to /queues/live.
+   *  Watchers in `watchers` implementing the `QueueManager` SPI are auto-registered — this array is
+   *  only needed for standalone managers (see the SPI doc in `queue/queue-manager.ts`). */
   queueManagers?: QueueManager[];
   /**
    * Schedule managers (e.g. the `@nestjs/schedule` watcher). Each contributes
    * registered cron/interval/timeout tasks to /schedules/live.
+   *
+   * Watchers in `watchers` that implement the `ScheduleManager` SPI are
+   * auto-registered — this array is only needed for standalone managers (see
+   * the SPI doc in `schedule/schedule-manager.ts`).
    */
   scheduleManagers?: ScheduleManager[];
   /**
@@ -125,6 +219,17 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * `app.use(telescopeRequestCapture(app.get(TelescopeService)))`.
    */
   registerRequestMiddleware?: boolean;
+  /**
+   * Pre-record capture gate for request bodies: size cap, content-type skip
+   * list, and a route predicate — all evaluated in the middleware BEFORE
+   * `TelescopeService.record()`, so a giant/binary body never reaches the
+   * synchronous redaction walk. The request entry (method/path/status/duration/
+   * user/headers) is always recorded; only `payload` is replaced by a marker
+   * string when a gate trips. ON by default (128 KiB cap + a binary
+   * content-type list) — this is the safe default, not an opt-in. See
+   * {@link RequestCaptureOptions}.
+   */
+  requestCapture?: RequestCaptureOptions;
   /**
    * Resolves the "authenticated user" recorded on a request entry from the raw
    * platform request. Defaults to reading `request.user` (the common

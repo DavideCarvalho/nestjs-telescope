@@ -48,6 +48,13 @@ export interface ScheduleManagerContext {
  * SPI for a source of scheduled tasks. The `@nestjs/schedule` watcher implements
  * this directly (it already discovers the tasks + records runs), reading
  * `SchedulerRegistry` for schedule + next-run and merging its own last-run map.
+ *
+ * A `watchers` entry that structurally implements this SPI (has a `listTasks`
+ * function) is auto-registered by `ScheduleManagerRegistry` — you do NOT also
+ * need to list it in `TelescopeModuleOptions.scheduleManagers`. That option
+ * remains for a standalone manager that isn't itself a `Watcher`. Listing the
+ * same instance in both `watchers` and `scheduleManagers` is safe (it's inited
+ * exactly once, deduped by identity).
  */
 export interface ScheduleManager {
   init?(ctx: ScheduleManagerContext): void | Promise<void>;

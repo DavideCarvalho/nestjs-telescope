@@ -70,6 +70,16 @@ export interface QueueManagerContext {
   readonly redact: (value: unknown) => unknown;
 }
 
+/**
+ * SPI for a source of queue summaries/jobs (e.g. a BullMQ queue watcher). A
+ * `watchers` entry that structurally implements this SPI (has `driver`,
+ * `init`, `listQueues`, `counts`, `listJobs`, and `getJob`) is auto-registered
+ * by `QueueManagerRegistry` — you do NOT also need to list it in
+ * `TelescopeModuleOptions.queueManagers`. That option remains for a standalone
+ * manager that isn't itself a `Watcher`. Listing the same instance in both
+ * `watchers` and `queueManagers` is safe (it's inited exactly once, deduped by
+ * identity).
+ */
 export interface QueueManager {
   readonly driver: string;
   init(ctx: QueueManagerContext): void | Promise<void>;

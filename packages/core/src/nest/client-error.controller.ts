@@ -17,7 +17,12 @@ import { exceptionFamilyHash } from '../entry/exception-family-hash.js';
 import { userIdentityTag } from '../tagging/tagger.js';
 import { ClientErrorRateLimiter } from './client-error-rate-limiter.js';
 import { validateClientErrorBody } from './client-error-validation.js';
-import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
+import {
+  TELESCOPE_OPTIONS,
+  type TelescopeHttpRequest,
+  type TelescopeModuleOptions,
+  toTelescopeHttpRequest,
+} from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
 /** Default per-IP requests/minute when `rateLimit` is omitted. */
@@ -135,11 +140,11 @@ export class ClientErrorController {
    * floods the logs.
    */
   private async runAuthorize(
-    authorize: (request: unknown) => boolean | Promise<boolean>,
+    authorize: (request: TelescopeHttpRequest) => boolean | Promise<boolean>,
     request: unknown,
   ): Promise<boolean> {
     try {
-      return (await authorize(request)) === true;
+      return (await authorize(toTelescopeHttpRequest(request))) === true;
     } catch (error) {
       if (!this.warnedAuthorize) {
         this.warnedAuthorize = true;

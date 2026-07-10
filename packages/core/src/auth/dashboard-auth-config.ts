@@ -1,10 +1,11 @@
 // packages/core/src/auth/dashboard-auth-config.ts
 import { durationToMs } from '../config/parse-duration.js';
+import type { TelescopeHttpRequest } from '../nest/telescope.options.js';
 import type { TelescopeSessionUser } from './session-cookie.js';
 
 /** Host hook for Mode A — validates the host's own auth on the raw request. */
 export type SessionHook = (
-  request: unknown,
+  request: TelescopeHttpRequest,
 ) => Promise<TelescopeSessionUser | null> | TelescopeSessionUser | null;
 
 /** Host hook for Mode B — validates submitted credentials. */
