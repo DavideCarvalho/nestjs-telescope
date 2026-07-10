@@ -1,5 +1,94 @@
 # @dudousxd/nestjs-telescope
 
+## 1.16.0
+
+### Minor Changes
+
+- [#37](https://github.com/DavideCarvalho/nestjs-telescope/pull/37) [`3969c33`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3969c338dd6c360fb08bb68e6b279f06cdf7ab77) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add a pre-record request-body capture gate, `requestCapture` on
+  `TelescopeModuleOptions`, plus a typed `TelescopeHttpRequest` for hook
+  signatures that previously took `request: unknown`.
+
+  **`requestCapture`**: `TelescopeRequestMiddleware` used to hand the raw,
+  already-decoded request body straight to `TelescopeService.record()`, so a
+  multi-MB JSON/string body always paid for the recorder's synchronous
+  redaction walk before its bounds could kick in. `requestCapture` gates the
+  body BEFORE `record()` ever sees it — the walk never runs over a skipped
+  body:
+
+  - `maxBodyBytes` (default `131_072`, 128 KiB): size from the `content-length`
+    header when present, else a string/Buffer body's own length. A parsed
+    object body without `content-length` is never measured (no
+    `JSON.stringify` — that would be the walk this gate avoids) and passes the
+    size gate untouched. Set `false` to disable.
+  - `skipBodyContentTypes` (default: `application/offset+octet-stream`,
+    `application/octet-stream`, `multipart/form-data`): string-prefix or
+    `RegExp` match against the `content-type` header.
+  - `skipBody(request)`: an escape hatch for route-based skips (e.g. a tus
+    resumable-upload endpoint), checked in addition to the two gates above.
+
+  Every gate is ON by default (the 128 KiB cap + the binary content-type
+  list) — this is a safe-by-default fix, not an opt-in. When a gate trips, the
+  request entry is still recorded in full (method/path/status/duration/user/
+  headers); only `payload` becomes a marker string (`'[Skipped: N bytes >
+maxBodyBytes]'`, `'[Skipped: <content-type>]'`, or `'[Skipped: skipBody
+predicate]'`).
+
+  **Typed hooks**: `clientErrors.authorize` and `dashboardAuth.session` (the
+  `SessionHook` type) now receive a `TelescopeHttpRequest` — a minimal
+  structural type (`method`, `url`, `headers`, `user`, plus an index
+  signature) — instead of `unknown`. Hosts can read `request.headers` /
+  `request.user` directly with no hand-rolled type guard; a real Express or
+  Fastify request satisfies the shape as-is. `toTelescopeHttpRequest()` is
+  exported from core for anyone narrowing a raw platform request themselves.
+
+- [#37](https://github.com/DavideCarvalho/nestjs-telescope/pull/37) [`3969c33`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3969c338dd6c360fb08bb68e6b279f06cdf7ab77) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Auto-collect `ScheduleManager`/`QueueManager` instances from `watchers`, and add
+  `telescopeMountPaths()`.
+
+  A watcher that implements the `ScheduleManager` SPI (e.g. `ScheduleWatcher`,
+  which implements both `Watcher` and `ScheduleManager`) used to also need to be
+  listed explicitly in `scheduleManagers` — forgetting one of the two arrays left
+  `/schedules/live` silently empty even though the watcher itself was registered
+  and working. `ScheduleManagerRegistry` and `QueueManagerRegistry` now also scan
+  `watchers` and auto-register any entry that structurally implements the
+  respective SPI (`ScheduleManager`: `listTasks`; `QueueManager`: `driver`,
+  `init`, `listQueues`, `counts`, `listJobs`, `getJob`). A watcher instance listed
+  in both arrays is inited exactly once (deduped by identity); the explicit
+  `scheduleManagers`/`queueManagers` arrays keep working unchanged for standalone
+  managers that aren't watchers.
+
+  Also adds `telescopeMountPaths(path = 'telescope')`, a small helper for hosts
+  using `setGlobalPrefix` — returns the route roots to exclude
+  (`app.setGlobalPrefix('api', { exclude: telescopeMountPaths() })`), normalized
+  the same way the module normalizes its own mount `path`.
+
+- [#37](https://github.com/DavideCarvalho/nestjs-telescope/pull/37) [`3969c33`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3969c338dd6c360fb08bb68e6b279f06cdf7ab77) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add a first-class deferred record sink, `telescopeRecord`/`setTelescopeRecordSink`
+  (exported from core), mirroring `telescopeDump`'s pattern. It exists for
+  boot-time integrations — most notably a MikroORM query logger — that need to
+  emit Telescope entries before Nest DI has constructed `TelescopeService`:
+  MikroORM builds (and can start calling) its logger at `MikroORM.init()`, well
+  before `TelescopeModule` wires anything. `TelescopeService`'s constructor binds
+  the global sink automatically and `onApplicationShutdown` clears it; calls made
+  before binding (or after shutdown) are dropped, not buffered — there is no
+  unbounded queue waiting to replay boot noise.
+
+  This removes the need for host apps to hand-roll their own module-global
+  bridge (`let telescopeRecord; export function setTelescopeRecord()` filled in
+  from `onModuleInit`) just to wire the MikroORM logger before DI is ready.
+
+  `telescopeMikroOrmLogger`'s `record` parameter is now optional. When omitted,
+  the logger lazily resolves `telescopeRecord` from core at each `logQuery` call
+  (not at construction), so binding order no longer matters:
+
+  ```ts
+  MikroORM.init({
+    debug: ["query"],
+    loggerFactory: telescopeMikroOrmLogger(),
+  });
+  ```
+
+  An explicit `record` function, when passed, still takes precedence over the
+  global sink.
+
 ## 1.15.1
 
 ### Patch Changes
