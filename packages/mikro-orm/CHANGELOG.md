@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-mikro-orm
 
+## 1.14.1
+
+### Patch Changes
+
+- [#39](https://github.com/DavideCarvalho/nestjs-telescope/pull/39) [`58f5d72`](https://github.com/DavideCarvalho/nestjs-telescope/commit/58f5d727244441c21f4db4ce2cc55609ac6dd11c) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `telescopeMikroOrmLogger` accepts options as the first argument for the zero-config case — `telescopeMikroOrmLogger({ slowMs: 100 })` instead of `telescopeMikroOrmLogger(undefined, { slowMs: 100 })`.
+
 ## 1.14.0
 
 ### Minor Changes
