@@ -96,3 +96,19 @@ describe('telescopeMikroOrmLogger', () => {
     expect(globalRecords).toHaveLength(0);
   });
 });
+
+describe('telescopeMikroOrmLogger options-first overload', () => {
+  it('treats a non-function first argument as the options bag', () => {
+    const captured: RecordInput[] = [];
+    setTelescopeRecordSink((input) => captured.push(input));
+    try {
+      const factory = telescopeMikroOrmLogger({ slowMs: 0, silent: true });
+      const logger = factory({ writer: () => {} } as unknown as LoggerOptions);
+      logger.logQuery({ query: 'select 1', took: 5 } as never);
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.type).toBe('query');
+    } finally {
+      setTelescopeRecordSink(null);
+    }
+  });
+});
