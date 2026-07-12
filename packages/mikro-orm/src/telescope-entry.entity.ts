@@ -47,7 +47,10 @@ export const TelescopeEntry = new EntitySchema<TelescopeEntryRow>({
     // that lookup is a full table scan (every other filterable column — type,
     // batchId, familyHash, createdAt — is already indexed). `schema.update`
     // adds the index additively on the next boot (no migration).
-    traceId: { type: 'string', nullable: true, length: 32, index: true },
+    // 64, not 32: a traceId is caller-supplied (RecordInput.traceId), so it can
+    // be a 36-char UUID (e.g. a durable runId) — 32 silently truncated those on
+    // MySQL and the #/traces/:id lookup then matched nothing.
+    traceId: { type: 'string', nullable: true, length: 64, index: true },
     spanId: { type: 'string', nullable: true, length: 16 },
     createdAt: { type: 'datetime', index: true },
   },
