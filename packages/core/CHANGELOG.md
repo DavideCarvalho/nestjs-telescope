@@ -1,5 +1,15 @@
 # @dudousxd/nestjs-telescope
 
+## 1.18.0
+
+### Minor Changes
+
+- [`dbaf8d2`](https://github.com/DavideCarvalho/nestjs-telescope/commit/dbaf8d2c00c08bc03c8df874cabc0c48741d712f) - Ext-dashboard tables paginate: a table panel may declare `paged: true` — the renderer adds
+  prev/next + "Page X of Y" and re-resolves the provider with `query.page`/`query.limit`, expecting
+  `{ rows, total, page, limit }`. Non-paged tables are byte-identical. `LinkSpec` documents the two
+  href conventions (in-app hash routes — including the trace view at `#/traces/{traceId}` — vs host
+  console paths); hash hrefs already navigate in-app.
+
 ## 1.17.0
 
 ### Minor Changes
