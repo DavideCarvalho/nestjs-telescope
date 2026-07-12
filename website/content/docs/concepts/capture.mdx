@@ -44,6 +44,16 @@ Entries recorded outside any batch get a synthetic per-entry batch, so nothing i
   `traceId` / `spanId` from an active OpenTelemetry span are stamped onto entries (via the [`-otel`](/docs/packages/watchers) provider), so a Telescope batch maps 1:1 to a trace and the correlation survives across the OTel bridge.
 </Callout>
 
+### `traceId` precedence — explicit wins
+
+Stamping isn't only ambient. `RecordInput.traceId` lets whatever calls `record()` **state its own trace id explicitly**, and precedence is: **explicit `input.traceId`** wins over everything, else the active OTel span's `traceId`, else (when `@dudousxd/nestjs-context` is present) the context accessor's `traceId()` as a last-resort fallback. An existing OTel trace id is never clobbered by the fallback — the fallback only fires when OTel yielded nothing for that entry.
+
+This is the hook a library integration reaches for when it already knows its own correlation id but has no active OTel span to inherit one from — e.g. a diagnostics package that emits its own span envelope for a background run and wants those spans to land in the **same** trace as the request that kicked the run off. It states `traceId` on the `RecordInput` it hands to `record()`, and that entry joins the trace exactly as if an OTel span had stamped it — including showing up in `TracesService.getWaterfall(traceId)` and the dashboard's `#/traces/:traceId` waterfall view, alongside the request/query/job entries that share the same id.
+
+<Callout type="warn" title="The Traces nav item still needs traceContext">
+  Explicit `traceId` gets an entry *onto* the right trace, but it doesn't turn the top-level **Traces** nav link on by itself — that's gated on `meta.tracesEnabled`, which is `true` only when a `traceContext` provider (e.g. `-otel`'s) is configured. In practice this is rarely a real constraint: a host running a trace-aware integration has almost always already wired `traceContext` for its own HTTP requests, so the lib-emitted spans just need to reuse the same `traceId` those requests are already stamped with.
+</Callout>
+
 ## The Entry
 
 Every watcher produces the same universal record. Type-specific data lives in `content`; everything else is uniform, so the API, dashboard, pruner, and OTel bridge treat all entry types identically:
@@ -83,6 +93,30 @@ TelescopeModule.forRoot({
   exceptions: { captureHttp4xx: true }, // default false — 4xx is control flow, not an incident
 });
 ```
+
+## Request body capture gate — `requestCapture`
+
+The request-capture middleware used to hand the raw, already-decoded body straight to `record()`, so a multi-MB JSON/string body always paid for the Recorder's synchronous redaction walk before its size bounds could kick in. `requestCapture` gates the body **before** `record()` ever sees it — the walk never runs over a skipped body:
+
+```ts
+TelescopeModule.forRoot({
+  requestCapture: {
+    maxBodyBytes: 131_072, // default: 128 KiB. `false` disables the size gate.
+    skipBodyContentTypes: [
+      'application/offset+octet-stream', // tus resumable uploads
+      'application/octet-stream',
+      'multipart/form-data',
+    ], // defaults shown — string-prefix or RegExp match against content-type
+    skipBody: (request) => request.url.startsWith('/uploads'), // escape hatch for route-based skips
+  },
+});
+```
+
+- **`maxBodyBytes`** (default `131_072`, 128 KiB) — measured from the `content-length` header when present, else a string/Buffer body's own length. A parsed object body with no `content-length` is never measured (no `JSON.stringify` — that would be the exact walk this gate exists to avoid) and passes the size gate untouched. Set `false` to disable.
+- **`skipBodyContentTypes`** — string-prefix or `RegExp` match against `content-type`. Defaults to the three binary/streamed types above.
+- **`skipBody(request)`** — a predicate escape hatch for route-based skips (e.g. a tus resumable-upload endpoint whose content-type doesn't tell the whole story), checked in addition to the two gates above. `request` is a typed `TelescopeHttpRequest` (`method`, `url`, `headers`, `user`, plus an index signature) — the same minimal shape `clientErrors.authorize` and `dashboardAuth.session` hooks receive, exported as `toTelescopeHttpRequest()` for narrowing a raw platform request yourself.
+
+Every gate is **on by default** (the 128 KiB cap + the binary content-type list) — this is a safe-by-default fix, not opt-in. When a gate trips, the request entry is still recorded in full — method/path/status/duration/user/headers are untouched; only `payload` becomes a marker string: `'[Skipped: N bytes > maxBodyBytes]'`, `'[Skipped: <content-type>]'`, or `'[Skipped: skipBody predicate]'`.
 
 ## The Recorder pipeline
 

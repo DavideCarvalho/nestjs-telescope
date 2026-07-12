@@ -68,13 +68,16 @@ import { NestFactory } from '@nestjs/core';
 import {
   TelescopeService,
   telescopeRequestCapture,
+  telescopeMountPaths,
 } from '@dudousxd/nestjs-telescope';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.setGlobalPrefix('api');
+  // Exclude Telescope's own routes from the prefix — otherwise the dashboard,
+  // its API, and its assets get shifted under /api/telescope/... too.
+  app.setGlobalPrefix('api', { exclude: telescopeMountPaths() });
 
   // Global capture sees EVERY route, prefix or not.
   app.use(telescopeRequestCapture(app.get(TelescopeService)));
@@ -89,6 +92,7 @@ bootstrap();
 - **`telescopeRequestCapture(service)`** returns a framework-agnostic `(req, res, next)` handler — the same capture logic the module would have registered, but mounted globally via `app.use(...)` so the global prefix can't scope it away.
 - **It still skips Telescope's own routes** (the dashboard, its API, its assets) to avoid self-capturing the dashboard's polling — so you can mount it unconditionally.
 - **Order doesn't matter much**, but registering it before other global middleware means the request batch is open for the whole downstream execution, so everything a request causes correlates to it.
+- **`telescopeMountPaths(path = 'telescope')`** solves the *other* half of the same prefix problem — not capture, but the dashboard's own routes. `setGlobalPrefix` rewrites every controller route, including Telescope's own (dashboard, API, assets) unless you exclude them; this helper returns the route roots to exclude, normalized the same way `TelescopeModule.forRoot({ path })` normalizes its mount path — so passing a custom `path` here matches a custom `path` there. Needed only when you call `setGlobalPrefix` at all; skip it if your app doesn't.
 
 <Callout type="warn" title="Only one capture path">
   Set `registerRequestMiddleware: false` whenever you call `telescopeRequestCapture` yourself — leaving the default `true` would register capture twice and open two batches per request. It's one or the other.

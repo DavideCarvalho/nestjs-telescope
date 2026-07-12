@@ -18,7 +18,8 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 | `redact` | sensible defaults | Deep-redaction of `headers` / `query` / `body` paths plus content bounds (`maxDepth`, `maxStringLength`, …). See [Performance](/docs/concepts/performance#memory-bounds). |
 | `resolveUser` | reads `request.user` | Resolves the authenticated user recorded on a request entry. |
 | `exceptions` | `{ captureHttp4xx: false }` | How thrown exceptions become entries. By default 4xx control flow is **not** recorded as an exception. See [Exception capture](/docs/concepts/capture#exception-capture). |
-| `registerRequestMiddleware` | `true` | Auto-register request-capture middleware. Set `false` when using `setGlobalPrefix(...)` and register capture in bootstrap instead. |
+| `requestCapture` | 128 KiB cap + binary content-types skipped | Gates a request body **before** `record()` sees it — `maxBodyBytes`, `skipBodyContentTypes`, `skipBody(request)`. See [Request body capture gate](/docs/concepts/capture#request-body-capture-gate-requestcapture). |
+| `registerRequestMiddleware` | `true` | Auto-register request-capture middleware. Set `false` when using `setGlobalPrefix(...)` and register capture in bootstrap instead — also exclude Telescope's own routes with `telescopeMountPaths()` (`app.setGlobalPrefix('api', { exclude: telescopeMountPaths() })`), or the dashboard/API/assets get shifted under the prefix too. See [Request context for your routes](/docs/recipes/request-context#capture-under-a-global-prefix-telescoperequestcapture). |
 
 ## Storage & retention
 
@@ -51,8 +52,8 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 
 | Option | Default | Description |
 |---|---|---|
-| `queueManagers` | `[]` | Live queue managers (BullMQ / SQS). See [queue managers](/docs/packages/queue-managers). |
-| `scheduleManagers` | `[]` | Schedule managers (`@nestjs/schedule`). See [the schedule watcher](/docs/packages/watchers). |
+| `queueManagers` | `[]` | Live queue managers (BullMQ / SQS). A `watchers` entry that structurally implements the `QueueManager` SPI (`driver`, `init`, `listQueues`, `counts`, `listJobs`, `getJob`) is **auto-registered** — this array is only needed for standalone managers that aren't also watchers. See [queue managers](/docs/packages/queue-managers). |
+| `scheduleManagers` | `[]` | Schedule managers (`@nestjs/schedule`). Same auto-registration: a `watchers` entry implementing the `ScheduleManager` SPI (`listTasks`) — e.g. `ScheduleWatcher` — is picked up automatically; listing it in both arrays is safe (deduped by identity, inited once). See [the schedule watcher](/docs/packages/watchers). |
 
 ## Agents & resilience
 

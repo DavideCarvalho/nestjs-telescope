@@ -68,13 +68,52 @@ A `Panel` is one of four kinds. Each binds its `data` to a provider via a `DataB
 | `stat` | `{ kind:'stat', title, data, format?: 'number'\|'percent'\|'duration', accent? }` | `{ value: number }` |
 | `timeseries` | `{ kind:'timeseries', title, data, series: string[], style?: 'area'\|'stacked' }` | `{ rows: ({ label } & Record<string, number>)[] }` |
 | `topN` | `{ kind:'topN', title, data, limit? }` | `{ items: { label, value, id? }[] }` |
-| `table` | `{ kind:'table', title, data, columns: { key, label, link? }[] }` | `{ rows: Record<string, unknown>[] }` |
+| `table` | `{ kind:'table', title, data, columns: { key, label, link? }[], paged? }` | `{ rows: Record<string, unknown>[] }` — or paged shape below |
 
-A `table` column can **deep-link out** with `link.href` — a URL template with `{key}` placeholders filled from the row (set `external: true` to open in a new tab):
+A `table` column can **deep-link out** with `link.href` — a URL template with `{key}` placeholders filled from the row:
 
 ```ts
 { key: 'runId', label: 'Run', link: { href: '/durable/runs/{runId}' } }
 ```
+
+### `LinkSpec` — two href conventions
+
+`link.href` is one of two shapes, and the UI tells them apart by whether the template starts with `#/`:
+
+- **In-app hash route** — `href` starting with `#/` (e.g. `'#/traces/{traceId}'`) is a route inside the **Telescope SPA itself**. It renders as a plain anchor; a same-document `#`-only href is a same-document navigation (URL hash update, no page reload), which the dashboard's `HashRouter` picks up — the same mechanism the built-in Entries table and Entry detail page already use for their own trace links. Leave `external` unset for these; it already navigates in-app.
+- **Host-console link** — an absolute path with no `#` (e.g. `'/durable/runs/{runId}'`) targets a page in the **host application** (the app embedding/linking to Telescope), not a Telescope route. This is a real top-level navigation — set `external: true` to open it in a new tab.
+
+The one confirmed in-app hash route today is the trace waterfall: `#/traces/{traceId}` (`traceId` is the row key substituted in), which renders the single-trace waterfall page. Point a table column there to deep-link "show me this trace" straight out of an extension's own dashboard:
+
+```ts
+{ key: 'traceId', label: 'Trace', link: { href: '#/traces/{traceId}' } } // in-app, no `external`
+{ key: 'runId', label: 'Run', link: { href: '/durable/runs/{runId}' }, external: true } // host console, new tab
+```
+
+### Paged tables
+
+A `table` panel can opt into pagination with `paged: true`:
+
+```ts
+{
+  kind: 'table',
+  title: 'Recent failures',
+  data: { provider: 'durable.recentFailures' },
+  columns: [/* ... */],
+  paged: true,
+}
+```
+
+This changes both sides of the contract:
+
+- **The UI** renders prev/next controls plus a "Page X of Y" indicator, and re-resolves the panel's provider on every page change with `query.page` (1-based) and `query.limit` merged in on top of the panel's own static `data.query`. The first request (before the user has paged) asks for page `1` at the UI's default page size.
+- **The provider** must then return `{ rows, total, page, limit }` instead of the bare `{ rows }` a non-paged table returns — `total` is the **full, unpaginated** row count so the UI can compute how many pages exist; `page`/`limit` normally just echo back what was requested.
+
+Omit `paged` (or set it `false`) for the original bare-`{ rows }` table — that variant is byte-identical to before pagination existed, so existing extensions don't need to change anything.
+
+<Callout type="warn" title="DataProvider output bypasses entry-level redact">
+  A `DataProvider`'s return value is sent to the browser **as-is** — `GET .../api/ext/:ext/data/:provider` returns whatever `resolve()` returns with no redaction pass in between (unlike `Entry.content`, which always goes through the Recorder's `redact()` step before it's ever stored). If a provider reads live data from a host service — a durable run's payload, a job's arguments, anything that might carry a secret — **the provider itself is responsible for masking it** before returning. Don't assume "it's rendered through Telescope's dashboard" implies "it's redacted"; that guarantee only applies to captured `Entry` content, not to extension-provider responses.
+</Callout>
 
 ### The dashboard-id convention
 

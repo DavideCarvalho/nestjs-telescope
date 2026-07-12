@@ -71,10 +71,14 @@ The return shape depends on the panel kind that binds to it:
 | `stat` | `{ value: number }` |
 | `timeseries` | `{ rows: ({ label } & Record<string, number>)[] }` |
 | `topN` | `{ items: { label, value, id? }[] }` |
-| `table` | `{ rows: Record<string, unknown>[] }` |
+| `table` | `{ rows: Record<string, unknown>[] }` — or, for a `paged: true` table, `{ rows, total, page, limit }` (see step 4) |
 
 <Callout type="info">
   The provider runs behind the dashboard's read `authorizer`, fetched at <code>GET &lt;path&gt;/api/ext/:ext/data/:provider</code>. Query params arrive as strings — coerce them inside `resolve` if you need numbers or dates.
+</Callout>
+
+<Callout type="warn" title="Redact before you return">
+  The response goes to the browser exactly as `resolve()` returns it — **there is no entry-level redaction pass on provider output** the way there is for captured `Entry.content`. If your provider surfaces anything that could carry a secret (a run's stored payload, a job's raw args), mask it inside `resolve` yourself before returning.
 </Callout>
 
 ---
@@ -108,12 +112,18 @@ dashboards: () => [
         kind: 'table',
         title: 'Recent failures',
         data: { provider: 'durable.recentFailures' },
+        paged: true, // adds prev/next + "Page X of Y"; see below
         columns: [
           { key: 'workflow', label: 'Workflow' },
           {
+            key: 'traceId',
+            label: 'Trace',
+            link: { href: '#/traces/{traceId}' }, // in-app hash route — the trace waterfall
+          },
+          {
             key: 'runId',
             label: 'Run',
-            link: { href: '/durable/runs/{runId}' }, // {key} filled from the row
+            link: { href: '/durable/runs/{runId}', external: true }, // host-console page, new tab
           },
         ],
       },
@@ -122,7 +132,12 @@ dashboards: () => [
 ],
 ```
 
-A `table` column's `link.href` is a URL template — `{runId}` is replaced with that row's `runId`. Set `external: true` to open it in a new tab.
+A `table` column's `link.href` is a URL template — `{runId}` / `{traceId}` are replaced with that row's value. Two conventions, told apart by a leading `#/`:
+
+- `'#/traces/{traceId}'` — an **in-app hash route** inside the Telescope SPA (today, only the trace waterfall). It already navigates in-app; don't set `external`.
+- `'/durable/runs/{runId}'` — a **host-console page** (your app, not Telescope). Set `external: true` to open it in a new tab.
+
+Because this table declares `paged: true`, `durable.recentFailures`'s `resolve()` must return `{ rows, total, page, limit }` (not a bare `{ rows }`) — `total` is the full, unpaginated count so the UI can render "Page X of Y". A non-paged table is unaffected; add `paged: true` only when a table's row count can outgrow one screen. See [Extensions → Paged tables](/docs/concepts/extensions#paged-tables) for the full contract.
 
 ---
 

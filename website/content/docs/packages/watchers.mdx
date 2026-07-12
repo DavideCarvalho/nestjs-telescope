@@ -15,7 +15,23 @@ Core captures requests and exceptions on its own. Everything else is a watcher y
 
 Captures every executed SQL query, correlates it to the request that triggered it, tags slow queries, and ships a pure N+1 detector. (The same package ships a [storage adapter](/docs/packages/storages).) Requires MikroORM v7+.
 
-MikroORM v7 stores its logger in a private field set once at `Configuration` construction time — runtime replacement isn't possible. So **the host must wire `loggerFactory` before constructing the ORM**; that factory *is* the capture mechanism. Use `forRootAsync` so `TelescopeService` can be injected first:
+MikroORM v7 stores its logger in a private field set once at `Configuration` construction time — runtime replacement isn't possible. So **the host must wire `loggerFactory` before constructing the ORM**; that factory *is* the capture mechanism.
+
+That timing is also the wrinkle: `MikroORM.init()` — and the logger it constructs — can run **before Nest DI has built `TelescopeService`**, so a `record` callback closing over an injected service isn't always available yet. `telescopeMikroOrmLogger`'s `record` parameter is now **optional**: omit it and the logger lazily resolves `telescopeRecord` from core at each `logQuery` call instead of at construction, so binding order stops mattering —
+
+```ts
+import { MikroORM } from '@mikro-orm/core';
+import { telescopeMikroOrmLogger } from '@dudousxd/nestjs-telescope-mikro-orm';
+
+MikroORM.init({
+  debug: ['query'],
+  loggerFactory: telescopeMikroOrmLogger(), // no `record` — resolves the global sink lazily
+});
+```
+
+`telescopeRecord` (exported from core, alongside `setTelescopeRecordSink`) is a free-function record sink for exactly this kind of boot-time integration — it mirrors `telescopeDump`'s pattern (see [Request context](/docs/recipes/request-context#ad-hoc-debugging-telescopedump)). `TelescopeService`'s constructor binds the sink automatically and `onApplicationShutdown` clears it; a call made before binding (or after shutdown) is **dropped, not buffered** — there's no unbounded queue replaying boot noise once the module comes up. An explicit `record` function, when passed, still takes precedence over the global sink.
+
+If you'd rather wire the callback explicitly (or need `TelescopeService` for other reasons at that point), use `forRootAsync` so it can be injected first:
 
 ```ts
 import { TelescopeModule, TelescopeService } from '@dudousxd/nestjs-telescope';
