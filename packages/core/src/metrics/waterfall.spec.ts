@@ -147,4 +147,19 @@ describe('buildWaterfall', () => {
     expect(wf.spans[0]?.label).toBe('POST /orders');
     expect(wf.spans[0]?.children[0]?.label).toBe('select * from orders');
   });
+
+  it('labels diagnostics span entries as lib:event', () => {
+    const wf = buildWaterfall([
+      entry({
+        id: 'd1',
+        type: 'diagnostic',
+        createdAt: new Date(0),
+        durationMs: 100,
+        sequence: 0,
+        content: { lib: 'agent', event: 'llm.turn', spanId: 'x-1', phase: 'asyncEnd' },
+      }),
+    ]);
+    if (wf === null) throw new Error('expected waterfall');
+    expect(wf.spans[0]?.label).toBe('agent:llm.turn');
+  });
 });

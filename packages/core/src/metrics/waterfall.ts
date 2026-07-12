@@ -60,6 +60,11 @@ function labelFor(entry: Entry): string {
   if (entry.type === EntryType.HttpClient && typeof record.url === 'string') {
     return typeof record.method === 'string' ? `${record.method} ${record.url}` : record.url;
   }
+  // Diagnostics span entries (`@dudousxd/nestjs-diagnostics-telescope`) carry the
+  // emitting lib + event name, e.g. `agent` + `llm.turn` → "agent:llm.turn".
+  if (typeof record.lib === 'string' && typeof record.event === 'string') {
+    return `${record.lib}:${record.event}`;
+  }
   if (typeof record.name === 'string') return record.name;
   return entry.type;
 }
