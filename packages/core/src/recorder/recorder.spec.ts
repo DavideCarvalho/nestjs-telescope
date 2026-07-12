@@ -777,6 +777,55 @@ describe('Recorder', () => {
     });
   });
 
+  // ── Explicit RecordInput.traceId (span integrations) ──────────────────────
+
+  describe('explicit RecordInput.traceId', () => {
+    it('lands on the entry when no ambient trace context is configured', async () => {
+      const { recorder, storage } = makeRecorder();
+      recorder.record({ type: 'diagnostic', content: {}, traceId: 'explicit-trace-1' });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBe('explicit-trace-1');
+    });
+
+    it('wins over the ambient OTel traceContext (explicit beats OTel)', async () => {
+      const otelTraceId = 'a'.repeat(32);
+      const { recorder, storage } = makeRecorder({
+        traceContext: { current: () => ({ traceId: otelTraceId, spanId: 'b'.repeat(16) }) },
+      });
+      recorder.record({ type: 'diagnostic', content: {}, traceId: 'explicit-trace-2' });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBe('explicit-trace-2');
+    });
+
+    it('wins over the contextAccessor fallback traceId', async () => {
+      const { recorder, storage } = makeRecorder({
+        contextAccessor: {
+          traceId: () => 'ctx-trace-should-be-ignored',
+          tenantId: () => undefined,
+          userRef: () => undefined,
+          get: () => undefined,
+        },
+      });
+      recorder.record({ type: 'diagnostic', content: {}, traceId: 'explicit-trace-3' });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBe('explicit-trace-3');
+    });
+
+    it('leaves ambient behaviour unchanged when traceId is absent from the input', async () => {
+      const otelTraceId = 'c'.repeat(32);
+      const { recorder, storage } = makeRecorder({
+        traceContext: { current: () => ({ traceId: otelTraceId, spanId: 'd'.repeat(16) }) },
+      });
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      const entry = (await storage.get({})).data[0]!;
+      expect(entry.traceId).toBe(otelTraceId);
+    });
+  });
+
   // ── nestjs-context enrichment (soft-detected, secondary to OTel) ───────────
 
   describe('nestjs-context enrichment', () => {

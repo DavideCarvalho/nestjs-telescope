@@ -132,9 +132,11 @@ export interface RecorderOptions {
    * entry as a SECONDARY correlation source, additive to the OTel
    * {@link traceContext}:
    *
-   * - **traceId precedence**: OTel wins. The context `traceId()` is used ONLY as
-   *   a FALLBACK when {@link traceContext} did not yield one for this entry. An
-   *   existing OTel trace id is never clobbered, so cross-lib correlation with
+   * - **traceId precedence**: an explicit {@link RecordInput.traceId} (when the
+   *   watcher already knows its own correlation id) wins over everything. Else
+   *   OTel wins, and the context `traceId()` is used ONLY as a FALLBACK when
+   *   {@link traceContext} did not yield one for this entry. An existing OTel
+   *   trace id is never clobbered, so cross-lib correlation with
    *   durable/notifications (which share nestjs-context) kicks in only when OTel
    *   is absent.
    * - **user/tenant tags**: when available, `user:<Type>#<id>` and
@@ -564,9 +566,12 @@ export class Recorder {
     // Soft-detected nestjs-context enrichment (SECONDARY to OTel). Read once,
     // defensively: a misbehaving accessor degrades to no enrichment, never throws.
     const ctx = this.readContextEnrichment();
-    // traceId precedence: OTel wins. The context traceId is only a FALLBACK when
-    // the OTel provider did not yield one — never clobber an OTel trace id.
-    const traceId = trace?.traceId ?? ctx.traceId;
+    // traceId precedence: an EXPLICIT `input.traceId` wins over everything — a
+    // watcher that already knows its own trace correlation (e.g. a span
+    // envelope) states it and is never second-guessed. Absent that, OTel wins;
+    // the context traceId is only a FALLBACK when neither yielded one — never
+    // clobber an OTel trace id.
+    const traceId = input.traceId ?? trace?.traceId ?? ctx.traceId;
     const base: Entry = {
       id: this.options.idFactory(),
       batchId,

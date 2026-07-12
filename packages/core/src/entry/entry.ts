@@ -68,4 +68,12 @@ export interface RecordInput<TContent = unknown> {
   tags?: string[];
   durationMs?: number | null;
   startedAt?: Date;
+  /**
+   * Explicit trace correlation id, for a watcher that already knows it (e.g. a
+   * span envelope carrying its own `traceId`). When present it takes
+   * precedence over BOTH the ambient OTel {@link TraceContextProvider} and the
+   * `contextAccessor` fallback — see `Recorder.enrich`'s stamping order. When
+   * absent, ambient enrichment behaves exactly as before this field existed.
+   */
+  traceId?: string;
 }
