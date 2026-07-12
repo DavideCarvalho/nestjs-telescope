@@ -1,5 +1,15 @@
 # @dudousxd/nestjs-telescope
 
+## 1.17.0
+
+### Minor Changes
+
+- [`dd60ad9`](https://github.com/DavideCarvalho/nestjs-telescope/commit/dd60ad9073f02b0a9cc13fa3a396f1dfb7769772) - `RecordInput.traceId` — integrations that already know their trace correlation (e.g. a diagnostics
+  span envelope whose traceId is the originating run's id) can state it explicitly; it wins over the
+  ambient OTel/context-accessor stamping, which remains the default when absent. This is what lets
+  lib-emitted spans land on the Entry column `TracesService.getWaterfall(traceId)` queries — the
+  missing half of rendering non-OTel span pipelines in the TRACES tab.
+
 ## 1.16.1
 
 ### Patch Changes
