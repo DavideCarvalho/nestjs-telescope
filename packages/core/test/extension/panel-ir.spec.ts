@@ -53,4 +53,37 @@ describe('panel IR additions', () => {
     expect(dash?.sections?.[0].panels[0].kind).toBe('stat');
     expect(dash?.sections?.[1].panels[0].kind).toBe('distribution');
   });
+
+  it('accepts a table panel opting into the paged convention', () => {
+    const ext = defineTelescopeExtension({
+      name: 'demo',
+      dashboards: () => [
+        {
+          id: 'demo.paged',
+          label: 'Demo',
+          panels: [
+            {
+              kind: 'table',
+              title: 'Runs',
+              data: { provider: 'demo.runs' },
+              columns: [{ key: 'runId', label: 'Run' }],
+              paged: true,
+            },
+            {
+              kind: 'table',
+              title: 'Recent',
+              data: { provider: 'demo.recent' },
+              columns: [{ key: 'runId', label: 'Run' }],
+            },
+          ],
+        },
+      ],
+    });
+    const dash = ext.dashboards?.({} as never)[0];
+    const [pagedPanel, unpagedPanel] = dash?.panels ?? [];
+    expect(pagedPanel?.kind).toBe('table');
+    expect(pagedPanel?.kind === 'table' && pagedPanel.paged).toBe(true);
+    // Non-paged tables don't declare the field at all — convention default is "off".
+    expect(unpagedPanel?.kind === 'table' && unpagedPanel.paged).toBeUndefined();
+  });
 });

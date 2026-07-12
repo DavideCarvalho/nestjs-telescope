@@ -56,6 +56,26 @@ describe('ui Panel mirror', () => {
     expect(p.kind).toBe('breakdown');
   });
 
+  it('supports table panels opting into the paged convention', () => {
+    const paged: Panel = {
+      kind: 'table',
+      title: 'Runs',
+      data: { provider: 'runs.list' },
+      columns: [{ key: 'runId', label: 'Run', link: { href: '#/traces/{runId}' } }],
+      paged: true,
+    };
+    expect(paged.kind === 'table' && paged.paged).toBe(true);
+
+    // Non-paged tables don't need the field at all — convention default is "off".
+    const unpaged: Panel = {
+      kind: 'table',
+      title: 'Recent',
+      data: { provider: 'runs.recent' },
+      columns: [{ key: 'runId', label: 'Run' }],
+    };
+    expect(unpaged.kind === 'table' && unpaged.paged).toBeUndefined();
+  });
+
   it('DashboardSection has correct structure', () => {
     const section: DashboardSection = {
       title: 'Performance',

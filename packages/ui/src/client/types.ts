@@ -133,7 +133,21 @@ export type Panel =
       kind: 'table';
       title: string;
       data: { provider: string; query?: Record<string, unknown> };
+      /**
+       * `link.href` starting with `#/` is an in-app hash route rendered as a plain
+       * anchor (e.g. the trace waterfall's `'#/traces/{traceId}'`); an absolute
+       * path with no `#` targets a page in the host application instead. See the
+       * core `LinkSpec` doc for the full convention.
+       */
       columns: { key: string; label: string; link?: { href: string; external?: boolean } }[];
+      /**
+       * Paged-table opt-in (mirrors core's `Panel` table variant): when true, the
+       * dashboard renders prev/next + "page X of Y" controls and re-resolves this
+       * panel's provider with `query.page` (1-based) / `query.limit` merged onto
+       * `data.query`. The resolved data is then `{ rows, total, page, limit }`
+       * instead of a bare `{ rows }`. Omit for the existing bare-rows table.
+       */
+      paged?: boolean;
     }
   | {
       kind: 'distribution';

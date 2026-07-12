@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Panel } from '../../client/types.js';
 import { PanelView } from '../../react/components/extensions/panel-renderer.js';
@@ -11,6 +12,11 @@ const colClass: Record<2 | 3 | 4, string> = {
   3: 'md:grid-cols-3',
   4: 'md:grid-cols-2 lg:grid-cols-4',
 };
+
+/** Default page size a paged table panel requests when it hasn't fetched yet —
+ *  matches the `DEFAULT_LIMIT` convention used by the core's own paged reads
+ *  (traces, storage providers). */
+const DEFAULT_PAGE_LIMIT = 50;
 
 /**
  * Small status badge driven by the SSE stream status. Green pulsing dot + "LIVE"
@@ -41,9 +47,20 @@ function LiveBadge({ status }: { status: StreamStatus }): JSX.Element {
  * many panels fan out into separate cached queries (React Query dedups identical
  * provider+query pairs). A failed fetch degrades to an inline error card rather
  * than blanking the whole dashboard.
+ *
+ * Paged tables (`panel.paged`, see the core `Panel` table variant) additionally
+ * own the requested page here: `page` state merges `query.page`/`query.limit`
+ * onto the panel's static `data.query`, so clicking prev/next re-resolves the
+ * provider with a distinct query (a distinct React Query cache key) instead of
+ * mutating the panel's declared query in place.
  */
 function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element {
-  const q = useExtensionData(ext, panel.data.provider, panel.data.query);
+  const isPagedTable = panel.kind === 'table' && panel.paged === true;
+  const [page, setPage] = useState(1);
+  const query = isPagedTable
+    ? { ...panel.data.query, page, limit: DEFAULT_PAGE_LIMIT }
+    : panel.data.query;
+  const q = useExtensionData(ext, panel.data.provider, query);
   if (q.isError) {
     return (
       <div className="rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-300">
@@ -51,7 +68,9 @@ function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element 
       </div>
     );
   }
-  return <PanelView panel={panel} data={q.data} />;
+  return (
+    <PanelView panel={panel} data={q.data} {...(isPagedTable ? { onPageChange: setPage } : {})} />
+  );
 }
 
 /**

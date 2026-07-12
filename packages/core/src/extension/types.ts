@@ -94,7 +94,27 @@ export interface DataBinding {
   query?: Record<string, unknown>;
 }
 
-/** A deep-link out of a table cell (to the durable dashboard, a telescope trace, etc.). */
+/**
+ * A deep-link out of a table cell (to the durable dashboard, a telescope trace, etc.).
+ *
+ * @remarks Two hrefs conventions:
+ *  - **In-app hash route** — an `href` starting with `#/` (e.g. `'#/traces/{traceId}'`)
+ *    is a route inside the Telescope SPA itself. The UI renders it as a plain
+ *    anchor; browsers treat a same-document `#`-only href as a same-document
+ *    navigation (URL hash update + `hashchange`, no page reload), which the
+ *    dashboard's `HashRouter` picks up — the same mechanism the built-in Entries
+ *    table and Entry detail page already use for their own trace links. Leave
+ *    `external` unset for these.
+ *  - **Host-console link** — an absolute path with no `#` (e.g.
+ *    `'/durable/runs/{runId}'`) targets a page in the HOST application (the app
+ *    embedding/linking to Telescope), not a Telescope route. This is a real
+ *    top-level navigation; set `external: true` when it should open in a new tab.
+ *
+ * The one confirmed in-app hash route today is the trace waterfall view:
+ * `#/traces/{traceId}` (`traceId` is the row key to substitute), which renders
+ * `TracePage` — the single-trace waterfall. Bridges that want to deep-link a
+ * table row to "show me this trace" should target that exact shape.
+ */
 export interface LinkSpec {
   /** A URL template with `{key}` placeholders filled from the row, e.g. '/durable/runs/{runId}'. */
   href: string;
@@ -127,7 +147,21 @@ export type Panel =
       style?: 'area' | 'stacked';
     }
   | { kind: 'topN'; title: string; data: DataBinding; limit?: number }
-  | { kind: 'table'; title: string; data: DataBinding; columns: Column[] }
+  | {
+      kind: 'table';
+      title: string;
+      data: DataBinding;
+      columns: Column[];
+      /**
+       * Opt into paged-table mode: the UI renders prev/next controls (+ "page X
+       * of Y") and re-resolves this panel's provider with `query.page` (1-based)
+       * and `query.limit` merged in on top of the panel's own static `data.query`.
+       * The provider MUST then return `{ rows, total, page, limit }` instead of
+       * a bare `{ rows }` — see {@link DataProvider.resolve}. Omit (or `false`)
+       * for the existing bare-rows table, unchanged.
+       */
+      paged?: boolean;
+    }
   | {
       kind: 'distribution';
       title: string;
@@ -156,7 +190,11 @@ export interface DataProvider {
    *  - stat         → `{ value: number; delta?: number; deltaLabel?: string; spark?: number[] }`
    *  - timeseries   → `{ rows: Array<{ label: string } & Record<string, number>> }`
    *  - topN         → `{ items: Array<{ label: string; value: number; id?: string }> }`
-   *  - table        → `{ rows: Array<Record<string, unknown>> }`
+   *  - table        → `{ rows: Array<Record<string, unknown>> }`, or — when the
+   *                   panel declares `paged: true` — `{ rows, total, page, limit }`
+   *                   (`page`/`limit` normally echo the requested `query.page` /
+   *                   `query.limit`; `total` is the full, unpaginated row count so
+   *                   the UI can compute "page X of Y")
    *  - distribution → `{ buckets: Array<{ label: string; count: number }>; p50?: number; p95?: number; p99?: number }`
    *  - gauge        → `{ value: number; min?: number; max?: number }`
    *  - breakdown    → `{ segments: Array<{ label: string; value: number; color?: string }> }`
