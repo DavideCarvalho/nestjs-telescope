@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.18.1
+
+### Patch Changes
+
+- [`126a280`](https://github.com/DavideCarvalho/nestjs-telescope/commit/126a280ada269c306371e2b621942d53b5951761) - Trace waterfall: diagnostics span entries now render a meaningful `lib:event` label (e.g. `agent:llm.turn`) instead of falling back to the bare entry type ("diagnostic").
+
 ## 1.18.0
 
 ### Minor Changes
