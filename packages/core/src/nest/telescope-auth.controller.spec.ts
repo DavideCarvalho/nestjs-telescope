@@ -94,6 +94,47 @@ describe('TelescopeAuthController', () => {
       app = await makeApp({ dashboardAuth: { secret: SECRET, login: () => null } });
       await request(app.getHttpServer()).post('/telescope/api/auth/session').expect(404);
     });
+
+    // Password is OPTIONAL end-to-end: nothing above the hook rejects an empty
+    // string, since some hosts gate on username alone (e.g. email must be an
+    // active admin) and deliberately ignore the password.
+    it('passes an empty password through to the hook verbatim', async () => {
+      const login = vi.fn(() => ({ id: 'admin', roles: ['admin'] }));
+      app = await makeApp({ dashboardAuth: { secret: SECRET, login } });
+      await request(app.getHttpServer())
+        .post('/telescope/api/auth/login')
+        .send({ username: 'admin', password: '' })
+        .expect(204);
+      expect(login).toHaveBeenCalledWith('admin', '');
+    });
+
+    it('still uniform-fails (401) when the hook rejects an empty password', async () => {
+      app = await makeApp({
+        dashboardAuth: { secret: SECRET, login: (u, p) => (p === '' ? null : { id: u }) },
+      });
+      const res = await request(app.getHttpServer())
+        .post('/telescope/api/auth/login')
+        .send({ username: 'admin', password: '' })
+        .expect(401);
+      expect(res.body.message).toBe('Invalid credentials');
+    });
+
+    it('mints the session when the hook accepts an empty password (email-only gate)', async () => {
+      app = await makeApp({
+        dashboardAuth: {
+          secret: SECRET,
+          login: (u) => (u === 'admin@example.com' ? { id: u, roles: ['admin'] } : null),
+        },
+      });
+      const server = app.getHttpServer();
+      const login = await request(server)
+        .post('/telescope/api/auth/login')
+        .send({ username: 'admin@example.com', password: '' })
+        .expect(204);
+      const cookie = cookieFrom(login);
+      expect(cookie).toContain('telescope_session=');
+      await request(server).get('/telescope/api/meta').set('Cookie', cookie).expect(200);
+    });
   });
 
   describe('mode A (session)', () => {

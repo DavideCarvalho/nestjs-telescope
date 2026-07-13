@@ -60,6 +60,8 @@ interface TelescopeSessionUser {
 }
 ```
 
+The password submitted to `login` is passed through verbatim — including an empty string, since the built-in login screen never requires one — the hook owns whether it matters.
+
 When `dashboardAuth` is **not** set, behavior is unchanged — the existing `authorizer` / default-deny-in-prod applies.
 
 ## Recipes

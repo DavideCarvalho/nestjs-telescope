@@ -84,6 +84,25 @@ describe('AuthScreen — login mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Invalid credentials'));
   });
+
+  // Password is OPTIONAL: some hosts gate on username alone (e.g. flip's
+  // email-must-be-active-admin hook, which ignores the password entirely), so
+  // the field must never block submission via HTML `required`.
+  it('has no `required` attribute on the password input', () => {
+    renderScreen(authClient(), ['login']);
+    const passwordInput = document.querySelector('input[name="password"]')!;
+    expect(passwordInput.hasAttribute('required')).toBe(false);
+  });
+
+  it('submits a blank password to auth.login verbatim (empty string, not blocked)', async () => {
+    const login = vi.fn(async () => ({ ok: true }) as LoginResult);
+    renderScreen(authClient({ login }), ['login']);
+    fireEvent.change(document.querySelector('input[name="username"]')!, {
+      target: { value: 'admin@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(login).toHaveBeenCalledWith('admin@example.com', ''));
+  });
 });
 
 describe('AuthScreen — session-only mode', () => {
