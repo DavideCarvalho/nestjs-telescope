@@ -115,6 +115,7 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `authorizer` | Gates the API. **Denies in production by default** until you supply one. |
 | `authorizeAction` | Separate, **default-deny** gate for queue mutations. |
 | `dashboardAuth` | Signed-cookie login for the dashboard — see [Dashboard auth](/docs/dashboard/auth). |
+| `guards` / `imports` | Bring-your-own `CanActivate` guard(s) fronting the console (appended to the built-in gate above) — see [Securing the console](/docs/dashboard/auth#securing-the-console-with-your-own-guards). |
 | `redact` | Deep-redact configured `headers` / `query` / `body` paths (default sensitive keys always run). |
 | `prune` | Retention window driving the scheduled pruner (e.g. `{ after: '24h' }`). Supports `perType` for [per-type cutoffs](/docs/concepts/storage#per-type-retention) (e.g. `{ after: '5m', perType: { exception: '7d' } }`). |
 | `archive` | Export a type's entries to a sink **before** the pruner deletes them — see [Archiving before prune](/docs/concepts/storage#archiving-before-prune). |

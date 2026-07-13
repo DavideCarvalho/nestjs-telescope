@@ -1,5 +1,7 @@
 // packages/core/src/nest/telescope.module.ts
+import 'reflect-metadata';
 import {
+  type CanActivate,
   type DynamicModule,
   Inject,
   type InjectionToken,
@@ -9,6 +11,7 @@ import {
   type OptionalFactoryDependency,
   type Provider,
   RequestMethod,
+  type Type,
 } from '@nestjs/common';
 import { APP_INTERCEPTOR, DiscoveryModule, ModuleRef } from '@nestjs/core';
 import { resolveDashboardAuth } from '../auth/dashboard-auth-config.js';
@@ -51,6 +54,51 @@ import {
   type TelescopeModuleOptions,
 } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
+
+/**
+ * `@nestjs/common`'s own `GUARDS_METADATA` key, INLINED rather than deep-imported
+ * from '@nestjs/common/constants' — that subpath has no extension and a strict
+ * ESM resolver 404s on it (same convention as `@dudousxd/nestjs-agent`'s
+ * `agent-dashboard.module.ts`). A drift spec imports the real constant (via the
+ * resolvable `'@nestjs/common/constants.js'` subpath) and asserts this literal
+ * stays byte-identical to it.
+ */
+const GUARDS_METADATA = '__guards__';
+
+/**
+ * Narrows a `guards` entry to a class (constructor) as opposed to an
+ * already-instantiated `CanActivate`. Only a class needs a DI provider so Nest
+ * can instantiate it — an instance is used by the guards consumer as-is.
+ */
+function isGuardClass(guard: Type<CanActivate> | CanActivate): guard is Type<CanActivate> {
+  return typeof guard === 'function';
+}
+
+/**
+ * Stamp host guards onto the console's API controllers — APPEND, not replace.
+ * `TelescopeController` / `StreamController` already carry `@UseGuards(TelescopeGuard)`
+ * via their own class decorator; `Reflect.getMetadata` (not `getOwnMetadata`) below
+ * walks the fresh `dynamicController(...)` subclass's prototype chain to pick that
+ * up BEFORE appending, so a host that sets `guards` never accidentally drops
+ * Telescope's own default-deny-in-production gate. A no-op when `guards` is
+ * omitted/empty, leaving the inherited metadata (and its prototype-chain fallback)
+ * completely untouched.
+ *
+ * Safe to call once per `forRoot`/`forRootAsync` invocation: `dynamicController`
+ * builds a BRAND NEW subclass every call (unlike a static singleton controller),
+ * so there is no cross-call metadata leakage to guard against here.
+ */
+function stampGuards(
+  guards: Array<Type<CanActivate> | CanActivate> | undefined,
+  ...controllers: Type[]
+): void {
+  if (guards === undefined || guards.length === 0) return;
+  for (const controller of controllers) {
+    const inherited: Array<Type<CanActivate> | CanActivate> =
+      Reflect.getMetadata(GUARDS_METADATA, controller) ?? [];
+    Reflect.defineMetadata(GUARDS_METADATA, [...inherited, ...guards], controller);
+  }
+}
 
 const SHARED_PROVIDERS: Provider[] = [
   {
@@ -144,9 +192,14 @@ export class TelescopeModule implements NestModule {
 
   static forRoot(options: TelescopeModuleOptions = {}): DynamicModule {
     const path = normalizeTelescopePath(options.path);
+    // Built ahead of the controllers array (rather than inline) so `stampGuards`
+    // can be applied to the EXACT dynamic subclass instances that get registered.
+    const apiController = dynamicController(TelescopeController, `${path}/api`);
+    const streamController = dynamicController(StreamController, `${path}/api`);
+    stampGuards(options.guards, apiController, streamController);
     return {
       module: TelescopeModule,
-      imports: [DiscoveryModule],
+      imports: [DiscoveryModule, ...(options.imports ?? [])],
       controllers: [
         // The auth controller mounts BEFORE the gated API controller so its
         // /api/auth/* routes resolve ahead of the catch-all and stay ungated
@@ -159,10 +212,17 @@ export class TelescopeModule implements NestModule {
         // MCP server — ungated by TelescopeGuard (it enforces its own Bearer
         // token / dev-only check); mounts before the catch-all gated controller.
         dynamicController(TelescopeMcpController, `${path}/api/mcp`),
-        dynamicController(TelescopeController, `${path}/api`),
-        dynamicController(StreamController, `${path}/api`),
+        apiController,
+        streamController,
       ],
-      providers: [{ provide: TELESCOPE_OPTIONS, useValue: options }, ...SHARED_PROVIDERS],
+      providers: [
+        { provide: TELESCOPE_OPTIONS, useValue: options },
+        // Class guards need a DI provider so Nest can instantiate them in THIS
+        // module's context (where `imports` above resolves their dependencies).
+        // An already-instantiated guard needs none — it's used as-is.
+        ...(options.guards ?? []).filter(isGuardClass),
+        ...SHARED_PROVIDERS,
+      ],
       exports: [
         TelescopeService,
         TELESCOPE_STORAGE,
@@ -188,8 +248,19 @@ export class TelescopeModule implements NestModule {
      * module-build time. Defaults to `'telescope'`.
      */
     path?: string;
+    /**
+     * Guard classes (or instances) fronting the console's API controllers. Must
+     * be passed HERE (not inside the async-resolved options) because guard
+     * stamping happens at module-build time, synchronously — the SAME
+     * constraint as `path` above. See {@link TelescopeModuleOptions.guards}.
+     * A class guard's dependencies resolve from `imports` above.
+     */
+    guards?: Array<Type<CanActivate> | CanActivate>;
   }): DynamicModule {
     const path = normalizeTelescopePath(config.path);
+    const apiController = dynamicController(TelescopeController, `${path}/api`);
+    const streamController = dynamicController(StreamController, `${path}/api`);
+    stampGuards(config.guards, apiController, streamController);
     return {
       module: TelescopeModule,
       imports: [DiscoveryModule, ...(config.imports ?? [])],
@@ -199,8 +270,8 @@ export class TelescopeModule implements NestModule {
         // MCP server — ungated by TelescopeGuard (it enforces its own Bearer
         // token / dev-only check); mounts before the catch-all gated controller.
         dynamicController(TelescopeMcpController, `${path}/api/mcp`),
-        dynamicController(TelescopeController, `${path}/api`),
-        dynamicController(StreamController, `${path}/api`),
+        apiController,
+        streamController,
       ],
       providers: [
         {
@@ -208,6 +279,7 @@ export class TelescopeModule implements NestModule {
           useFactory: config.useFactory,
           inject: config.inject ?? [],
         },
+        ...(config.guards ?? []).filter(isGuardClass),
         ...SHARED_PROVIDERS,
       ],
       exports: [

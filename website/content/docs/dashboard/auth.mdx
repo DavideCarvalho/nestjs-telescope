@@ -155,3 +155,89 @@ When `dashboardAuth` is configured:
 <Callout type="info">
   Server-side / revocable sessions, OAuth/OIDC flows inside Telescope, and per-view authorization granularity are explicitly out of scope: it's a single all-or-nothing dashboard session plus the existing `authorizeAction` for mutations. The codec is swappable, so revocable sessions can be added later without an API break.
 </Callout>
+
+## Securing the console with your own guards
+
+`dashboardAuth` is Telescope's own turnkey login. If your app already has an auth guard — a session/cookie check, an Inertia-style `InertiaAuthGuard`, whatever fronts the rest of your app — you don't need a second auth system. `guards` (+ `imports` for its dependencies) lets you front the console with THAT guard directly, on both `TelescopeModule` (the API) and `TelescopeUiModule` (the page).
+
+```ts
+TelescopeModule.forRoot({
+  guards: [ConsoleAuthGuard],
+  imports: [AuthModule], // resolves ConsoleAuthGuard's own dependencies
+});
+
+TelescopeUiModule.forRoot({
+  guards: [ConsoleAuthGuard],
+  imports: [AuthModule],
+});
+```
+
+<Callout type="warn">
+  Set `guards` on **both** modules. They're independent options in separate packages: `TelescopeUiModule` has no visibility into what you passed `TelescopeModule`, or vice versa. A guard on the API alone still leaves the page (HTML shell + assets) reachable; a guard on the page alone still leaves the API reachable.
+</Callout>
+
+### Why a guard here must handle cookies, not just headers
+
+Most apps gate their API with a header — `Authorization: Bearer <token>`. That works for `fetch`/XHR calls the SPA makes, but **not** for the full-page navigation that loads the dashboard shell in the first place: a browser typing/clicking its way to `/telescope` sends a plain `GET` with whatever **cookies** are set for the origin — it cannot attach a bearer header to a navigation. A guard that only reads `Authorization` will 401 the shell every time, even for an already-logged-in admin.
+
+So a guard passed to `guards` needs to authenticate from a **cookie** (your app's own session cookie, not `dashboardAuth`'s), optionally falling back to a header for callers that do carry one (an API client, an internal service). And because it fronts BOTH a page (full-page `GET`) and a JSON API (`fetch`/XHR from the SPA), it should respond differently per surface: a **redirect** for the page (so an anonymous visitor lands on your sign-in screen, not a bare 401 page) and a plain **401/403** for the API (so the SPA's own fetches fail cleanly instead of getting redirected into an HTML sign-in page).
+
+### Example: cookie-session guard with a header fallback
+
+```ts
+import {
+  type CanActivate,
+  type ExecutionContext,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
+import { parseCookieHeader, readCookieHeader } from '@dudousxd/nestjs-telescope';
+import { SessionService } from './session.service';
+
+@Injectable()
+export class ConsoleAuthGuard implements CanActivate {
+  constructor(@Inject(SessionService) private readonly sessions: SessionService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const http = context.switchToHttp();
+    const request = http.getRequest();
+    const response = http.getResponse();
+
+    // Full-page navigations (the dashboard shell) carry only cookies — no
+    // Authorization header. XHR/fetch calls from the SPA (or an external
+    // client) may carry a Bearer token instead; accept either.
+    const cookieValue = parseCookieHeader(readCookieHeader(request))['app_session'];
+    const bearer = request.headers?.authorization?.replace(/^Bearer\s+/i, '');
+    const user = cookieValue
+      ? await this.sessions.verifyCookie(cookieValue)
+      : bearer
+        ? await this.sessions.verifyToken(bearer)
+        : null;
+
+    if (user?.isAdmin) return true;
+
+    // `sec-fetch-mode: navigate` marks a real browser navigation (loading the
+    // HTML shell). Everything else — the SPA's own polling/fetch calls — is
+    // API-shaped and gets a plain 401 instead of a redirect.
+    if (request.headers?.['sec-fetch-mode'] === 'navigate') {
+      response.redirect(302, '/signin?next=' + encodeURIComponent(request.url));
+    } else {
+      response.status(401).send({ message: 'Unauthorized' });
+    }
+    return false;
+  }
+}
+```
+
+`parseCookieHeader` / `readCookieHeader` are exported from `@dudousxd/nestjs-telescope` (the same helpers `dashboardAuth` uses internally) — reuse them instead of hand-rolling cookie parsing; your guard's own session **format** is entirely yours (this example delegates to a `SessionService`, but a JWT-in-cookie, an opaque session-store lookup, or bridging Keycloak/Passport all fit the same shape).
+
+### `guards` vs `dashboardAuth`
+
+| | `dashboardAuth` | `guards` |
+|---|---|---|
+| Auth mechanism | Telescope's own signed cookie + built-in login/session-bridge endpoints | Whatever `CanActivate` you bring — typically your app's existing auth |
+| Fronts the page (HTML shell + assets)? | No — the shell stays public by design; only the API is gated | Yes, when set on `TelescopeUiModule` too |
+| Setup | One config object, zero extra code | You write (or already have) the guard |
+| Best for | Standalone hosts with no existing admin auth | Hosts that already authenticate the rest of the app and want ONE gate to reuse |
+
+They're independent — nothing stops you from setting both (a host guard AND `dashboardAuth` both run; a request must pass every configured gate, since `guards` **appends** to Telescope's own gate on the API side — see `TelescopeModuleOptions.guards`). Most hosts pick one.

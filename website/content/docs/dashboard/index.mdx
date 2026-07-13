@@ -232,4 +232,4 @@ See the [`-ui` package](/docs/packages/ui) for the full exports map and peer dep
 
 ## Gating the dashboard
 
-The UI shell and hashed assets are public (they contain no data); the **API** behind them is what's gated. For a production-grade login that works even when your app uses header-Bearer auth, see [Dashboard auth](/docs/dashboard/auth).
+By default the UI shell and hashed assets are public (they contain no data); the **API** behind them is what's gated. For a production-grade login that works even when your app uses header-Bearer auth, see [Dashboard auth](/docs/dashboard/auth). To front BOTH the shell and the API with a guard you already have — reusing your app's existing cookie-session auth instead of Telescope's own login — see [Securing the console with your own guards](/docs/dashboard/auth#securing-the-console-with-your-own-guards).

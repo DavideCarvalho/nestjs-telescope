@@ -1,4 +1,5 @@
 // packages/core/src/nest/telescope.options.ts
+import type { CanActivate, DynamicModule, Type } from '@nestjs/common';
 import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
@@ -342,6 +343,40 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * on a transient. Set `0` to arm immediately. Ignored when protection is off.
    */
   overloadProtection?: boolean | { maxEventLoopLagMs?: number; startupGraceMs?: number };
+  /**
+   * Guard classes (or already-instantiated `CanActivate`s) fronting the console's
+   * API controllers — `TelescopeController` (entries/metrics/traces/ext data
+   * providers/retention/…) and `StreamController`'s live SSE feed. Stamped
+   * ALONGSIDE Telescope's own built-in gate (`TelescopeGuard`'s `authorizer` /
+   * `dashboardAuth` / dev-open-prod-closed default) — APPEND, not replace: a
+   * request must pass the built-in gate AND every guard listed here.
+   *
+   * This is deliberate and differs from a from-scratch dashboard: Telescope's
+   * console controllers already ship a default-deny-in-production gate, so
+   * `guards` is an ADDITIONAL seam for hosts that want to front the console with
+   * THEIR OWN auth — e.g. reusing the app's existing cookie-session guard —
+   * instead of (or in addition to) configuring `dashboardAuth`'s own
+   * login/session bridge. See the "Securing the console" guide.
+   *
+   * IMPORTANT: pass the SAME `guards` (and matching `imports`) to
+   * `TelescopeUiModule.forRoot({ guards, imports })` too — the dashboard's page
+   * (HTML shell + hashed assets) lives in a SEPARATE package/module with no
+   * visibility into this option, so a `guards` set here alone still leaves the
+   * page itself reachable by an anonymous full-page navigation.
+   *
+   * A class guard's own DEPENDENCIES resolve from this module's `imports` (see
+   * {@link imports}) — `TelescopeModule` has no application context of its own
+   * to pull them from otherwise. An already-instantiated guard (a `CanActivate`
+   * object, not a class) needs no `imports` entry.
+   */
+  guards?: Array<Type<CanActivate> | CanActivate>;
+  /**
+   * Extra `imports` merged into `TelescopeModule`'s own dynamic module — the DI
+   * resolution path for a class passed to {@link guards} (or any other provider
+   * the console controllers need reachable). Typically the host's own auth
+   * module, e.g. `imports: [AuthModule]` alongside `guards: [ConsoleAuthGuard]`.
+   */
+  imports?: DynamicModule['imports'];
 }
 
 export interface TelescopeOptionsFactory {

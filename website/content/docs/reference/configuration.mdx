@@ -36,6 +36,8 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 | `authorizer` | deny in production | Gates the read API. **Denies in production by default** until you supply one. |
 | `authorizeAction` | **deny** | Separate, default-deny gate for **mutations** — queue actions, **Prune now**, and [request replay](/docs/dashboard#replay-a-request). Throwing denies (fails closed). |
 | `dashboardAuth` | _none_ | Signed-cookie login for the dashboard. See [Dashboard auth](/docs/dashboard/auth). |
+| `guards` | _none_ | Bring-your-own `CanActivate` guard(s) fronting the console's API controllers — **appended** to (not replacing) the built-in gate above. Pass the SAME guards to `TelescopeUiModule.forRoot` to also gate the page. See [Securing the console](/docs/dashboard/auth#securing-the-console-with-your-own-guards). |
+| `imports` | `[]` | Extra Nest `imports` resolving a class passed to `guards`' own dependencies. |
 | `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
 
 ## Health, alerts & AI

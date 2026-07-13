@@ -61,3 +61,16 @@ const page = await telescope.entries({ type: 'job' });
 ## Peer dependencies
 
 The module (`.`) needs `@nestjs/common` / `@nestjs/core` (>= 11). `/react` needs `react`, `react-dom`, and `@tanstack/react-query` — but only if you import it; they're optional peers. The turnkey dashboard bundles its own copies, so a plain `TelescopeUiModule.forRoot()` adds no React to your app.
+
+## Gating the page
+
+By default `TelescopeUiController` (the HTML shell + hashed assets) is public — no data lives there. Pass `guards` (+ `imports` for its dependencies) to front it with your own `CanActivate`, e.g. reusing the app's existing cookie-session guard:
+
+```ts
+TelescopeUiModule.forRoot({
+  guards: [ConsoleAuthGuard],
+  imports: [AuthModule],
+});
+```
+
+Set the SAME `guards` on `TelescopeModule.forRoot` too — this option only covers the page; the API is a separate package/module. See [Securing the console](/docs/dashboard/auth#securing-the-console-with-your-own-guards) for the full rationale and a realistic guard example.
