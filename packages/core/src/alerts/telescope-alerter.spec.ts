@@ -57,6 +57,7 @@ function makeAlerter(
     intervalMs: 60_000,
     cooldownMs: 900_000,
     rules,
+    geoLookup: null,
     ...partial,
   };
   const alerter = new TelescopeAlerter({
@@ -271,7 +272,13 @@ describe('TelescopeAlerter', () => {
         durationMs: 1234,
         tags: ['user:42'],
         createdAt: new Date(createdAt),
-        content: { method: 'POST', uri: '/checkout', statusCode: 500 },
+        content: {
+          method: 'POST',
+          uri: '/checkout',
+          statusCode: 500,
+          ip: '198.51.100.9',
+          headers: { 'user-agent': 'curl/8.0', referer: 'https://app.example.com/pay' },
+        },
       });
       await storage.store([exception, request]);
       return exception;
@@ -361,6 +368,9 @@ describe('TelescopeAlerter', () => {
         statusCode: 500,
         durationMs: 1234,
         user: '42',
+        clientIp: '198.51.100.9',
+        userAgent: 'curl/8.0',
+        referer: 'https://app.example.com/pay',
         occurrences: 1,
         entryId: 'ex-b1',
         batchId: 'b1',
@@ -391,6 +401,8 @@ describe('TelescopeAlerter', () => {
           url: 'https://app.example.com/cart',
           userAgent: 'Mozilla/5.0',
           clientIp: '203.0.113.7',
+          componentStack: '    in Cart\n    in App',
+          extra: { cartId: 'c-42' },
         },
       });
       await storage.store([clientError]);
@@ -410,8 +422,79 @@ describe('TelescopeAlerter', () => {
         userAgent: 'Mozilla/5.0',
         statusCode: null,
         user: '99',
+        clientIp: '203.0.113.7',
+        componentStack: '    in Cart\n    in App',
+        extra: { cartId: 'c-42' },
         entryId: 'ce-1',
       });
+    });
+
+    it('enriches the alert with geo when a geoLookup hook is configured', async () => {
+      const { alerter, sent, storage } = makeAlerter([{ type: 'new-exception', window: '1h' }], {
+        geoLookup: (ip: string) =>
+          ip === '198.51.100.9'
+            ? { city: 'Reno', region: 'Nevada', country: 'United States', countryCode: 'US' }
+            : null,
+      });
+      const ex = await storeException(storage, 'fam-A', 'b1', NOW);
+      await alerter.evaluateFlush([ex]);
+      expect(sent[0]?.exception?.geo).toEqual({
+        city: 'Reno',
+        region: 'Nevada',
+        country: 'United States',
+        countryCode: 'US',
+      });
+    });
+
+    it('leaves geo null and still fires when the geoLookup hook throws', async () => {
+      const { alerter, sent, storage } = makeAlerter([{ type: 'new-exception', window: '1h' }], {
+        geoLookup: () => {
+          throw new Error('provider down');
+        },
+      });
+      const ex = await storeException(storage, 'fam-A', 'b1', NOW);
+      await alerter.evaluateFlush([ex]);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.exception?.geo).toBeNull();
+    });
+
+    it('every-exception fires for a REPEAT family that new-exception would suppress', async () => {
+      const { alerter, sent, storage } = makeAlerter([{ type: 'every-exception' }], {
+        cooldownMs: 0,
+      });
+      const first = await storeException(storage, 'fam-A', 'b1', NOW);
+      await alerter.evaluateFlush([first]);
+      const second = await storeException(storage, 'fam-A', 'b2', NOW + 1_000);
+      await alerter.evaluateFlush([second]);
+      expect(sent).toHaveLength(2);
+      expect(sent.every((a) => a.rule.type === 'every-exception')).toBe(true);
+    });
+
+    it('every-exception rate-limits a repeat family within the cooldown', async () => {
+      const { alerter, sent, storage } = makeAlerter([{ type: 'every-exception' }], {
+        cooldownMs: 10 * 60_000,
+      });
+      const first = await storeException(storage, 'fam-A', 'b1', NOW);
+      await alerter.evaluateFlush([first]);
+      const second = await storeException(storage, 'fam-A', 'b2', NOW + 1_000);
+      await alerter.evaluateFlush([second]);
+      expect(sent).toHaveLength(1);
+    });
+
+    it('new-exception + every-exception keep independent cooldown clocks', async () => {
+      const { alerter, sent, storage } = makeAlerter(
+        [{ type: 'new-exception', window: '1h' }, { type: 'every-exception' }],
+        { cooldownMs: 0 },
+      );
+      const first = await storeException(storage, 'fam-A', 'b1', NOW);
+      await alerter.evaluateFlush([first]);
+      // First flush: both rules fire (family is new AND it's an exception).
+      expect(sent.map((a) => a.rule.type).sort()).toEqual(['every-exception', 'new-exception']);
+      // Repeat within the window: new-exception suppresses (not new), every-exception fires.
+      const second = await storeException(storage, 'fam-A', 'b2', NOW + 1_000);
+      await alerter.evaluateFlush([second]);
+      expect(sent).toHaveLength(3);
+      expect(sent[2]?.rule.type).toBe('every-exception');
     });
 
     it('evicts oldest families beyond the cap, re-firing an evicted family', async () => {

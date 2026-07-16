@@ -51,6 +51,11 @@ export function resolveAlerts(alerts: AlertsOptions | undefined): ResolvedAlerts
       // Throws on an unparseable window — fail closed at boot.
       durationToMs(rule.window);
     }
+    // `every-exception`'s window is optional (occurrence-count only); validate it
+    // when present so a typo fails at boot rather than silently mis-counting.
+    if (rule.type === 'every-exception' && rule.window !== undefined) {
+      durationToMs(rule.window);
+    }
   }
 
   return {
@@ -62,5 +67,6 @@ export function resolveAlerts(alerts: AlertsOptions | undefined): ResolvedAlerts
     intervalMs: durationToMs(alerts.every ?? DEFAULT_INTERVAL),
     cooldownMs: durationToMs(alerts.cooldown ?? DEFAULT_COOLDOWN),
     rules: alerts.rules,
+    geoLookup: typeof alerts.geoLookup === 'function' ? alerts.geoLookup : null,
   };
 }

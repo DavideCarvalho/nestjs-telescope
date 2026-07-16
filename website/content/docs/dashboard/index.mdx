@@ -112,8 +112,15 @@ TelescopeModule.forRoot({
     ],
     every: '1m',
     cooldown: '15m',
+    // Optional: resolve a client IP → coarse location, rendered as a "Location"
+    // field on exception alerts. The lib ships no geo DB — you own the lookup
+    // (and its caching). Called only when an alert fires with a client IP.
+    geoLookup: async (ip) => geoProvider.lookup(ip), // → { city?, region?, country?, countryCode? } | null
+    every: '1m',
+    cooldown: '15m',
     rules: [
       { type: 'new-exception', window: '1h' },
+      { type: 'every-exception' },
       { type: 'exception-rate', window: '5m', threshold: 10 },
       { type: 'slow-request-rate', window: '5m', thresholdMs: 1000, count: 20 },
       { type: 'dropped-entries', threshold: 100 },
@@ -125,13 +132,14 @@ TelescopeModule.forRoot({
 ### Rules
 
 - `new-exception` — fires the **first** time an exception's error family (`familyHash`) is seen within `window`, i.e. a genuinely **new** error. Evaluated **per flush** (not on the interval) so a new error pages you within a flush interval, and the alert carries rich context (see below). Dedup uses a bounded in-memory map — see the multi-replica note. By default this rule only ever sees **real server errors**: expected 4xx control flow (a 403 `ForbiddenException`, a 404, a validation 400) is **not** recorded as an exception entry, so it can never open a family or page you. See [Exception capture](/docs/concepts/capture#exception-capture). Set `exceptions.captureHttp4xx: true` to opt 4xx back in.
+- `every-exception` — fires for **every** exception (server + browser-reported `client_exception`), not just brand-new families — parity with a "notify on every error" setup. Also evaluated **per flush** and carries the same rich context. Still rate-limited by the shared `cooldown` **per family** (independent clock from `new-exception`), so a hot loop of the same error re-pages once per cooldown rather than on every occurrence; set `cooldown: '0s'` for a fully uncollapsed stream. The optional `window` counts occurrences shown on the alert (default `1h`) and does **not** gate firing.
 - `exception-rate` — `>= threshold` exceptions in `window`.
 - `slow-request-rate` — `>= count` requests slower than `thresholdMs` in `window`.
 - `dropped-entries` — Recorder `droppedCount` grew by `>= threshold` since the last evaluation.
 
 ### Channels
 
-- **`slackChannel(url, options?)`** — POSTs Slack [Block Kit](https://api.slack.com/block-kit) JSON: a header with a severity emoji + rule name, fielded context (route, method, status, user, count/rate, window), a truncated stack snippet in a code block, and — when `dashboardUrl` is set — an **Open in Telescope** button deep-linking to the entry (`${dashboardUrl}#/entries/exception/${id}`). `options` accepts `{ username, iconEmoji }`.
+- **`slackChannel(url, options?)`** — POSTs Slack [Block Kit](https://api.slack.com/block-kit) JSON: a header with a severity emoji + rule name, fielded context (route, method, status, user-agent, referer, **client IP**, **location** when a `geoLookup` is configured, count/rate, window), a truncated stack snippet in a code block, a **component stack** and **extra** block for browser-reported errors that carry them, and — when `dashboardUrl` is set — an **Open in Telescope** button deep-linking to the entry (`${dashboardUrl}#/entries/view/${id}`). `options` accepts `{ username, iconEmoji }`.
 - **`webhookChannel(url)`** — POSTs the raw `AlertPayload` JSON. This is the v1 behavior unchanged; existing relays that parse the raw body keep working.
 - **`customChannel(fn, name?)`** — calls your async `fn(alert)` for anything else (email, SNS, PagerDuty, a DB row). Throwing is safe — the alerter isolates and logs it.
 
@@ -141,9 +149,9 @@ TelescopeModule.forRoot({
 2. Set it as an env var (e.g. `SLACK_WEBHOOK_URL`) and pass it to `slackChannel(process.env.SLACK_WEBHOOK_URL)`.
 3. Set `alerts.dashboardUrl` to your dashboard's external origin so the message includes an **Open in Telescope** button.
 
-### `new-exception` payload
+### Exception payload
 
-When a `new-exception` rule fires, the payload adds an `exception` block pulled from the exception entry **and its sibling request entry in the same batch**:
+When a `new-exception` or `every-exception` rule fires, the payload adds an `exception` block pulled from the exception entry **and its sibling request entry in the same batch** (for a `client_exception`, from the browser report itself):
 
 ```json
 {
@@ -155,12 +163,18 @@ When a `new-exception` rule fires, the payload adds an `exception` block pulled 
     "familyHash": "ab12…", "class": "TypeError", "message": "cannot read x",
     "stack": "TypeError: cannot read x\n  at …",
     "route": "/checkout", "method": "POST", "statusCode": 500, "durationMs": 1234,
-    "user": "42", "occurrences": 1, "entryId": "0190…", "batchId": "0190…"
+    "user": "42", "userAgent": "curl/8.0", "referer": "https://app.example.com/pay",
+    "clientIp": "198.51.100.9",
+    "geo": { "city": "Reno", "region": "Nevada", "country": "United States", "countryCode": "US" },
+    "componentStack": null, "extra": null,
+    "occurrences": 1, "entryId": "0190…", "batchId": "0190…"
   }
 }
 ```
 
-The legacy raw-webhook JSON is **backward compatible**: every v1 field (`rule`, `value`, `threshold`, `firedAt`, `instanceId`) is unchanged; `exception`/`dashboardUrl` are purely additive.
+`clientIp` is the sibling request's `ip` (`request.ip` / first `x-forwarded-for` hop) for a server exception, or the server-filled browser IP for a `client_exception` — **never** sourced from an untrusted body. `geo` is populated only when a `geoLookup` hook is configured and the alert has a `clientIp`; `componentStack` and `extra` are present only for browser-reported errors that supplied them.
+
+The legacy raw-webhook JSON is **backward compatible**: every v1 field (`rule`, `value`, `threshold`, `firedAt`, `instanceId`) is unchanged; `exception`/`dashboardUrl` and the enrichment fields (`clientIp`, `geo`, `referer`, `userAgent`, `componentStack`, `extra`) are purely additive.
 
 <Callout type="warn">
   **Multi-replica caveat.** `new-exception` dedup is an in-memory, per-pod map (capped at ~10k families, oldest evicted). In a multi-replica deployment the **same** new error family may alert **once per pod** the first time each pod sees it. This is acceptable for v1; a cross-pod store would defeat the goal of a cheap map lookup on the hot flush path.
