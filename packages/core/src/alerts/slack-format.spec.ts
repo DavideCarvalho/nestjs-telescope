@@ -175,9 +175,7 @@ describe('formatSlackMessage — new vs recurring badge', () => {
   });
 
   it('badges a repeat exception as Recurring', () => {
-    const message = formatSlackMessage(
-      payload(exceptionContext({ isNew: false, occurrences: 7 })),
-    );
+    const message = formatSlackMessage(payload(exceptionContext({ isNew: false, occurrences: 7 })));
     expect(message.text).not.toContain('🆕 New');
     expect((message.blocks[0] as { text: { text: string } }).text.text).toContain('🔁 Recurring');
   });
