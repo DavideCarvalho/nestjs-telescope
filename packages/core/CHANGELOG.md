@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.20.1
+
+### Patch Changes
+
+- [#52](https://github.com/DavideCarvalho/nestjs-telescope/pull/52) [`95e4ca6`](https://github.com/DavideCarvalho/nestjs-telescope/commit/95e4ca67ebc5ee090f515d9602d902705cfdca9a) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Fix exception Slack alerts being rejected as `invalid_blocks` when fully enriched. A server exception carrying instance + observed + error + route + user-agent + referer + duration + user + client IP + location + occurrences produces 11 context fields, but Slack caps a `section` block's `fields` at 10 and rejects the whole message. The context fields now spread across as many section blocks as needed instead of overflowing one.
+
 ## 1.20.0
 
 ### Minor Changes
