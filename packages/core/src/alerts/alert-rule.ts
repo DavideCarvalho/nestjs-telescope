@@ -21,6 +21,15 @@ import type { AlertChannel } from './alert-channel.js';
  *                         implements `markFamilySeen` (so a family pages ONCE
  *                         across a multi-replica deployment), falling back to an
  *                         in-memory per-replica seen-map otherwise.
+ * - `every-exception`   — fires for EVERY exception (server + browser-reported
+ *                         `client_exception`), not just brand-new families —
+ *                         parity with a "notify on every error" setup. Still
+ *                         rate-limited by the shared `cooldown` PER FAMILY, so a
+ *                         hot loop of the same error re-pages once per cooldown
+ *                         rather than on every occurrence; set `cooldown: '0s'`
+ *                         for a truly uncollapsed stream. The optional `window`
+ *                         is used only to count occurrences shown on the alert
+ *                         (default `'1h'`); it does NOT gate firing.
  * - `metric-threshold`  — fires when a COMPUTED metric over the trailing
  *                         `window` crosses `threshold` in the `comparator`
  *                         direction. Unlike the rate rules (which count events),
@@ -33,6 +42,7 @@ export type AlertRule =
   | { type: 'slow-request-rate'; window: string; thresholdMs: number; count: number }
   | { type: 'dropped-entries'; threshold: number }
   | { type: 'new-exception'; window: string }
+  | { type: 'every-exception'; window?: string }
   | {
       type: 'metric-threshold';
       /** The computed metric to evaluate (see {@link AlertMetric}). */
@@ -64,12 +74,43 @@ export type AlertMetric =
   | 'cache-hit-rate';
 
 /**
+ * A coarse geo location resolved from a client IP, attached to an exception alert
+ * when a {@link AlertsOptions.geoLookup} hook is configured. Every field is
+ * optional — a partial result (e.g. country only) still renders. Deliberately
+ * dependency-light: the LIB ships no geo database or HTTP client; the host owns
+ * the lookup (and its caching/rate-limiting) and returns this shape.
+ */
+export interface AlertGeoLocation {
+  city?: string;
+  region?: string;
+  country?: string;
+  /** ISO 3166-1 alpha-2 (e.g. `US`), used to render a flag emoji. */
+  countryCode?: string;
+}
+
+/**
+ * Host-supplied resolver from a client IP to a coarse {@link AlertGeoLocation}.
+ * Called ONLY when an exception alert actually fires and carries a `clientIp`, so
+ * the common no-fire path pays nothing. May be sync or async; returning `null`
+ * (or throwing — swallowed) simply omits the Location field. The lib never caches
+ * or rate-limits it — do that in the hook if the provider needs it.
+ */
+export type GeoLookup = (ip: string) => AlertGeoLocation | null | Promise<AlertGeoLocation | null>;
+
+/**
  * Pluggable alerting (v2). When set, {@link TelescopeAlerter} evaluates `rules`
  * and fans each fired alert out to EVERY configured channel concurrently. A
  * configured `alerts` with no destination (neither `channels` nor the legacy
  * `webhookUrl`) or empty `rules` is a fail-closed boot error.
  */
 export interface AlertsOptions {
+  /**
+   * Optional IP→geo resolver. When set, a firing exception alert that carries a
+   * `clientIp` is enriched with a coarse {@link AlertGeoLocation} (rendered as a
+   * "Location" field by channels that support it). Kept out of the lib core so
+   * telescope ships no geo dependency — see {@link GeoLookup}.
+   */
+  geoLookup?: GeoLookup;
   /**
    * Delivery destinations. Each fired alert is sent to every channel
    * concurrently; one channel failing never blocks the others. Use the factory
@@ -113,6 +154,8 @@ export interface ResolvedAlerts {
   intervalMs: number;
   cooldownMs: number;
   rules: AlertRule[];
+  /** Host IP→geo resolver, or `null` when unconfigured. */
+  geoLookup: GeoLookup | null;
 }
 
 /**
@@ -139,13 +182,42 @@ export interface ExceptionAlertContext {
   /** Request method, or `null` (always `null` for a client_exception). */
   method: string | null;
   /**
-   * Reporting browser's user-agent — present ONLY for a `client_exception`
-   * (front-end errors carry no server route/method but do carry a UA). `null`
-   * for server exceptions.
+   * User-agent string. For a `client_exception` it's the reporting browser's UA;
+   * for a server exception it's the sibling request's `user-agent` header (when
+   * captured). `null` when unavailable.
    */
   userAgent: string | null;
+  /**
+   * `Referer` header of the originating request (server exception) — the page a
+   * user came from. `null` when absent or for a `client_exception` (the browser
+   * report carries its own page `url` in `route`, not a referer).
+   */
+  referer: string | null;
+  /**
+   * React component stack from an error boundary — present ONLY for a
+   * `client_exception` that supplied one. `null` otherwise.
+   */
+  componentStack: string | null;
+  /**
+   * Host-defined free-form debugging bag from a `client_exception` (`extra`), or
+   * `null`. Redacted/bounded at record time like any other content.
+   */
+  extra: Record<string, unknown> | null;
   /** True when this alert is a browser-reported `client_exception`. */
   client: boolean;
+  /**
+   * Originating client IP, or `null` when unknown. For a `client_exception` it's
+   * the browser IP the ingestion controller filled in server-side (`clientIp`);
+   * for a server exception it's the sibling request entry's `ip` (`request.ip` /
+   * the first `x-forwarded-for` hop). Never sourced from an untrusted body.
+   */
+  clientIp: string | null;
+  /**
+   * Coarse geo location resolved from {@link clientIp}, or `null`. Populated only
+   * when an {@link AlertsOptions.geoLookup} hook is configured AND the alert has a
+   * `clientIp`; otherwise `null`.
+   */
+  geo: AlertGeoLocation | null;
   /** Response status code, or `null`. */
   statusCode: number | null;
   /** Request duration (ms), or `null`. */

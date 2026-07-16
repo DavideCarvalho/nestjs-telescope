@@ -8,6 +8,7 @@ import { percentile } from '../metrics/stats.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { AlertChannel } from './alert-channel.js';
 import type {
+  AlertGeoLocation,
   AlertMetric,
   AlertPayload,
   AlertRule,
@@ -26,6 +27,10 @@ const ALERT_SCAN_CAP = 10_000;
 
 /** Stack frames carried in a `new-exception` alert (the Slack channel re-clips). */
 const ALERT_STACK_FRAME_LIMIT = 12;
+
+/** Window used only to count occurrences on an `every-exception` alert when the
+ *  rule omits its own `window`. Firing is per-flush, so this is display-only. */
+const DEFAULT_EVERY_WINDOW = '1h';
 
 export interface TelescopeAlerterDeps {
   alerts: ResolvedAlerts;
@@ -66,7 +71,11 @@ export class TelescopeAlerter {
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Per-rule last-fired wall time (index-keyed; rules are a fixed array). */
   private readonly lastFiredAt = new Map<number, number>();
-  /** Per-family last-fired wall time for the `new-exception` cooldown. */
+  /**
+   * Per-family last-fired wall time for the flush-driven exception rules. Keyed
+   * by `${ruleType}|${familyHash}` so a `new-exception` and an `every-exception`
+   * rule configured together keep independent cooldown clocks.
+   */
   private readonly lastFiredFamily = new Map<string, number>();
   /** Channels we've already warned about (rate-limit failure logs by name). */
   private readonly warnedChannels = new Set<string>();
@@ -76,6 +85,8 @@ export class TelescopeAlerter {
   private readonly newExceptionTracker: NewExceptionTracker;
   /** Pre-computed `new-exception` rule (if any) so the flush path is cheap. */
   private readonly newExceptionRule: { type: 'new-exception'; window: string } | null;
+  /** Pre-computed `every-exception` rule (if any) so the flush path is cheap. */
+  private readonly everyExceptionRule: { type: 'every-exception'; window?: string } | null;
 
   constructor(private readonly deps: TelescopeAlerterDeps) {
     this.logger = deps.logger ?? new Logger(TelescopeAlerter.name);
@@ -85,6 +96,11 @@ export class TelescopeAlerter {
     this.newExceptionRule =
       deps.alerts.rules.find(
         (rule): rule is { type: 'new-exception'; window: string } => rule.type === 'new-exception',
+      ) ?? null;
+    this.everyExceptionRule =
+      deps.alerts.rules.find(
+        (rule): rule is { type: 'every-exception'; window?: string } =>
+          rule.type === 'every-exception',
       ) ?? null;
   }
 
@@ -115,7 +131,11 @@ export class TelescopeAlerter {
   async evaluate(): Promise<void> {
     for (let index = 0; index < this.deps.alerts.rules.length; index++) {
       const rule = this.deps.alerts.rules[index];
-      if (rule === undefined || rule.type === 'new-exception') continue;
+      // `new-exception` and `every-exception` are flush-driven (see evaluateFlush),
+      // never evaluated on the interval timer.
+      if (rule === undefined || rule.type === 'new-exception' || rule.type === 'every-exception') {
+        continue;
+      }
       const outcome = await this.measure(rule);
       if (outcome === null) continue;
       if (this.inCooldown(index)) continue;
@@ -125,38 +145,52 @@ export class TelescopeAlerter {
   }
 
   /**
-   * Per-flush evaluation for the `new-exception` rule. Called with the entries a
-   * flush just stored. MUST be cheap: it filters to exception-type entries and
-   * does a single bounded-map lookup per family; the expensive batch-context
-   * fetch happens ONLY for a family that actually fires (and is past cooldown).
-   * No-op (zero cost beyond the early return) when the rule isn't configured.
-   * Never throws into the host — failures are swallowed/logged.
+   * Per-flush evaluation for the exception rules (`new-exception` /
+   * `every-exception`). Called with the entries a flush just stored. MUST be
+   * cheap: it filters to exception-type entries and does a single bounded-map
+   * lookup per family; the expensive batch-context fetch happens ONLY for a
+   * family that actually fires (and is past cooldown). No-op (zero cost beyond the
+   * early return) when neither rule is configured. Never throws into the host —
+   * failures are swallowed/logged.
    */
   async evaluateFlush(storedEntries: Entry[]): Promise<void> {
-    const rule = this.newExceptionRule;
-    if (rule === null) return;
-    const windowMs = durationToMs(rule.window);
+    const newRule = this.newExceptionRule;
+    const everyRule = this.everyExceptionRule;
+    if (newRule === null && everyRule === null) return;
     const nowMs = this.now();
     try {
       for (const entry of storedEntries) {
         // Server exceptions AND browser-reported client_exceptions both feed the
-        // new-exception rule — a brand-new front-end error family should page
-        // just like a server one.
+        // exception rules — a front-end error should page just like a server one.
         if (entry.type !== EntryType.Exception && entry.type !== EntryType.ClientException) {
           continue;
         }
         if (entry.familyHash === null) continue;
-        const isNew = await this.observeFamily(entry.familyHash, nowMs, windowMs);
-        if (!isNew) continue;
-        if (this.familyInCooldown(entry.familyHash, nowMs)) continue;
-        this.lastFiredFamily.set(entry.familyHash, nowMs);
-        // Only NOW do we pay for the batch-context fetch + dispatch.
-        const payload = await this.buildNewExceptionPayload(rule, entry, windowMs, nowMs);
-        await this.dispatch(payload);
+
+        // `new-exception`: fire only the FIRST time a family is seen in the window.
+        if (newRule !== null) {
+          const windowMs = durationToMs(newRule.window);
+          const isNew = await this.observeFamily(entry.familyHash, nowMs, windowMs);
+          if (isNew && !this.familyInCooldown('new-exception', entry.familyHash, nowMs)) {
+            this.lastFiredFamily.set(this.cooldownKey('new-exception', entry.familyHash), nowMs);
+            await this.dispatch(await this.buildExceptionPayload(newRule, entry, windowMs, nowMs));
+          }
+        }
+
+        // `every-exception`: fire for EVERY exception, rate-limited per family by
+        // the shared cooldown (independent clock from new-exception above).
+        if (
+          everyRule !== null &&
+          !this.familyInCooldown('every-exception', entry.familyHash, nowMs)
+        ) {
+          const windowMs = durationToMs(everyRule.window ?? DEFAULT_EVERY_WINDOW);
+          this.lastFiredFamily.set(this.cooldownKey('every-exception', entry.familyHash), nowMs);
+          await this.dispatch(await this.buildExceptionPayload(everyRule, entry, windowMs, nowMs));
+        }
       }
     } catch (error: unknown) {
       // A bug in evaluation must never break the host's flush path.
-      this.logger.warn(`Telescope new-exception evaluation failed: ${(error as Error).message}`);
+      this.logger.warn(`Telescope exception-alert evaluation failed: ${(error as Error).message}`);
     }
   }
 
@@ -188,7 +222,7 @@ export class TelescopeAlerter {
 
   /** Returns `{ value, threshold }` when an interval rule is firing, else `null`. */
   private async measure(
-    rule: Exclude<AlertRule, { type: 'new-exception' }>,
+    rule: Exclude<AlertRule, { type: 'new-exception' } | { type: 'every-exception' }>,
   ): Promise<{ value: number; threshold: number } | null> {
     if (rule.type === 'exception-rate') {
       const value = await this.countInWindow(rule.window, EntryType.Exception);
@@ -310,8 +344,17 @@ export class TelescopeAlerter {
     return this.now() - last < this.deps.alerts.cooldownMs;
   }
 
-  private familyInCooldown(familyHash: string, nowMs: number): boolean {
-    const last = this.lastFiredFamily.get(familyHash);
+  /** Composite cooldown key so each flush rule keeps an independent per-family clock. */
+  private cooldownKey(ruleType: 'new-exception' | 'every-exception', familyHash: string): string {
+    return `${ruleType}|${familyHash}`;
+  }
+
+  private familyInCooldown(
+    ruleType: 'new-exception' | 'every-exception',
+    familyHash: string,
+    nowMs: number,
+  ): boolean {
+    const last = this.lastFiredFamily.get(this.cooldownKey(ruleType, familyHash));
     if (last === undefined) return false;
     return nowMs - last < this.deps.alerts.cooldownMs;
   }
@@ -331,13 +374,15 @@ export class TelescopeAlerter {
   }
 
   /**
-   * Build the rich `new-exception` payload. Pulls the exception's own fields, then
-   * fetches its batch to find the sibling REQUEST entry for route/method/status/
-   * duration/user context, and counts how many times this family appears in the
-   * trailing window. This is the ONLY expensive path and runs only on a real fire.
+   * Build the rich exception payload shared by `new-exception` and
+   * `every-exception`. Pulls the exception's own fields, then fetches its batch to
+   * find the sibling REQUEST entry for route/method/status/duration/user context,
+   * counts how many times this family appears in the trailing window, and (when a
+   * `geoLookup` hook is configured) resolves the client IP to a coarse location.
+   * This is the ONLY expensive path and runs only on a real fire.
    */
-  private async buildNewExceptionPayload(
-    rule: { type: 'new-exception'; window: string },
+  private async buildExceptionPayload(
+    rule: { type: 'new-exception'; window: string } | { type: 'every-exception'; window?: string },
     entry: Entry,
     windowMs: number,
     nowMs: number,
@@ -347,6 +392,10 @@ export class TelescopeAlerter {
       entry.type === EntryType.ClientException
         ? this.buildClientContext(entry, occurrences)
         : await this.buildServerContext(entry, occurrences);
+
+    // Optional geo enrichment: resolve the client IP to a coarse location via the
+    // host hook. Only on a real fire, and only when an IP is present.
+    context.geo = await this.resolveGeo(context.clientIp);
 
     // Auto-mode AI enrichment: briefly await a diagnosis for this family. The
     // hook caps its own wait, so this never holds the alert beyond the grace.
@@ -370,6 +419,23 @@ export class TelescopeAlerter {
   }
 
   /**
+   * Resolve a client IP to a coarse {@link AlertGeoLocation} via the host's
+   * `geoLookup` hook. Returns `null` when no hook is configured, no IP is present,
+   * the hook returns `null`, or the hook throws (swallowed — geo is purely
+   * additive and must never break or block an alert beyond the hook's own cost).
+   */
+  private async resolveGeo(clientIp: string | null): Promise<AlertGeoLocation | null> {
+    const hook = this.deps.alerts.geoLookup;
+    if (typeof hook !== 'function' || clientIp === null) return null;
+    try {
+      return (await hook(clientIp)) ?? null;
+    } catch (error: unknown) {
+      this.logger.warn(`Telescope alert geoLookup failed: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
    * Build the server-exception context: the exception's own fields plus its
    * sibling REQUEST entry (route/method/status/duration/user) from the same batch.
    */
@@ -380,6 +446,7 @@ export class TelescopeAlerter {
     const exceptionContent = asPartialExceptionContent(entry.content);
     const request = await this.findSiblingRequest(entry.batchId);
     const requestContent = request === null ? null : asPartialRequestContent(request.content);
+    const headers = requestContent?.headers ?? null;
     return {
       familyHash: entry.familyHash ?? '',
       class: typeof exceptionContent.class === 'string' ? exceptionContent.class : 'Error',
@@ -395,8 +462,14 @@ export class TelescopeAlerter {
         requestContent !== null && typeof requestContent.method === 'string'
           ? requestContent.method
           : null,
-      userAgent: null,
+      userAgent: headerValue(headers, 'user-agent'),
+      referer: headerValue(headers, 'referer') ?? headerValue(headers, 'referrer'),
+      componentStack: null,
+      extra: null,
       client: false,
+      clientIp:
+        requestContent !== null && typeof requestContent.ip === 'string' ? requestContent.ip : null,
+      geo: null,
       statusCode:
         requestContent !== null && typeof requestContent.statusCode === 'number'
           ? requestContent.statusCode
@@ -426,7 +499,12 @@ export class TelescopeAlerter {
       route: typeof content.url === 'string' ? content.url : null,
       method: null,
       userAgent: typeof content.userAgent === 'string' ? content.userAgent : null,
+      referer: null,
+      componentStack: typeof content.componentStack === 'string' ? content.componentStack : null,
+      extra: typeof content.extra === 'object' && content.extra !== null ? content.extra : null,
       client: true,
+      clientIp: typeof content.clientIp === 'string' ? content.clientIp : null,
+      geo: null,
       statusCode: null,
       durationMs: null,
       user: userFromTags(entry.tags),
@@ -506,7 +584,30 @@ function asPartialRequestContent(content: unknown): Partial<RequestContent> {
     ...(typeof record.uri === 'string' ? { uri: record.uri } : {}),
     ...(typeof record.method === 'string' ? { method: record.method } : {}),
     ...(typeof record.statusCode === 'number' ? { statusCode: record.statusCode } : {}),
+    ...(typeof record.ip === 'string' ? { ip: record.ip } : {}),
+    ...(typeof record.headers === 'object' && record.headers !== null
+      ? { headers: record.headers as Record<string, unknown> }
+      : {}),
   };
+}
+
+/**
+ * Read a request header case-insensitively, returning a trimmed string or `null`.
+ * Express lowercases header names, but we normalize anyway so a differently-cased
+ * captured header (e.g. from another adapter) still resolves. A header captured as
+ * an array (rare, e.g. `set-cookie`) takes its first element.
+ */
+function headerValue(headers: Record<string, unknown> | null, name: string): string | null {
+  if (headers === null) return null;
+  const target = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() !== target) continue;
+    const raw = headers[key];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof value === 'string' && value.trim() !== '') return value;
+    return null;
+  }
+  return null;
 }
 
 function asPartialClientExceptionContent(content: unknown): Partial<ClientExceptionContent> {
@@ -517,6 +618,11 @@ function asPartialClientExceptionContent(content: unknown): Partial<ClientExcept
     ...(typeof record.stack === 'string' ? { stack: record.stack } : {}),
     ...(typeof record.url === 'string' ? { url: record.url } : {}),
     ...(typeof record.userAgent === 'string' ? { userAgent: record.userAgent } : {}),
+    ...(typeof record.clientIp === 'string' ? { clientIp: record.clientIp } : {}),
+    ...(typeof record.componentStack === 'string' ? { componentStack: record.componentStack } : {}),
+    ...(typeof record.extra === 'object' && record.extra !== null
+      ? { extra: record.extra as Record<string, unknown> }
+      : {}),
   };
 }
 
