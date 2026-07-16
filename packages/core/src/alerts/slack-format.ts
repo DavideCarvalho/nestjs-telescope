@@ -23,6 +23,15 @@ const STACK_CHAR_LIMIT = 2_800;
 const STACK_FRAME_LIMIT = 10;
 
 /**
+ * Slack caps a `section` block's `fields` array at 10 items — an 11th makes Slack
+ * reject the WHOLE message with `400 invalid_blocks`. A fully-enriched exception
+ * (instance + observed + error + route + UA + referer + duration + user + client
+ * IP + location + occurrences) exceeds that, so we spread the fields across as
+ * many section blocks as needed rather than overflowing one.
+ */
+const MAX_SECTION_FIELDS = 10;
+
+/**
  * Char budget for the AI diagnosis section. The diagnoser is already bounded by
  * `maxOutputTokens`, but a long report still has to share Slack's per-section
  * 3000-char cap with its `*Probable cause (AI):*` label, so we hard-clip here.
@@ -265,8 +274,12 @@ export function formatSlackMessage(
 
   const blocks: SlackBlock[] = [
     { type: 'header', text: { type: 'plain_text', text: headerText, emoji: true } },
-    { type: 'section', fields: contextFields },
   ];
+  // Spread the context fields across section blocks of at most MAX_SECTION_FIELDS —
+  // one overflowing section makes Slack reject the entire message.
+  for (let i = 0; i < contextFields.length; i += MAX_SECTION_FIELDS) {
+    blocks.push({ type: 'section', fields: contextFields.slice(i, i + MAX_SECTION_FIELDS) });
+  }
 
   const stack = exception ? clipStack(exception.stack) : null;
   if (stack !== null) {

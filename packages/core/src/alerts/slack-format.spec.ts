@@ -165,3 +165,33 @@ describe('formatSlackMessage — referer / geo / component stack / extra', () =>
     expect(message.blocks[0]).toMatchObject({ type: 'header' });
   });
 });
+
+describe('formatSlackMessage — Slack section field cap', () => {
+  it('keeps every section at or under 10 fields for a fully-enriched exception', () => {
+    // Every context field populated: instance + observed + error + route + UA + referer +
+    // duration + user + client IP + location + occurrences = 11 fields, which overflows a
+    // single section's 10-field cap and makes Slack reject the whole message (invalid_blocks).
+    const message = formatSlackMessage(
+      payload(
+        exceptionContext({
+          userAgent: 'Mozilla/5.0',
+          referer: 'https://app.example.com/from',
+          clientIp: '198.51.100.9',
+          geo: { city: 'São Paulo', region: 'SP', country: 'Brazil', countryCode: 'BR' },
+        }),
+      ),
+    );
+
+    const fieldSections = message.blocks.filter(
+      (block): block is Extract<typeof block, { type: 'section' }> =>
+        block.type === 'section' && Array.isArray(block.fields),
+    );
+    // The fields spilled into more than one section rather than overflowing one.
+    expect(fieldSections.length).toBeGreaterThan(1);
+    for (const section of fieldSections) {
+      expect(section.fields?.length ?? 0).toBeLessThanOrEqual(10);
+    }
+    // No field was dropped in the process — all 11 are present across the sections.
+    expect(fieldTexts(message).length).toBe(11);
+  });
+});
