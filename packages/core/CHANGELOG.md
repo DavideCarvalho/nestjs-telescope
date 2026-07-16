@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.21.0
+
+### Minor Changes
+
+- [#54](https://github.com/DavideCarvalho/nestjs-telescope/pull/54) [`356539f`](https://github.com/DavideCarvalho/nestjs-telescope/commit/356539f1a2fa5fb5fb743809ed74d8b1d509350f) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add `isNew` to exception alert context + a New/Recurring header badge. Exception alerts now carry `isNew` (true on a family's first occurrence in the window, `occurrences === 1`), and the Slack card badges the header `🆕 New` vs `🔁 Recurring` so on-call can gauge urgency at a glance — a brand-new error vs one that keeps recurring.
+
 ## 1.20.1
 
 ### Patch Changes
