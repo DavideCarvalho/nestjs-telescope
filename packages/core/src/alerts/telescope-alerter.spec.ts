@@ -372,6 +372,7 @@ describe('TelescopeAlerter', () => {
         userAgent: 'curl/8.0',
         referer: 'https://app.example.com/pay',
         occurrences: 1,
+        isNew: true,
         entryId: 'ex-b1',
         batchId: 'b1',
       });

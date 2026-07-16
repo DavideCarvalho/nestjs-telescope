@@ -39,6 +39,7 @@ function exceptionPayload(): AlertPayload {
       durationMs: 1234,
       user: '42',
       occurrences: 1,
+      isNew: true,
       entryId: 'ex-1',
       batchId: 'b-1',
     },

@@ -477,6 +477,7 @@ export class TelescopeAlerter {
       durationMs: request?.durationMs ?? null,
       user: userFromTags(request?.tags ?? entry.tags),
       occurrences,
+      isNew: occurrences === 1,
       entryId: entry.id,
       batchId: entry.batchId,
     };
@@ -509,6 +510,7 @@ export class TelescopeAlerter {
       durationMs: null,
       user: userFromTags(entry.tags),
       occurrences,
+      isNew: occurrences === 1,
       entryId: entry.id,
       batchId: entry.batchId,
     };

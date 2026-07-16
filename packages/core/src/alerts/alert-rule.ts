@@ -226,6 +226,12 @@ export interface ExceptionAlertContext {
   user: string | null;
   /** Times this family was seen in the window (>= 1; 1 on first-occurrence). */
   occurrences: number;
+  /**
+   * True when this is the family's first occurrence in the window (`occurrences
+   * === 1`) — a brand-new error rather than a recurrence. Lets channels badge a
+   * new error distinctly from a recurring one.
+   */
+  isNew: boolean;
   /** Exception entry id (for the dashboard deep link). */
   entryId: string;
   /** Batch id that ties the exception to its request entry. */
