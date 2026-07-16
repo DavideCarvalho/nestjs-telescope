@@ -22,6 +22,7 @@ function exceptionContext(overrides: Partial<ExceptionAlertContext> = {}): Excep
     durationMs: 1234,
     user: '42',
     occurrences: 1,
+    isNew: true,
     entryId: 'ex-1',
     batchId: 'b1',
     ...overrides,
@@ -163,6 +164,28 @@ describe('formatSlackMessage — referer / geo / component stack / extra', () =>
     });
     expect(message.text).toContain('Exception');
     expect(message.blocks[0]).toMatchObject({ type: 'header' });
+  });
+});
+
+describe('formatSlackMessage — new vs recurring badge', () => {
+  it('badges a first-occurrence exception as New', () => {
+    const message = formatSlackMessage(payload(exceptionContext({ isNew: true, occurrences: 1 })));
+    expect(message.text).toContain('🆕 New');
+    expect((message.blocks[0] as { text: { text: string } }).text.text).toContain('🆕 New');
+  });
+
+  it('badges a repeat exception as Recurring', () => {
+    const message = formatSlackMessage(
+      payload(exceptionContext({ isNew: false, occurrences: 7 })),
+    );
+    expect(message.text).not.toContain('🆕 New');
+    expect((message.blocks[0] as { text: { text: string } }).text.text).toContain('🔁 Recurring');
+  });
+
+  it('omits the badge for a non-exception (rate) alert', () => {
+    const message = formatSlackMessage(payload(undefined));
+    expect(message.text).not.toContain('🆕');
+    expect(message.text).not.toContain('🔁');
   });
 });
 
