@@ -559,7 +559,15 @@ export class Recorder {
     // snapshots the (possibly fat, possibly live-ORM-graph) content into a plain,
     // reference-free, size-capped clone at record() time (see spec §A.1). Track
     // when a bound clipped content so /health can surface fat-capture pressure.
-    const redacted = redactBoundedWith(input.content, this.options.redact, this.redactSpec);
+    // Per-type content bounds: a rare, high-value entry (exception/
+    // client_exception, whose stacks are legitimately many KB) can carry a bigger
+    // content budget than the high-volume request/query/cache entries the global
+    // bound exists to guard. Only the NUMERIC bounds differ per type; the masking
+    // spec is shared (compiled once). Most entries have no override → the common
+    // path allocates nothing.
+    const perType = this.options.redact.perType?.[input.type];
+    const redactOptions = perType ? { ...this.options.redact, ...perType } : this.options.redact;
+    const redacted = redactBoundedWith(input.content, redactOptions, this.redactSpec);
     if (redacted.truncated) {
       this.truncatedEntryCount += 1;
     }

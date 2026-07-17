@@ -110,6 +110,14 @@ export class ClientErrorController {
     const userTag = userIdentityTag(content.user);
     if (userTag !== null) tags.push(userTag);
 
+    // Content field ORDER is load-bearing. The Recorder's content-byte budget
+    // (redact.maxContentBytes) walks keys in insertion order and drops every key
+    // after the budget is exhausted. A deep React error boundary yields a
+    // componentStack of many KB, so the short enrichment fields the alert renders
+    // (clientIp/url/userAgent) MUST precede `stack`/`componentStack` — otherwise a
+    // big stack starves them out and the Slack card silently loses its IP (hence
+    // geo), URL and user-agent. `clientIp` is server-derived (never from the body)
+    // and leads, so it survives even the tightest budget.
     this.service.record({
       type: EntryType.ClientException,
       familyHash: exceptionFamilyHash({
@@ -118,7 +126,18 @@ export class ClientErrorController {
         stack: content.stack,
       }),
       tags,
-      content: { ...content, clientIp: ip },
+      content: {
+        clientIp: ip,
+        message: content.message,
+        name: content.name,
+        url: content.url,
+        userAgent: content.userAgent,
+        user: content.user,
+        release: content.release,
+        extra: content.extra,
+        stack: content.stack,
+        componentStack: content.componentStack,
+      },
     });
   }
 

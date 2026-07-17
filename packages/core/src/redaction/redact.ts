@@ -94,7 +94,32 @@ export interface RedactOptions {
    * strings (an ORM user graph) that slip under the node/string/array limits.
    */
   maxContentBytes?: number;
+  /**
+   * Per-entry-type overrides of the numeric bounds above, keyed by the entry's
+   * `type` (e.g. `'exception'`, `'client_exception'`). A listed type's bounds are
+   * merged OVER the top-level bounds for that entry only; unlisted types use the
+   * top-level bounds unchanged. The masking spec (`keys`/`paths`/`mask`) is never
+   * per-type — it stays uniform (and is compiled once).
+   *
+   * Motivation: the content-byte budget is really an OOM guard on HIGH-VOLUME
+   * entries (request/query/cache clone big live graphs). Rare, high-value entries
+   * — exceptions and client exceptions, whose stacks/componentStacks are
+   * legitimately many KB — can be given a bigger budget WITHOUT loosening the
+   * guard on the noisy ones.
+   */
+  perType?: Record<string, RedactBounds>;
 }
+
+/**
+ * The numeric memory bounds of {@link RedactOptions} — the subset overridable
+ * PER ENTRY TYPE via {@link RedactOptions.perType}. The masking spec
+ * (`keys`/`paths`/`mask`) is deliberately excluded: masking is a security
+ * invariant that stays uniform across every entry.
+ */
+export type RedactBounds = Pick<
+  RedactOptions,
+  'maxDepth' | 'maxStringLength' | 'maxArrayLength' | 'maxNodes' | 'maxContentBytes'
+>;
 
 /** Result of a bounded redaction: the detached clone plus whether anything was clipped. */
 export interface RedactBoundedResult {

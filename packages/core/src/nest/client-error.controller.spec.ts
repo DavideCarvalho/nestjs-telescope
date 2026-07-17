@@ -184,4 +184,61 @@ describe('ClientErrorController', () => {
       .send({ message: 'boom' })
       .expect(204);
   });
+
+  it('keeps clientIp/url/userAgent when a huge componentStack would exhaust the redaction budget', async () => {
+    // A deeply-nested React error boundary produces a componentStack of many KB.
+    // The short enrichment fields the Slack alert renders (clientIp/url/userAgent)
+    // must NOT be starved out of the content by that big string — they are
+    // ordered ahead of the stacks so the byte budget covers them first.
+    const built = await makeApp({
+      clientErrors: { enabled: true },
+      redact: { maxContentBytes: 2_000 },
+    });
+    app = built.app;
+    const componentStack = 'at Component\n'.repeat(600); // ~7.8 KB, well over budget
+
+    await request(app.getHttpServer())
+      .post(ENDPOINT)
+      .set('x-forwarded-for', '203.0.113.7')
+      .send({
+        message: 'f.map is not a function',
+        name: 'TypeError',
+        url: 'https://dev.example/dashboard/vehicle-statistics',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0)',
+        componentStack,
+      })
+      .expect(204);
+
+    const entries = await clientEntries(app, built.storage);
+    const content = entries[0]?.content as Record<string, unknown> | undefined;
+    expect(content?.clientIp).toBe('203.0.113.7');
+    expect(content?.url).toBe('https://dev.example/dashboard/vehicle-statistics');
+    expect(content?.userAgent).toBe('Mozilla/5.0 (Windows NT 10.0)');
+  });
+
+  it('honors redact.perType to give client_exception a larger content budget than the global', async () => {
+    // Global budget is punishingly small (protects high-volume request/cache
+    // entries); the rare, high-value client_exception gets its own generous
+    // budget so its whole componentStack survives.
+    const built = await makeApp({
+      clientErrors: { enabled: true },
+      redact: {
+        maxContentBytes: 50,
+        perType: { [EntryType.ClientException]: { maxContentBytes: 32_768 } },
+      },
+    });
+    app = built.app;
+    const componentStack = 'at Component\n'.repeat(600);
+
+    await request(app.getHttpServer())
+      .post(ENDPOINT)
+      .set('x-forwarded-for', '203.0.113.7')
+      .send({ message: 'boom', componentStack })
+      .expect(204);
+
+    const entries = await clientEntries(app, built.storage);
+    const content = entries[0]?.content as Record<string, unknown> | undefined;
+    expect(content?.clientIp).toBe('203.0.113.7');
+    expect((content?.componentStack as string | undefined)?.length).toBe(componentStack.length);
+  });
 });
