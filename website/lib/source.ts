@@ -1,11 +1,23 @@
+import { type ComponentType, createElement } from 'react';
 import { docs } from 'collections/server';
 import { loader } from 'fumadocs-core/source';
+import * as lucide from 'lucide-react';
 import { docsContentRoute, docsImageRoute, docsRoute } from './shared';
+
+const lucideExports = lucide as unknown as Record<string, ComponentType | undefined>;
 
 // See https://fumadocs.dev/docs/headless/source-api for more info
 export const source = loader({
   baseUrl: docsRoute,
   source: docs.toFumadocsSource(),
+  // Resolve the `icon` field in meta.json / frontmatter to a lucide icon so the
+  // docs sidebar renders per-page glyphs. Resolve against the full lucide
+  // namespace so renamed-icon aliases still work.
+  icon(icon) {
+    if (!icon) return;
+    const Icon = lucideExports[icon];
+    if (Icon) return createElement(Icon);
+  },
   plugins: [],
 });
 
