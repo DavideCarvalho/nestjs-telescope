@@ -1,4 +1,5 @@
 {
   "title": "Reference",
+  "icon": "BookMarked",
   "pages": ["configuration", "changelog"]
 }

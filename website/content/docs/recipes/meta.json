@@ -1,5 +1,6 @@
 {
   "title": "Recipes",
+  "icon": "BookOpen",
   "pages": [
     "index",
     "custom-storage",

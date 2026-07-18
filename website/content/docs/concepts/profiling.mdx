@@ -1,0 +1,140 @@
+---
+title: CPU profiling
+description: On-demand V8 CPU flamegraphs — strictly opt-in, off by default, with a headless "profile the next N requests" API and a uniform sampled mode, aggregated into a bounded flame tree the dashboard renders.
+icon: Flame
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+When a route is slow but you can't tell *where* the time goes, a CPU flamegraph answers it: a picture of the call stack over the life of a request, with each frame sized by the time spent in it. Telescope can capture one on demand — arm "profile the next request to this endpoint", hit it, and read the flamegraph in the dashboard — or sample a fraction of traffic automatically. It's built on V8's own inspector profiler, aggregated into a `cpu_profile` entry that lands in the same batch as the request it profiled.
+
+<Callout type="warn" title="Strictly opt-in — off by default">
+  Profiling has **real overhead** (it drives a V8 sampling profiler), so it is OFF unless you set `profiling.enabled`. While disabled, Telescope **never constructs a profiler, never requires `node:inspector`**, and adds nothing to the request path beyond a single boolean check. There is provably zero inspector activity until you turn it on *and* a request is selected.
+</Callout>
+
+## Turn it on
+
+`profiling` is a core `forRoot` option. The minimal form enables the feature for **manual triggers only** — no request is profiled until you arm a capture, so enabling it this way carries no per-request cost beyond the gate:
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  profiling: { enabled: true }, // manual captures only; sampling stays off
+});
+```
+
+To also auto-capture a fraction of traffic, add a `sampleRate`:
+
+```ts
+TelescopeModule.forRoot({
+  profiling: {
+    enabled: true,
+    sampleRate: 0.01,           // profile ~1% of requests, uniformly
+    maxConcurrent: 1,           // never run two captures at once (default)
+    minDurationMs: 50,          // discard captures shorter than 50ms
+    samplingIntervalMicros: 500, // finer-grained V8 sampling (default 1000 = 1ms)
+  },
+});
+```
+
+### `ProfilingOptions`
+
+| Option | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Master switch. Nothing below matters while this is false — no profiler is constructed and `node:inspector` is never loaded. |
+| `sampleRate` | `0` | Fraction (0–1) of requests auto-captured. `0` disables sampling entirely (manual triggers still work). Sampling is **uniform** — errors/slow requests are *not* special-cased; use manual triggers for targeted captures. |
+| `maxConcurrent` | `1` | Max simultaneous in-flight captures. A request that would exceed the cap is **not** profiled — it runs untouched. Profiling is expensive and concurrent V8 profilers compound the overhead. |
+| `minDurationMs` | `0` | Captures whose wall time is below this are **discarded** (too short to be meaningful; the flamegraph would be near-empty). `0` keeps all. |
+| `samplingIntervalMicros` | `1000` | V8 sampling interval in microseconds. Lower = finer-grained but more overhead. V8's own default is 1ms. |
+
+<Callout type="info">
+  The two capture modes **compose**. `sampleRate` drives background sampling; manual arms (below) drive targeted captures. Both are gated by `maxConcurrent` and filtered by `minDurationMs`. Manual arms always win the selection race — a request matching an armed capture is profiled even at `sampleRate: 0`.
+</Callout>
+
+## The two capture modes
+
+**Manual (armed).** You tell Telescope "profile the next N requests" — optionally only those whose normalized route matches a label like `"GET /users/:id"`. Matching requests consume the budget one at a time until it's exhausted. This is the targeted path: reproduce a slow endpoint, arm one capture against it, and get exactly the flamegraph you want with no sampling noise.
+
+**Sampled.** With `sampleRate > 0`, each request has that probability of being auto-captured. Uniform and untargeted — good for catching *something* slow you didn't anticipate, at a fixed cost budget. Because it's uniform, keep the rate low: at `maxConcurrent: 1` an in-flight capture already sheds any concurrent selection, but a high rate still means a steady stream of captures competing for that one slot.
+
+For every selected request the flow is: `shouldProfile(route)` (cheap gate) → `begin(route)` starts a V8 profile → the request runs → on `finish`, `end()` stops the profiler, aggregates the samples into a flame tree, and records it. The capture runs **inside the request's async context**, so the resulting `cpu_profile` entry inherits the active batch and trace context — it correlates to the exact request it profiled. A capture failure can never affect the request it wrapped; a too-short capture (below `minDurationMs`) is silently dropped.
+
+## The headless API
+
+Everything the dashboard does is a plain HTTP call against the mounted API (default mount `/telescope`, so `/telescope/api/...`). Reads sit behind the normal read `authorizer`; **arming a capture is a mutation** — it incurs real overhead — so it's behind the same default-deny `authorizeAction` gate as *Prune now* and request replay.
+
+| Method | Path | Shape | Notes |
+|---|---|---|---|
+| `GET` | `/api/profiles/status` | read | `{ enabled, sampleRate, active, maxConcurrent, pendingManual }` — powers the dashboard's Profiles tab and its "enable `profiling`" empty state. |
+| `GET` | `/api/profiles` | read | Captured profiles, newest-first, **without** their (large) frame trees (`?limit=` to cap). |
+| `GET` | `/api/profiles/:id` | read | One profile's full flame tree — the flamegraph payload. `404` if the id isn't a `cpu_profile` entry. |
+| `POST` | `/api/profiles/arm` | mutation | Arm the next `count` requests (optional `label`). `403` when no `authorizeAction` is configured; `400` when profiling is disabled. |
+
+Arm a capture straight from a script or `curl` — profile the next 3 hits to one route:
+
+```bash
+curl -X POST https://your-app/telescope/api/profiles/arm \
+  -H 'content-type: application/json' \
+  -d '{ "count": 3, "label": "GET /users/:id" }'
+# → { "pendingManual": 3 }
+```
+
+The response returns the remaining manual budget across all arms. Omit `label` to profile the next `count` requests regardless of route; omit `count` to arm exactly one.
+
+<Callout type="warn" title="Arming needs `authorizeAction`">
+  Like every Telescope mutation, arming is **default-deny**. Without an `authorizeAction` configured the endpoint returns `403` ("Mutations are disabled"). And if `profiling.enabled` is false, arming returns `400` so the dashboard can explain why nothing happens — the switch has to be on first.
+</Callout>
+
+## The dashboard flamegraph view
+
+With profiling enabled the console shows a **Profiles** tab (hidden otherwise — the nav reads `profiling.enabled` from status, so an older server that predates the feature simply hides it). From there you can:
+
+<Steps>
+<Step>
+**See the live profiler status** — enabled/disabled, the sample rate, how many captures are in flight (`active` / `maxConcurrent`), and the pending manual budget.
+</Step>
+<Step>
+**Arm a capture** — "profile the next N requests", optionally scoped to one route — the UI's Arm button posts to `/profiles/arm`.
+</Step>
+<Step>
+**Browse captured profiles** newest-first, each tagged `profile` plus its `manual`/`sampled` reason, showing the label, duration, and sample count.
+</Step>
+<Step>
+**Open a flamegraph** — the frame tree renders as an interactive flamegraph, with a precomputed **hot functions** list (the frames with the most *self* time) so the bottleneck is one glance away.
+</Step>
+</Steps>
+
+## What gets stored
+
+A finished capture is recorded as a `cpu_profile` entry. Crucially, Telescope stores the **aggregated flame tree**, not the raw per-sample `.cpuprofile`:
+
+- Each V8 sample's time delta is charged to the **self** time of the frame it landed on; **total** time is the frame's self time plus all its descendants', from a single post-order walk. The tree mirrors V8's call graph, so callers nest exactly as they did at runtime.
+- The tree is rooted at a synthetic `(root)` frame; times are in **milliseconds** (`selfMs` / `totalMs`), with sample counts alongside.
+- The entry also carries a small precomputed **`hot`** list — the hottest frames by self time (with `selfPct`) — so the dashboard's hot-functions panel doesn't have to walk the tree.
+
+```ts
+interface CpuProfileContent {
+  durationMs: number;            // wall-clock capture duration
+  sampleCount: number;           // V8 samples collected
+  reason: 'manual' | 'sampled';  // what triggered the capture
+  label: string | null;          // route/label, e.g. "GET /users/:id"
+  tree: FlameNode;               // aggregated flamegraph (single synthetic root)
+  hot: HotFrame[];               // hottest frames by self time, precomputed
+}
+```
+
+<Callout type="info" title="Why aggregate instead of storing the raw profile">
+  A raw `.cpuprofile` is unbounded — it grows with the number of samples and would blow the entry-content budget (and trip the redaction bounds). The aggregated frame tree is bounded by the *call-graph size*, not the sample count, and it's everything the flamegraph renderer needs. The aggregation is pure and deterministic, and it runs **outside any hot path** — only when a capture actually completes.
+</Callout>
+
+## Overhead, precisely
+
+The whole design is built so the cost is where you asked for it and nowhere else:
+
+- **Disabled:** `shouldProfile` returns false after one boolean check; `begin` returns `null`. No profiler, no `node:inspector`, no RNG.
+- **Enabled, request not selected:** the gate plus — only if sampling is on — a single `Math.random()` call.
+- **Selected:** a V8 sampling profiler runs for that request. Real overhead, which is exactly why captures are capped by `maxConcurrent` (default 1) and can be floored by `minDurationMs`. `node:inspector` is required lazily on the *first* capture and never before.
+
+This composes with Telescope's other guards — sampling for store volume, [overload protection](/docs/concepts/performance#overload-protection-pause-under-event-loop-pressure) for event-loop pressure — so profiling is a scalpel you pick up deliberately, not a cost you carry by default.

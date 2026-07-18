@@ -1,6 +1,7 @@
 ---
 title: Watchers
 description: Query watchers (MikroORM, TypeORM, Prisma) and behavioral watchers (mail, cache, schedule, events, logs, redis, model) — each a small package you add to the watchers array.
+icon: Eye
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -214,6 +215,25 @@ Telescope's own log contexts (`Telescope`, `Recorder`, `LogsWatcher`, `EventsWat
 ```ts
 TelescopeModule.forRoot({ sampling: { log: { rate: 0.1, keepErrors: true } } });
 ```
+
+**Programmatic log emit.** Both capture paths above hook Nest's `Logger`. Hosts that log through something else entirely — a raw `pino` / `winston` pipeline, a framework logger, a background worker that never touches `@nestjs/common` — can push lines into Telescope directly with `emitTelescopeLog`. It forwards a `LogSinkInput` to the sink that `LogsWatcher` installs, so the `log` entry lands in the active request/job batch just like an auto-captured one:
+
+```ts
+import { emitTelescopeLog } from '@dudousxd/nestjs-telescope-logs';
+
+// Anywhere in your own logging pipeline:
+emitTelescopeLog({
+  level: 'warn',                 // Nest log level: 'log' | 'warn' | 'error' | 'debug' | 'verbose' | 'fatal'
+  message: 'Payment retry exhausted',
+  context: 'BillingService',     // logger context, or null
+});
+```
+
+`LogSinkInput` is the line's shape — `{ level, message, context }`, where `message` is already stringified and `context` is `null` when none. `emitTelescopeLog` is a **no-op until `LogsWatcher` has wired the sink**, so calling it from a module that also runs outside a Telescope-enabled app never crashes and never records. The shared re-entrancy guard applies here too: emitting a log while Telescope is already recording one self-suppresses, so a logging side effect of capture can't spiral into a loop.
+
+<Callout type="info" title="setTelescopeLogSink is internal">
+  The sink itself is installed by `LogsWatcher`'s lifecycle. `setTelescopeLogSink(fn | null)` is exported for that wiring (and for tests) — hosts don't call it directly; add `LogsWatcher` to `watchers` and use `emitTelescopeLog` to push lines.
+</Callout>
 
 ### Redis commands — `@dudousxd/nestjs-telescope-redis-watcher`
 

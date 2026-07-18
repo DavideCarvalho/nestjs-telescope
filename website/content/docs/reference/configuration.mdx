@@ -1,6 +1,7 @@
 ---
 title: Configuration
-description: The full TelescopeModule.forRoot() options reference — capture, storage, the gate, retention, alerts, AI, the MCP server, and overload protection.
+description: The full TelescopeModule.forRoot() options reference — capture, storage, the gate, retention, alerts, AI, CPU profiling, the MCP server, and overload protection.
+icon: Settings
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -47,6 +48,7 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 | `pulse` | _none_ | Health-snapshot tuning; `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot. |
 | `alerts` | _none_ | Pluggable-channel alerting (Slack / webhook / custom) + rules. See [Alerts](/docs/dashboard#alerts). |
 | `ai` | _none_ | AI exception diagnosis. See [AI diagnosis](/docs/packages/ai). |
+| `profiling` | `{ enabled: false }` | On-demand V8 CPU flamegraphs — strictly opt-in. `enabled`, `sampleRate`, `maxConcurrent`, `minDurationMs`, `samplingIntervalMicros`. See below and [CPU profiling](/docs/concepts/profiling). |
 | `traceContext` / `traceLink` | _none_ | OpenTelemetry trace stamping + deep-link template. See [`-otel`](/docs/packages/otel). |
 | `explainQuery` | _none_ | Host hook that runs an engine `EXPLAIN` for a captured query. See [Explain slow queries](/docs/dashboard#explain-slow-queries). |
 
@@ -67,7 +69,7 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 ### `overloadProtection`
 
 ```ts
-overloadProtection?: boolean | { maxEventLoopLagMs?: number };
+overloadProtection?: boolean | { maxEventLoopLagMs?: number; startupGraceMs?: number };
 ```
 
 Telescope samples the process event-loop delay (`perf_hooks.monitorEventLoopDelay`) on a 1s interval and, when the **p99 lag** crosses the threshold, **pauses the Recorder** (`record()` becomes a no-op) until the lag recovers — so a telescope under load can never amplify an incident.
@@ -75,13 +77,38 @@ Telescope samples the process event-loop delay (`perf_hooks.monitorEventLoopDela
 - `true` (the **default**) — protect with a **200ms** p99 threshold.
 - `false` — disable.
 - `{ maxEventLoopLagMs }` — tune the threshold (defaults to 200 when omitted).
+- `{ startupGraceMs }` — grace window (default **~5000ms**) after the guard arms during which it samples but never pauses or logs, so the synchronous bootstrap stall (DI wiring, migrations, codegen blocking the loop) can't trip the guard on a transient. Set `0` to arm immediately; ignored when protection is off.
 
 ```ts
 TelescopeModule.forRoot({
-  overloadProtection: { maxEventLoopLagMs: 100 }, // pause sooner
+  overloadProtection: { maxEventLoopLagMs: 100, startupGraceMs: 0 }, // pause sooner, arm at once
 });
 ```
 
 <Callout type="info">
   The sampling timer is `unref`'d (it never keeps the host's loop alive), and the guard degrades to a no-op when `perf_hooks.monitorEventLoopDelay` is unavailable. See [Performance → Overload protection](/docs/concepts/performance#overload-protection-pause-under-event-loop-pressure).
+</Callout>
+
+### `profiling`
+
+```ts
+profiling?: {
+  enabled?: boolean;                // default false — master switch
+  sampleRate?: number;              // default 0 — fraction (0–1) auto-captured
+  maxConcurrent?: number;           // default 1 — max simultaneous captures
+  minDurationMs?: number;           // default 0 — discard captures shorter than this
+  samplingIntervalMicros?: number;  // default 1000 — V8 sampling interval
+};
+```
+
+On-demand V8 CPU flamegraph profiling. **Strictly opt-in and OFF by default** — while disabled no profiler is constructed, `node:inspector` is never loaded, and the request path is untouched beyond one boolean check. Enable it for manual "profile the next N requests" captures (via the `POST /api/profiles/arm` endpoint / the dashboard's **Profiles** tab), and/or set `sampleRate` to auto-capture a uniform fraction of traffic.
+
+```ts
+TelescopeModule.forRoot({
+  profiling: { enabled: true, sampleRate: 0.01, minDurationMs: 50 },
+});
+```
+
+<Callout type="info">
+  Captures are aggregated into a bounded `cpu_profile` entry (a flame tree, not the raw `.cpuprofile`) that inherits the profiled request's batch/trace context. Arming is a **mutation** — behind the default-deny `authorizeAction` gate. See [CPU profiling](/docs/concepts/profiling).
 </Callout>
