@@ -14,6 +14,9 @@ export type LoginHook = (
   password: string,
 ) => Promise<TelescopeSessionUser | null> | TelescopeSessionUser | null;
 
+/** Re-checks a live session on sliding renewal; see `DashboardAuthOptions.revalidate`. */
+export type RevalidateHook = (session: TelescopeSessionUser) => Promise<boolean> | boolean;
+
 /** Author-facing `dashboardAuth` option (see TelescopeModuleOptions). */
 export interface DashboardAuthOptions {
   /** REQUIRED HMAC-SHA256 signing key. Missing/empty => boot error (fail closed). */
@@ -24,6 +27,9 @@ export interface DashboardAuthOptions {
   session?: SessionHook;
   /** Mode B. */
   login?: LoginHook;
+  /** Re-checks a live session on sliding renewal; see `RevalidateHook`. Not a mode — it cannot
+   *  mint a session, only revoke one already minted by `session`/`login`. */
+  revalidate?: RevalidateHook;
 }
 
 export type AuthMode = 'session' | 'login';
@@ -35,6 +41,7 @@ export interface ResolvedDashboardAuth {
   modes: AuthMode[];
   session?: SessionHook;
   login?: LoginHook;
+  revalidate?: RevalidateHook;
 }
 
 const DEFAULT_TTL = '8h';
@@ -71,5 +78,6 @@ export function resolveDashboardAuth(
     modes,
     ...(options.session !== undefined ? { session: options.session } : {}),
     ...(options.login !== undefined ? { login: options.login } : {}),
+    ...(options.revalidate !== undefined ? { revalidate: options.revalidate } : {}),
   };
 }

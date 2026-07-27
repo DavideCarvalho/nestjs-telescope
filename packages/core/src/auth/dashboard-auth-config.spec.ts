@@ -35,6 +35,21 @@ describe('resolveDashboardAuth', () => {
     expect(loginOnly?.modes).toEqual(['login']);
   });
 
+  it('throws at boot when only revalidate is provided (it cannot mint a session)', () => {
+    expect(() => resolveDashboardAuth({ secret: 's'.repeat(32), revalidate: () => true })).toThrow(
+      /session.*login|at least one/,
+    );
+  });
+
+  it('does not list revalidate in modes', () => {
+    const auth = resolveDashboardAuth({
+      secret: 's'.repeat(32),
+      session: () => null,
+      revalidate: () => true,
+    });
+    expect(auth?.modes).toEqual(['session']);
+  });
+
   it('defaults ttl to 8h and parses a custom duration string', () => {
     expect(resolveDashboardAuth({ secret: 's', login: () => null })?.ttlMs).toBe(
       8 * 60 * 60 * 1000,

@@ -9,7 +9,11 @@ import {
 import { attachSession, readCookieHeader } from '../auth/auth-request.js';
 import { parseCookieHeader } from '../auth/cookie-header.js';
 import type { ResolvedDashboardAuth } from '../auth/dashboard-auth-config.js';
-import { SESSION_COOKIE_NAME, issueSessionCookie } from '../auth/session-cookie-io.js';
+import {
+  SESSION_COOKIE_NAME,
+  clearSessionCookie,
+  issueSessionCookie,
+} from '../auth/session-cookie-io.js';
 import { type TelescopeSession, verifySessionCookie } from '../auth/session-cookie.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import {
@@ -43,7 +47,10 @@ export class TelescopeGuard implements CanActivate {
         throw new UnauthorizedException();
       }
       attachSession(request, session);
-      this.maybeRenew(http.getResponse<unknown>(), request, session);
+      if (!(await this.maybeRenew(http.getResponse<unknown>(), request, session))) {
+        // Revoked mid-session: same 401 as an absent cookie.
+        throw new UnauthorizedException();
+      }
       return this.runAuthorizer(request);
     }
     if (this.options.authorizer) {
@@ -63,29 +70,45 @@ export class TelescopeGuard implements CanActivate {
   }
 
   /**
-   * Sliding renewal: when a valid cookie is past 50% of its TTL, re-issue a
-   * fresh one so active users never get logged out mid-session. Appends a new
-   * Set-Cookie (preserving any others already on the response).
+   * Sliding renewal + revalidation: when a valid cookie is past 50% of its TTL, re-issue a fresh one
+   * so active users never get logged out mid-session — but first let the host's `revalidate` hook
+   * re-check the user, so a deactivated or demoted operator loses access instead of riding a
+   * self-renewing cookie. Returns `false` when the session was revoked (cookie already cleared).
    */
-  private maybeRenew(response: unknown, request: unknown, session: TelescopeSession): void {
+  private async maybeRenew(
+    response: unknown,
+    request: unknown,
+    session: TelescopeSession,
+  ): Promise<boolean> {
     const auth = this.dashboardAuth;
-    if (!auth) return;
+    if (!auth) return true;
     const now = Date.now();
-    if (now - session.iat <= auth.ttlMs / 2) return;
-    issueSessionCookie(
-      {
-        id: session.sub,
-        ...(session.name !== undefined ? { name: session.name } : {}),
-        roles: session.roles,
-      },
-      {
-        auth,
-        telescopePath: this.config?.path ?? 'telescope',
-        request,
-        response,
-        now,
-      },
-    );
+    if (now - session.iat <= auth.ttlMs / 2) return true;
+    const user = {
+      id: session.sub,
+      ...(session.name !== undefined ? { name: session.name } : {}),
+      roles: session.roles,
+    };
+    if (auth.revalidate) {
+      let allowed: boolean;
+      try {
+        allowed = await auth.revalidate(user);
+      } catch {
+        allowed = false; // Fail closed.
+      }
+      if (!allowed) {
+        clearSessionCookie({ telescopePath: this.config?.path ?? 'telescope', request, response });
+        return false;
+      }
+    }
+    issueSessionCookie(user, {
+      auth,
+      telescopePath: this.config?.path ?? 'telescope',
+      request,
+      response,
+      now,
+    });
+    return true;
   }
 
   private async runAuthorizer(request: unknown): Promise<boolean> {
