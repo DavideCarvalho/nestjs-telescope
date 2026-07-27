@@ -22,7 +22,7 @@ Both modes mint the *same* cookie — there's no session store and no revocation
 - **Name** `telescope_session`; `httpOnly`, `SameSite=Lax`, `Secure` when the request is https (or `x-forwarded-proto: https`), `Path=/<mount path>` (default `/telescope`).
 - **Value** `base64url(JSON payload) . base64url(HMAC-SHA256(payload, secret))`, payload `{ sub, name?, roles, iat, exp }`. Verified with `crypto.timingSafeEqual`. **No JWT dependency — `node:crypto` only.**
 - **Tampered / expired / malformed** cookies are treated as *absent* (`401`), never thrown.
-- **Sliding renewal** is handled centrally in the guard: a valid cookie past 50% of its TTL is transparently re-issued on the response.
+- **Sliding renewal** is handled centrally in the guard: a valid cookie past 50% of its TTL is transparently re-issued on the response — optionally gated by a `revalidate` hook first (see below).
 
 ## Two modes
 
@@ -49,6 +49,13 @@ TelescopeModule.forRoot({
 
     /** Mode B. Called by POST /auth/login with the submitted credentials. */
     login: (username, password) => /* TelescopeSessionUser | null */,
+
+    /** Optional. Re-checks the session on sliding renewal (at most once per
+     *  ttl/2 per session). false, or a throw, clears the cookie and 401s.
+     *  Not a mode — it can't mint a session, so it doesn't count toward the
+     *  "at least one of session/login" boot check, and it never appears in
+     *  `modes`. */
+    revalidate: (session) => /* boolean */,
   },
 });
 
@@ -64,6 +71,18 @@ interface TelescopeSessionUser {
 The password submitted to `login` is passed through verbatim — including an empty string, since the built-in login screen never requires one — the hook owns whether it matters.
 
 When `dashboardAuth` is **not** set, behavior is unchanged — the existing `authorizer` / default-deny-in-prod applies.
+
+## Revalidating a renewed session
+
+Sliding renewal keeps an active tab logged in by re-issuing the cookie — but on its own, it never asks the host anything, so a deactivated or demoted operator keeps dashboard access for as long as the tab stays open. `revalidate` closes that gap: when a renewal is due, it runs first, receiving the already-minted session (`{ id, name?, roles }`), and returning `false` (or throwing) clears the cookie and denies the request instead of renewing it.
+
+- It only runs **on the renewal path** — at most once per `ttl/2` per session — not on every request, so a DB round-trip in the hook is cheap.
+- It's distinct from `session`/`login`: those mint a session from a **fresh request** the dashboard's own XHRs don't carry the host's credential on; `revalidate` re-checks an **existing** session by identity instead.
+- It can't mint a session, so it isn't a mode — it doesn't count toward the "at least one of `session`/`login`" boot check, and it never appears in `modes`.
+
+<Callout type="warn" title="Revocation isn't instant">
+  Because `revalidate` only runs on the renewal path, access loss lags behind the change on the host side by up to `ttl/2` — 4 hours at the default 8h TTL. A demoted or deactivated operator keeps dashboard access for the rest of that window if the tab stays open. Lower `ttl` to tighten the window; there's no way to force an immediate check without one.
+</Callout>
 
 ## Recipes
 
@@ -151,12 +170,13 @@ When `dashboardAuth` is configured:
 - **CSRF.** `SameSite=Lax` blocks the cookie from riding cross-site `POST`s. Queue mutations are `POST`s, so they're covered by this alone.
 - **Fail-closed boot.** A missing or too-short `secret` while `dashboardAuth` is set is a **hard boot error** with a clear message — never a silent open door.
 - **401 vs 403.** A missing / tampered / expired session is `401` (not authenticated → show the auth screen). A valid session that your `authorizer` or `authorizeAction` then rejects is `403` (authenticated, not allowed). The login endpoint returns a **uniform `401`** on bad credentials — no user enumeration.
-- **Hook errors don't leak.** A hook that throws is treated as a denial (`null`) with a once-per-kind warn log — it never `500`s the auth endpoint into a stack-trace leak.
+- **Hook errors don't leak.** A hook that throws is treated as a denial (`null`) with a once-per-kind warn log — it never `500`s the auth endpoint into a stack-trace leak. `revalidate` follows the same rule: a throw denies (fails closed), same as returning `false`.
 - **Clock skew.** `exp` is checked with a 30-second grace.
 - **Brute-force throttling** on `/auth/login` is documented as the host's job (e.g. Nest's `Throttler`); the `/auth/*` endpoints do no heavy work before the hook runs.
+- **`revalidate` is not immediate revocation.** It only fires on the renewal path (past 50% of TTL), so a demoted/deactivated operator can retain access for up to `ttl/2` after the change lands on the host side — see the callout above.
 
 <Callout type="info">
-  Server-side / revocable sessions, OAuth/OIDC flows inside Telescope, and per-view authorization granularity are explicitly out of scope: it's a single all-or-nothing dashboard session plus the existing `authorizeAction` for mutations. The codec is swappable, so revocable sessions can be added later without an API break.
+  There's still no session store — `revalidate` is a per-renewal callback into the host, not a revocation list. Server-side session storage, OAuth/OIDC flows inside Telescope, and per-view authorization granularity remain out of scope: it's a single all-or-nothing dashboard session plus the existing `authorizeAction` for mutations. The codec is swappable, so a stored/revocable session could be added later without an API break.
 </Callout>
 
 ## Securing the console with your own guards
