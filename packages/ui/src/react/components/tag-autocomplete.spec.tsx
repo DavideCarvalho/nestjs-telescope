@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { TagCount, TelescopeClient } from '../../client/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../index.js';
 import { TagAutocomplete } from './tag-autocomplete.js';
 
@@ -15,49 +16,22 @@ function mockClient(tags: TagCount[] = ALL_TAGS) {
   const tagsFn = vi.fn<(prefix?: string) => Promise<TagCount[]>>(async (prefix) =>
     prefix ? tags.filter((entry) => entry.tag.toLowerCase().includes(prefix.toLowerCase())) : tags,
   );
-  const client: TelescopeClient = {
+  const client: TelescopeClient = mockTelescopeClient({
     tags: tagsFn,
-    entries: async () => {
-      throw new Error('not used');
-    },
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
-    liveQueues: async () => {
-      throw new Error('not used');
-    },
-    queueCounts: async () => {
-      throw new Error('not used');
-    },
-    queueJobs: async () => {
-      throw new Error('not used');
-    },
-    queueJob: async () => {
-      throw new Error('not used');
-    },
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
-  };
+  });
   return { client, tagsFn };
 }
 

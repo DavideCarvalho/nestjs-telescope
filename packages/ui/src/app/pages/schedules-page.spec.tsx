@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { ScheduledTask, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { DashboardLayout } from '../dashboard-layout.js';
 import { ThemeProvider } from '../theme-context.js';
 import { SchedulesPage } from './schedules-page.js';
@@ -42,26 +43,8 @@ const TASKS: ScheduledTask[] = [
 ];
 
 function mockClient(tasks: ScheduledTask[]): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    traces: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     tags: async () => [],
     meta: async () => ({
       enabled: true,
@@ -69,6 +52,9 @@ function mockClient(tasks: ScheduledTask[]): TelescopeClient {
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     liveQueues: async () => ({
@@ -89,7 +75,7 @@ function mockClient(tasks: ScheduledTask[]): TelescopeClient {
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
     queueEnqueue: async () => ({ id: null }),
-  };
+  });
 }
 
 function renderPage(tasks: ScheduledTask[]) {

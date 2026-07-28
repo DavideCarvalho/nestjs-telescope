@@ -9,6 +9,7 @@ import type {
   TelescopeClient,
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { QueueManagerPage } from './QueueManagerPage.js';
 
 const summaries: QueueSummary[] = [
@@ -40,29 +41,17 @@ const waitingPage: JobPage = {
 };
 
 function mockClient(capabilities: QueueCapabilities): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     liveQueues: async () => ({ queues: summaries, capabilities }),
@@ -72,7 +61,7 @@ function mockClient(capabilities: QueueCapabilities): TelescopeClient {
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
     queueEnqueue: async () => ({ id: null }),
-  };
+  });
 }
 
 function renderPage(capabilities: QueueCapabilities) {

@@ -39,7 +39,9 @@ describe('TelescopeUiModule.forRootAsync', () => {
         TelescopeUiModule.forRootAsync({
           imports: [ConfigModule],
           inject: [CONFIG_TOKEN],
-          useFactory: (cfg: { assetsDir: string }) => ({ assetsDir: cfg.assetsDir }),
+          useFactory: (...args: unknown[]) => ({
+            assetsDir: (args[0] as { assetsDir: string }).assetsDir,
+          }),
           path: 'observability',
         }) as DynamicModule,
       ],

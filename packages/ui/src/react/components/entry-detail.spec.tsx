@@ -2,27 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { EntryWithBatch, TelescopeClient, TelescopeMeta } from '../../client/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../telescope-context.js';
 import { EntryDetail } from './entry-detail.js';
 
 function mockClient(meta: TelescopeMeta): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => meta,
     liveQueues: async () => ({
       queues: [],
@@ -40,7 +26,7 @@ function mockClient(meta: TelescopeMeta): TelescopeClient {
     queueJob: async () => null,
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
-  };
+  });
 }
 
 function entry(over: Partial<EntryWithBatch>): EntryWithBatch {
@@ -71,6 +57,9 @@ async function renderDetail(entryValue: EntryWithBatch, traceLink: string | null
     watchers: [],
     traceLink,
     retention: null,
+    pruneEnabled: false,
+    explainEnabled: false,
+    auth: { enabled: false, modes: [] },
     sampling: {},
   };
   const result = render(
@@ -183,6 +172,9 @@ async function renderDetailWithBatch(entryValue: EntryWithBatch) {
     watchers: [],
     traceLink: null,
     retention: null,
+    pruneEnabled: false,
+    explainEnabled: false,
+    auth: { enabled: false, modes: [] },
     sampling: {},
   };
   render(

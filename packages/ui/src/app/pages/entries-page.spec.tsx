@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { EntriesQuery, Entry, Page, TagCount, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { EntriesPage } from './entries-page.js';
 
 function entry(over: Partial<Entry> & { type: string }): Entry {
@@ -34,50 +35,26 @@ function mockClient(rows: Entry[]) {
     data: rows,
     nextCursor: null,
   }));
-  const client: TelescopeClient = {
+  const client: TelescopeClient = mockTelescopeClient({
     entries,
     tags: async (prefix) =>
       prefix
         ? TAGS.filter((entry) => entry.tag.toLowerCase().includes(prefix.toLowerCase()))
         : TAGS,
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
-    liveQueues: async () => {
-      throw new Error('not used');
-    },
-    queueCounts: async () => {
-      throw new Error('not used');
-    },
-    queueJobs: async () => {
-      throw new Error('not used');
-    },
-    queueJob: async () => {
-      throw new Error('not used');
-    },
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
-  };
+  });
   return { client, entries };
 }
 

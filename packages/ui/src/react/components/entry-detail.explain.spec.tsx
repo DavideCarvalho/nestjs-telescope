@@ -49,6 +49,7 @@ function meta(explainEnabled: boolean): TelescopeMeta {
     retention: null,
     pruneEnabled: false,
     explainEnabled,
+    auth: { enabled: false, modes: [] },
     sampling: {},
   };
 }

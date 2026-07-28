@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { StatsResult, TelescopeClient, TimeseriesReport } from '../../client/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../telescope-context.js';
 import { EntryInsights } from './entry-insights.js';
 
@@ -29,20 +30,8 @@ function statsFor(over: Partial<StatsResult> & { type: string }): StatsResult {
 }
 
 function mockClient(stats: StatsResult): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
     stats: async () => stats,
     meta: async () => ({
       enabled: true,
@@ -50,21 +39,15 @@ function mockClient(stats: StatsResult): TelescopeClient {
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
-    liveQueues: async () => {
-      throw new Error('not used');
-    },
-    queueCounts: async () => {
-      throw new Error('not used');
-    },
-    queueJobs: async () => {
-      throw new Error('not used');
-    },
     queueJob: async () => null,
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
-  };
+  });
 }
 
 function renderInsights(type: string, stats: StatsResult) {
@@ -102,8 +85,11 @@ describe('EntryInsights', () => {
         hits: 6,
         misses: 2,
         sets: 1,
+        deletes: 0,
         hitRatio: 0.75,
         topKeys: [{ key: 'user:1', count: 4 }],
+        staleHits: 0,
+        byTier: {},
       },
     });
     renderInsights('cache', stats);

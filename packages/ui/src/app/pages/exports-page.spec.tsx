@@ -7,8 +7,48 @@ import { TelescopeProvider } from '../../react/index.js';
 import { ExportsPage } from './exports-page.js';
 
 function mockClient(): TelescopeClient {
+  const unused = async (): Promise<never> => {
+    throw new Error('not used');
+  };
   return {
+    baseUrl: '',
     entries: async () => ({ data: [], nextCursor: null }),
+    entry: unused,
+    pulse: unused,
+    queues: unused,
+    timeseries: unused,
+    traces: unused,
+    waterfall: unused,
+    stats: unused,
+    tags: unused,
+    meta: unused,
+    extData: unused,
+    serverStats: unused,
+    serverStatsHistory: unused,
+    health: unused,
+    retention: unused,
+    prunes: unused,
+    prune: unused,
+    explain: unused,
+    diagnose: unused,
+    cachedDiagnosis: unused,
+    profilerStatus: unused,
+    profiles: unused,
+    profile: unused,
+    armProfile: unused,
+    liveQueues: unused,
+    schedulesLive: unused,
+    queueCounts: unused,
+    queueJobs: unused,
+    queueJob: unused,
+    queueJobAction: unused,
+    queueAction: unused,
+    queueEnqueue: unused,
+    auth: {
+      me: unused,
+      login: unused,
+      logout: unused,
+    },
   };
 }
 

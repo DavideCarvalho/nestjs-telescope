@@ -80,7 +80,7 @@ describe('entriesToCsv', () => {
     // The content cell is the trailing field, escaped exactly as escapeCsvField
     // would escape the stringified content — one quoted field, no raw commas leak.
     const expectedCell = escapeCsvField(JSON.stringify(content));
-    expect(row.endsWith(expectedCell)).toBe(true);
+    expect(row!.endsWith(expectedCell)).toBe(true);
     expect(expectedCell.startsWith('"')).toBe(true);
     expect(expectedCell.endsWith('"')).toBe(true);
   });
