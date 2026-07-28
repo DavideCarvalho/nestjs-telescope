@@ -1,5 +1,12 @@
 # example-basic-app
 
+## 0.0.38
+
+### Patch Changes
+
+- Updated dependencies [[`2d0e76e`](https://github.com/DavideCarvalho/nestjs-telescope/commit/2d0e76ee52e3a556c24b567fdb4b9e6cef25c067)]:
+  - @dudousxd/nestjs-telescope-ui@1.18.0
+
 ## 0.0.37
 
 ### Patch Changes
