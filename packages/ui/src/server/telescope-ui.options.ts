@@ -1,3 +1,4 @@
+import type { DashboardAuthOptions } from '@dudousxd/nestjs-telescope';
 import type { CanActivate, DynamicModule, Type } from '@nestjs/common';
 
 export const TELESCOPE_UI_OPTIONS = Symbol('TELESCOPE_UI_OPTIONS');
@@ -33,6 +34,20 @@ export interface TelescopeUiModuleOptions {
    * listed guard(s) become the controller's entire gate.
    */
   guards?: Array<Type<CanActivate> | CanActivate>;
+  /**
+   * The SAME `dashboardAuth` passed to `TelescopeModule.forRoot` (core). Only needed to use
+   * `dashboardAuth.unauthenticatedPage`: this module serves the page + SPA shell, so it is the only
+   * one that can replace that page — core gates the API, not the HTML.
+   *
+   * Like {@link guards}, the two options are INDEPENDENT (different package, different module).
+   * Setting `unauthenticatedPage` only on core gates the API but leaves the page untouched, and the
+   * visitor keeps getting the SPA's built-in auth screen.
+   *
+   * Everything except `secret`, the configured modes, and `unauthenticatedPage` is ignored here —
+   * minting and renewal stay entirely core's job. The full options type is accepted so a host can
+   * pass one object to both modules rather than hand-picking fields.
+   */
+  dashboardAuth?: DashboardAuthOptions;
   /**
    * Extra `imports` merged into `TelescopeUiModule`'s own dynamic module — the
    * DI resolution path for a class passed to {@link guards}.

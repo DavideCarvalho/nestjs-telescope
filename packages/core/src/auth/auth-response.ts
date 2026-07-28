@@ -46,3 +46,55 @@ export function appendSetCookie(response: unknown, cookie: string): void {
   if (!raw) return;
   raw.setHeader('set-cookie', [...existingSetCookies(raw), cookie]);
 }
+
+interface EndableResponse {
+  statusCode: number;
+  headersSent?: boolean;
+  setHeader(name: string, value: string | string[]): unknown;
+  end(chunk?: string): unknown;
+}
+
+function isEndableResponse(value: unknown): value is EndableResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as EndableResponse).setHeader === 'function' &&
+    typeof (value as EndableResponse).end === 'function'
+  );
+}
+
+function resolveEndableResponse(response: unknown): EndableResponse | null {
+  if (isEndableResponse(response)) return response;
+  if (typeof response === 'object' && response !== null) {
+    const raw = (response as { raw?: unknown }).raw;
+    if (isEndableResponse(raw)) return raw;
+  }
+  return null;
+}
+
+/**
+ * Did something already write to this response?
+ *
+ * Used to decide whether a host's `unauthenticatedPage` hook actually produced a page. A hook that
+ * returns without writing (an early `return`, a forgotten `await`, a template that resolved to
+ * nothing) would otherwise leave the request hanging forever — the browser spins until it times
+ * out, with no error anywhere. Checking this lets the caller fall back to serving the SPA.
+ */
+export function responseAlreadyWritten(response: unknown): boolean {
+  return resolveEndableResponse(response)?.headersSent === true;
+}
+
+/**
+ * Write a full HTML page on the raw response and END it. Used by the dashboard's SPA shell route,
+ * which is non-passthrough so a host's `unauthenticatedPage` can take the response over instead.
+ */
+export function sendHtml(response: unknown, status: number, html: string): void {
+  const raw = resolveEndableResponse(response);
+  if (!raw) return;
+  raw.statusCode = status;
+  raw.setHeader('content-type', 'text/html; charset=utf-8');
+  // index.html references hash-named bundles, so it MUST NOT be cached (stale bundle = the classic
+  // "stuck loading after a deploy"); the unauthenticated page likewise reflects live session state.
+  raw.setHeader('cache-control', 'no-store, must-revalidate');
+  raw.end(html);
+}
