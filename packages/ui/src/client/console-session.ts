@@ -119,10 +119,7 @@ export async function mintTelescopeConsoleSession(options: OpenConsoleOptions = 
     response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
   if (redirected) {
     throw new ConsoleSessionError(
-      `The console session endpoint at ${url} answered with a redirect instead of minting a ` +
-        'session. Something in front of it — usually an auth middleware or exception filter that ' +
-        'rewrites 401s into a sign-in redirect — is intercepting the response. Exempt this path ' +
-        'from that rewrite so the real status reaches this caller.',
+      `The console session endpoint at ${url} answered with a redirect instead of minting a session. Something in front of it — usually an auth middleware or exception filter that rewrites 401s into a sign-in redirect — is intercepting the response. Exempt this path from that rewrite so the real status reaches this caller.`,
       url,
       response.status || undefined,
     );
