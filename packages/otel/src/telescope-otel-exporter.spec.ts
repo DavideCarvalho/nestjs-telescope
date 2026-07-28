@@ -109,7 +109,7 @@ describe('TelescopeOtelExporter.observeFlush', () => {
 
     const spans = memory.getFinishedSpans();
     expect(spans).toHaveLength(1);
-    expect(spans[0].name).toBe('telescope.request');
-    expect(spans[0].attributes['telescope.type']).toBe('request');
+    expect(spans[0]!.name).toBe('telescope.request');
+    expect(spans[0]!.attributes['telescope.type']).toBe('request');
   });
 });

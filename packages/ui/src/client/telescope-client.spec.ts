@@ -16,7 +16,7 @@ describe('createTelescopeClient default base URL', () => {
 
   it('falls back to /telescope/api when the global base is absent', async () => {
     vi.stubGlobal('window', undefined);
-    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     const client = createTelescopeClient({ fetch: fetchMock });
     await client.meta();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/meta');
@@ -24,7 +24,7 @@ describe('createTelescopeClient default base URL', () => {
 
   it('derives the base from window.__TELESCOPE_BASE__ when present', async () => {
     vi.stubGlobal('window', { __TELESCOPE_BASE__: '/observability' });
-    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     const client = createTelescopeClient({ fetch: fetchMock });
     await client.meta();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/observability/api/meta');
@@ -32,7 +32,7 @@ describe('createTelescopeClient default base URL', () => {
 
   it('lets an explicit baseUrl win over the injected global', async () => {
     vi.stubGlobal('window', { __TELESCOPE_BASE__: '/observability' });
-    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     const client = createTelescopeClient({ baseUrl: '/custom/api', fetch: fetchMock });
     await client.meta();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/custom/api/meta');
@@ -41,7 +41,9 @@ describe('createTelescopeClient default base URL', () => {
 
 describe('createTelescopeClient', () => {
   it('lists entries with type + cursor query params', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ data: [], nextCursor: null }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ data: [], nextCursor: null }),
+    );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.entries({ type: 'query', cursor: 'abc', limit: 10 });
     const url = fetchMock.mock.calls[0]![0] as string;
@@ -52,7 +54,9 @@ describe('createTelescopeClient', () => {
   });
 
   it('fetches a single entry (with its batch)', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ id: 'x', batch: [] }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ id: 'x', batch: [] }),
+    );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const entry = await client.entry('x');
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/entries/x');
@@ -60,7 +64,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('fetches extension panel data and encodes the ext + provider path', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ value: 1 }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ value: 1 }));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.extData('my ext', 'top/providers');
     expect(fetchMock.mock.calls[0]![0] as string).toBe(
@@ -69,7 +73,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('serializes the panel data query into the query string', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ value: 1 }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ value: 1 }));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.extData('billing', 'revenue', { window: '24h', limit: 5 });
     const url = fetchMock.mock.calls[0]![0] as string;
@@ -79,14 +83,14 @@ describe('createTelescopeClient', () => {
   });
 
   it('omits the query string when no panel query is given', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ value: 1 }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ value: 1 }));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.extData('billing', 'revenue', {});
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/ext/billing/data/revenue');
   });
 
   it('fetches pulse and queues with a window param', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.pulse('15m');
     await client.queues('1h');
@@ -106,7 +110,7 @@ describe('createTelescopeClient', () => {
       scanned: 0,
       truncated: false,
     };
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<typeof globalThis.fetch>(
       async () => ({ ok: true, status: 200, json: async () => body }) as Response,
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
@@ -114,7 +118,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('fetches timeseries with window + buckets', async () => {
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<typeof globalThis.fetch>(
       async () => ({ ok: true, status: 200, json: async () => ({ buckets: [] }) }) as Response,
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
@@ -126,7 +130,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('fetches stats with type + window', async () => {
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<typeof globalThis.fetch>(
       async () => ({ ok: true, status: 200, json: async () => ({ overTime: {} }) }) as Response,
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
@@ -138,14 +142,16 @@ describe('createTelescopeClient', () => {
   });
 
   it('lists tags with an optional prefix', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse([{ tag: 'slow', count: 42 }]));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse([{ tag: 'slow', count: 42 }]),
+    );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.tags('sl');
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/tags?prefix=sl');
   });
 
   it('omits the prefix param when listing all tags', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse([]));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse([]));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.tags();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/tags');
@@ -159,7 +165,7 @@ describe('createTelescopeClient', () => {
       eventLoopDelayMs: 1.5,
       instanceId: 'i-1',
     };
-    const fetchMock = vi.fn(async () => jsonResponse(snapshot));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse(snapshot));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const result = await client.serverStats();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/server-stats');
@@ -183,7 +189,7 @@ describe('createTelescopeClient', () => {
       droppedCount: 0,
       captureCostNanos: 8700,
     };
-    const fetchMock = vi.fn(async () => jsonResponse(snapshot));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse(snapshot));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const result = await client.health();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/health');
@@ -191,7 +197,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('throws on a non-ok response', async () => {
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<typeof globalThis.fetch>(
       async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
@@ -199,7 +205,9 @@ describe('createTelescopeClient', () => {
   });
 
   it('GETs live queues', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ queues: [], capabilities: {} }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ queues: [], capabilities: {} }),
+    );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.liveQueues();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/queues/live');
@@ -207,7 +215,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('GETs queue counts with encoded path segments', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.queueCounts('bullmq', 'a/b');
     expect(fetchMock.mock.calls[0]![0] as string).toBe(
@@ -216,7 +224,9 @@ describe('createTelescopeClient', () => {
   });
 
   it('GETs queue jobs with state + cursor + limit', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ jobs: [], nextCursor: null, total: null }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ jobs: [], nextCursor: null, total: null }),
+    );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.queueJobs('bullmq', 'q1', 'failed', { cursor: 'c1', limit: 25 });
     const url = fetchMock.mock.calls[0]![0] as string;
@@ -227,7 +237,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('GETs a single live job', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(null));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse(null));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.queueJob('bullmq', 'q1', '99');
     expect(fetchMock.mock.calls[0]![0] as string).toBe(
@@ -236,7 +246,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('POSTs a job action', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ ok: true }));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.queueJobAction('bullmq', 'q1', '99', 'retry');
     expect(fetchMock.mock.calls[0]![0] as string).toBe(
@@ -247,7 +257,9 @@ describe('createTelescopeClient', () => {
   });
 
   it('POSTs a bulk queue action with a state query param', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, count: 4 }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ ok: true, count: 4 }),
+    );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.queueAction('bullmq', 'q1', 'retry-all', { state: 'failed' });
     const url = fetchMock.mock.calls[0]![0] as string;
@@ -258,7 +270,7 @@ describe('createTelescopeClient', () => {
   });
 
   it('POSTs an enqueue with a JSON body (name + payload)', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ id: '7' }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ id: '7' }));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const result = await client.queueEnqueue('bullmq', 'q1', {
       name: 'send-email',
@@ -280,7 +292,7 @@ describe('createTelescopeClient', () => {
 describe('createTelescopeClient auth', () => {
   it('auth.me() returns authenticated with the user on 200', async () => {
     const user = { id: 'ops', name: 'Ops', roles: ['admin'] };
-    const fetchMock = vi.fn(async () => statusResponse(200, { user }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => statusResponse(200, { user }));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const result = await client.auth.me();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/auth/me');
@@ -288,7 +300,7 @@ describe('createTelescopeClient auth', () => {
   });
 
   it('auth.me() returns unauthenticated with the offered modes on 401', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
       statusResponse(401, { auth: { modes: ['login', 'session'] } }),
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
@@ -297,14 +309,14 @@ describe('createTelescopeClient auth', () => {
   });
 
   it('auth.me() returns disabled on 404 (dashboardAuth not configured)', async () => {
-    const fetchMock = vi.fn(async () => statusResponse(404, {}));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => statusResponse(404, {}));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const result = await client.auth.me();
     expect(result).toEqual({ status: 'disabled' });
   });
 
   it('auth.login() returns ok on 204', async () => {
-    const fetchMock = vi.fn(async () => statusResponse(204, undefined));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => statusResponse(204, undefined));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const result = await client.auth.login('ops', 'secret');
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/auth/login');
@@ -315,14 +327,16 @@ describe('createTelescopeClient auth', () => {
   });
 
   it('auth.login() returns the failure message on 401', async () => {
-    const fetchMock = vi.fn(async () => statusResponse(401, { message: 'Invalid credentials' }));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      statusResponse(401, { message: 'Invalid credentials' }),
+    );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     const result = await client.auth.login('ops', 'wrong');
     expect(result).toEqual({ ok: false, message: 'Invalid credentials' });
   });
 
   it('auth.logout() POSTs to /auth/logout', async () => {
-    const fetchMock = vi.fn(async () => statusResponse(204, undefined));
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => statusResponse(204, undefined));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.auth.logout();
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/auth/logout');

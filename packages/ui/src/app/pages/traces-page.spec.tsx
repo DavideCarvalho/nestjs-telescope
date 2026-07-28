@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { TelescopeClient, TraceSummary, TracesResult } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TracesPage } from './traces-page.js';
 
 function trace(over: Partial<TraceSummary> & { traceId: string }): TraceSummary {
@@ -23,32 +24,22 @@ function mockClient(rows: TraceSummary[]) {
     scanned: rows.length,
     truncated: false,
   }));
-  const notUsed = async () => {
-    throw new Error('not used');
-  };
-  const client: TelescopeClient = {
-    entries: notUsed,
-    entry: notUsed,
-    pulse: notUsed,
-    queues: notUsed,
-    timeseries: notUsed,
+  const client: TelescopeClient = mockTelescopeClient({
     traces,
-    stats: notUsed,
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
-    liveQueues: notUsed,
-    queueCounts: notUsed,
-    queueJobs: notUsed,
-    queueJob: notUsed,
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
-  };
+  });
   return { client, traces };
 }
 

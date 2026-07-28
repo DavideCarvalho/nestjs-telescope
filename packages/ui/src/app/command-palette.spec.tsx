@@ -64,7 +64,7 @@ describe('CommandPalette', () => {
     fireEvent.change(input, { target: { value: 'pulse' } });
     const options = screen.getAllByRole('option');
     expect(options).toHaveLength(1);
-    expect(options[0].textContent).toBe('Pulse');
+    expect(options[0]!.textContent).toBe('Pulse');
   });
 
   it('Enter on the highlighted action navigates to its hash route and closes', () => {

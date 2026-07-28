@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../client/index.js';
+import { mockTelescopeClient } from '../testing/mock-telescope-client.js';
 import { TelescopeProvider, useLiveTail } from './telescope-context.js';
 import {
   REFETCH_MS,
@@ -11,32 +12,20 @@ import {
 } from './use-telescope-queries.js';
 
 function mockClient(): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
-  };
+  });
 }
 
 describe('live-tail query gating', () => {

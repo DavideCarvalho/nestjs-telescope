@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build-test-lint:
-    name: Build · Test · Lint
+    name: Build · Test · Lint · Typecheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,6 +32,9 @@ jobs:
 
       - name: Lint (biome)
         run: pnpm lint
+
+      - name: Typecheck (turbo)
+        run: pnpm typecheck
 
       - name: Build (turbo)
         run: pnpm build

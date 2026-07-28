@@ -292,8 +292,9 @@ describe('SqliteStorageProvider additive trace-column guard', () => {
     expect(columnsBefore).not.toContain('span_id');
     seed.close();
 
+    // Schema self-heal (adding trace_id/span_id) runs synchronously in the
+    // constructor — SqliteStorageProvider has no separate async init() step.
     provider = new SqliteStorageProvider({ path: dbPath });
-    await provider.init?.();
 
     await provider.store([
       entry({ id: 'healed', traceId: 'c'.repeat(32), spanId: 'd'.repeat(16) }),

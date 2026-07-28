@@ -16,7 +16,6 @@ function entry<TContent>(overrides: Partial<Entry<TContent>> & { type: string })
   return {
     id: `${overrides.type}-${Math.random()}`,
     batchId: 'b',
-    type: overrides.type,
     familyHash: null,
     content: {} as TContent,
     tags: [],
@@ -41,6 +40,7 @@ function requestContent(statusCode: number | null): RequestContent {
     uri: '/x',
     headers: {},
     payload: null,
+    user: null,
     response: null,
     statusCode,
     ip: null,

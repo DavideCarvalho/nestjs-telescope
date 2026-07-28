@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TelescopeClient } from '../../src/client/index.js';
 import { TelescopeProvider } from '../../src/react/telescope-context.js';
 import { useTelescopeStream } from '../../src/react/use-telescope-stream.js';
+import { mockTelescopeClient } from '../../src/testing/mock-telescope-client.js';
 
 class FakeES {
   onopen: (() => void) | null = null;
@@ -19,27 +20,9 @@ class FakeES {
 afterEach(() => vi.unstubAllGlobals());
 
 function makeClient(baseUrl = '/telescope/api'): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     baseUrl,
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    traces: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     tags: async () => [],
     meta: async () => ({
       enabled: true,
@@ -47,34 +30,16 @@ function makeClient(baseUrl = '/telescope/api'): TelescopeClient {
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     extData: async () => null,
-    serverStats: async () => {
-      throw new Error('not used');
-    },
-    health: async () => {
-      throw new Error('not used');
-    },
-    retention: async () => {
-      throw new Error('not used');
-    },
     prune: async () => ({ pruned: 0 }),
     explain: async () => ({ ok: false, message: '' }),
     diagnose: async () => ({ ok: false, message: '' }),
     cachedDiagnosis: async () => null,
-    liveQueues: async () => {
-      throw new Error('not used');
-    },
-    schedulesLive: async () => {
-      throw new Error('not used');
-    },
-    queueCounts: async () => {
-      throw new Error('not used');
-    },
-    queueJobs: async () => {
-      throw new Error('not used');
-    },
     queueJob: async () => null,
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
@@ -84,7 +49,7 @@ function makeClient(baseUrl = '/telescope/api'): TelescopeClient {
       login: async () => ({ ok: true }),
       logout: async () => {},
     },
-  };
+  });
 }
 
 describe('useTelescopeStream', () => {

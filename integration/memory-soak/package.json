@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.spec.json --noEmit",
     "soak": "node --expose-gc dist/soak.js",
     "analyze": "node dist/analyze-snapshot.js",
     "test": "vitest run --passWithNoTests",

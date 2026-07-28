@@ -132,7 +132,7 @@ export function ExportsPage(): JSX.Element {
     setError(null);
     setLiveCount(0);
     const effectiveLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
-    const windowStartMs = Date.now() - (WINDOW_MS[window] ?? WINDOW_MS['1h']);
+    const windowStartMs = Date.now() - (WINDOW_MS[window] ?? WINDOW_MS['1h']!);
     const base: EntriesQuery = {
       ...typeFilter(type),
       ...(search.trim() !== '' ? { search: search.trim() } : {}),

@@ -55,7 +55,6 @@ function fakeSession(): { session: InspectorSessionLike; calls: string[] } {
 describe('CpuProfiler', () => {
   it('does NOT create a session until start() is called (zero overhead when idle)', () => {
     const factory = vi.fn();
-    // biome-ignore lint/suspicious/noExplicitAny: factory signature narrowed by ctor
     const profiler = new CpuProfiler(factory as any);
     expect(factory).not.toHaveBeenCalled();
     expect(profiler.isRunning).toBe(false);
@@ -97,7 +96,6 @@ describe('CpuProfiler', () => {
 
   it('stop() without start() returns null and never touches a session', async () => {
     const factory = vi.fn();
-    // biome-ignore lint/suspicious/noExplicitAny: factory signature narrowed by ctor
     const profiler = new CpuProfiler(factory as any);
     expect(await profiler.stop()).toBeNull();
     expect(factory).not.toHaveBeenCalled();

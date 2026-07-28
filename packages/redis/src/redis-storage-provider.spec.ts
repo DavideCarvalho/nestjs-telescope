@@ -163,7 +163,7 @@ describe('RedisStorageProvider', () => {
     let cursor: string | null | undefined;
     let pages = 0;
     do {
-      const page = await store.get({ limit: 50, cursor: cursor ?? undefined });
+      const page = await store.get({ limit: 50, ...(cursor ? { cursor } : {}) });
       pageSizes.push(page.data.length);
       collected.push(...page.data);
       cursor = page.nextCursor;
@@ -180,12 +180,12 @@ describe('RedisStorageProvider', () => {
 
     // Newest-first: createdAt strictly descending across the whole concatenation.
     for (let i = 1; i < collected.length; i++) {
-      expect(collected[i - 1].createdAt.getTime()).toBeGreaterThan(
-        collected[i].createdAt.getTime(),
+      expect(collected[i - 1]!.createdAt.getTime()).toBeGreaterThan(
+        collected[i]!.createdAt.getTime(),
       );
     }
     // Newest entry first, oldest last.
-    expect(collected[0].id).toBe('e119');
+    expect(collected[0]!.id).toBe('e119');
     expect(collected.at(-1)?.id).toBe('e0');
   });
 

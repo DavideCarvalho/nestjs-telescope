@@ -2,8 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExportJsonToolbar } from './export-json-toolbar.js';
 
-const copyJson = vi.fn(async () => true);
-const downloadJson = vi.fn();
+const copyJson = vi.fn<(value: unknown) => Promise<boolean>>(async () => true);
+const downloadJson = vi.fn<(filename: string, value: unknown) => void>();
 
 vi.mock('./export-json.js', () => ({
   copyJson: (value: unknown) => copyJson(value),

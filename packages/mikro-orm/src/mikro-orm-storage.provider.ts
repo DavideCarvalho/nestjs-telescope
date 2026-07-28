@@ -140,10 +140,13 @@ const TELESCOPE_CONTEXT_NAME = 'nestjs-telescope';
 /**
  * Options for the dedicated, single-entity ORM the provider owns. These are
  * standard MikroORM `Options` (connection config) plus an optional
- * `ensureSchema` flag. Any `entities` provided here is overridden — the provider
- * always forces `entities: [TelescopeEntry, TelescopeRollup]`.
+ * `ensureSchema` flag. Partial, mirroring `MikroORM.init()`'s own `Partial<Options>`
+ * signature — callers only need to supply connection fields (e.g. `driver`,
+ * `dbName`); `buildOrmOptions()` below treats `source` as partial and fills in the
+ * rest. Any `entities` provided here is overridden — the provider always forces
+ * `entities: [TelescopeEntry, TelescopeRollup]`.
  */
-export type MikroOrmStorageProviderOptions = Options & { ensureSchema?: boolean };
+export type MikroOrmStorageProviderOptions = Partial<Options> & { ensureSchema?: boolean };
 
 function padTags(tags: string[]): string {
   return tags.length ? ` ${tags.join(' ')} ` : ' ';

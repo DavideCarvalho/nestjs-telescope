@@ -29,8 +29,8 @@ describe.skipIf(!process.env.REDIS_URL)('RedisStorageProvider (real Redis)', () 
   let store: RedisStorageProvider;
 
   beforeAll(async () => {
-    const Redis = (await import('ioredis')).default;
-    redis = new Redis(process.env.REDIS_URL!);
+    const { Redis: RedisCtor } = await import('ioredis');
+    redis = new RedisCtor(process.env.REDIS_URL!);
   });
 
   beforeEach(async () => {

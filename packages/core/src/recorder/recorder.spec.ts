@@ -130,7 +130,11 @@ describe('Recorder', () => {
   describe('onFlushStored hook', () => {
     it('fires with the just-stored entries after a successful flush', async () => {
       const seen: Entry[][] = [];
-      const { recorder } = makeRecorder({ onFlushStored: (entries) => seen.push(entries) });
+      const { recorder } = makeRecorder({
+        onFlushStored: (entries) => {
+          seen.push(entries);
+        },
+      });
       recorder.record({ type: 'exception', content: {} });
       await recorder.flush();
       expect(seen).toHaveLength(1);
@@ -139,9 +143,21 @@ describe('Recorder', () => {
     });
 
     it('does NOT fire when the batch fails to store', async () => {
+      // NOTE: `InMemoryStorageProvider`'s methods live on the class prototype,
+      // so `{ ...base, store: ... }` would silently drop everything but `store`
+      // (a plain spread only copies OWN enumerable properties). Bind the real
+      // instance's methods explicitly so `failing` is a genuine StorageProvider
+      // with only `store` overridden.
+      const base = new InMemoryStorageProvider();
       const failing: StorageProvider = {
-        ...new InMemoryStorageProvider(),
         store: () => Promise.reject(new Error('down')),
+        update: base.update.bind(base),
+        find: base.find.bind(base),
+        get: base.get.bind(base),
+        batch: base.batch.bind(base),
+        tags: base.tags.bind(base),
+        prune: base.prune.bind(base),
+        clear: base.clear.bind(base),
       };
       const onFlushStored = vi.fn();
       const { recorder } = makeRecorder({
@@ -276,9 +292,14 @@ describe('Recorder', () => {
 
     it('does not pile up flushes during a retry: the ring keeps absorbing and a concurrent flush() shares the in-flight promise', async () => {
       let storeCalls = 0;
-      let releaseRetry: (() => void) | null = null;
-      // First store rejects; the backoff delay is gated on releaseRetry() so we
-      // can drive records into the ring WHILE the single flush is mid-retry.
+      // A mutable ref cell (not a bare `let`): a `let` reassigned from inside the
+      // `delay` closure below and then read at the bottom of this test collapses
+      // to `never` under TS's control-flow analysis (a closure-narrowing quirk —
+      // TS tries to track the reassignment across the closure boundary and gets
+      // it wrong). Boxing it in an object sidesteps that entirely.
+      const retryGate: { release: (() => void) | null } = { release: null };
+      // First store rejects; the backoff delay is gated on retryGate.release() so
+      // we can drive records into the ring WHILE the single flush is mid-retry.
       const failingThenOk: StorageProvider = {
         store: () => {
           storeCalls += 1;
@@ -299,7 +320,7 @@ describe('Recorder', () => {
       });
       const delay = (): Promise<void> =>
         new Promise<void>((resolve) => {
-          releaseRetry = resolve;
+          retryGate.release = () => resolve();
           signalDelayReached?.();
         });
       const { recorder } = makeRecorder({ storage: failingThenOk, delay });
@@ -316,7 +337,7 @@ describe('Recorder', () => {
       recorder.record({ type: 'request', content: { n: 2 } });
       expect(storeCalls).toBe(1);
 
-      releaseRetry?.(); // let the retry proceed (and succeed)
+      retryGate.release?.(); // let the retry proceed (and succeed)
       await Promise.all([flushPromise, concurrent]);
 
       // Exactly initial + retry = 2 store calls for the single batch; no pileup.
@@ -933,7 +954,7 @@ describe('Recorder', () => {
       recorder.record({ type: 'query', content: { sql: 'select 1', bindings: [], took: 1 } });
       // Sampling dropped it from storage, but the metrics tap still saw it.
       expect(seen).toHaveLength(1);
-      expect(seen[0].type).toBe('query');
+      expect(seen[0]!.type).toBe('query');
     });
 
     it('fires even while paused (so counts stay complete under overload)', () => {

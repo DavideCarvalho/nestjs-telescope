@@ -10,6 +10,7 @@ import type {
   TimeseriesReport,
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import {
   OverviewPage,
   QUEUE_WAITING_ATTENTION_THRESHOLD,
@@ -106,17 +107,11 @@ const timeseries: TimeseriesReport = {
 };
 
 function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
     pulse: async () => pulse,
     queues: async () => queues,
     timeseries: async () => timeseries,
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
@@ -125,6 +120,7 @@ function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
       retention: { afterMs: 3_600_000, keepLast: null },
       pruneEnabled: true,
       explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     serverStats: async () => serverStats,
@@ -137,7 +133,7 @@ function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
       pruneSupported: true,
     }),
     prune: async () => ({ pruned: 0 }),
-  };
+  });
 }
 
 function renderOverview(healthOverride: TelescopeHealth = health) {

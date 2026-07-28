@@ -1,7 +1,12 @@
 // packages/core/src/alerts/alert-channel.spec.ts
 import { describe, expect, it, vi } from 'vitest';
-import { customChannel, slackChannel, webhookChannel } from './alert-channel.js';
+import { type ChannelFetch, customChannel, slackChannel, webhookChannel } from './alert-channel.js';
 import type { AlertPayload } from './alert-rule.js';
+
+/** A typed `ChannelFetch` mock so `.mock.calls[n]` destructures as [url, init]. */
+function makeFetchMock() {
+  return vi.fn<ChannelFetch>(() => Promise.resolve(undefined));
+}
 
 function ratePayload(): AlertPayload {
   return {
@@ -48,7 +53,7 @@ function exceptionPayload(): AlertPayload {
 
 describe('webhookChannel', () => {
   it('POSTs the raw AlertPayload as JSON (backward compatible)', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(undefined));
+    const fetchMock = makeFetchMock();
     const channel = webhookChannel('https://hook.example/x', fetchMock);
     const payload = ratePayload();
     await channel.send(payload);
@@ -77,7 +82,7 @@ describe('customChannel', () => {
 
 describe('slackChannel', () => {
   it('POSTs Block Kit blocks with a header, fields, stack, and dashboard link', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(undefined));
+    const fetchMock = makeFetchMock();
     const channel = slackChannel('https://hooks.slack.com/x', undefined, fetchMock);
     await channel.send(exceptionPayload());
     expect(channel.name).toBe('slack');
@@ -117,7 +122,7 @@ describe('slackChannel', () => {
   });
 
   it('links a client_exception to the same detail route (view/:id, not the type list)', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(undefined));
+    const fetchMock = makeFetchMock();
     const channel = slackChannel('https://hooks.slack.com/x', undefined, fetchMock);
     const payload = exceptionPayload();
     if (payload.exception !== undefined) {
@@ -137,17 +142,18 @@ describe('slackChannel', () => {
   });
 
   it('omits the dashboard link button when no dashboardUrl is configured', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(undefined));
+    const fetchMock = makeFetchMock();
     const channel = slackChannel('https://hooks.slack.com/x', undefined, fetchMock);
     const payload = exceptionPayload();
-    payload.dashboardUrl = undefined;
+    // biome-ignore lint/performance/noDelete: `dashboardUrl?: string` + exactOptionalPropertyTypes rejects `= undefined`; delete is the only type-safe way to unset it here.
+    delete payload.dashboardUrl;
     await channel.send(payload);
     const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body ?? '');
     expect(body.blocks.some((b: { type: string }) => b.type === 'actions')).toBe(false);
   });
 
   it('renders a rate-rule payload (no exception context) without crashing', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(undefined));
+    const fetchMock = makeFetchMock();
     const channel = slackChannel('https://hooks.slack.com/x', undefined, fetchMock);
     await channel.send(ratePayload());
     const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body ?? '');

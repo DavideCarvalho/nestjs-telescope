@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { PrunesInfo, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { DashboardLayout } from '../dashboard-layout.js';
 import { ThemeProvider } from '../theme-context.js';
 import { PrunesPage } from './prunes-page.js';
@@ -37,7 +38,7 @@ const PRUNES: PrunesInfo = {
 };
 
 function mockClient(prunes: PrunesInfo, pruneEnabled: boolean): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
@@ -45,6 +46,8 @@ function mockClient(prunes: PrunesInfo, pruneEnabled: boolean): TelescopeClient 
       traceLink: null,
       retention: { afterMs: 3_600_000, keepLast: 100 },
       pruneEnabled,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     prunes: async () => prunes,
@@ -55,7 +58,7 @@ function mockClient(prunes: PrunesInfo, pruneEnabled: boolean): TelescopeClient 
       queues: [],
       capabilities: { mutationsEnabled: false, actionsByDriver: {} },
     }),
-  };
+  });
 }
 
 function renderPage(prunes: PrunesInfo, pruneEnabled = true) {

@@ -6,7 +6,11 @@ import { TelescopeProvider } from '../telescope-context.js';
 import { RetentionIndicator, formatRetention, samplingNote } from './retention-indicator.js';
 
 function mockClient(meta: TelescopeMeta): TelescopeClient {
+  const unused = async (): Promise<never> => {
+    throw new Error('not used');
+  };
   return {
+    baseUrl: '',
     entries: async () => ({ data: [], nextCursor: null }),
     entry: async () => {
       throw new Error('not used');
@@ -20,10 +24,40 @@ function mockClient(meta: TelescopeMeta): TelescopeClient {
     timeseries: async () => {
       throw new Error('not used');
     },
+    traces: unused,
+    waterfall: unused,
     stats: async () => {
       throw new Error('not used');
     },
+    tags: unused,
     meta: async () => meta,
+    extData: unused,
+    serverStats: unused,
+    serverStatsHistory: unused,
+    health: unused,
+    retention: unused,
+    prunes: unused,
+    prune: unused,
+    explain: unused,
+    diagnose: unused,
+    cachedDiagnosis: unused,
+    profilerStatus: unused,
+    profiles: unused,
+    profile: unused,
+    armProfile: unused,
+    liveQueues: unused,
+    schedulesLive: unused,
+    queueCounts: unused,
+    queueJobs: unused,
+    queueJob: unused,
+    queueJobAction: unused,
+    queueAction: unused,
+    queueEnqueue: unused,
+    auth: {
+      me: unused,
+      login: unused,
+      logout: unused,
+    },
   };
 }
 
@@ -34,6 +68,9 @@ function meta(over: Partial<TelescopeMeta>): TelescopeMeta {
     watchers: [],
     traceLink: null,
     retention: null,
+    pruneEnabled: false,
+    explainEnabled: false,
+    auth: { enabled: false, modes: [] },
     sampling: {},
     ...over,
   };

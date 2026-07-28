@@ -4,6 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../client/index.js';
 import { ENTRY_TYPES, TelescopeProvider } from '../react/index.js';
+import { mockTelescopeClient } from '../testing/mock-telescope-client.js';
 import { DashboardLayout, visibleTopNav } from './dashboard-layout.js';
 import { ThemeProvider } from './theme-context.js';
 
@@ -14,32 +15,20 @@ const TOP_NAV = [
 ];
 
 function mockClient(watchers: string[] = []): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers,
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
-  };
+  });
 }
 
 function renderLayout(watchers?: string[]) {

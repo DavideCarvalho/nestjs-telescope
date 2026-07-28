@@ -35,7 +35,7 @@
     "build": "vite build && tsc -p tsconfig.lib.json && tsc -p tsconfig.server.json",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.lib.json --noEmit && tsc -p tsconfig.server.json --noEmit"
+    "typecheck": "tsc -p tsconfig.lib.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.spec.json --noEmit"
   },
   "peerDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:^",

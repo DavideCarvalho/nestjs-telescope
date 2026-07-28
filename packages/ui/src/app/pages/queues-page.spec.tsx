@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { QueueMetricsReport, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { QueuesPage, toFailureRateBars } from './queues-page.js';
 
 const report: QueueMetricsReport = {
@@ -37,14 +38,8 @@ const report: QueueMetricsReport = {
 };
 
 function mockClient(): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
     queues: async () => report,
     timeseries: async () => ({
       windowStart: '',
@@ -54,18 +49,18 @@ function mockClient(): TelescopeClient {
       scanned: 0,
       truncated: false,
     }),
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
-  };
+  });
 }
 
 describe('toFailureRateBars', () => {

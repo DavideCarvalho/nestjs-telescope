@@ -50,8 +50,8 @@ describe('panel IR additions', () => {
       ],
     });
     const dash = ext.dashboards?.({} as never)[0];
-    expect(dash?.sections?.[0].panels[0].kind).toBe('stat');
-    expect(dash?.sections?.[1].panels[0].kind).toBe('distribution');
+    expect(dash?.sections?.[0]?.panels[0]?.kind).toBe('stat');
+    expect(dash?.sections?.[1]?.panels[0]?.kind).toBe('distribution');
   });
 
   it('accepts a table panel opting into the paged convention', () => {

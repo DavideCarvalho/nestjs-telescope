@@ -2,33 +2,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { QueueCapabilities, QueueState, TelescopeClient } from '../../../client/index.js';
+import { mockTelescopeClient } from '../../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../../telescope-context.js';
 import { JobActions, jobActionAllowedForState, supportsAction } from './JobActions.js';
 
 function mockClient(): TelescopeClient {
-  return {
+  return mockTelescopeClient({
     entries: async () => ({ data: [], nextCursor: null }),
-    entry: async () => {
-      throw new Error('not used');
-    },
-    pulse: async () => {
-      throw new Error('not used');
-    },
-    queues: async () => {
-      throw new Error('not used');
-    },
-    timeseries: async () => {
-      throw new Error('not used');
-    },
-    stats: async () => {
-      throw new Error('not used');
-    },
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
       watchers: [],
       traceLink: null,
       retention: null,
+      pruneEnabled: false,
+      explainEnabled: false,
+      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     liveQueues: async () => ({
@@ -47,7 +36,7 @@ function mockClient(): TelescopeClient {
     queueJob: async () => null,
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
-  };
+  });
 }
 
 function renderActions(capabilities: QueueCapabilities, state: QueueState) {

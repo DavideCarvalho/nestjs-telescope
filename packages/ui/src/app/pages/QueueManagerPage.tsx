@@ -46,7 +46,7 @@ export function QueueManagerPage(): JSX.Element {
     <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="space-y-2">
         <h3 className="px-1 text-[10px] uppercase tracking-wide text-zinc-500">Live queues</h3>
-        <QueueList selected={selected} onSelect={handleSelect} />
+        <QueueList {...(selected ? { selected } : {})} onSelect={handleSelect} />
       </aside>
 
       <section className="min-w-0 space-y-3">

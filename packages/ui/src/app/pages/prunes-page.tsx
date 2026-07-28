@@ -82,7 +82,7 @@ function ConfigCards({
         label="Next prune"
         value={formatCountdown(nextRunAt, nowMs)}
         accent="text-sky-300"
-        hint={perType.length > 0 ? `${perType.length} per-type override(s)` : undefined}
+        {...(perType.length > 0 ? { hint: `${perType.length} per-type override(s)` } : {})}
       />
       {perType.length > 0 && (
         <div className="col-span-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 sm:col-span-4">
