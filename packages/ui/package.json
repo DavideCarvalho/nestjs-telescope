@@ -24,6 +24,11 @@
       "import": "./dist/react/index.js",
       "default": "./dist/react/index.js"
     },
+    "./react/console": {
+      "types": "./dist/react/console.d.ts",
+      "import": "./dist/react/console.js",
+      "default": "./dist/react/console.js"
+    },
     "./client": {
       "types": "./dist/client/index.d.ts",
       "import": "./dist/client/index.js",
