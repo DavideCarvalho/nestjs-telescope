@@ -129,6 +129,42 @@ export class AppModule {}
 
 ---
 
+## Recipe D — show your own page when there is no session
+
+Under Mode A, a visitor who navigates straight to `/telescope` with no cookie gets the SPA, which then renders its built-in auth screen: *"open this console from your application"*. That copy is generic because the library cannot know who hosts it — it can't name your launcher, link to it, or look like the rest of your product.
+
+`unauthenticatedPage` hands that response to you — and, because the decision happens **before** the shell is served, the bundle never loads at all for someone with no session:
+
+```ts
+const dashboardAuth = {
+  secret: process.env.TELESCOPE_AUTH_SECRET!,
+  session: (request) => resolveAdmin(request),
+  unauthenticatedPage: ({ request, response, basePath }) => {
+    // `request`/`response` are your platform's own objects (Express here). Render however you
+    // already render — a template engine, @dudousxd/nestjs-inertia, a plain string.
+    (response as Response).status(401).render('console-locked', { returnTo: basePath });
+  },
+};
+
+TelescopeModule.forRoot({ enabled: true, dashboardAuth });
+// The UI module serves the page, so it needs the same config — see the Callout below.
+TelescopeUiModule.forRoot({ dashboardAuth });
+```
+
+<Callout type="warn">
+  **Pass `dashboardAuth` to `TelescopeUiModule` too.** `TelescopeModule` (core) gates the JSON API; `TelescopeUiModule` (`@dudousxd/nestjs-telescope-ui`) serves the HTML shell, so it is the only one that can replace that page. Setting `unauthenticatedPage` on core alone changes nothing a visitor sees — exactly the same independence `guards` has between the two modules. Only `secret`, the configured modes and `unauthenticatedPage` are read there; minting and renewal stay core's job.
+</Callout>
+
+### How it works
+
+- The hook **owns** the response: it must write AND end it. The page is served at the dashboard's own URL, so `/telescope` stays `/telescope`.
+- **It cannot open the dashboard.** It only runs when the request carries no valid session cookie, and every data route stays behind core's guard regardless.
+- **A broken page can't break the dashboard.** If the hook throws, or returns without writing, the library logs one warning and serves the SPA as before — no hung request, no `500`.
+- **Hashed assets stay ungated** — only the shell is gated. They carry no data.
+- **Mode-A-only.** With `login` configured the hook is ignored: under Mode B the login form the visitor needs is *inside* the bundle this page would replace. To ship your own **login** UI, use Mode A plus this hook and `POST /telescope/api/auth/session` from your page.
+
+---
+
 ## Recipe C — role-gate queue mutations
 
 Reading the dashboard is gated by the session. **Mutations** (retry / remove / promote / redrive a job) are gated *separately* by `authorizeAction`, which **defaults to deny**. With a session in place it can read the roles you minted:
