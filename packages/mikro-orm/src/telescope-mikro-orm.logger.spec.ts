@@ -1,6 +1,7 @@
 // packages/mikro-orm/src/telescope-mikro-orm.logger.spec.ts
 import { setTelescopeRecordSink } from '@dudousxd/nestjs-telescope';
 import type { RecordInput } from '@dudousxd/nestjs-telescope';
+import type { LoggerOptions } from '@mikro-orm/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { telescopeMikroOrmLogger } from './telescope-mikro-orm.logger.js';
 
@@ -49,7 +50,7 @@ describe('telescopeMikroOrmLogger', () => {
     const writes: string[] = [];
     const logger = telescopeMikroOrmLogger((i) => records.push(i))({
       debugMode: ['query'],
-      writer: (msg) => writes.push(msg),
+      writer: (msg: string) => writes.push(msg),
     } as never);
     logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
     expect(records).toHaveLength(1); // recorded
@@ -61,7 +62,7 @@ describe('telescopeMikroOrmLogger', () => {
     const writes: string[] = [];
     const logger = telescopeMikroOrmLogger((i) => records.push(i), { silent: true })({
       debugMode: ['query'],
-      writer: (msg) => writes.push(msg),
+      writer: (msg: string) => writes.push(msg),
     } as never);
     logger.logQuery({ query: 'select 1', params: [], took: 5, level: 'info' } as never);
     expect(records).toHaveLength(1); // still captured for Telescope

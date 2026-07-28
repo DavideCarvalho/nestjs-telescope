@@ -58,8 +58,11 @@ async function readMarker(dbFile: string): Promise<Array<Record<string, unknown>
   return rows;
 }
 
+/** A prototype object whose methods spyOn can wrap (the ones this suite spies on). */
+type SpyableProto = Record<string, (...args: any[]) => any>;
+
 /** Walks an object's prototype chain to the level that OWNS `method`. */
-function protoOwning(instance: object, method: string): Record<string, unknown> {
+function protoOwning(instance: object, method: string): SpyableProto {
   let proto = Object.getPrototypeOf(instance);
   while (proto && !Object.getOwnPropertyNames(proto).includes(method)) {
     proto = Object.getPrototypeOf(proto);
@@ -68,8 +71,8 @@ function protoOwning(instance: object, method: string): Record<string, unknown> 
 }
 
 describe('MikroOrmStorageProvider schema fingerprint gate (file sqlite)', () => {
-  let schemaProto: Record<string, unknown>;
-  let connProto: Record<string, unknown>;
+  let schemaProto: SpyableProto;
+  let connProto: SpyableProto;
 
   beforeAll(async () => {
     const probe = await bareOrm(':memory:');

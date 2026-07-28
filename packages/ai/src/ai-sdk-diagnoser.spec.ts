@@ -27,7 +27,9 @@ class StubModel implements LanguageModelV2 {
       | { generate: (options: LanguageModelV2CallOptions) => Promise<string> },
   ) {}
 
-  async doGenerate(options: LanguageModelV2CallOptions): ReturnType<LanguageModelV2['doGenerate']> {
+  async doGenerate(
+    options: LanguageModelV2CallOptions,
+  ): Promise<Awaited<ReturnType<LanguageModelV2['doGenerate']>>> {
     this.calls.push(options);
     const text = 'text' in this.handler ? this.handler.text : await this.handler.generate(options);
     const content: LanguageModelV2Content[] = [{ type: 'text', text }];

@@ -14,7 +14,14 @@ import { BullMqJobWatcher } from './bullmq-job.watcher.js';
 
 // A realistic WorkerHost subclass. `process` is what the watcher must wrap.
 // A loose stand-in for the BullMQ Job shape the test processor reads.
-type JobStub = { id?: number; name?: string; queueName?: string; data?: { boom?: boolean } };
+type JobStub = {
+  id?: string;
+  name?: string;
+  queueName?: string;
+  attemptsMade?: number;
+  opts?: { attempts?: number };
+  data?: { boom?: boolean; to?: string };
+};
 
 class EmailProcessor extends WorkerHost {
   public calls = 0;
@@ -90,7 +97,7 @@ describe('BullMqJobWatcher', () => {
     await new BullMqJobWatcher().register(ctx);
 
     const result = await proc.process({
-      id: 1,
+      id: '1',
       name: 'send-welcome-email',
       queueName: 'mail',
       attemptsMade: 1,
@@ -121,7 +128,7 @@ describe('BullMqJobWatcher', () => {
     await new BullMqJobWatcher().register(ctx);
 
     await expect(
-      proc.process({ id: 2, name: 'send', queueName: 'mail', data: { boom: true } }),
+      proc.process({ id: '2', name: 'send', queueName: 'mail', data: { boom: true } }),
     ).rejects.toThrow('SMTP down');
 
     expect(recorded).toHaveLength(1);
@@ -143,7 +150,7 @@ describe('BullMqJobWatcher', () => {
     const { ctx, recorded } = makeHarness([{ instance: proc }]);
     await new BullMqJobWatcher({ slowMs: 100, clock }).register(ctx);
 
-    await proc.process({ id: 3, name: 'slow', queueName: 'reports' });
+    await proc.process({ id: '3', name: 'slow', queueName: 'reports' });
 
     expect(recorded[0]!.durationMs).toBe(150);
     expect(recorded[0]!.tags).toContain('slow');
@@ -161,7 +168,7 @@ describe('BullMqJobWatcher', () => {
     await new NotAProcessor().process(); // must NOT be wrapped
     expect(recorded).toHaveLength(0);
 
-    await proc.process({ id: 4, name: 'x', queueName: 'q' });
+    await proc.process({ id: '4', name: 'x', queueName: 'q' });
     expect(recorded).toHaveLength(1);
   });
 
@@ -171,7 +178,7 @@ describe('BullMqJobWatcher', () => {
     const { ctx, recorded } = makeHarness([{ instance: a }, { instance: b }]);
     await new BullMqJobWatcher().register(ctx);
 
-    await a.process({ id: 5, name: 'x', queueName: 'q' });
+    await a.process({ id: '5', name: 'x', queueName: 'q' });
     expect(recorded).toHaveLength(1); // not double-wrapped
   });
 
@@ -185,7 +192,7 @@ describe('BullMqJobWatcher', () => {
     const { ctx, recorded, providers } = makeHarness();
     // Fresh subclass -> pristine prototype, isolated from other tests.
     class CorrelatingProcessor extends WorkerHost {
-      async process(): Promise<string> {
+      async process(_job: JobStub): Promise<string> {
         // Simulate a query/exception emitted while the job runs.
         ctx.record({ type: 'query', content: { sql: 'select 1' } });
         return 'ok';
@@ -195,7 +202,7 @@ describe('BullMqJobWatcher', () => {
     providers.push({ instance: proc });
     await new BullMqJobWatcher().register(ctx);
 
-    await proc.process({ id: 9, name: 'corr', queueName: 'q' });
+    await proc.process({ id: '9', name: 'corr', queueName: 'q' });
 
     const innerQuery = recorded.find((e) => e.type === 'query');
     const jobEntry = recorded.find((e) => e.type === 'job');
@@ -209,12 +216,12 @@ describe('BullMqJobWatcher', () => {
   it('never corrupts the job outcome when ctx.record throws', async () => {
     // Fresh subclasses -> pristine prototypes (no wrapper nesting from prior tests).
     class OkProc extends WorkerHost {
-      async process(): Promise<string> {
+      async process(_job: JobStub): Promise<string> {
         return 'ok';
       }
     }
     class BoomProc extends WorkerHost {
-      async process(): Promise<never> {
+      async process(_job: JobStub): Promise<never> {
         throw new Error('SMTP down');
       }
     }
@@ -223,13 +230,13 @@ describe('BullMqJobWatcher', () => {
     const okHarness = makeHarness([{ instance: okProc }], { recordThrows: true });
     await new BullMqJobWatcher().register(okHarness.ctx);
     // Success must stay success even though record() throws.
-    await expect(okProc.process({ id: 1, name: 'x', queueName: 'q' })).resolves.toBe('ok');
+    await expect(okProc.process({ id: '1', name: 'x', queueName: 'q' })).resolves.toBe('ok');
 
     const boomProc = new BoomProc();
     const boomHarness = makeHarness([{ instance: boomProc }], { recordThrows: true });
     await new BullMqJobWatcher().register(boomHarness.ctx);
     // The host's original error must propagate, not the recorder's.
-    await expect(boomProc.process({ id: 2, name: 'x', queueName: 'q' })).rejects.toThrow(
+    await expect(boomProc.process({ id: '2', name: 'x', queueName: 'q' })).rejects.toThrow(
       'SMTP down',
     );
   });

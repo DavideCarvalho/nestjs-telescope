@@ -180,11 +180,17 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(page1.data).toHaveLength(50);
     expect(page1.nextCursor).not.toBeNull();
 
-    const page2 = await provider.get({ limit: 50, cursor: page1.nextCursor ?? undefined });
+    const page2 = await provider.get({
+      limit: 50,
+      ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}),
+    });
     expect(page2.data).toHaveLength(50);
     expect(page2.nextCursor).not.toBeNull();
 
-    const page3 = await provider.get({ limit: 50, cursor: page2.nextCursor ?? undefined });
+    const page3 = await provider.get({
+      limit: 50,
+      ...(page2.nextCursor ? { cursor: page2.nextCursor } : {}),
+    });
     expect(page3.data).toHaveLength(20);
     expect(page3.nextCursor).toBeNull();
 
@@ -583,7 +589,9 @@ describe('MikroOrmStorageProvider schema self-heal (file sqlite)', () => {
 
       // host_widgets was NOT altered: it still lacks `price`, and its row stands.
       const hostConn = hostOrm.em.getConnection();
-      const columns = await hostConn.execute('pragma table_info(`host_widgets`)');
+      const columns = (await hostConn.execute('pragma table_info(`host_widgets`)')) as Array<{
+        name: unknown;
+      }>;
       const columnNames = columns.map((c) => String(c.name));
       expect(columnNames.sort()).toEqual(['id', 'name']);
       expect(columnNames).not.toContain('price');

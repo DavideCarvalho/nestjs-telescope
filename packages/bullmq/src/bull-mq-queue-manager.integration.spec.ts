@@ -13,11 +13,7 @@
 // Bootstrap mirrors bullmq-job.watcher.integration.spec.ts: the manager is
 // resolved from the registry (app.get(QueueManagerRegistry).get('bullmq')).
 import 'reflect-metadata';
-import {
-  type QueueManager,
-  QueueManagerRegistry,
-  TelescopeModule,
-} from '@dudousxd/nestjs-telescope';
+import { QueueManagerRegistry, TelescopeModule } from '@dudousxd/nestjs-telescope';
 import { BullModule, Processor, WorkerHost, getQueueToken } from '@nestjs/bullmq';
 import { type INestApplication, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -71,7 +67,7 @@ describe.skipIf(!REDIS_URL)('BullMqQueueManager integration (real Redis)', () =>
   let app: INestApplication;
   let queue: Queue;
   let actionsQueue: Queue;
-  let manager: QueueManager;
+  let manager: BullMqQueueManager;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -85,7 +81,7 @@ describe.skipIf(!REDIS_URL)('BullMqQueueManager integration (real Redis)', () =>
     await actionsQueue.obliterate({ force: true });
     const found = app.get(QueueManagerRegistry).get('bullmq');
     expect(found).toBeDefined();
-    manager = found as QueueManager;
+    manager = found as BullMqQueueManager;
   });
 
   afterAll(async () => {
