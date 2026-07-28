@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-mikro-orm
 
+## 1.14.3
+
+### Patch Changes
+
+- [#59](https://github.com/DavideCarvalho/nestjs-telescope/pull/59) [`93f2b6d`](https://github.com/DavideCarvalho/nestjs-telescope/commit/93f2b6dd471ef26efb7024c724f174cee4f3543f) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Widen `MikroOrmStorageProviderOptions` to `Partial<Options>` (was the full `Options`). The provider's own `buildOrmOptions()` already treated the connection config as partial — it forwards `source` to `MikroORM.init()` (whose own signature is `Partial<Options>`) and always overrides `entities` — so passing the minimal `{ driver, dbName }` shown in the docs and every test always worked at runtime but was rejected by the type checker. No behavior change.
+
 ## 1.14.2
 
 ### Patch Changes
