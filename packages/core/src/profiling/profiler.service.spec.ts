@@ -47,7 +47,6 @@ function makeService(
   const service = new ProfilerService(config, {
     record: deps.record ?? ((input) => records.push(input)),
     random: deps.random ?? (() => 0.99),
-    // biome-ignore lint/suspicious/noExplicitAny: test factory
     profilerFactory: (deps.profilerFactory as any) ?? (fp.factory as any),
   });
   return { service, records, fp };
@@ -60,7 +59,6 @@ describe('ProfilerService — disabled', () => {
     const service = new ProfilerService(config, {
       record: () => {},
       random: () => 0,
-      // biome-ignore lint/suspicious/noExplicitAny: spy factory
       profilerFactory: profilerFactory as any,
     });
     // shouldProfile must be false and no profiler created even if we force-begin.
@@ -149,7 +147,6 @@ describe('ProfilerService — capture lifecycle', () => {
     const service = new ProfilerService(config, {
       record: (i) => records.push(i),
       random: () => 0,
-      // biome-ignore lint/suspicious/noExplicitAny: test factory
       profilerFactory: fp.factory as any,
     });
     const handle = service.begin('GET /a');

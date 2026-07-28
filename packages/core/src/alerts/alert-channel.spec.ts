@@ -145,6 +145,7 @@ describe('slackChannel', () => {
     const fetchMock = makeFetchMock();
     const channel = slackChannel('https://hooks.slack.com/x', undefined, fetchMock);
     const payload = exceptionPayload();
+    // biome-ignore lint/performance/noDelete: `dashboardUrl?: string` + exactOptionalPropertyTypes rejects `= undefined`; delete is the only type-safe way to unset it here.
     delete payload.dashboardUrl;
     await channel.send(payload);
     const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body ?? '');

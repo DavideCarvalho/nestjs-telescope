@@ -102,7 +102,6 @@ describe('profiling — middleware integration', () => {
     const profilerFactory = vi.fn(() => new CpuProfiler(factory));
     const profiler = new ProfilerService(resolveProfilingConfig({ enabled: false }), {
       record: (input) => service.record(input),
-      // biome-ignore lint/suspicious/noExplicitAny: spy
       profilerFactory: profilerFactory as any,
     });
     const mw = new TelescopeRequestMiddleware(service, profiler);
