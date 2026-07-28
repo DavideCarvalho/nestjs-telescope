@@ -1,5 +1,22 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 1.20.0
+
+### Minor Changes
+
+- [#67](https://github.com/DavideCarvalho/nestjs-telescope/pull/67) [`87c8732`](https://github.com/DavideCarvalho/nestjs-telescope/commit/87c8732006a46eeea50d1dd1536c8a9794a13ae5) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Ship the console launcher on its own subpath: `@dudousxd/nestjs-telescope-ui/react/console`.
+
+  The launcher was only reachable from the `./react` barrel, which re-exports the whole dashboard
+  component set and therefore pulls in `recharts` and `react-router-dom`. Neither is declared by this
+  package, and a bundler resolves re-exported modules even when nothing references them — so a host
+  that wanted nothing but the launcher button got a hard build failure on a missing dependency
+  instead of tree-shaking it away.
+
+  `./react/console` re-exports the hook, the button and the headless client primitives, and nothing
+  else. Its entire dependency footprint is `react`, guarded by a test that walks the import graph.
+
+  `./react` is unchanged and still exports the launcher, so nothing breaks.
+
 ## 1.19.0
 
 ### Minor Changes
