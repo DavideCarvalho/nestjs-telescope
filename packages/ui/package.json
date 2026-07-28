@@ -40,7 +40,10 @@
   "peerDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:^",
     "@nestjs/common": ">=11.0.0",
-    "@nestjs/core": ">=11.0.0"
+    "@nestjs/core": ">=11.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "@tanstack/react-query": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "react": {
