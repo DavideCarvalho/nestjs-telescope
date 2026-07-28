@@ -50,7 +50,7 @@ function makeManager(spies: ActionSpies): QueueManager {
     retryAll: spies.retryAll as unknown as (queue: string, state: QueueState) => Promise<number>,
     ...(spies.enqueue
       ? {
-          enqueue: spies.enqueue as unknown as QueueManager['enqueue'],
+          enqueue: spies.enqueue as unknown as NonNullable<QueueManager['enqueue']>,
         }
       : {}),
   };

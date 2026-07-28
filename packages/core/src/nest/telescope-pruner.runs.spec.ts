@@ -59,7 +59,7 @@ describe('TelescopePruner run recording', () => {
 
     const runs = pruner.getRuns();
     expect(runs).toHaveLength(1);
-    const [run] = runs;
+    const run = runs[0]!;
     expect(run.trigger).toBe('scheduled');
     expect(run.deletedTotal).toBe(2);
     expect(run.deletedByType).toEqual({ exception: 1 });
@@ -108,8 +108,8 @@ describe('TelescopePruner run recording', () => {
 
     const runs = pruner.getRuns();
     expect(runs).toHaveLength(1);
-    expect(runs[0].trigger).toBe('manual');
-    expect(runs[0].deletedTotal).toBe(1);
+    expect(runs[0]!.trigger).toBe('manual');
+    expect(runs[0]!.deletedTotal).toBe(1);
     // A manual prune does not advance the SCHEDULED prediction window.
     expect(pruner.getNextRunAtMs()).toBe(before);
   });

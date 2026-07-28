@@ -1,11 +1,24 @@
 // packages/core/src/nest/telescope.controller.spec.ts
+import type { ModuleRef } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
+import type { ResolvedCoreConfig } from '../config/options.js';
 import { resolveConfig } from '../config/resolve-config.js';
 import type { Entry } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
+import type { QueueMetricsService } from '../metrics/queue-metrics.service.js';
+import type { ServerStatsService } from '../metrics/server-stats.service.js';
+import type { StatsService } from '../metrics/stats.service.js';
+import type { TimeseriesService } from '../metrics/timeseries.service.js';
+import type { TracesService } from '../metrics/traces.service.js';
+import type { ProfilerService } from '../profiling/profiler.service.js';
+import type { PulseService } from '../pulse/pulse.service.js';
+import type { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
+import type { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
+import type { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeController } from './telescope.controller.js';
+import type { TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
 function entry(over: Partial<Entry>): Entry {
@@ -31,7 +44,27 @@ function setup() {
   const storage = new InMemoryStorageProvider();
   const extensions = new ExtensionRegistry([], {} as ExtensionContext);
   const service = new TelescopeService(resolveConfig({}), storage, {}, null, extensions);
-  const controller = new TelescopeController(storage, service);
+  // Only list()/show()/meta() are exercised below, and they touch just
+  // `storage` and `service`. The remaining constructor deps are unused by
+  // those paths, so they're stubbed rather than wired up for real.
+  const controller = new TelescopeController(
+    storage,
+    service,
+    {} as QueueMetricsService,
+    {} as TimeseriesService,
+    {} as TracesService,
+    {} as StatsService,
+    {} as ServerStatsService,
+    {} as PulseService,
+    {} as ProfilerService,
+    {} as QueueManagerRegistry,
+    {} as ScheduleManagerRegistry,
+    {} as TelescopeModuleOptions,
+    extensions,
+    {} as ResolvedCoreConfig,
+    {} as TelescopePruner,
+    {} as ModuleRef,
+  );
   return { storage, controller };
 }
 

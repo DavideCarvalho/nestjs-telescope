@@ -29,7 +29,10 @@ describe('TelescopeModule.forRootAsync (async options applied)', () => {
         TelescopeModule.forRootAsync({
           imports: [ConfigModule],
           inject: [STORAGE_SOURCE],
-          useFactory: (storage: InMemoryStorageProvider) => ({ storage, authorizer: () => true }),
+          useFactory: (...args: unknown[]) => ({
+            storage: args[0] as InMemoryStorageProvider,
+            authorizer: () => true,
+          }),
         }),
       ],
     }).compile();
