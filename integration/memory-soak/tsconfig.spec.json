@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "reflect-metadata"]
+  },
+  "include": ["src/**/*.spec.ts", "test/**/*.spec.ts"]
+}
