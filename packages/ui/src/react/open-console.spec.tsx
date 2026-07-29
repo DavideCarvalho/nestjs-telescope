@@ -1,5 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpenTelescopeConsoleButton } from './open-console-button.js';
 import { openTelescopeConsoleMutationOptions } from './use-open-console.js';
 
@@ -7,6 +7,18 @@ function response(init: { status?: number; type?: string } = {}): Response {
   const status = init.status ?? 204;
   return { ok: status >= 200 && status < 300, status, type: init.type ?? 'basic' } as Response;
 }
+
+/**
+ * jsdom does not implement `PageTransitionEvent`, so the `persisted` flag — the only thing that
+ * separates a bfcache restore from a fresh load — has to be stapled onto a plain `Event`.
+ */
+function pageShow(persisted: boolean): Event {
+  return Object.assign(new Event('pageshow'), { persisted });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('openTelescopeConsoleMutationOptions', () => {
   it('returns a useMutation-shaped object without depending on TanStack', async () => {
@@ -173,5 +185,79 @@ describe('<OpenTelescopeConsoleButton>', () => {
     // The navigation is already underway; going back to idle would read as "ready to click again"
     // on a page that is leaving.
     expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('recovers from the bfcache instead of coming back to a dead spinner', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response());
+    const navigate = vi.fn();
+    render(<OpenTelescopeConsoleButton fetch={fetchMock} navigate={navigate} />);
+    const button = screen.getByRole('button') as HTMLButtonElement;
+
+    await act(async () => {
+      button.click();
+    });
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(button.disabled).toBe(true);
+
+    // The page did not die: the browser restored it from the back/forward cache with React state
+    // intact, so the deliberate "stay pending" above becomes a spinner that never stops on a button
+    // that can never be clicked again.
+    await act(async () => {
+      globalThis.window.dispatchEvent(pageShow(true));
+    });
+
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-busy')).toBeNull();
+    expect(button.textContent).toBe('Open Telescope');
+  });
+
+  it('leaves a genuinely in-flight mint pending on a non-persisted pageshow', async () => {
+    let release: (value: Response) => void = () => {};
+    const fetchMock = vi.fn().mockReturnValue(
+      new Promise<Response>((resolve) => {
+        release = resolve;
+      }),
+    );
+    render(<OpenTelescopeConsoleButton fetch={fetchMock} navigate={vi.fn()} />);
+    const button = screen.getByRole('button') as HTMLButtonElement;
+
+    await act(async () => {
+      button.click();
+    });
+
+    // A fresh load fires `pageshow` too, with `persisted: false`. Reacting to it would clear the
+    // spinner of a mint the user is still waiting on — the flicker this hook exists to avoid.
+    await act(async () => {
+      globalThis.window.dispatchEvent(pageShow(false));
+    });
+
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    await act(async () => {
+      release(response());
+    });
+  });
+
+  it('removes the pageshow listener on unmount', async () => {
+    const added = vi.spyOn(globalThis.window, 'addEventListener');
+    const removed = vi.spyOn(globalThis.window, 'removeEventListener');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { unmount } = render(<OpenTelescopeConsoleButton fetch={vi.fn()} navigate={vi.fn()} />);
+
+    const registered = added.mock.calls.find(([type]) => type === 'pageshow')?.[1];
+    expect(registered).toBeDefined();
+
+    unmount();
+
+    // Same handler identity, or the listener outlives the component and fires setState on a dead
+    // tree for every bfcache restore for the rest of the session.
+    expect(
+      removed.mock.calls.some(([type, handler]) => type === 'pageshow' && handler === registered),
+    ).toBe(true);
+
+    await act(async () => {
+      globalThis.window.dispatchEvent(pageShow(true));
+    });
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });
