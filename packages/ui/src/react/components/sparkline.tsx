@@ -27,10 +27,8 @@ export function Sparkline({
       role="img"
       aria-label="throughput"
     >
-      {area && <polygon points={area} className="fill-emerald-500/10" />}
-      {points && (
-        <polyline points={points} className="fill-none stroke-emerald-400" strokeWidth={1.5} />
-      )}
+      {area && <polygon points={area} className="fill-accent opacity-10" />}
+      {points && <polyline points={points} className="fill-none stroke-accent" strokeWidth={1.5} />}
     </svg>
   );
 }

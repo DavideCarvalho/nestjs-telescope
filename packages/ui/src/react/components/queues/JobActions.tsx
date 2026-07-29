@@ -5,6 +5,7 @@ import type {
   QueueCapabilities,
   QueueState,
 } from '../../../client/index.js';
+import { Button, type ButtonProps } from '../../ui/index.js';
 import { useQueueAction, useQueueJobAction } from '../../use-telescope-queries.js';
 
 /** Does the driver advertise this action AND are mutations enabled at all? */
@@ -40,10 +41,11 @@ function isForbidden(error: unknown): boolean {
   return error instanceof Error && /\b403\b/.test(error.message);
 }
 
-const ACTION_STYLE: Record<JobActionName, string> = {
-  retry: 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10',
-  promote: 'border-amber-500/40 text-amber-300 hover:bg-amber-500/10',
-  remove: 'border-red-500/40 text-red-300 hover:bg-red-500/10',
+/** Semantic `Button` variant per action — the hue comes from the Aviary status tokens. */
+const ACTION_VARIANT: Record<JobActionName, NonNullable<ButtonProps['variant']>> = {
+  retry: 'good',
+  promote: 'warn',
+  remove: 'bad',
 };
 
 function JobActionButton({
@@ -77,36 +79,27 @@ function JobActionButton({
   if (action === 'remove' && confirming) {
     return (
       <span className="inline-flex items-center gap-1">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={fire}
-          className="rounded border border-red-500/50 bg-red-500/10 px-2 py-1 text-[11px] text-red-200 disabled:opacity-50"
-        >
+        <Button variant="bad" disabled={pending} onClick={fire}>
           {pending ? 'Removing…' : 'Confirm remove'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirming(false)}
-          className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-200"
-        >
+        </Button>
+        <Button variant="ghost" onClick={() => setConfirming(false)}>
           Cancel
-        </button>
+        </Button>
       </span>
     );
   }
 
   return (
     <span className="inline-flex flex-col">
-      <button
-        type="button"
+      <Button
+        variant={ACTION_VARIANT[action]}
         disabled={pending}
         onClick={action === 'remove' ? () => setConfirming(true) : fire}
-        className={`rounded border px-2 py-1 text-[11px] capitalize transition-colors disabled:opacity-50 ${ACTION_STYLE[action]}`}
+        className="capitalize"
       >
         {pending ? `${action}…` : action}
-      </button>
-      {forbidden && <span className="mt-0.5 text-[10px] text-red-400">Not authorized</span>}
+      </Button>
+      {forbidden && <span className="mt-0.5 text-[10px] text-bad">Not authorized</span>}
     </span>
   );
 }
@@ -172,15 +165,10 @@ export function RetryAllFailedButton({
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
-        type="button"
-        disabled={mutation.isPending}
-        onClick={fire}
-        className="rounded border border-emerald-500/40 px-2.5 py-1 text-[11px] text-emerald-300 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
-      >
+      <Button variant="good" disabled={mutation.isPending} onClick={fire}>
         {mutation.isPending ? 'Retrying all…' : 'Retry all failed'}
-      </button>
-      {forbidden && <span className="text-[10px] text-red-400">Not authorized</span>}
+      </Button>
+      {forbidden && <span className="text-[10px] text-bad">Not authorized</span>}
     </span>
   );
 }
@@ -218,36 +206,22 @@ export function RedriveDlqButton({
   if (confirming) {
     return (
       <span className="inline-flex items-center gap-1">
-        <button
-          type="button"
-          disabled={mutation.isPending}
-          onClick={fire}
-          className="rounded border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-200 disabled:opacity-50"
-        >
+        <Button variant="warn" disabled={mutation.isPending} onClick={fire}>
           {mutation.isPending ? 'Redriving…' : 'Confirm redrive'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirming(false)}
-          className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-200"
-        >
+        </Button>
+        <Button variant="ghost" onClick={() => setConfirming(false)}>
           Cancel
-        </button>
+        </Button>
       </span>
     );
   }
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
-        type="button"
-        disabled={mutation.isPending}
-        onClick={() => setConfirming(true)}
-        className="rounded border border-amber-500/40 px-2.5 py-1 text-[11px] text-amber-300 transition-colors hover:bg-amber-500/10 disabled:opacity-50"
-      >
+      <Button variant="warn" disabled={mutation.isPending} onClick={() => setConfirming(true)}>
         Redrive DLQ
-      </button>
-      {forbidden && <span className="text-[10px] text-red-400">Not authorized</span>}
+      </Button>
+      {forbidden && <span className="text-[10px] text-bad">Not authorized</span>}
     </span>
   );
 }

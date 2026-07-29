@@ -28,13 +28,11 @@ function LiveBadge({ status }: { status: StreamStatus }): JSX.Element {
     <span
       data-telescope-status={status}
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-        isLive ? 'bg-emerald-950/60 text-emerald-400' : 'bg-amber-950/60 text-amber-400'
+        isLive ? 'tint-good' : 'tint-warn'
       }`}
     >
       <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          isLive ? 'animate-pulse bg-emerald-400' : 'bg-amber-400'
-        }`}
+        className={`h-1.5 w-1.5 rounded-full ${isLive ? 'animate-pulse bg-good' : 'bg-warn'}`}
       />
       {isLive ? 'live' : status}
     </span>
@@ -63,7 +61,7 @@ function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element 
   const q = useExtensionData(ext, panel.data.provider, query);
   if (q.isError) {
     return (
-      <div className="rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+      <div className="tint-bad rounded-lg border px-4 py-3 text-sm">
         Failed to load "{panel.title}".
       </div>
     );
@@ -88,7 +86,7 @@ export function ExtensionDashboardPage(): JSX.Element {
   const { status } = useTelescopeStream();
   const dash = meta.data?.dashboards?.find((d) => d.id === dashboardId);
   if (!dash) {
-    return <div className="p-6 text-sm text-zinc-400">Dashboard not found.</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Dashboard not found.</div>;
   }
   const ext = dashboardId?.split('.')[0] ?? '';
   // Backward compat: dashboards without sections fall back to a single 2-column section.
@@ -96,13 +94,13 @@ export function ExtensionDashboardPage(): JSX.Element {
   return (
     <div className="p-4">
       <div className="mb-4 flex items-center gap-3">
-        <h2 className="text-sm font-semibold text-zinc-200">{dash.label}</h2>
+        <h2 className="text-sm font-semibold text-foreground">{dash.label}</h2>
         <LiveBadge status={status} />
       </div>
       {sections.map((section, i) => (
         <section key={section.title ?? `s${i}`} className="mb-6">
           {section.title && (
-            <p className="mb-2 text-[10px] uppercase tracking-wide text-zinc-500">
+            <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
               {section.title}
             </p>
           )}

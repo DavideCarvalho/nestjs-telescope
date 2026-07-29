@@ -46,15 +46,13 @@ function formatUptime(seconds: number): string {
 
 function ServerStatsCard({ stats }: { stats: ServerStats | undefined }): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">Server</h3>
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Server
+      </h3>
       {stats ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard
-            label="Uptime"
-            value={formatUptime(stats.uptimeSec)}
-            accent="text-emerald-400"
-          />
+          <StatCard label="Uptime" value={formatUptime(stats.uptimeSec)} accent="text-brand" />
           <StatCard
             label="RSS"
             value={`${stats.memory.rssMb} MB`}
@@ -76,14 +74,14 @@ function ServerStatsCard({ stats }: { stats: ServerStats | undefined }): JSX.Ele
             value={stats.eventLoopDelayMs === null ? 'n/a' : `${stats.eventLoopDelayMs} ms`}
             accent={
               stats.eventLoopDelayMs !== null && stats.eventLoopDelayMs > 100
-                ? 'text-red-400'
-                : 'text-zinc-100'
+                ? 'text-bad'
+                : 'text-foreground'
             }
             hint={`instance ${stats.instanceId}`}
           />
         </div>
       ) : (
-        <p className="text-xs text-zinc-600">Loading…</p>
+        <p className="text-xs text-muted-foreground">Loading…</p>
       )}
     </section>
   );
@@ -100,12 +98,12 @@ function formatFlushMs(ms: number | null): string {
 
 function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Telescope health
         </h3>
-        <span className="text-[10px] text-zinc-600">
+        <span className="text-[10px] text-muted-foreground">
           Captures run off the response path — your requests don&apos;t wait on Telescope.
         </span>
       </div>
@@ -114,7 +112,7 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
           <StatCard
             label="Capture cost"
             value={`${formatMicros(health.captureCostNanos)}/capture`}
-            accent="text-emerald-400"
+            accent="text-brand"
             hint="micro-benchmark"
           />
           <StatCard
@@ -137,7 +135,7 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
           <StatCard
             label="Dropped"
             value={health.droppedCount.toLocaleString()}
-            accent={health.droppedCount > 0 ? 'text-red-400' : 'text-emerald-400'}
+            accent={health.droppedCount > 0 ? 'text-bad' : 'text-good'}
             hint={
               health.droppedCount > 0
                 ? `overflow ${health.overflowDropped} · store ${health.storeFailedDropped}`
@@ -147,14 +145,14 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
           <StatCard
             label="Truncated"
             value={health.truncatedCount.toLocaleString()}
-            accent={health.truncatedCount > 0 ? 'text-amber-400' : 'text-emerald-400'}
+            accent={health.truncatedCount > 0 ? 'text-warn' : 'text-good'}
             hint={
               health.truncatedCount > 0 ? 'fat content — tune redact/sampling' : 'within bounds'
             }
           />
         </div>
       ) : (
-        <p className="text-xs text-zinc-600">Loading…</p>
+        <p className="text-xs text-muted-foreground">Loading…</p>
       )}
     </section>
   );
@@ -185,15 +183,17 @@ function RetentionCard({
   }
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400">Retention</h3>
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Retention
+        </h3>
         {pruneEnabled ? (
           <button
             type="button"
             onClick={onPrune}
             disabled={prune.isPending}
-            className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded border border-line px-2 py-1 text-[11px] text-foreground hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
           >
             {prune.isPending ? 'Pruning…' : 'Prune now'}
           </button>
@@ -203,7 +203,7 @@ function RetentionCard({
         <StatCard
           label="Window"
           value={window ? formatRetention(window.afterMs) : 'none'}
-          accent={window ? 'text-emerald-400' : 'text-zinc-500'}
+          accent={window ? 'text-brand' : 'text-muted-foreground'}
           hint={window?.keepLast != null ? `keep last ${window.keepLast}` : 'unbounded'}
         />
         <StatCard
@@ -317,7 +317,7 @@ function StatCards({
       <StatCard
         label="Requests"
         value={requests.toLocaleString()}
-        accent="text-emerald-400"
+        accent="text-brand"
         hint={`${totalEntries.toLocaleString()} entries total`}
       />
       <StatCard
@@ -325,21 +325,21 @@ function StatCards({
         value={formatErrorRate(errorRate)}
         accent={
           errorRate !== null && errorRate > ERROR_RATE_ALERT_THRESHOLD
-            ? 'text-red-400'
-            : 'text-zinc-100'
+            ? 'text-bad'
+            : 'text-foreground'
         }
         hint={`${exceptions.toLocaleString()} exceptions`}
       />
       <StatCard
         label="Failed jobs"
         value={failedJobs.toLocaleString()}
-        accent={failedJobs > 0 ? 'text-red-400' : 'text-zinc-100'}
+        accent={failedJobs > 0 ? 'text-bad' : 'text-foreground'}
         hint="across queues"
       />
       <StatCard
         label="Slow routes"
         value={slowRequests.toLocaleString()}
-        accent={slowRequests > 0 ? 'text-amber-400' : 'text-zinc-100'}
+        accent={slowRequests > 0 ? 'text-warn' : 'text-foreground'}
         hint="routes over the slow p99 threshold"
       />
     </div>
@@ -357,12 +357,14 @@ function ListCard({
 }): JSX.Element {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">{title}</h3>
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
       {hasChildren ? (
         <ul className="space-y-1 text-xs">{children}</ul>
       ) : (
-        <p className="text-xs text-zinc-600">{emptyLabel}</p>
+        <p className="text-xs text-muted-foreground">{emptyLabel}</p>
       )}
     </section>
   );
@@ -382,8 +384,8 @@ function NPlusOneCard({
   onSelectFamily: (familyHash: string) => void;
 }): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         N+1 query hotspots
       </h3>
       {hotspots.length > 0 ? (
@@ -393,13 +395,13 @@ function NPlusOneCard({
               <button
                 type="button"
                 onClick={() => onSelectFamily(hotspot.familyHash)}
-                className="flex w-full items-center justify-between gap-3 border-t border-zinc-900 pt-1 text-left hover:text-zinc-100 first:border-0 first:pt-0"
+                className="flex w-full items-center justify-between gap-3 border-t border-line-soft pt-1 text-left hover:text-foreground first:border-0 first:pt-0"
               >
                 <span className="min-w-0 truncate">
-                  <span className="whitespace-nowrap text-amber-400">×{hotspot.perRequest}</span>{' '}
-                  <span className="text-zinc-400">{hotspot.sql}</span>
+                  <span className="whitespace-nowrap text-warn">×{hotspot.perRequest}</span>{' '}
+                  <span className="text-muted-foreground">{hotspot.sql}</span>
                 </span>
-                <span className="shrink-0 tabular-nums text-zinc-500">
+                <span className="shrink-0 tabular-nums text-muted-foreground">
                   {hotspot.requests} req · {hotspot.total} total
                   {hotspot.totalDurationMs > 0 ? ` · ${Math.round(hotspot.totalDurationMs)}ms` : ''}
                 </span>
@@ -408,7 +410,7 @@ function NPlusOneCard({
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-zinc-600">None detected</p>
+        <p className="text-xs text-muted-foreground">None detected</p>
       )}
     </section>
   );
@@ -428,15 +430,15 @@ function QueuesAttentionCard({
   onOpenQueues: () => void;
 }): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Queues needing attention
         </h3>
         <button
           type="button"
           onClick={onOpenQueues}
-          className="text-[11px] text-zinc-500 hover:text-emerald-400"
+          className="text-[11px] text-muted-foreground hover:text-brand"
         >
           All queues →
         </button>
@@ -450,18 +452,18 @@ function QueuesAttentionCard({
                 <button
                   type="button"
                   onClick={onOpenQueues}
-                  className="flex w-full items-center justify-between gap-3 border-t border-zinc-900 pt-1 text-left hover:text-zinc-100 first:border-0 first:pt-0"
+                  className="flex w-full items-center justify-between gap-3 border-t border-line-soft pt-1 text-left hover:text-foreground first:border-0 first:pt-0"
                 >
-                  <span className="min-w-0 truncate text-zinc-300">{queue.queue}</span>
+                  <span className="min-w-0 truncate text-foreground">{queue.queue}</span>
                   <span className="shrink-0 tabular-nums">
                     {queue.failed > 0 ? (
-                      <span className="text-red-400">{queue.failed} failed</span>
+                      <span className="text-bad">{queue.failed} failed</span>
                     ) : null}
                     {queue.failed > 0 && pending >= QUEUE_WAITING_ATTENTION_THRESHOLD ? (
-                      <span className="text-zinc-600"> · </span>
+                      <span className="text-muted-foreground"> · </span>
                     ) : null}
                     {pending >= QUEUE_WAITING_ATTENTION_THRESHOLD ? (
-                      <span className="text-amber-400">{pending.toLocaleString()} pending</span>
+                      <span className="text-warn">{pending.toLocaleString()} pending</span>
                     ) : null}
                   </span>
                 </button>
@@ -470,7 +472,7 @@ function QueuesAttentionCard({
           })}
         </ul>
       ) : (
-        <p className="text-xs text-emerald-400/80">All queues healthy</p>
+        <p className="text-xs text-good">All queues healthy</p>
       )}
     </section>
   );
@@ -479,8 +481,8 @@ function QueuesAttentionCard({
 /** Slowest job families by p99 — the queue analogue of the slow-route hotspots. */
 function SlowJobsCard({ hotspots }: { hotspots: SlowRouteHotspot[] }): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Slowest jobs
       </h3>
       {hotspots.length > 0 ? (
@@ -488,18 +490,18 @@ function SlowJobsCard({ hotspots }: { hotspots: SlowRouteHotspot[] }): JSX.Eleme
           {hotspots.map((hotspot) => (
             <li
               key={hotspot.route}
-              className="flex items-center justify-between gap-3 border-t border-zinc-900 pt-1 first:border-0 first:pt-0"
+              className="flex items-center justify-between gap-3 border-t border-line-soft pt-1 first:border-0 first:pt-0"
             >
-              <span className="min-w-0 truncate text-zinc-300">{hotspot.route}</span>
-              <span className="shrink-0 tabular-nums text-zinc-500">
-                <span className="text-amber-400">{Math.round(hotspot.p99)}ms</span> p99 ·{' '}
-                {hotspot.count}×
+              <span className="min-w-0 truncate text-foreground">{hotspot.route}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                <span className="text-warn">{Math.round(hotspot.p99)}ms</span> p99 · {hotspot.count}
+                ×
               </span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-zinc-600">No jobs in window.</p>
+        <p className="text-xs text-muted-foreground">No jobs in window.</p>
       )}
     </section>
   );
@@ -514,8 +516,8 @@ function LoadByUserCard({
   onSelectUser: (user: string) => void;
 }): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Load by user
       </h3>
       {users.length > 0 ? (
@@ -525,10 +527,10 @@ function LoadByUserCard({
               <button
                 type="button"
                 onClick={() => onSelectUser(load.user)}
-                className="flex w-full items-center justify-between gap-3 border-t border-zinc-900 pt-1 text-left hover:text-zinc-100 first:border-0 first:pt-0"
+                className="flex w-full items-center justify-between gap-3 border-t border-line-soft pt-1 text-left hover:text-foreground first:border-0 first:pt-0"
               >
-                <span className="min-w-0 truncate text-zinc-300">{load.user}</span>
-                <span className="shrink-0 tabular-nums text-zinc-500">
+                <span className="min-w-0 truncate text-foreground">{load.user}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
                   {load.count} req · {Math.round(load.totalDurationMs)}ms
                 </span>
               </button>
@@ -536,7 +538,7 @@ function LoadByUserCard({
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-zinc-600">No identified users in window.</p>
+        <p className="text-xs text-muted-foreground">No identified users in window.</p>
       )}
     </section>
   );
@@ -552,33 +554,33 @@ function ResourceHistoryCard({
   const heap = samples.map((s) => s.heapUsedMb);
   const last = samples[samples.length - 1];
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+    <section className="rounded-lg border border-line bg-panel/40 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Resource history
       </h3>
       {samples.length > 1 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <div className="mb-1 text-[11px] text-zinc-500">
+            <div className="mb-1 text-[11px] text-muted-foreground">
               CPU {last ? `${last.cpuPercent}%` : ''}
             </div>
             <Sparkline values={cpu} />
           </div>
           <div>
-            <div className="mb-1 text-[11px] text-zinc-500">
+            <div className="mb-1 text-[11px] text-muted-foreground">
               RSS {last ? `${last.rssMb}MB` : ''}
             </div>
             <Sparkline values={rss} />
           </div>
           <div>
-            <div className="mb-1 text-[11px] text-zinc-500">
+            <div className="mb-1 text-[11px] text-muted-foreground">
               Heap {last ? `${last.heapUsedMb}MB` : ''}
             </div>
             <Sparkline values={heap} />
           </div>
         </div>
       ) : (
-        <p className="text-xs text-zinc-600">Collecting samples…</p>
+        <p className="text-xs text-muted-foreground">Collecting samples…</p>
       )}
     </section>
   );
@@ -604,7 +606,7 @@ export function OverviewPage(): JSX.Element {
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm text-emerald-400">Overview</h2>
+        <h2 className="text-sm text-brand">Overview</h2>
         <WindowSelect value={window} onChange={setWindow} />
       </div>
 
@@ -620,13 +622,13 @@ export function OverviewPage(): JSX.Element {
           {(pulse.data?.topExceptions ?? []).map((group) => (
             <li
               key={group.familyHash}
-              className="flex items-center justify-between gap-3 border-t border-zinc-900 pt-1 first:border-0 first:pt-0"
+              className="flex items-center justify-between gap-3 border-t border-line-soft pt-1 first:border-0 first:pt-0"
             >
               <span className="min-w-0">
-                <span className="text-red-400">{group.class}</span>{' '}
-                <span className="text-zinc-400">{group.message}</span>
+                <span className="text-bad">{group.class}</span>{' '}
+                <span className="text-muted-foreground">{group.message}</span>
               </span>
-              <span className="shrink-0 tabular-nums text-zinc-500">×{group.count}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">×{group.count}</span>
             </li>
           ))}
         </ListCard>
@@ -646,13 +648,15 @@ export function OverviewPage(): JSX.Element {
               <button
                 type="button"
                 onClick={() => navigate(`/entries/view/${slow.id}`)}
-                className="flex w-full items-center justify-between gap-3 border-t border-zinc-900 pt-1 text-left hover:text-zinc-100 first:border-0 first:pt-0"
+                className="flex w-full items-center justify-between gap-3 border-t border-line-soft pt-1 text-left hover:text-foreground first:border-0 first:pt-0"
               >
                 <span className="min-w-0 truncate">
-                  <span className="text-emerald-400">{slow.type}</span>{' '}
-                  <span className="text-zinc-400">{slow.label}</span>
+                  <span className="text-brand">{slow.type}</span>{' '}
+                  <span className="text-muted-foreground">{slow.label}</span>
                 </span>
-                <span className="shrink-0 tabular-nums text-zinc-500">{slow.durationMs}ms</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {slow.durationMs}ms
+                </span>
               </button>
             </li>
           ))}

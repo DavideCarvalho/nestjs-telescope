@@ -13,12 +13,14 @@ function CountBadge({
   return (
     <span
       className={`flex items-baseline gap-1 rounded px-1.5 py-0.5 ${
-        emphasize ? 'bg-red-500/10' : 'bg-zinc-800/60'
+        emphasize ? 'tint-bad' : 'bg-panel-2/60'
       }`}
       title={`${value} ${state}`}
     >
-      <span className="text-[9px] uppercase tracking-wide text-zinc-500">{state.slice(0, 4)}</span>
-      <span className={`tabular-nums ${value > 0 ? STATE_ACCENT[state] : 'text-zinc-600'}`}>
+      <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+        {state.slice(0, 4)}
+      </span>
+      <span className={`tabular-nums ${value > 0 ? STATE_ACCENT[state] : 'text-muted-foreground'}`}>
         {value}
       </span>
     </span>
@@ -40,19 +42,19 @@ function QueueRow({
       onClick={() => onSelect(summary.driver, summary.queue)}
       className={`w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
         active
-          ? 'border-emerald-500/40 bg-emerald-500/5'
-          : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-700 hover:bg-zinc-900'
+          ? 'border-brand bg-panel-2'
+          : 'border-line bg-panel/40 hover:border-line hover:bg-panel'
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate font-medium text-zinc-100">{summary.queue}</span>
+        <span className="min-w-0 truncate font-medium text-foreground">{summary.queue}</span>
         {summary.isPaused && (
           <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-violet-300">
             paused
           </span>
         )}
       </div>
-      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-zinc-600">
+      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
         {summary.driver}
       </div>
       <div className="mt-2 flex flex-wrap gap-1 text-[10px]">
@@ -74,15 +76,15 @@ export function QueueList({
   const { data, isLoading, isError } = useLiveQueues();
 
   if (isLoading) {
-    return <p className="px-1 py-2 text-xs text-zinc-600">Loading queues…</p>;
+    return <p className="px-1 py-2 text-xs text-muted-foreground">Loading queues…</p>;
   }
   if (isError) {
-    return <p className="px-1 py-2 text-xs text-red-400">Failed to load queues.</p>;
+    return <p className="px-1 py-2 text-xs text-bad">Failed to load queues.</p>;
   }
   const queues = data?.queues ?? [];
   if (queues.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-800 px-3 py-6 text-center text-xs text-zinc-600">
+      <div className="rounded-lg border border-dashed border-line px-3 py-6 text-center text-xs text-muted-foreground">
         No live queues detected.
       </div>
     );

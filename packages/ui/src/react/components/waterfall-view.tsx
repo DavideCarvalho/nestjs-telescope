@@ -53,24 +53,24 @@ function WaterfallRow({ span, totalDurationMs, onSelect }: RowProps): JSX.Elemen
       type="button"
       onClick={() => onSelect?.(span.id)}
       data-testid="waterfall-row"
-      className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[11px] hover:bg-zinc-800/60"
+      className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[11px] hover:bg-panel-2"
     >
       <span
-        className="min-w-0 flex-shrink-0 truncate font-mono text-zinc-300"
+        className="min-w-0 flex-shrink-0 truncate font-mono text-foreground"
         style={{ width: '40%', paddingLeft: `${span.depth * 12}px` }}
         title={span.label}
       >
-        <span className="mr-1 text-zinc-500">{span.type}</span>
+        <span className="mr-1 text-muted-foreground">{span.type}</span>
         {span.label}
       </span>
-      <span className="relative h-3 flex-1 rounded bg-zinc-900/60">
+      <span className="relative h-3 flex-1 rounded bg-panel">
         <span
           className={`absolute top-0 h-3 rounded ${colorFor(span.type)}`}
           style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
           title={`${formatMs(span.offsetMs)} +${formatMs(span.durationMs)}`}
         />
       </span>
-      <span className="w-16 flex-shrink-0 text-right tabular-nums text-zinc-400">
+      <span className="w-16 flex-shrink-0 text-right tabular-nums text-muted-foreground">
         {formatMs(span.durationMs)}
       </span>
     </button>
@@ -91,11 +91,11 @@ export interface WaterfallViewProps {
 export function WaterfallView({ waterfall, onSelect }: WaterfallViewProps): JSX.Element {
   const rows = flatten(waterfall.spans);
   if (rows.length === 0) {
-    return <p className="text-zinc-600">No spans in this trace</p>;
+    return <p className="text-muted-foreground">No spans in this trace</p>;
   }
   return (
     <div className="space-y-0.5">
-      <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-zinc-500">
+      <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
         <span>Span</span>
         <span>Total {formatMs(waterfall.totalDurationMs)}</span>
       </div>

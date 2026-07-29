@@ -4,8 +4,9 @@
  * small set of status pills from that content: a red `409` when the render was a
  * forced version-mismatch reload, a `partial` chip for partial reloads, a
  * `deferred` chip when there are deferred prop groups, and a human-readable
- * page-size chip. Mirrors the bordered-pill token style of `cache-badge.tsx`.
+ * page-size chip. Mirrors the semantic-variant style of `cache-badge.tsx`.
  */
+import { Badge, type BadgeProps, badgeVariants } from '../ui/index.js';
 
 interface InertiaBadgeContent {
   isPartial: boolean;
@@ -37,10 +38,18 @@ function readBadgeContent(content: unknown): InertiaBadgeContent | null {
 
 export interface InertiaBadgeInfo {
   label: string;
+  /**
+   * Semantic role, not a colour: which `Badge` variant renders this pill.
+   * Prefer this over {@link InertiaBadgeInfo.className} in new code.
+   */
+  variant: NonNullable<BadgeProps['variant']>;
+  /** Resolved class string for the variant, for callers rendering their own element. */
   className: string;
 }
 
-const PILL_BASE = 'rounded border px-1.5 py-0.5 text-[10px] font-medium';
+function badge(label: string, variant: NonNullable<BadgeProps['variant']>): InertiaBadgeInfo {
+  return { label, variant, className: badgeVariants({ variant }) };
+}
 
 /** Format a byte count as a short human-readable string (e.g. `1.2 KB`). */
 export function humanBytes(bytes: number): string {
@@ -61,22 +70,10 @@ export function inertiaBadges(content: unknown): InertiaBadgeInfo[] {
   const info = readBadgeContent(content);
   if (info === null) return [];
   const badges: InertiaBadgeInfo[] = [];
-  if (info.versionMismatch) {
-    badges.push({ label: '409', className: `${PILL_BASE} border-red-500/40 text-red-300` });
-  }
-  if (info.isPartial) {
-    badges.push({ label: 'partial', className: `${PILL_BASE} border-amber-500/40 text-amber-300` });
-  }
-  if (Object.keys(info.deferred).length > 0) {
-    badges.push({
-      label: 'deferred',
-      className: `${PILL_BASE} border-violet-500/40 text-violet-300`,
-    });
-  }
-  badges.push({
-    label: humanBytes(info.pageBytes),
-    className: `${PILL_BASE} border-zinc-700 text-zinc-300`,
-  });
+  if (info.versionMismatch) badges.push(badge('409', 'bad'));
+  if (info.isPartial) badges.push(badge('partial', 'warn'));
+  if (Object.keys(info.deferred).length > 0) badges.push(badge('deferred', 'brand'));
+  badges.push(badge(humanBytes(info.pageBytes), 'muted'));
   return badges;
 }
 
@@ -86,10 +83,10 @@ export function InertiaBadge({ content }: { content: unknown }): JSX.Element | n
   if (badges.length === 0) return null;
   return (
     <span className="inline-flex items-center gap-1">
-      {badges.map((badge) => (
-        <span key={badge.label} className={badge.className}>
-          {badge.label}
-        </span>
+      {badges.map((pill) => (
+        <Badge key={pill.label} variant={pill.variant}>
+          {pill.label}
+        </Badge>
       ))}
     </span>
   );

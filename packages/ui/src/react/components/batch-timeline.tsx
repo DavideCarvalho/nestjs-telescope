@@ -21,14 +21,14 @@ export function BatchTimeline({
               onClick={() => onSelect?.(entry.id)}
               className={`flex w-full justify-between gap-4 px-2 py-1 text-left text-xs ${
                 entry.id === currentId
-                  ? 'bg-zinc-800 text-emerald-300'
-                  : 'text-zinc-400 hover:bg-zinc-900'
+                  ? 'bg-panel-2 text-brand'
+                  : 'text-muted-foreground hover:bg-panel'
               }`}
             >
               <span>
-                <span className="text-emerald-500">{entry.type}</span> {entryLabel(entry)}
+                <span className="text-brand">{entry.type}</span> {entryLabel(entry)}
               </span>
-              <span className="text-zinc-600">
+              <span className="text-muted-foreground">
                 {entry.durationMs != null ? `${entry.durationMs}ms` : ''}
               </span>
             </button>

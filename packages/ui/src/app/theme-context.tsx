@@ -34,8 +34,15 @@ function persistTheme(theme: Theme): void {
 
 /**
  * Theme provider: holds `theme` (dark default), persists to localStorage, and
- * applies the active theme as a `light`/`dark` class on the root container it
- * renders. The `.light` overrides live in `index.css` (see the comment there).
+ * applies the active theme as a `light`/`dark` class BOTH on the container it
+ * renders and on `<html>`. The token definitions live in `index.css`.
+ *
+ * The `<html>` half is not redundant. Every overlay in the console — dialog,
+ * select popup, tooltip — is portalled to `document.body`, which is *outside*
+ * this provider's container. Scoping the class to the container alone leaves
+ * portalled content reading the `:root` (dark) tokens, so in light mode the
+ * command palette renders as a dark box on a white page. Nothing but a browser
+ * catches that: it typechecks, it builds, and the components are correct.
  */
 export function ThemeProvider({ children }: { children: React.ReactNode }): JSX.Element {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
@@ -53,6 +60,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): JSX.
   useEffect(() => {
     setTheme(readStoredTheme());
   }, []);
+
+  // Mirror the theme onto <html> so portalled overlays inherit the same tokens.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    root.classList.toggle('light', theme === 'light');
+    root.classList.toggle('dark', theme === 'dark');
+    return () => {
+      root.classList.remove('light', 'dark');
+    };
+  }, [theme]);
 
   const value = useMemo<ThemeValue>(() => ({ theme, toggleTheme }), [theme, toggleTheme]);
 

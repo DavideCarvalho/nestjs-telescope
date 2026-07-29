@@ -1,7 +1,16 @@
 /**
- * Shared dark theme tokens for the Recharts chart cards. Centralizing these keeps
- * the chart layer consistent with the dashboard's zinc/emerald palette and makes
- * the rest of the app chart-library-agnostic (only this folder imports Recharts).
+ * Shared theme values for the Recharts chart cards. Only this folder imports
+ * Recharts, so this is the one place chart colours are decided.
+ *
+ * Two palettes live here and they are NOT the same thing:
+ *  - `TYPE_HEX` is CATEGORICAL: one hue per entry type, chosen to be mutually
+ *    distinguishable. It is data, and deliberately does not go through the Aviary
+ *    status tokens — a `request` series is not "healthy", it is just requests.
+ *  - `chartTheme` / `ACCENT_HEX` is CHROME: grid, axes, tooltip, the throughput
+ *    accent. Those follow the console tokens so they theme with everything else.
+ *
+ * Recharts takes plain colour strings rather than classes, so chrome reads the
+ * tokens as `var(--x)`; SVG resolves the custom property at paint time.
  */
 
 /** Resolved hex colors for known entry types (matches the `fill-*` tokens used elsewhere). */
@@ -17,7 +26,8 @@ export const TYPE_HEX: Record<string, string> = {
 /** Ordered palette for series whose type is not in {@link TYPE_HEX}. */
 const FALLBACK_PALETTE = ['#71717a', '#a1a1aa', '#22d3ee', '#c084fc', '#fb923c', '#4ade80'];
 
-export const ACCENT_HEX = '#34d399'; // emerald-400 — primary throughput accent
+/** Primary throughput accent — the console `--accent`, not a status hue. */
+export const ACCENT_HEX = 'var(--accent)';
 
 export function hexForType(type: string, fallbackIndex = 0): string {
   const fallback = FALLBACK_PALETTE[fallbackIndex % FALLBACK_PALETTE.length];
@@ -25,14 +35,14 @@ export function hexForType(type: string, fallbackIndex = 0): string {
 }
 
 export const chartTheme = {
-  gridStroke: '#ffffff10',
-  axisStroke: '#3f3f46', // zinc-700
-  axisTick: '#71717a', // zinc-500
-  tooltipBg: '#18181b', // zinc-900
-  tooltipBorder: '#27272a', // zinc-800
-  tooltipText: '#e4e4e7', // zinc-200
-  tooltipLabel: '#a1a1aa', // zinc-400
-  legendText: '#a1a1aa', // zinc-400
+  gridStroke: 'color-mix(in srgb, var(--line) 70%, transparent)',
+  axisStroke: 'var(--line)',
+  axisTick: 'var(--muted)',
+  tooltipBg: 'var(--panel-2)',
+  tooltipBorder: 'var(--line)',
+  tooltipText: 'var(--text)',
+  tooltipLabel: 'var(--muted)',
+  legendText: 'var(--muted)',
 } as const;
 
 /** Shared `contentStyle` for Recharts `<Tooltip>` so every chart looks identical. */

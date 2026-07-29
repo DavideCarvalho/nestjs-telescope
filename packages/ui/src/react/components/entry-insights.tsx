@@ -31,15 +31,15 @@ function toAreaSeries(report: TimeseriesReport | undefined): AreaChartPoint[] {
 function StatCard({
   label,
   value,
-  accent = 'text-zinc-100',
+  accent = 'text-foreground',
 }: {
   label: string;
   value: string | number;
   accent?: string;
 }): JSX.Element {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3">
-      <p className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</p>
+    <div className="rounded-lg border border-line bg-panel/40 px-4 py-3">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={`mt-1 text-2xl font-semibold tabular-nums ${accent}`}>{value}</p>
     </div>
   );
@@ -63,11 +63,11 @@ function familyBars(families: FamilyLatency[]): BarChartDatum[] {
 
 function statusBars(status: StatusBreakdown): BarChartDatum[] {
   return [
-    { label: '2xx', value: status['2xx'], color: '#34d399' },
+    { label: '2xx', value: status['2xx'], color: 'var(--good)' },
     { label: '3xx', value: status['3xx'], color: '#38bdf8' },
-    { label: '4xx', value: status['4xx'], color: '#fbbf24' },
-    { label: '5xx', value: status['5xx'], color: '#f87171' },
-    { label: 'other', value: status.other, color: '#71717a' },
+    { label: '4xx', value: status['4xx'], color: 'var(--warn)' },
+    { label: '5xx', value: status['5xx'], color: 'var(--bad)' },
+    { label: 'other', value: status.other, color: 'var(--muted)' },
   ];
 }
 
@@ -91,7 +91,7 @@ function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
         <StatCard
           label="Slow"
           value={latency ? latency.slow.toLocaleString() : '—'}
-          accent={latency && latency.slow > 0 ? 'text-amber-400' : 'text-zinc-100'}
+          accent={latency && latency.slow > 0 ? 'text-warn' : 'text-foreground'}
         />
       </StatRow>
       <ChartRow>
@@ -139,7 +139,7 @@ function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
         <StatCard
           label="Hit ratio"
           value={cache ? `${Math.round(cache.hitRatio * 100)}%` : '—'}
-          accent="text-emerald-400"
+          accent="text-brand"
         />
         <StatCard label="Hits" value={cache ? cache.hits.toLocaleString() : '—'} />
         <StatCard label="Misses" value={cache ? cache.misses.toLocaleString() : '—'} />
@@ -147,7 +147,7 @@ function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
         {/* Surfaced only when the cache reports them, so a simple cache stays clean. */}
         {deletes > 0 ? <StatCard label="Deletes" value={deletes.toLocaleString()} /> : null}
         {staleHits > 0 ? (
-          <StatCard label="Stale hits" value={staleHits.toLocaleString()} accent="text-amber-400" />
+          <StatCard label="Stale hits" value={staleHits.toLocaleString()} accent="text-warn" />
         ) : null}
       </StatRow>
       <ChartRow>
@@ -156,8 +156,8 @@ function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
             title="Hits vs misses"
             valueLabel="count"
             data={[
-              { label: 'hits', value: cache.hits, color: '#34d399' },
-              { label: 'misses', value: cache.misses, color: '#f87171' },
+              { label: 'hits', value: cache.hits, color: 'var(--good)' },
+              { label: 'misses', value: cache.misses, color: 'var(--bad)' },
             ]}
           />
         ) : null}
@@ -195,7 +195,7 @@ function RequestInsights({ stats }: { stats: StatsResult }): JSX.Element {
         <StatCard
           label="Error %"
           value={`${errorPct}%`}
-          accent={errors > 0 ? 'text-red-400' : 'text-zinc-100'}
+          accent={errors > 0 ? 'text-bad' : 'text-foreground'}
         />
       </StatRow>
       <ChartRow>
@@ -223,7 +223,7 @@ function Sparkline({ values }: { values: number[] }): JSX.Element | null {
           // Buckets are positional and fixed-length; index is a stable key here.
           // biome-ignore lint/suspicious/noArrayIndexKey: positional buckets
           key={index}
-          className="w-1 rounded-sm bg-amber-500/60"
+          className="w-1 rounded-sm bg-warn"
           style={{ height: `${Math.max(2, Math.round((value / max) * 100))}%` }}
         />
       ))}
@@ -236,18 +236,18 @@ function ExceptionGroupRow({ group }: { group: StatsExceptionGroup }): JSX.Eleme
   return (
     <Link
       to={`/entries/exception?familyHash=${encodeURIComponent(group.key)}`}
-      className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 transition hover:border-zinc-700 hover:bg-zinc-900/70"
+      className="flex items-center gap-3 rounded-lg border border-line bg-panel/40 px-4 py-3 transition hover:border-line hover:bg-panel/70"
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-sm font-semibold text-red-300">{group.class}</p>
-        <p className="truncate text-xs text-zinc-400">{group.message}</p>
+        <p className="truncate font-mono text-sm font-semibold text-bad">{group.class}</p>
+        <p className="truncate text-xs text-muted-foreground">{group.message}</p>
       </div>
       <Sparkline values={group.overTime} />
       <div className="shrink-0 text-right">
-        <p className="text-sm font-semibold tabular-nums text-zinc-100">
+        <p className="text-sm font-semibold tabular-nums text-foreground">
           {group.count.toLocaleString()}
         </p>
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-[10px] text-muted-foreground">
           {relativeTime(Number.isNaN(lastAtMs) ? null : lastAtMs)}
         </p>
       </div>
@@ -264,12 +264,14 @@ function ExceptionInsights({ stats }: { stats: StatsResult }): JSX.Element {
         <StatCard
           label="Groups"
           value={groups.length.toLocaleString()}
-          accent={groups.length > 0 ? 'text-amber-400' : 'text-zinc-100'}
+          accent={groups.length > 0 ? 'text-warn' : 'text-foreground'}
         />
       </StatRow>
       {groups.length > 0 ? (
         <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-wide text-zinc-500">Exception groups</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Exception groups
+          </p>
           {groups.map((group) => (
             <ExceptionGroupRow key={group.key} group={group} />
           ))}
@@ -307,14 +309,14 @@ function InsightsBody({ stats }: { stats: StatsResult }): JSX.Element {
 export function EntryInsights({ type }: { type: string }): JSX.Element | null {
   const { data } = useStats(type, DEFAULT_WINDOW);
   if (!data) {
-    return (
-      <div className="mb-4 h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900/20" />
-    );
+    return <div className="mb-4 h-24 animate-pulse rounded-lg border border-line bg-panel/20" />;
   }
   return (
     <div className="mb-4 space-y-4">
       <InsightsBody stats={data} />
-      {data.truncated ? <p className="text-[10px] text-zinc-600">sampled (window capped)</p> : null}
+      {data.truncated ? (
+        <p className="text-[10px] text-muted-foreground">sampled (window capped)</p>
+      ) : null}
     </div>
   );
 }

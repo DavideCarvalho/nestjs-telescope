@@ -73,10 +73,52 @@ describe('./react/console subpath', () => {
     expect(deps.has('react-router-dom')).toBe(false);
   });
 
+  it('does not reach the vendored shadcn primitives', () => {
+    // The `src/react/ui/*` primitives pull Base UI, clsx, tailwind-merge and cva. Those ARE
+    // declared as dependencies, so a leak here would not break a host's build the way the two
+    // above did — but the launcher's whole promise is "a button, and nothing else", and four
+    // extra packages installed to render one button is that promise quietly failing.
+    const deps = externalDeps(resolve(HERE, 'console.ts'));
+    for (const pkg of [
+      '@base-ui-components/react',
+      'class-variance-authority',
+      'clsx',
+      'tailwind-merge',
+    ]) {
+      expect(deps.has(pkg)).toBe(false);
+    }
+  });
+
   it('proves the guard works by catching the barrel it is an alternative to', () => {
     // If this ever comes back empty the walker is broken and the assertions above are vacuous.
     const barrel = externalDeps(resolve(HERE, 'index.ts'));
     expect(barrel.has('recharts')).toBe(true);
     expect(barrel.has('react-router-dom')).toBe(true);
+  });
+
+  it('keeps every non-react package the public barrel reaches declared', () => {
+    // The `./react` barrel IS allowed to pull the dashboard component set — what is not allowed
+    // is pulling something this package does not declare. That is the exact failure mode that
+    // broke a host build once, and adding the shadcn layer is a new chance to repeat it.
+    const pkg = JSON.parse(readFileSync(resolve(HERE, '../../package.json'), 'utf8')) as Record<
+      string,
+      Record<string, string> | undefined
+    >;
+    const declared = new Set([
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.peerDependencies ?? {}),
+      ...Object.keys(pkg.devDependencies ?? {}),
+    ]);
+
+    const undeclared = [...externalDeps(resolve(HERE, 'index.ts'))]
+      .filter((specifier) => !specifier.startsWith('node:'))
+      // `@scope/pkg/sub` and `pkg/sub` both resolve to their package root.
+      .map((specifier) => {
+        const parts = specifier.split('/');
+        return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+      })
+      .filter((name): name is string => name !== undefined && !declared.has(name));
+
+    expect([...new Set(undeclared)].sort()).toEqual([]);
   });
 });

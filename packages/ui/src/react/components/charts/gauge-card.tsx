@@ -8,7 +8,7 @@ export function GaugeCard({
   min = 0,
   max = 1,
   label,
-  color = '#34d399',
+  color = 'var(--good)',
   height = 220,
 }: {
   title: string;
@@ -51,7 +51,9 @@ export function GaugeCard({
             paddingTop: '40%',
           }}
         >
-          <span style={{ fontSize: 20, fontWeight: 600, color: '#e4e4e7' }}>{displayLabel}</span>
+          <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)' }}>
+            {displayLabel}
+          </span>
         </div>
       </div>
     </ChartCard>

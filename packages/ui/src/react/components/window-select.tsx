@@ -1,3 +1,5 @@
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/index.js';
+
 const WINDOWS = ['15m', '1h', '6h', '24h'] as const;
 
 export function WindowSelect({
@@ -5,16 +7,22 @@ export function WindowSelect({
   onChange,
 }: { value: string; onChange: (w: string) => void }): JSX.Element {
   return (
-    <select
+    <Select
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-300"
+      onValueChange={(next) => {
+        if (typeof next === 'string') onChange(next);
+      }}
     >
-      {WINDOWS.map((w) => (
-        <option key={w} value={w}>
-          {w}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger aria-label="Time window">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end">
+        {WINDOWS.map((w) => (
+          <SelectItem key={w} value={w}>
+            {w}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

@@ -8,6 +8,13 @@ import {
   useMeta,
   visibleEntryTypes,
 } from '../react/index.js';
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../react/ui/index.js';
 import { useAuthOptional } from './auth-context.js';
 import { CommandPalette, usePalette } from './command-palette.js';
 import { useTheme } from './theme-context.js';
@@ -62,34 +69,38 @@ export function visibleTopNav(
 function topLinkClass({ isActive }: { isActive: boolean }): string {
   return `block rounded px-3 py-1.5 text-xs uppercase tracking-wide ${
     isActive
-      ? 'bg-zinc-900 text-emerald-300'
-      : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+      ? 'bg-panel-2 text-brand'
+      : 'text-muted-foreground hover:bg-panel hover:text-foreground'
   }`;
 }
 
 function watcherLinkClass({ isActive }: { isActive: boolean }): string {
   return `flex items-center gap-2 rounded px-3 py-1.5 text-xs ${
-    isActive ? 'bg-zinc-900 text-zinc-100' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+    isActive
+      ? 'bg-panel-2 text-foreground'
+      : 'text-muted-foreground hover:bg-panel hover:text-foreground'
   }`;
 }
 
 function LiveTailToggle(): JSX.Element {
   const { paused, setPaused } = useLiveTail();
   return (
-    <button
-      type="button"
-      onClick={() => setPaused(!paused)}
-      aria-pressed={paused}
-      title={paused ? 'Resume live tail' : 'Pause live tail'}
-      className={`flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition-colors ${
-        paused
-          ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-      }`}
-    >
-      <span aria-hidden="true">{paused ? '⏸' : '●'}</span>
-      {paused ? 'Paused' : 'Live'}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant={paused ? 'warn' : 'good'}
+            onClick={() => setPaused(!paused)}
+            aria-pressed={paused}
+            className="uppercase tracking-wide"
+          >
+            <span aria-hidden="true">{paused ? '⏸' : '●'}</span>
+            {paused ? 'Paused' : 'Live'}
+          </Button>
+        }
+      />
+      <TooltipContent>{paused ? 'Resume live tail' : 'Pause live tail'}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -97,30 +108,37 @@ function ThemeToggle(): JSX.Element {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
   return (
-    <button
-      type="button"
-      onClick={toggleTheme}
-      aria-pressed={!isDark}
-      title={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
-      className="flex items-center gap-1.5 rounded border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
-    >
-      <span aria-hidden="true">{isDark ? '☾' : '☀'}</span>
-      {isDark ? 'Dark' : 'Light'}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button onClick={toggleTheme} aria-pressed={!isDark}>
+            <span aria-hidden="true">{isDark ? '☾' : '☀'}</span>
+            {isDark ? 'Dark' : 'Light'}
+          </Button>
+        }
+      />
+      <TooltipContent>{isDark ? 'Switch to light theme' : 'Switch to dark theme'}</TooltipContent>
+    </Tooltip>
   );
 }
 
 function PaletteHint({ onClick }: { onClick: () => void }): JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title="Open command palette"
-      aria-keyshortcuts="Meta+K Control+K"
-      className="flex items-center gap-1.5 rounded border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-    >
-      <span aria-hidden="true">⌘K</span>
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            onClick={onClick}
+            aria-label="Open command palette"
+            aria-keyshortcuts="Meta+K Control+K"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <span aria-hidden="true">⌘K</span>
+          </Button>
+        }
+      />
+      <TooltipContent>Open command palette (⌘K)</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -145,16 +163,10 @@ function LogoutButton(): JSX.Element | null {
   }
 
   return (
-    <button
-      type="button"
-      onClick={onLogout}
-      disabled={busy}
-      title="Sign out"
-      className="flex items-center gap-1.5 rounded border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-    >
+    <Button onClick={onLogout} disabled={busy} title="Sign out">
       <span aria-hidden="true">⎋</span>
       Sign out
-    </button>
+    </Button>
   );
 }
 
@@ -170,10 +182,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
   // compatible fallback as the watcher-driven nav above).
   const topNav = visibleTopNav(NAV, meta.data?.tracesEnabled, meta.data?.profiling?.enabled);
   return (
-    <div className="flex min-h-screen bg-zinc-950 font-mono text-sm text-zinc-200">
+    <div className="flex min-h-screen bg-background font-mono text-sm text-foreground">
       <CommandPalette open={open} onClose={() => setOpen(false)} />
-      <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-zinc-800 px-3 py-4">
-        <span className="px-3 text-base font-semibold text-emerald-400">Telescope</span>
+      <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-line px-3 py-4">
+        <span className="px-3 text-base font-semibold text-brand">Telescope</span>
         <nav className="flex flex-col gap-1">
           {topNav.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={topLinkClass}>
@@ -187,7 +199,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
           ))}
         </nav>
         <nav className="flex flex-col gap-1">
-          <span className="px-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-600">
+          <span className="px-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             Watchers
           </span>
           {watcherTypes.map((type) => (
@@ -199,12 +211,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end gap-4 border-b border-zinc-800 px-4 py-2">
-          <RetentionIndicator />
-          <PaletteHint onClick={() => setOpen(true)} />
-          <ThemeToggle />
-          <LiveTailToggle />
-          <LogoutButton />
+        <header className="flex items-center justify-end gap-4 border-b border-line px-4 py-2">
+          <TooltipProvider delay={200}>
+            <RetentionIndicator />
+            <PaletteHint onClick={() => setOpen(true)} />
+            <ThemeToggle />
+            <LiveTailToggle />
+            <LogoutButton />
+          </TooltipProvider>
         </header>
         <main className="min-w-0 flex-1">{children}</main>
       </div>

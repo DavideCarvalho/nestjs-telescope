@@ -9,10 +9,19 @@ import {
   usePrune,
   usePrunes,
 } from '../../react/index.js';
+import { Button } from '../../react/ui/index.js';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../../react/ui/index.js';
 
 const TRIGGER_ACCENT: Record<PruneRun['trigger'], string> = {
   scheduled: 'text-sky-300 bg-sky-500/10',
-  manual: 'text-amber-300 bg-amber-500/10',
+  manual: 'text-warn tint-warn',
 };
 
 function TriggerBadge({ trigger }: { trigger: PruneRun['trigger'] }): JSX.Element {
@@ -27,9 +36,9 @@ function TriggerBadge({ trigger }: { trigger: PruneRun['trigger'] }): JSX.Elemen
 
 function TypeChip({ type, count }: { type: string; count: number }): JSX.Element {
   return (
-    <span className="inline-flex items-center gap-1 rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] text-zinc-300">
-      <span className="text-zinc-500">{labelForType(type)}</span>
-      <span className="tabular-nums text-zinc-100">{count}</span>
+    <span className="inline-flex items-center gap-1 rounded bg-panel-2/80 px-1.5 py-0.5 text-[10px] text-foreground">
+      <span className="text-muted-foreground">{labelForType(type)}</span>
+      <span className="tabular-nums text-foreground">{count}</span>
     </span>
   );
 }
@@ -72,7 +81,7 @@ function ConfigCards({
   const perType = Object.entries(config.perType ?? {});
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <StatCard label="Window" value={formatRetention(config.afterMs)} accent="text-emerald-400" />
+      <StatCard label="Window" value={formatRetention(config.afterMs)} accent="text-brand" />
       <StatCard label="Interval" value={formatRetention(config.intervalMs)} />
       <StatCard
         label="Keep last"
@@ -85,18 +94,18 @@ function ConfigCards({
         {...(perType.length > 0 ? { hint: `${perType.length} per-type override(s)` } : {})}
       />
       {perType.length > 0 && (
-        <div className="col-span-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 sm:col-span-4">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+        <div className="col-span-2 rounded-lg border border-line bg-panel/40 p-3 sm:col-span-4">
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
             Per-type overrides
           </span>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {perType.map(([type, ms]) => (
               <span
                 key={type}
-                className="inline-flex items-center gap-1 rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] text-zinc-300"
+                className="inline-flex items-center gap-1 rounded bg-panel-2/80 px-1.5 py-0.5 text-[10px] text-foreground"
               >
-                <span className="text-zinc-500">{labelForType(type)}</span>
-                <span className="tabular-nums text-zinc-100">{formatRetention(ms)}</span>
+                <span className="text-muted-foreground">{labelForType(type)}</span>
+                <span className="tabular-nums text-foreground">{formatRetention(ms)}</span>
               </span>
             ))}
           </div>
@@ -109,20 +118,20 @@ function ConfigCards({
 function PruneRow({ run }: { run: PruneRun }): JSX.Element {
   const perType = Object.entries(run.deletedByType);
   return (
-    <tr className="border-t border-zinc-800/60 align-top hover:bg-zinc-900/40">
-      <td className="px-3 py-2 text-xs text-zinc-400">
+    <TableRow className="border-t border-line/60 align-top hover:bg-panel/40">
+      <TableCell className="text-xs text-muted-foreground">
         {relativeTime(new Date(run.at).getTime())}
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         <TriggerBadge trigger={run.trigger} />
-      </td>
-      <td className="px-3 py-2 text-xs tabular-nums text-zinc-400">
+      </TableCell>
+      <TableCell className="text-xs tabular-nums text-muted-foreground">
         {formatDuration(run.durationMs)}
-      </td>
-      <td className="px-3 py-2 text-xs tabular-nums text-zinc-100">
+      </TableCell>
+      <TableCell className="text-xs tabular-nums text-foreground">
         {run.deletedTotal.toLocaleString()}
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         {perType.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {perType.map(([type, count]) => (
@@ -130,14 +139,14 @@ function PruneRow({ run }: { run: PruneRun }): JSX.Element {
             ))}
           </div>
         ) : (
-          <span className="text-zinc-600">—</span>
+          <span className="text-muted-foreground">—</span>
         )}
-      </td>
-      <td className="px-3 py-2 text-xs tabular-nums text-zinc-400">
+      </TableCell>
+      <TableCell className="text-xs tabular-nums text-muted-foreground">
         {run.archivedTotal != null ? run.archivedTotal.toLocaleString() : '—'}
-      </td>
-      <td className="px-3 py-2 text-xs text-red-400">{run.error ?? ''}</td>
-    </tr>
+      </TableCell>
+      <TableCell className="text-xs text-bad">{run.error ?? ''}</TableCell>
+    </TableRow>
   );
 }
 
@@ -168,9 +177,10 @@ export function PrunesPage(): JSX.Element {
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-[10px] uppercase tracking-wide text-zinc-500">Prune activity</h3>
-        <button
-          type="button"
+        <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Prune activity
+        </h3>
+        <Button
           onClick={onPrune}
           disabled={!pruneEnabled || prune.isPending}
           title={
@@ -178,49 +188,48 @@ export function PrunesPage(): JSX.Element {
               ? 'Run a prune cycle now'
               : 'Mutations are disabled (configure authorizeAction to enable on-demand pruning).'
           }
-          className="rounded border border-zinc-700 px-2.5 py-1 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {prune.isPending ? 'Pruning…' : 'Prune now'}
-        </button>
+        </Button>
       </div>
 
       {config ? (
         <ConfigCards config={config} nextRunAt={data?.nextRunAt ?? null} nowMs={nowMs} />
       ) : (
-        <div className="rounded-lg border border-dashed border-zinc-800 px-4 py-6 text-center text-xs text-zinc-600">
+        <div className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-xs text-muted-foreground">
           No retention window is configured. Set a `prune` option to enable automatic pruning.
         </div>
       )}
 
-      {isLoading && <p className="px-1 py-2 text-xs text-zinc-600">Loading prune runs…</p>}
-      {isError && <p className="px-1 py-2 text-xs text-red-400">Failed to load prune runs.</p>}
+      {isLoading && <p className="px-1 py-2 text-xs text-muted-foreground">Loading prune runs…</p>}
+      {isError && <p className="px-1 py-2 text-xs text-bad">Failed to load prune runs.</p>}
 
       {!isLoading && !isError && runs.length === 0 && (
-        <div className="rounded-lg border border-dashed border-zinc-800 px-4 py-12 text-center text-xs text-zinc-600">
+        <div className="rounded-lg border border-dashed border-line px-4 py-12 text-center text-xs text-muted-foreground">
           No prune runs recorded yet on this pod.
         </div>
       )}
 
       {runs.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-zinc-800">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-zinc-500">
-                <th className="px-3 py-2 font-normal">Time</th>
-                <th className="px-3 py-2 font-normal">Trigger</th>
-                <th className="px-3 py-2 font-normal">Duration</th>
-                <th className="px-3 py-2 font-normal">Deleted</th>
-                <th className="px-3 py-2 font-normal">By type</th>
-                <th className="px-3 py-2 font-normal">Archived</th>
-                <th className="px-3 py-2 font-normal">Error</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-lg border border-line">
+          <Table className="min-w-[760px] text-left text-sm">
+            <TableHeader>
+              <TableRow className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <TableHead>Time</TableHead>
+                <TableHead>Trigger</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Deleted</TableHead>
+                <TableHead>By type</TableHead>
+                <TableHead>Archived</TableHead>
+                <TableHead>Error</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {runs.map((run, index) => (
                 <PruneRow key={`${run.at}:${index}`} run={run} />
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

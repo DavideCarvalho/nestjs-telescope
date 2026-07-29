@@ -31,17 +31,20 @@ export function RetentionIndicator(): JSX.Element | null {
   if (!meta) return null;
   const note = samplingNote(meta.sampling ?? {});
   return (
-    <span className="flex items-center gap-1.5 text-[11px] text-zinc-500" title={note ?? undefined}>
-      <span className="uppercase tracking-wide text-zinc-600">retention:</span>
+    <span
+      className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+      title={note ?? undefined}
+    >
+      <span className="uppercase tracking-wide text-muted-foreground">retention:</span>
       {meta.retention ? (
-        <span className="text-zinc-400">{formatRetention(meta.retention.afterMs)}</span>
+        <span className="text-muted-foreground">{formatRetention(meta.retention.afterMs)}</span>
       ) : (
-        <span className="text-zinc-600">none</span>
+        <span className="text-muted-foreground">none</span>
       )}
       {note ? (
         <span
           aria-label={note}
-          className="cursor-help rounded-full border border-zinc-700 px-1 text-[9px] text-zinc-500"
+          className="cursor-help rounded-full border border-line px-1 text-[9px] text-muted-foreground"
         >
           ?
         </span>

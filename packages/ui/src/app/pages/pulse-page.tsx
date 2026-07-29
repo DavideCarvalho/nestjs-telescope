@@ -19,7 +19,7 @@ export function PulsePage(): JSX.Element {
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm text-emerald-400">Pulse</h2>
+        <h2 className="text-sm text-brand">Pulse</h2>
         <WindowSelect value={window} onChange={setWindow} />
       </div>
       <StackedAreaChartCard
@@ -28,7 +28,7 @@ export function PulsePage(): JSX.Element {
         data={toByTypeRows(series.data)}
       />
       {isLoading || !data ? (
-        <p className="text-zinc-600">Loading…</p>
+        <p className="text-muted-foreground">Loading…</p>
       ) : (
         <PulsePanel
           report={data}

@@ -3,7 +3,7 @@ import type { PulseReport } from '../../client/index.js';
 function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
   return (
     <section className="mb-6">
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">{title}</h3>
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">{title}</h3>
       {children}
     </section>
   );
@@ -25,7 +25,7 @@ export function PulsePanel({
   return (
     <div className="text-xs">
       {report.truncated && (
-        <p className="mb-4 text-amber-500">
+        <p className="mb-4 text-warn">
           Scan truncated at {report.scanned} entries — widen the window with care.
         </p>
       )}
@@ -33,13 +33,13 @@ export function PulsePanel({
       <Section title="Entries by type">
         <div className="flex flex-wrap gap-3">
           {Object.entries(report.counts).map(([type, count]) => (
-            <span key={type} className="rounded bg-zinc-900 px-2 py-1">
-              <span className="text-emerald-400">{type}</span>{' '}
-              <span className="text-zinc-300">{count}</span>
+            <span key={type} className="rounded bg-panel px-2 py-1">
+              <span className="text-brand">{type}</span>{' '}
+              <span className="text-foreground">{count}</span>
             </span>
           ))}
           {Object.keys(report.counts).length === 0 && (
-            <span className="text-zinc-600">No entries in window.</span>
+            <span className="text-muted-foreground">No entries in window.</span>
           )}
         </div>
       </Section>
@@ -55,16 +55,16 @@ export function PulsePanel({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onSelectEntry?.(slow.id);
                 }}
-                className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
+                className="cursor-pointer border-t border-line-soft hover:bg-panel"
               >
-                <td className="py-1 text-emerald-400">{slow.type}</td>
-                <td className="max-w-md truncate text-zinc-300">{slow.label}</td>
-                <td className="text-right text-zinc-400">{slow.durationMs}ms</td>
+                <td className="py-1 text-brand">{slow.type}</td>
+                <td className="max-w-md truncate text-foreground">{slow.label}</td>
+                <td className="text-right text-muted-foreground">{slow.durationMs}ms</td>
               </tr>
             ))}
             {report.slowest.length === 0 && (
               <tr>
-                <td className="py-1 text-zinc-600">—</td>
+                <td className="py-1 text-muted-foreground">—</td>
               </tr>
             )}
           </tbody>
@@ -75,15 +75,15 @@ export function PulsePanel({
         <table className="w-full text-left">
           <tbody>
             {report.topExceptions.map((group) => (
-              <tr key={group.familyHash} className="border-t border-zinc-900">
-                <td className="py-1 text-red-400">{group.class}</td>
-                <td className="max-w-md truncate text-zinc-300">{group.message}</td>
-                <td className="text-right text-zinc-400">×{group.count}</td>
+              <tr key={group.familyHash} className="border-t border-line-soft">
+                <td className="py-1 text-bad">{group.class}</td>
+                <td className="max-w-md truncate text-foreground">{group.message}</td>
+                <td className="text-right text-muted-foreground">×{group.count}</td>
               </tr>
             ))}
             {report.topExceptions.length === 0 && (
               <tr>
-                <td className="py-1 text-zinc-600">No exceptions 🎉</td>
+                <td className="py-1 text-muted-foreground">No exceptions 🎉</td>
               </tr>
             )}
           </tbody>
@@ -102,21 +102,21 @@ export function PulsePanel({
                   if (event.key === 'Enter' || event.key === ' ')
                     onSelectFamily?.(hotspot.familyHash);
                 }}
-                className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
+                className="cursor-pointer border-t border-line-soft hover:bg-panel"
               >
-                <td className="whitespace-nowrap py-1 text-amber-400">
+                <td className="whitespace-nowrap py-1 text-warn">
                   ×{hotspot.perRequest}
-                  <span className="text-zinc-500"> per request</span>
+                  <span className="text-muted-foreground"> per request</span>
                 </td>
-                <td className="max-w-md truncate text-zinc-300">{hotspot.sql}</td>
-                <td className="whitespace-nowrap text-right text-zinc-500">
+                <td className="max-w-md truncate text-foreground">{hotspot.sql}</td>
+                <td className="whitespace-nowrap text-right text-muted-foreground">
                   {hotspot.requests} requests · {hotspot.total} total
                 </td>
               </tr>
             ))}
             {report.nPlusOne.length === 0 && (
               <tr>
-                <td className="py-1 text-zinc-600">None detected</td>
+                <td className="py-1 text-muted-foreground">None detected</td>
               </tr>
             )}
           </tbody>
@@ -134,19 +134,21 @@ export function PulsePanel({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onSelectRoute?.(route.route);
                 }}
-                className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
+                className="cursor-pointer border-t border-line-soft hover:bg-panel"
               >
-                <td className="max-w-md truncate py-1 font-mono text-zinc-300">{route.route}</td>
-                <td className="whitespace-nowrap text-right text-amber-400">
+                <td className="max-w-md truncate py-1 font-mono text-foreground">{route.route}</td>
+                <td className="whitespace-nowrap text-right text-warn">
                   {route.p99}ms
-                  <span className="text-zinc-500"> p99</span>
+                  <span className="text-muted-foreground"> p99</span>
                 </td>
-                <td className="whitespace-nowrap text-right text-zinc-500">×{route.count}</td>
+                <td className="whitespace-nowrap text-right text-muted-foreground">
+                  ×{route.count}
+                </td>
               </tr>
             ))}
             {report.slowRoutes.length === 0 && (
               <tr>
-                <td className="py-1 text-zinc-600">No routes over the slow threshold</td>
+                <td className="py-1 text-muted-foreground">No routes over the slow threshold</td>
               </tr>
             )}
           </tbody>
@@ -164,19 +166,23 @@ export function PulsePanel({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onSelectOutgoing?.(target.route);
                 }}
-                className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
+                className="cursor-pointer border-t border-line-soft hover:bg-panel"
               >
-                <td className="max-w-md truncate py-1 font-mono text-zinc-300">{target.route}</td>
-                <td className="whitespace-nowrap text-right text-amber-400">
+                <td className="max-w-md truncate py-1 font-mono text-foreground">{target.route}</td>
+                <td className="whitespace-nowrap text-right text-warn">
                   {target.p99}ms
-                  <span className="text-zinc-500"> p99</span>
+                  <span className="text-muted-foreground"> p99</span>
                 </td>
-                <td className="whitespace-nowrap text-right text-zinc-500">×{target.count}</td>
+                <td className="whitespace-nowrap text-right text-muted-foreground">
+                  ×{target.count}
+                </td>
               </tr>
             ))}
             {report.slowOutgoing.length === 0 && (
               <tr>
-                <td className="py-1 text-zinc-600">No outgoing calls over the slow threshold</td>
+                <td className="py-1 text-muted-foreground">
+                  No outgoing calls over the slow threshold
+                </td>
               </tr>
             )}
           </tbody>

@@ -15,9 +15,9 @@ function health(value: number | undefined, t?: PanelThresholds): 'ok' | 'warn' |
 }
 
 const ACCENT: Record<'ok' | 'warn' | 'bad', string> = {
-  ok: '#34d399',
-  warn: '#fbbf24',
-  bad: '#f87171',
+  ok: 'var(--good)',
+  warn: 'var(--warn)',
+  bad: 'var(--bad)',
 };
 
 function Sparkline({ points }: { points: number[] }): JSX.Element | null {
@@ -35,7 +35,7 @@ function Sparkline({ points }: { points: number[] }): JSX.Element | null {
   return (
     <svg className="mt-2" width="100%" height="22" viewBox="0 0 100 22" preserveAspectRatio="none">
       <title>Trend sparkline</title>
-      <path d={d} fill="none" stroke="#52525b" strokeWidth="1.5" />
+      <path d={d} fill="none" stroke="var(--muted)" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -48,7 +48,7 @@ export function StatCard({
   spark,
   thresholds,
   currentValue,
-  accent = 'text-zinc-100',
+  accent = 'text-foreground',
   hint,
 }: {
   label: string;
@@ -69,15 +69,15 @@ export function StatCard({
       : thresholds.direction === 'up-bad'
         ? delta < 0
         : delta > 0;
-  const deltaColor = deltaGood === null ? '#a1a1aa' : deltaGood ? '#34d399' : '#f87171';
+  const deltaColor = deltaGood === null ? '#a1a1aa' : deltaGood ? 'var(--good)' : 'var(--bad)';
   const arrow = delta === undefined ? '' : delta > 0 ? '▲' : delta < 0 ? '▼' : '◆';
   return (
     <div
       data-health={h ?? undefined}
-      className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 overflow-hidden"
+      className="rounded-lg border border-line bg-panel/40 px-4 py-3 overflow-hidden"
     >
       {h && <div style={{ height: 3, background: ACCENT[h], margin: '-12px -16px 9px' }} />}
-      <p className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</p>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={`mt-1 text-2xl font-semibold tabular-nums ${accent} flex items-baseline gap-2`}>
         {value}
         {delta !== undefined && (
@@ -87,7 +87,7 @@ export function StatCard({
         )}
       </p>
       {spark && <Sparkline points={spark} />}
-      {hint && <p className="mt-0.5 text-[10px] text-zinc-600">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }

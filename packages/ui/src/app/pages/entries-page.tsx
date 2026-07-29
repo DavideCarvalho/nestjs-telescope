@@ -13,6 +13,7 @@ import {
   useEntries,
   userTagId,
 } from '../../react/index.js';
+import { Button, Input } from '../../react/ui/index.js';
 
 function emptyMessage(type: string | undefined, tag: string): string {
   if (tag.trim() !== '') return `No entries match tag '${tag.trim()}'`;
@@ -92,21 +93,23 @@ export function EntriesPage(): JSX.Element {
   return (
     <div className="p-4">
       {activeType ? <EntryInsights type={activeType} /> : null}
-      <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-zinc-800 pb-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-line pb-3">
         {activeType ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => navigate('/entries')}
-            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+            className="bg-panel text-foreground hover:bg-panel-2"
           >
             <span className={`h-2 w-2 rounded-full ${dotForType(activeType)}`} aria-hidden="true" />
             {labelForType(activeType)}
-            <span className="text-zinc-500" aria-hidden="true">
+            <span className="text-muted-foreground" aria-hidden="true">
               ×
             </span>
-          </button>
+          </Button>
         ) : (
-          <span className="rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-400">All types</span>
+          <span className="rounded bg-panel px-2 py-1 text-xs text-muted-foreground">
+            All types
+          </span>
         )}
         <TagAutocomplete key={`tag-${genericTagKey}`} onSelect={selectGenericTag} />
         <TagAutocomplete
@@ -117,30 +120,30 @@ export function EntriesPage(): JSX.Element {
           onSelect={selectUserTag}
         />
         {activeGenericTag !== '' ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => setTag('')}
-            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+            className="bg-panel text-foreground hover:bg-panel-2"
           >
             <span>{`tag:${activeGenericTag}`}</span>
-            <span className="text-zinc-500" aria-hidden="true">
+            <span className="text-muted-foreground" aria-hidden="true">
               ×
             </span>
-          </button>
+          </Button>
         ) : null}
         {activeUserTag !== '' ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => setTag('')}
-            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+            className="bg-panel text-foreground hover:bg-panel-2"
           >
             <span>{`User: ${userTagId(activeUserTag)}`}</span>
-            <span className="text-zinc-500" aria-hidden="true">
+            <span className="text-muted-foreground" aria-hidden="true">
               ×
             </span>
-          </button>
+          </Button>
         ) : null}
-        <input
+        <Input
           type="text"
           value={searchDraft}
           onChange={(event) => setSearchDraft(event.target.value)}
@@ -150,49 +153,44 @@ export function EntriesPage(): JSX.Element {
           onBlur={submitSearch}
           placeholder="Search content…"
           aria-label="Search content"
-          className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
         />
         {hasSearch ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={clearSearch}
-            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+            className="bg-panel text-foreground hover:bg-panel-2"
           >
             <span>{`search:"${trimmedSearch}"`}</span>
-            <span className="text-zinc-500" aria-hidden="true">
+            <span className="text-muted-foreground" aria-hidden="true">
               ×
             </span>
-          </button>
+          </Button>
         ) : null}
         {hasFamilyHash ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={clearFamilyHash}
-            className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-200 hover:bg-zinc-800"
+            className="bg-panel text-foreground hover:bg-panel-2"
           >
-            <span className="text-zinc-500" aria-hidden="true">
+            <span className="text-muted-foreground" aria-hidden="true">
               family:
             </span>
             {familyHash.slice(0, 12)}
-            <span className="text-zinc-500" aria-hidden="true">
+            <span className="text-muted-foreground" aria-hidden="true">
               ×
             </span>
-          </button>
+          </Button>
         ) : null}
         {hasFilters ? (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="text-xs text-zinc-500 hover:text-zinc-300"
-          >
+          <Button variant="ghost" onClick={clearFilters}>
             Clear filters
-          </button>
+          </Button>
         ) : null}
       </div>
       {isLoading ? (
-        <p className="text-zinc-600">Loading…</p>
+        <p className="text-muted-foreground">Loading…</p>
       ) : entries.length === 0 ? (
-        <p className="text-zinc-600">{emptyMessage(activeType, tag)}</p>
+        <p className="text-muted-foreground">{emptyMessage(activeType, tag)}</p>
       ) : (
         <EntriesTable entries={entries} onSelect={(id) => navigate(`/entries/view/${id}`)} />
       )}

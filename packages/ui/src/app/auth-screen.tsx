@@ -1,14 +1,15 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useId, useState } from 'react';
 import type { AuthMode } from '../client/index.js';
 import { useTelescopeClient } from '../react/index.js';
+import { Button, Input } from '../react/ui/index.js';
 import { useAuth } from './auth-context.js';
 
 /** Telescope-branded shell shared by both AuthScreen variants. */
 function AuthCard({ children }: { children: React.ReactNode }): JSX.Element {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 font-mono text-sm text-zinc-200">
-      <div className="w-full max-w-sm rounded-lg border border-zinc-800 bg-zinc-900 p-8 shadow-2xl">
-        <div className="mb-6 text-center text-lg font-semibold text-emerald-400">Telescope</div>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 font-mono text-sm text-foreground">
+      <div className="w-full max-w-sm rounded-lg border border-line bg-panel p-8 shadow-2xl">
+        <div className="mb-6 text-center text-lg font-semibold text-brand">Telescope</div>
         {children}
       </div>
     </div>
@@ -21,6 +22,8 @@ function LoginForm(): JSX.Element {
   const { refresh } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const usernameId = useId();
+  const passwordId = useId();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,40 +45,46 @@ function LoginForm(): JSX.Element {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs uppercase tracking-wide text-zinc-500">Username</span>
-        <input
+      {/* `htmlFor` rather than wrapping: <Input> is a component, so the linter (and any
+          static a11y checker) cannot see the <input> it renders. */}
+      <label className="flex flex-col gap-1.5" htmlFor={usernameId}>
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">Username</span>
+        <Input
+          id={usernameId}
           type="text"
           name="username"
           autoComplete="username"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
-          className="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/60"
+          className="px-3 py-2 text-sm"
         />
       </label>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs uppercase tracking-wide text-zinc-500">Password</span>
-        <input
+      <label className="flex flex-col gap-1.5" htmlFor={passwordId}>
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">Password</span>
+        <Input
+          id={passwordId}
           type="password"
           name="password"
           autoComplete="current-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/60"
+          className="px-3 py-2 text-sm"
         />
       </label>
       {error !== null ? (
-        <p role="alert" className="text-xs text-rose-400">
+        <p role="alert" className="text-xs text-bad">
           {error}
         </p>
       ) : null}
-      <button
+      <Button
         type="submit"
+        variant="brand"
+        size="md"
         disabled={submitting}
-        className="mt-2 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-medium uppercase tracking-wide text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-2 uppercase tracking-wide"
       >
         {submitting ? 'Signing in…' : 'Sign in'}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -96,8 +105,8 @@ function SessionInstructions(): JSX.Element {
 
   return (
     <div className="flex flex-col gap-4 text-center">
-      <p className="text-sm font-medium text-zinc-200">Open Telescope from your application</p>
-      <p className="text-xs leading-relaxed text-zinc-500">
+      <p className="text-sm font-medium text-foreground">Open Telescope from your application</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">
         Your session is minted by the host app. Use its &ldquo;Open Telescope&rdquo; action to sign
         in, then come back here.
       </p>
@@ -105,7 +114,7 @@ function SessionInstructions(): JSX.Element {
         type="button"
         onClick={onRetry}
         disabled={retrying}
-        className="mt-2 rounded border border-zinc-700 px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-2 rounded border border-line px-3 py-2 text-xs font-medium uppercase tracking-wide text-foreground transition-colors hover:bg-panel-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {retrying ? 'Checking…' : 'Retry'}
       </button>

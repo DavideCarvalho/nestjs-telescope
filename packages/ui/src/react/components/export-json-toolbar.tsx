@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { copyJson, downloadJson } from './export-json.js';
 
 const BUTTON_CLASS =
-  'rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[11px] text-zinc-300 ' +
-  'transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100';
+  'rounded border border-line bg-panel px-2.5 py-1 text-[11px] text-foreground ' +
+  'transition-colors hover:border-line hover:bg-panel-2 hover:text-foreground';
 
 /**
  * A small toolbar exposing "Copy JSON" / "Download JSON" actions for a value.

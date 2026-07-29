@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import type { QueueCapabilities } from '../../../client/index.js';
+import { Button } from '../../ui/index.js';
 import { useQueueEnqueue } from '../../use-telescope-queries.js';
 import { supportsAction } from './JobActions.js';
 
@@ -67,15 +68,15 @@ export function EnqueueJobForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2 rounded-lg border border-zinc-800 p-3">
-      <h3 className="text-[10px] uppercase tracking-wide text-zinc-500">Send message</h3>
+    <form onSubmit={submit} className="space-y-2 rounded-lg border border-line p-3">
+      <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">Send message</h3>
       <input
         type="text"
         value={name}
         onChange={(event) => setName(event.target.value)}
         placeholder="Job name (optional)"
         aria-label="Job name"
-        className="w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600"
+        className="w-full rounded border border-line bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground"
       />
       <textarea
         value={payload}
@@ -83,20 +84,16 @@ export function EnqueueJobForm({
         placeholder='{"to": "a@b.c"}'
         aria-label="Payload (JSON)"
         rows={4}
-        className="w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
+        className="w-full rounded border border-line bg-background px-2 py-1 font-mono text-xs text-foreground placeholder:text-muted-foreground"
       />
-      {jsonError && <p className="text-[10px] text-red-400">{jsonError}</p>}
+      {jsonError && <p className="text-[10px] text-bad">{jsonError}</p>}
       <div className="flex items-center gap-2">
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="rounded border border-emerald-500/40 px-2.5 py-1 text-[11px] text-emerald-300 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
-        >
+        <Button type="submit" variant="good" disabled={mutation.isPending}>
           {mutation.isPending ? 'Sending…' : 'Send message'}
-        </button>
-        {forbidden && <span className="text-[10px] text-red-400">Not authorized</span>}
+        </Button>
+        {forbidden && <span className="text-[10px] text-bad">Not authorized</span>}
         {sentId !== undefined && !forbidden && (
-          <span className="text-[10px] text-emerald-400">
+          <span className="text-[10px] text-good">
             {sentId ? `Enqueued job ${sentId}` : 'Message enqueued'}
           </span>
         )}
