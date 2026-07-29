@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ENTRY_TYPES } from '../react/index.js';
+import { Dialog, DialogContent } from '../react/ui/index.js';
 
 /** A single navigable target in the palette. */
 export interface PaletteAction {
@@ -71,7 +72,7 @@ export function usePalette(): { open: boolean; setOpen: (open: boolean) => void 
 export function CommandPalette({
   open,
   onClose,
-}: { open: boolean; onClose: () => void }): JSX.Element | null {
+}: { open: boolean; onClose: () => void }): JSX.Element {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
@@ -102,14 +103,7 @@ export function CommandPalette({
     [navigate, onClose],
   );
 
-  if (!open) return null;
-
   function onKeyDown(event: React.KeyboardEvent): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onClose();
-      return;
-    }
     if (results.length === 0) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -126,18 +120,17 @@ export function CommandPalette({
   const activeId = results[highlight] ? `${listId}-${results[highlight].id}` : undefined;
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop close is a pointer affordance; Escape handles keyboard close.
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[12vh]"
-      onClick={onClose}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
     >
-      {/* biome-ignore lint/a11y/useSemanticElements: a div with role=dialog is the portable modal pattern here; <dialog> needs imperative showModal wiring. */}
-      <div
-        role="dialog"
-        aria-modal="true"
+      <DialogContent
+        placement="top"
         aria-label="Command palette"
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
+        className="overflow-hidden"
+        initialFocus={inputRef}
         onKeyDown={onKeyDown}
       >
         <input
@@ -149,14 +142,14 @@ export function CommandPalette({
           aria-label="Search actions"
           aria-controls={listId}
           aria-activedescendant={activeId}
-          className="w-full border-b border-zinc-800 bg-transparent px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+          className="w-full border-b border-line bg-transparent px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
         {/* biome-ignore lint/a11y/useSemanticElements: ARIA listbox is the canonical combobox popup; <select>/<option> can't host this rich layout, and focus stays on the input via aria-activedescendant. */}
         {/* biome-ignore lint/a11y/useFocusableInteractive: the listbox is not a tab stop; the input owns focus and drives it via aria-activedescendant. */}
         {/* biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: listbox is the correct role for the combobox popup; activation happens on the input. */}
         <ul id={listId} role="listbox" className="max-h-72 overflow-y-auto py-1">
           {results.length === 0 ? (
-            <li className="px-4 py-3 text-xs text-zinc-500">No matching actions</li>
+            <li className="px-4 py-3 text-xs text-muted-foreground">No matching actions</li>
           ) : (
             results.map((action, index) => {
               return (
@@ -175,7 +168,7 @@ export function CommandPalette({
                     select(action);
                   }}
                   className={`cursor-pointer px-4 py-2 text-sm ${
-                    index === highlight ? 'bg-zinc-800 text-emerald-300' : 'text-zinc-300'
+                    index === highlight ? 'bg-panel-2 text-brand' : 'text-foreground'
                   }`}
                 >
                   {action.label}
@@ -184,7 +177,7 @@ export function CommandPalette({
             })
           )}
         </ul>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

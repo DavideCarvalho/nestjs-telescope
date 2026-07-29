@@ -10,12 +10,12 @@ export function EntryPage(): JSX.Element {
       <button
         type="button"
         onClick={() => navigate('/entries')}
-        className="mb-4 text-xs text-zinc-500 hover:text-zinc-300"
+        className="mb-4 text-xs text-muted-foreground hover:text-foreground"
       >
         ← entries
       </button>
       {isLoading || !data ? (
-        <p className="text-zinc-600">Loading…</p>
+        <p className="text-muted-foreground">Loading…</p>
       ) : (
         <EntryDetail entry={data} onSelect={(entryId) => navigate(`/entries/view/${entryId}`)} />
       )}

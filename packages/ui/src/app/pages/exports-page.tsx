@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { EntriesQuery, Entry, TelescopeClient } from '../../client/index.js';
 import {
   ENTRY_TYPES,
@@ -9,8 +9,30 @@ import {
   resolveEntryQuery,
   useTelescopeClient,
 } from '../../react/index.js';
+import {
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../../react/ui/index.js';
 
 type ExportFormat = 'json' | 'csv';
+
+/** Value→label maps for the two selects, so the trigger shows the label not the id. */
+const FORMAT_ITEMS: Record<string, string> = { json: 'JSON', csv: 'CSV' };
+const TYPE_ITEMS: Record<string, string> = {
+  all: 'all',
+  ...Object.fromEntries(ENTRY_TYPES.map((entryType) => [entryType.id, entryType.label])),
+};
 
 /** One completed export this session (kept in component state, never persisted). */
 interface ExportRecord {
@@ -32,8 +54,6 @@ const WINDOW_MS: Record<string, number> = {
   '6h': 6 * 60 * 60_000,
   '24h': 24 * 60 * 60_000,
 };
-
-const INPUT_CLASS = 'rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-300';
 
 /** Backend filter for the chosen type; 'all' means no type filter. */
 function typeFilter(type: string): EntriesQuery {
@@ -81,42 +101,41 @@ async function collectEntries(
 function RecentExports({ records }: { records: ExportRecord[] }): JSX.Element | null {
   if (records.length === 0) return null;
   return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-800">
-      <table className="w-full min-w-[640px] text-left text-sm">
-        <thead>
-          <tr className="text-[10px] uppercase tracking-wide text-zinc-500">
-            <th className="px-3 py-2 font-normal">Filename</th>
-            <th className="px-3 py-2 font-normal">Type</th>
-            <th className="px-3 py-2 font-normal">Rows</th>
-            <th className="px-3 py-2 font-normal">Format</th>
-            <th className="px-3 py-2 font-normal">Time</th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="rounded-lg border border-line">
+      <Table className="min-w-[640px] text-left">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Filename</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Rows</TableHead>
+            <TableHead>Format</TableHead>
+            <TableHead>Time</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {records.map((record) => (
-            <tr
-              key={`${record.filename}:${record.at}`}
-              className="border-t border-zinc-800/60 hover:bg-zinc-900/40"
-            >
-              <td className="px-3 py-2 font-mono text-xs text-zinc-300">{record.filename}</td>
-              <td className="px-3 py-2 text-xs text-zinc-400">{record.type}</td>
-              <td className="px-3 py-2 text-xs tabular-nums text-zinc-100">
+            <TableRow key={`${record.filename}:${record.at}`} className="hover:bg-panel">
+              <TableCell className="font-mono text-foreground">{record.filename}</TableCell>
+              <TableCell className="text-muted-foreground">{record.type}</TableCell>
+              <TableCell className="tabular-nums text-foreground">
                 {record.rows.toLocaleString()}
-              </td>
-              <td className="px-3 py-2 text-xs uppercase text-zinc-400">{record.format}</td>
-              <td className="px-3 py-2 text-xs text-zinc-400">
+              </TableCell>
+              <TableCell className="uppercase text-muted-foreground">{record.format}</TableCell>
+              <TableCell className="text-muted-foreground">
                 {new Date(record.at).toLocaleTimeString()}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
 
 export function ExportsPage(): JSX.Element {
   const client = useTelescopeClient();
+  const searchId = useId();
+  const limitId = useId();
   const [type, setType] = useState('all');
   const [window, setWindow] = useState('1h');
   const [search, setSearch] = useState('');
@@ -160,96 +179,117 @@ export function ExportsPage(): JSX.Element {
   return (
     <div className="space-y-4 p-4">
       <div className="px-1">
-        <h3 className="text-[10px] uppercase tracking-wide text-zinc-500">Export workbench</h3>
-        <p className="mt-1 text-xs text-zinc-600">
+        <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Export workbench
+        </h3>
+        <p className="mt-1 text-xs text-muted-foreground">
           Page captured entries into a downloadable JSON or CSV file. Gathering runs in your browser
           against the live store, newest-first within the selected window.
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-zinc-500">
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-panel/40 p-4">
+        {/* Not a <label>: Select renders a button trigger, which a label cannot bind to. */}
+        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
           Type
-          <select
+          {/* `items` lets <SelectValue> render the human label rather than the raw id. */}
+          <Select
+            items={TYPE_ITEMS}
             value={type}
-            onChange={(event) => setType(event.target.value)}
-            className={INPUT_CLASS}
+            onValueChange={(next) => {
+              if (typeof next === 'string') setType(next);
+            }}
           >
-            <option value="all">all</option>
-            {ENTRY_TYPES.map((entryType) => (
-              <option key={entryType.id} value={entryType.id}>
-                {entryType.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            <SelectTrigger aria-label="Entry type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">all</SelectItem>
+              {ENTRY_TYPES.map((entryType) => (
+                <SelectItem key={entryType.id} value={entryType.id}>
+                  {entryType.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Not a <label>: WindowSelect renders its own <select>, so wrapping it in a
             label has no native control to bind to (a11y/noLabelWithoutControl). */}
-        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-zinc-500">
+        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
           Window
           <WindowSelect value={window} onChange={setWindow} />
         </div>
 
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-zinc-500">
+        {/* `htmlFor` rather than wrapping: <Input> is a component, so a static a11y check
+            cannot see the <input> it renders. */}
+        <label
+          className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground"
+          htmlFor={searchId}
+        >
           Search
-          <input
+          <Input
+            id={searchId}
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="content filter"
-            className={INPUT_CLASS}
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-zinc-500">
+        <label
+          className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground"
+          htmlFor={limitId}
+        >
           Limit
-          <input
+          <Input
+            id={limitId}
             type="number"
             min={1}
             max={MAX_LIMIT}
             value={limit}
             onChange={(event) => setLimit(Number(event.target.value) || DEFAULT_LIMIT)}
-            className={`${INPUT_CLASS} w-24 tabular-nums`}
+            className="w-24 tabular-nums"
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-zinc-500">
+        {/* Not a <label>: Select renders a button trigger, which a label cannot bind to. */}
+        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
           Format
-          <select
+          <Select
+            items={FORMAT_ITEMS}
             value={format}
-            onChange={(event) => setFormat(event.target.value === 'csv' ? 'csv' : 'json')}
-            className={INPUT_CLASS}
+            onValueChange={(next) => setFormat(next === 'csv' ? 'csv' : 'json')}
           >
-            <option value="json">JSON</option>
-            <option value="csv">CSV</option>
-          </select>
-        </label>
+            <SelectTrigger aria-label="Export format">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="json">JSON</SelectItem>
+              <SelectItem value="csv">CSV</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={exporting}
-          className="rounded border border-zinc-700 px-3 py-1.5 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button onClick={onExport} disabled={exporting} size="md">
           {exporting ? 'Exporting…' : 'Export'}
-        </button>
+        </Button>
 
         {exporting && liveCount !== null && (
-          <span className="text-xs tabular-nums text-zinc-500">
+          <span className="text-xs tabular-nums text-muted-foreground">
             gathered {liveCount.toLocaleString()}…
           </span>
         )}
       </div>
 
-      {error && <p className="px-1 text-xs text-red-400">{error}</p>}
+      {error && <p className="px-1 text-xs text-bad">{error}</p>}
 
       <div className="space-y-2">
-        <h4 className="px-1 text-[10px] uppercase tracking-wide text-zinc-500">
+        <h4 className="px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
           Recent exports (this session)
         </h4>
         {records.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-800 px-4 py-10 text-center text-xs text-zinc-600">
+          <div className="rounded-lg border border-dashed border-line px-4 py-10 text-center text-xs text-muted-foreground">
             No exports yet. Pick a type, window, and format, then export.
           </div>
         ) : (

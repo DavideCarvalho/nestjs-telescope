@@ -43,7 +43,9 @@ export function RequestTimeline({
           </li>
         ))}
       </ol>
-      {hidden > 0 ? <p className="mt-1 px-2 text-[10px] text-zinc-600">+{hidden} more</p> : null}
+      {hidden > 0 ? (
+        <p className="mt-1 px-2 text-[10px] text-muted-foreground">+{hidden} more</p>
+      ) : null}
     </div>
   );
 }
@@ -72,21 +74,21 @@ function TimelineRow({
         onSelect?.(entry.id);
       }}
       className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs ${
-        isRequest ? 'bg-zinc-800 text-emerald-300' : 'text-zinc-400 hover:bg-zinc-900'
+        isRequest ? 'bg-panel-2 text-brand' : 'text-muted-foreground hover:bg-panel'
       }`}
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${dotForType(entry.type)}`} aria-hidden />
       <span className="w-40 shrink-0 truncate" title={entryLabel(entry)}>
         {entryLabel(entry)}
       </span>
-      <span className="h-2 flex-1 overflow-hidden rounded bg-zinc-900">
+      <span className="h-2 flex-1 overflow-hidden rounded bg-panel">
         <span
-          className="block h-full rounded bg-emerald-500/60"
+          className="block h-full rounded bg-brand"
           style={{ width: `${widthPercent}%` }}
           aria-hidden
         />
       </span>
-      <span className="w-12 shrink-0 text-right tabular-nums text-zinc-500">
+      <span className="w-12 shrink-0 text-right tabular-nums text-muted-foreground">
         {entry.durationMs != null ? `${entry.durationMs}ms` : '—'}
       </span>
     </button>

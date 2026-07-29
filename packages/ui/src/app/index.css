@@ -3,51 +3,167 @@
 @tailwind utilities;
 
 /*
- * Light theme overrides.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Aviary console tokens.
  *
- * The dashboard is authored dark-first with hardcoded Tailwind `zinc` tokens.
- * Rather than re-theming every component, the `.light` root class (applied by
- * ThemeProvider) flips the most common app-wide dark surfaces/text/borders to
- * light equivalents so the main surfaces stay legible in light mode.
+ * SOURCE OF TRUTH: ../../../../AVIARY-UI.md (the `nestjs/` checkout root).
+ * The shared neutrals and status hues below are byte-identical across all four
+ * consoles (agent, durable, media, telescope). Do NOT tune them per console.
+ * `--accent` is the one line that differs — one per console.
  *
- * Covered: page backgrounds (zinc-950/900/800 surfaces), primary/secondary
- * text (zinc-100/200/300/400), and borders (zinc-800/700). The accent emerald
- * is left as-is (legible on light).
- *
- * NOT covered (follow-up): per-component bespoke colors, chart palettes, badge
- * tints, and translucent overlays. Full per-component theming via design
- * tokens is a follow-up; this is a pragmatic, usable light mode for the main
- * surfaces only.
+ * Telescope is the only console with a user-facing light mode, so the tokens are
+ * declared twice: `:root` holds the canonical dark values, `.light` re-points the
+ * SAME names at light equivalents. Anything expressed in tokens therefore themes
+ * for free — which is the point, because the previous light mode was a block of
+ * `.light .bg-zinc-900 { ... }` overrides that could only ever cover the handful
+ * of utility classes someone remembered to list.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+:root {
+  /* ── Shared. Identical in all four consoles. Do not tune per console. ── */
+  --bg: #09090b;
+  --panel: #0c0c0f;
+  --panel-2: #101017; /* elevated surface: modal/dialog, drawer, popover, menu */
+  --line: #1c1c22;
+  --line-soft: #16161a;
+  --text: #e7e7ea;
+  --muted: #76767f;
+
+  /* Status. Semantic, never decorative. */
+  --good: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --live: #60a5fa; /* in flight: a live tail streaming, a job mid-execution */
+
+  /*
+   * ── Per console. This is the ONLY line that differs between them. ──
+   * Telescope: magenta. Every other hue on the wheel is already spoken for —
+   * `--good` green, `--warn` amber, `--bad` red, `--live` blue, agent violet,
+   * media cyan — and magenta sits in the one large gap left between violet and
+   * red. See the PR description for the full derivation.
+   */
+  --accent: #e879f9;
+
+  color-scheme: dark;
+}
+
+/*
+ * Light theme. Same token names, light values — every token-based surface,
+ * border, label and status flips with it. The status hues are darkened from
+ * their dark-mode values so they stay legible on a light background.
  */
 .light {
+  --bg: #ffffff;
+  --panel: #fafafa;
+  --panel-2: #f4f4f5;
+  --line: #e4e4e7;
+  --line-soft: #efeff1;
+  --text: #18181b;
+  --muted: #71717a;
+
+  --good: #047857;
+  --warn: #b45309;
+  --bad: #dc2626;
+  --live: #1d4ed8;
+
+  --accent: #a21caf;
+
   color-scheme: light;
 }
 
-/* Surfaces: darkest backgrounds become light. */
-.light .bg-zinc-950 {
-  background-color: #ffffff;
-}
-.light .bg-zinc-900 {
-  background-color: #f4f4f5;
-}
-.light .bg-zinc-800 {
-  background-color: #e4e4e7;
+* {
+  box-sizing: border-box;
 }
 
-/* Primary + secondary text become dark on light. */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Tinted pills/chips: one class per semantic role, each setting background, border
+ * and text together. `bg-good/10 border-good/40 text-good` would work too — the
+ * `token()` colour functions in tailwind.config.ts make the opacity modifier resolve
+ * — but three classes that must stay in sync at ~40 call sites is how the tint
+ * ratios drift apart. These are the single source of truth for a tinted chip.
+ */
+.tint-brand {
+  background-color: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+.tint-good {
+  background-color: color-mix(in srgb, var(--good) 12%, transparent);
+  border-color: color-mix(in srgb, var(--good) 40%, transparent);
+  color: var(--good);
+}
+.tint-warn {
+  background-color: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--warn);
+}
+.tint-bad {
+  background-color: color-mix(in srgb, var(--bad) 12%, transparent);
+  border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+  color: var(--bad);
+}
+.tint-muted {
+  background-color: var(--panel-2);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 3px solid var(--bg);
+  border-radius: 999px;
+}
+
+/*
+ * ── Legacy `zinc-*` compatibility layer ──────────────────────────────────────
+ * The dashboard predates these tokens and still has hardcoded `zinc-*` utilities
+ * in components not yet migrated. Until they are, keep them legible in light mode
+ * by remapping the surfaces/text/borders that dominate. Every component migrated
+ * to a token or a `src/react/ui` primitive can drop out of this list; when the
+ * list is empty, delete the block.
+ */
+.light .bg-zinc-950 {
+  background-color: var(--bg);
+}
+.light .bg-zinc-900 {
+  background-color: var(--panel);
+}
+.light .bg-zinc-800 {
+  background-color: var(--panel-2);
+}
 .light .text-zinc-100,
 .light .text-zinc-200,
 .light .text-zinc-300 {
-  color: #18181b;
+  color: var(--text);
 }
 .light .text-zinc-400,
 .light .text-zinc-500,
 .light .text-zinc-600 {
-  color: #52525b;
+  color: var(--muted);
 }
-
-/* Borders become light-mode hairlines. */
 .light .border-zinc-800,
-.light .border-zinc-700 {
-  border-color: #d4d4d8;
+.light .border-zinc-700,
+.light .border-zinc-900 {
+  border-color: var(--line);
 }

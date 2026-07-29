@@ -36,7 +36,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
     annotations?: Record<string, string>;
   }[] = [
     { label: 'Shared', keys: props.sharedKeys, accent: 'text-sky-300' },
-    { label: 'Final', keys: props.finalKeys, accent: 'text-zinc-300' },
+    { label: 'Final', keys: props.finalKeys, accent: 'text-foreground' },
     { label: 'Optional', keys: props.optionalKeys, accent: 'text-indigo-300' },
     { label: 'Once', keys: props.onceKeys, accent: 'text-fuchsia-300' },
     { label: 'Merge', keys: props.merge, accent: 'text-teal-300', annotations: props.matchPropsOn },
@@ -52,7 +52,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       accent: 'text-teal-300',
       annotations: props.matchPropsOn,
     },
-    { label: 'Rescued', keys: props.rescued, accent: 'text-red-300' },
+    { label: 'Rescued', keys: props.rescued, accent: 'text-bad' },
   ];
 
   return (
@@ -60,34 +60,32 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 1. Header */}
       <h3 className="mb-2 flex flex-wrap items-center gap-2 font-mono text-sm text-cyan-400">
         {method ? (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] uppercase">{method}</span>
+          <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] uppercase">{method}</span>
         ) : null}
-        {url ? <span className="text-zinc-400">{url}</span> : null}
-        <span className="text-zinc-500">→</span>
-        <span className="text-zinc-200">{component}</span>
+        {url ? <span className="text-muted-foreground">{url}</span> : null}
+        <span className="text-muted-foreground">→</span>
+        <span className="text-foreground">{component}</span>
         {statusCode !== null ? (
           <span
-            className={`rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] ${
-              statusCode === 409 ? 'text-red-400' : 'text-zinc-500'
+            className={`rounded bg-panel px-1.5 py-0.5 text-[10px] ${
+              statusCode === 409 ? 'text-bad' : 'text-muted-foreground'
             }`}
           >
             {statusCode}
           </span>
         ) : null}
         {isPartial ? (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-amber-400">
-            partial
-          </span>
+          <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-warn">partial</span>
         ) : null}
         {assetVersion ? (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">
+          <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted-foreground">
             asset {assetVersion}
           </span>
         ) : null}
       </h3>
 
       {versionMismatch ? (
-        <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-300">
+        <div className="mb-4 rounded border border-bad tint-bad p-3 text-xs text-bad">
           Version mismatch: client <code className="font-mono">{clientVersion ?? 'unknown'}</code> ≠
           server <code className="font-mono">{assetVersion ?? 'unknown'}</code> → 409 forced full
           reload.
@@ -97,18 +95,20 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 2. Partial-reload panel */}
       {isPartial ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Partial reload</h3>
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+            Partial reload
+          </h3>
           <div className="grid grid-cols-2 gap-3">
-            <KeyColumn label="Kept" keys={partial.only} accent="text-emerald-300" />
-            <KeyColumn label="Excluded" keys={excluded} accent="text-red-300" />
+            <KeyColumn label="Kept" keys={partial.only} accent="text-brand" />
+            <KeyColumn label="Excluded" keys={excluded} accent="text-bad" />
           </div>
           {partial.reset.length > 0 ||
           partial.resetOnce.length > 0 ||
           partial.exceptOnce.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-3">
-              <ChipRow label="reset" keys={partial.reset} accent="text-amber-300" />
-              <ChipRow label="reset-once" keys={partial.resetOnce} accent="text-amber-300" />
-              <ChipRow label="except-once" keys={partial.exceptOnce} accent="text-amber-300" />
+              <ChipRow label="reset" keys={partial.reset} accent="text-warn" />
+              <ChipRow label="reset-once" keys={partial.resetOnce} accent="text-warn" />
+              <ChipRow label="except-once" keys={partial.exceptOnce} accent="text-warn" />
             </div>
           ) : null}
         </div>
@@ -116,7 +116,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
 
       {/* 3. Prop classification */}
       <div className="mb-4">
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Props</h3>
+        <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Props</h3>
         <div className="flex flex-col gap-1.5">
           {propRows.map((r) => (
             <ChipRow {...r} key={r.label} />
@@ -127,7 +127,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 4. Deferred groups */}
       {Object.keys(props.deferred).length > 0 ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Deferred</h3>
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Deferred</h3>
           <div className="flex flex-col gap-1.5">
             {Object.entries(props.deferred).map(([group, paths]) => (
               <div key={group} className="flex flex-wrap items-center gap-1.5">
@@ -135,7 +135,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
                 {paths.map((path) => (
                   <span
                     key={path}
-                    className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300"
+                    className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-foreground"
                   >
                     {path}
                   </span>
@@ -149,15 +149,15 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 4b. Once props cache metadata */}
       {Object.keys(props.once).length > 0 ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Once cache</h3>
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Once cache</h3>
           <div className="flex flex-col gap-1.5">
             {Object.entries(props.once).map(([cacheKey, meta]) => (
               <div key={cacheKey} className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-fuchsia-300">
+                <span className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-fuchsia-300">
                   {cacheKey}
                 </span>
-                <span className="text-[10px] text-zinc-500">→ {meta.prop}</span>
-                <span className="text-[10px] text-zinc-600">
+                <span className="text-[10px] text-muted-foreground">→ {meta.prop}</span>
+                <span className="text-[10px] text-muted-foreground">
                   {meta.expiresAt == null ? 'no expiry' : `expires ${meta.expiresAt}`}
                 </span>
               </div>
@@ -169,20 +169,20 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 4c. Infinite-scroll cursors */}
       {Object.keys(props.scroll).length > 0 ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Scroll</h3>
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Scroll</h3>
           <div className="flex flex-col gap-1.5">
             {Object.entries(props.scroll).map(([path, cursor]) => (
               <div key={path} className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-teal-300">
+                <span className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-teal-300">
                   {path}
                 </span>
-                <span className="text-[10px] text-zinc-500">page «{cursor.pageName}»</span>
-                <span className="text-[10px] text-zinc-400">
+                <span className="text-[10px] text-muted-foreground">page «{cursor.pageName}»</span>
+                <span className="text-[10px] text-muted-foreground">
                   {fmtCursor(cursor.previousPage)} ← {fmtCursor(cursor.currentPage)} →{' '}
                   {fmtCursor(cursor.nextPage)}
                 </span>
                 {cursor.reset ? (
-                  <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-amber-300">
+                  <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-warn">
                     reset
                   </span>
                 ) : null}
@@ -194,8 +194,10 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
 
       {/* 5. Resolved props tree */}
       <div className="mb-4">
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Resolved props</h3>
-        <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+        <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+          Resolved props
+        </h3>
+        <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
           {prettyJson(record.resolvedProps)}
         </pre>
       </div>
@@ -204,10 +206,10 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       <div className="flex flex-wrap items-center gap-1.5">
         <FlagChip label="encryptHistory" on={encryptHistory} />
         <FlagChip label="clearHistory" on={clearHistory} />
-        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400">
+        <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted-foreground">
           {humanBytes(pageBytes)}
         </span>
-        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400">
+        <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted-foreground">
           SSR: {ssr ? 'yes' : 'no'}
         </span>
       </div>
@@ -332,16 +334,16 @@ function ChipRow({
   if (keys.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="w-20 shrink-0 text-[11px] text-zinc-500">{label}</span>
+      <span className="w-20 shrink-0 text-[11px] text-muted-foreground">{label}</span>
       {keys.map((key) => {
         const match = annotations?.[key];
         return (
           <span
             key={key}
-            className={`rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] ${accent}`}
+            className={`rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] ${accent}`}
           >
             {key}
-            {match ? <span className="text-zinc-500"> · {match}</span> : null}
+            {match ? <span className="text-muted-foreground"> · {match}</span> : null}
           </span>
         );
       })}
@@ -356,8 +358,10 @@ function KeyColumn({
   accent,
 }: { label: string; keys: string[]; accent: string }): JSX.Element {
   return (
-    <div className="rounded bg-zinc-900 p-2">
-      <div className="mb-1.5 text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
+    <div className="rounded bg-panel p-2">
+      <div className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
       {keys.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {keys.map((key) => (
@@ -367,7 +371,7 @@ function KeyColumn({
           ))}
         </div>
       ) : (
-        <span className="text-[10px] text-zinc-600">—</span>
+        <span className="text-[10px] text-muted-foreground">—</span>
       )}
     </div>
   );
@@ -377,8 +381,8 @@ function KeyColumn({
 function FlagChip({ label, on }: { label: string; on: boolean }): JSX.Element {
   return (
     <span
-      className={`rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] ${
-        on ? 'text-emerald-400' : 'text-zinc-600'
+      className={`rounded bg-panel px-1.5 py-0.5 text-[10px] ${
+        on ? 'text-brand' : 'text-muted-foreground'
       }`}
     >
       {label}: {on ? 'on' : 'off'}

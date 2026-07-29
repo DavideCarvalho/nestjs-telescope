@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { TagCount } from '../../client/index.js';
+import { Input } from '../ui/index.js';
 import { useTags } from '../use-telescope-queries.js';
 
 /** Top-N suggestions shown in the dropdown, sorted by count desc. */
@@ -113,7 +114,7 @@ export function TagAutocomplete({
 
   return (
     <div ref={containerRef} className="relative">
-      <input
+      <Input
         type="text"
         value={input}
         onChange={(event) => {
@@ -129,7 +130,6 @@ export function TagAutocomplete({
         aria-controls={listboxId}
         aria-autocomplete="list"
         {...(activeId ? { 'aria-activedescendant': activeId } : {})}
-        className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
       />
       {showList ? (
         <div
@@ -138,7 +138,7 @@ export function TagAutocomplete({
           role="listbox"
           aria-label="Tag suggestions"
           tabIndex={-1}
-          className="absolute left-0 top-full z-10 mt-1 max-h-64 w-48 overflow-auto rounded border border-zinc-800 bg-zinc-950 py-1 shadow-lg"
+          className="absolute left-0 top-full z-10 mt-1 max-h-64 w-48 overflow-auto rounded border border-line bg-popover py-1 shadow-lg"
         >
           {suggestions.map((suggestion, index) => (
             <div
@@ -155,11 +155,11 @@ export function TagAutocomplete({
               }}
               onMouseEnter={() => setHighlight(index)}
               className={`flex cursor-pointer items-center justify-between gap-3 px-2 py-1 text-xs ${
-                index === highlight ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300'
+                index === highlight ? 'bg-panel-2 text-foreground' : 'text-foreground'
               }`}
             >
               <span className="truncate">{displayOf(suggestion.tag)}</span>
-              <span className="shrink-0 text-zinc-500">{suggestion.count}</span>
+              <span className="shrink-0 text-muted-foreground">{suggestion.count}</span>
             </div>
           ))}
         </div>

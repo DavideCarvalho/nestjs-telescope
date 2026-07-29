@@ -32,11 +32,9 @@ function fillTemplate(href: string, row: Record<string, unknown>): string {
  *  "nothing happened in this window" rather than a blank/broken panel. */
 function EmptyPanel({ title }: { title: string }): JSX.Element {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40">
-      <p className="border-b border-zinc-800 px-4 py-2 text-xs font-medium text-zinc-300">
-        {title}
-      </p>
-      <p className="px-4 py-8 text-center text-xs text-zinc-600">No data in this window.</p>
+    <div className="rounded-lg border border-line bg-panel/40">
+      <p className="border-b border-line px-4 py-2 text-xs font-medium text-foreground">{title}</p>
+      <p className="px-4 py-8 text-center text-xs text-muted-foreground">No data in this window.</p>
     </div>
   );
 }
@@ -53,8 +51,11 @@ function TableRows({
   return (
     <tbody>
       {rows.length === 0 ? (
-        <tr className="border-t border-zinc-800/60">
-          <td colSpan={columns.length} className="px-4 py-6 text-center text-xs text-zinc-600">
+        <tr className="border-t border-line/60">
+          <td
+            colSpan={columns.length}
+            className="px-4 py-6 text-center text-xs text-muted-foreground"
+          >
             No data in this window.
           </td>
         </tr>
@@ -62,12 +63,12 @@ function TableRows({
       {rows.map((row) => (
         <tr
           key={columns.map((c) => String(row[c.key] ?? '')).join('|')}
-          className="border-t border-zinc-800/60"
+          className="border-t border-line/60"
         >
           {columns.map((c) => {
             const text = String(row[c.key] ?? '');
             return (
-              <td key={c.key} className="px-4 py-2 text-zinc-200">
+              <td key={c.key} className="px-4 py-2 text-foreground">
                 {c.link ? (
                   <a
                     className="text-sky-400 hover:underline"
@@ -96,7 +97,7 @@ function TableHead({ columns }: { columns: TableColumn[] }): JSX.Element {
         {columns.map((c) => (
           <th
             key={c.key}
-            className="px-4 py-2 text-left text-[10px] uppercase tracking-wide text-zinc-500"
+            className="px-4 py-2 text-left text-[10px] uppercase tracking-wide text-muted-foreground"
           >
             {c.label}
           </th>
@@ -121,12 +122,12 @@ function PagerControls({
   onPageChange?: (page: number) => void;
 }): JSX.Element {
   return (
-    <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
       <button
         type="button"
         disabled={page <= 1}
         onClick={() => onPageChange?.(page - 1)}
-        className="rounded border border-zinc-800 px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+        className="rounded border border-line px-1.5 py-0.5 text-muted-foreground hover:bg-panel-2 disabled:cursor-not-allowed disabled:opacity-40"
       >
         Prev
       </button>
@@ -137,7 +138,7 @@ function PagerControls({
         type="button"
         disabled={page >= totalPages}
         onClick={() => onPageChange?.(page + 1)}
-        className="rounded border border-zinc-800 px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+        className="rounded border border-line px-1.5 py-0.5 text-muted-foreground hover:bg-panel-2 disabled:cursor-not-allowed disabled:opacity-40"
       >
         Next
       </button>
@@ -252,9 +253,9 @@ export function PanelView({
         const total = d.total ?? rows.length;
         const totalPages = Math.max(1, Math.ceil(total / limit));
         return (
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/40">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
-              <p className="text-xs font-medium text-zinc-300">{panel.title}</p>
+          <div className="rounded-lg border border-line bg-panel/40">
+            <div className="flex items-center justify-between border-b border-line px-4 py-2">
+              <p className="text-xs font-medium text-foreground">{panel.title}</p>
               <PagerControls
                 page={page}
                 totalPages={totalPages}
@@ -274,8 +275,8 @@ export function PanelView({
       // the pager row.
       const rows = (data as { rows?: Record<string, unknown>[] })?.rows ?? [];
       return (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/40">
-          <p className="border-b border-zinc-800 px-4 py-2 text-xs font-medium text-zinc-300">
+        <div className="rounded-lg border border-line bg-panel/40">
+          <p className="border-b border-line px-4 py-2 text-xs font-medium text-foreground">
             {panel.title}
           </p>
           <table className="w-full text-sm">

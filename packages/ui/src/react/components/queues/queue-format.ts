@@ -9,14 +9,18 @@ export const QUEUE_STATE_ORDER: readonly QueueState[] = [
   'paused',
 ];
 
-/** Per-state accent colors, consistent across list badges and tabs. */
+/**
+ * Per-state accent colors, consistent across list badges and tabs. Expressed in
+ * Aviary status tokens (`--good`/`--warn`/`--bad`/`--accent`) rather than raw
+ * Tailwind hues, so they theme with the console instead of against it.
+ */
 export const STATE_ACCENT: Record<QueueState, string> = {
-  waiting: 'text-zinc-300',
-  active: 'text-sky-400',
-  delayed: 'text-amber-400',
-  failed: 'text-red-400',
-  completed: 'text-emerald-400',
-  paused: 'text-violet-400',
+  waiting: 'text-foreground',
+  active: 'text-brand',
+  delayed: 'text-warn',
+  failed: 'text-bad',
+  completed: 'text-good',
+  paused: 'text-muted-foreground',
 };
 
 export function relativeTime(timestamp: number | null): string {

@@ -58,7 +58,7 @@ function Dashboard(): JSX.Element {
 function AuthGate(): JSX.Element {
   const { phase, modes } = useAuth();
   if (phase === 'loading') {
-    return <div className="min-h-screen bg-zinc-950" data-testid="auth-loading" />;
+    return <div className="min-h-screen bg-background" data-testid="auth-loading" />;
   }
   if (phase === 'screen') {
     return <AuthScreen modes={modes} />;

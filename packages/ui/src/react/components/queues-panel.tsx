@@ -13,7 +13,7 @@ export function QueuesPanel({
 }): JSX.Element {
   return (
     <table className="w-full text-left text-xs">
-      <thead className="text-zinc-500">
+      <thead className="text-muted-foreground">
         <tr>
           <th className="py-2 font-normal">Queue</th>
           <th className="font-normal">Total</th>
@@ -27,22 +27,22 @@ export function QueuesPanel({
       </thead>
       <tbody>
         {report.queues.map((q) => (
-          <tr key={q.queue} className="border-t border-zinc-900">
-            <td className="py-1.5 text-emerald-400">{q.queue}</td>
-            <td className="text-zinc-300">{q.total}</td>
-            <td className="text-zinc-300">{q.failed}</td>
-            <td className={q.failureRate > 0 ? 'text-red-400' : 'text-zinc-500'}>
+          <tr key={q.queue} className="border-t border-line-soft">
+            <td className="py-1.5 text-brand">{q.queue}</td>
+            <td className="text-foreground">{q.total}</td>
+            <td className="text-foreground">{q.failed}</td>
+            <td className={q.failureRate > 0 ? 'text-bad' : 'text-muted-foreground'}>
               {(q.failureRate * 100).toFixed(1)}%
             </td>
-            <td className="text-zinc-400">{q.throughputPerMinute.toFixed(1)}</td>
-            <td className="text-zinc-400">{p95(q.runtimeMs)}</td>
-            <td className="text-zinc-400">{p95(q.waitMs)}</td>
-            {sparkline && <td className="text-zinc-400">{sparkline(q.queue)}</td>}
+            <td className="text-muted-foreground">{q.throughputPerMinute.toFixed(1)}</td>
+            <td className="text-muted-foreground">{p95(q.runtimeMs)}</td>
+            <td className="text-muted-foreground">{p95(q.waitMs)}</td>
+            {sparkline && <td className="text-muted-foreground">{sparkline(q.queue)}</td>}
           </tr>
         ))}
         {report.queues.length === 0 && (
           <tr>
-            <td className="py-2 text-zinc-600" colSpan={sparkline ? 8 : 7}>
+            <td className="py-2 text-muted-foreground" colSpan={sparkline ? 8 : 7}>
               No queue activity in window.
             </td>
           </tr>

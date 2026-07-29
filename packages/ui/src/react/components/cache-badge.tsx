@@ -1,9 +1,10 @@
 /**
  * Cache entries carry `content: { operation, hit, key, tier?, stale?, ... }`. This
- * module derives a small status pill: green `HIT` / amber `MISS` for reads, neutral
- * `SET`, and `DEL`/`CLEAR` for writes. A grace-served (`stale`) hit reads amber to
+ * module derives a small status pill: `HIT` reads `--good`, `MISS` reads `--warn`,
+ * and `SET`/`DEL`/`CLEAR` are neutral. A grace-served (`stale`) hit reads warn to
  * stand out from a fresh hit; a `tier` (e.g. l1/l2) is appended when present.
  */
+import { Badge, type BadgeProps, badgeVariants } from '../ui/index.js';
 
 interface CacheContent {
   operation: 'get' | 'set' | 'delete' | 'clear';
@@ -27,44 +28,36 @@ function isCacheContent(content: unknown): content is CacheContent {
 
 export interface CacheBadgeInfo {
   label: string;
+  /**
+   * Semantic role, not a colour: which `Badge` variant renders this pill. The
+   * hue behind it comes from the Aviary status tokens, so it themes with the
+   * console. Prefer this over {@link CacheBadgeInfo.className} in new code.
+   */
+  variant: NonNullable<BadgeProps['variant']>;
+  /** Resolved class string for the variant, for callers rendering their own element. */
   className: string;
 }
 
-const PILL_BASE = 'rounded border px-1.5 py-0.5 text-[10px] font-medium';
+function info(label: string, variant: NonNullable<BadgeProps['variant']>): CacheBadgeInfo {
+  return { label, variant, className: badgeVariants({ variant }) };
+}
 
 /**
  * Pure mapping from entry content to a cache pill descriptor; `null` for any
- * non-cache or unrecognized content. Mirrors the bordered-pill token style used
- * by the queue action buttons.
+ * non-cache or unrecognized content.
  */
 export function cacheBadge(content: unknown): CacheBadgeInfo | null {
   if (!isCacheContent(content)) return null;
   const tierSuffix = typeof content.tier === 'string' ? ` ${content.tier.toUpperCase()}` : '';
-  if (content.operation === 'set') {
-    return { label: `SET${tierSuffix}`, className: `${PILL_BASE} border-zinc-700 text-zinc-300` };
-  }
-  if (content.operation === 'delete') {
-    return { label: 'DEL', className: `${PILL_BASE} border-zinc-700 text-zinc-400` };
-  }
-  if (content.operation === 'clear') {
-    return { label: 'CLEAR', className: `${PILL_BASE} border-zinc-700 text-zinc-400` };
-  }
+  if (content.operation === 'set') return info(`SET${tierSuffix}`, 'muted');
+  if (content.operation === 'delete') return info('DEL', 'muted');
+  if (content.operation === 'clear') return info('CLEAR', 'muted');
   if (content.hit === true) {
-    // A grace-period (stale) hit is amber so it's distinguishable from a fresh hit.
+    // A grace-period (stale) hit warns so it's distinguishable from a fresh hit.
     const stale = content.stale === true;
-    return {
-      label: `${stale ? 'HIT·STALE' : 'HIT'}${tierSuffix}`,
-      className: `${PILL_BASE} ${
-        stale ? 'border-amber-500/40 text-amber-300' : 'border-emerald-500/40 text-emerald-300'
-      }`,
-    };
+    return info(`${stale ? 'HIT·STALE' : 'HIT'}${tierSuffix}`, stale ? 'warn' : 'good');
   }
-  if (content.hit === false) {
-    return {
-      label: `MISS${tierSuffix}`,
-      className: `${PILL_BASE} border-amber-500/40 text-amber-300`,
-    };
-  }
+  if (content.hit === false) return info(`MISS${tierSuffix}`, 'warn');
   return null;
 }
 
@@ -72,5 +65,5 @@ export function cacheBadge(content: unknown): CacheBadgeInfo | null {
 export function CacheBadge({ content }: { content: unknown }): JSX.Element | null {
   const badge = cacheBadge(content);
   if (badge === null) return null;
-  return <span className={badge.className}>{badge.label}</span>;
+  return <Badge variant={badge.variant}>{badge.label}</Badge>;
 }

@@ -1,4 +1,5 @@
 import type { Entry } from '../../client/index.js';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/index.js';
 import { CacheBadge } from './cache-badge.js';
 import { InertiaBadge } from './inertia-badge.js';
 import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
@@ -68,51 +69,51 @@ export function EntriesTable({
   onSelect,
 }: { entries: Entry[]; onSelect?: (id: string) => void }): JSX.Element {
   return (
-    <table className="w-full text-left text-xs">
-      <thead className="text-zinc-500">
-        <tr>
-          <th className="py-2 font-normal">Time</th>
-          <th className="font-normal">Type</th>
-          <th className="font-normal">Summary</th>
-          <th className="font-normal">Duration</th>
-          <th className="font-normal">Tags</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table className="text-left">
+      <TableHeader>
+        <TableRow>
+          <TableHead className="px-0 py-2">Time</TableHead>
+          <TableHead className="px-0">Type</TableHead>
+          <TableHead className="px-0">Summary</TableHead>
+          <TableHead className="px-0">Duration</TableHead>
+          <TableHead className="px-0">Tags</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {entries.map((entry) => {
           const userTag = findUserTag(entry.tags);
           const otherTags = entry.tags.filter((tag) => tag !== userTag);
           return (
-            <tr
+            <TableRow
               key={entry.id}
               onClick={() => onSelect?.(entry.id)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') onSelect?.(entry.id);
               }}
-              className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900"
+              className="cursor-pointer hover:bg-panel"
             >
-              <td className="py-1.5 text-zinc-500">
+              <TableCell className="px-0 py-1.5 align-middle text-muted-foreground">
                 {new Date(entry.createdAt).toLocaleTimeString()}
-              </td>
-              <td className="text-emerald-400">{entry.type}</td>
-              <td className="max-w-md truncate text-zinc-300">
+              </TableCell>
+              <TableCell className="px-0 py-1.5 align-middle text-brand">{entry.type}</TableCell>
+              <TableCell className="max-w-md truncate px-0 py-1.5 align-middle text-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
                   {entry.type === 'inertia' ? <InertiaBadge content={entry.content} /> : null}
                   <span className="truncate">{entryLabel(entry)}</span>
                 </span>
-              </td>
-              <td className="text-zinc-400">
+              </TableCell>
+              <TableCell className="px-0 py-1.5 align-middle text-muted-foreground">
                 {entry.durationMs != null ? `${entry.durationMs}ms` : '—'}
-              </td>
-              <td className="text-zinc-600">
+              </TableCell>
+              <TableCell className="px-0 py-1.5 align-middle text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   {entry.traceId !== null && (
                     <a
                       href={`#/traces/${entry.traceId}`}
                       title={`View trace ${entry.traceId}`}
                       onClick={(event) => event.stopPropagation()}
-                      className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-sky-400 hover:bg-zinc-800"
+                      className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-brand hover:bg-panel-2"
                     >
                       trace:{entry.traceId.slice(0, 6)}
                     </a>
@@ -122,18 +123,18 @@ export function EntriesTable({
                       href={buildUserActivityHref(userTag)}
                       title={`View all activity for user ${userTagId(userTag)}`}
                       onClick={(event) => event.stopPropagation()}
-                      className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-emerald-400 hover:bg-zinc-800"
+                      className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-good hover:bg-panel-2"
                     >
                       {userTag}
                     </a>
                   )}
                   {otherTags.length > 0 && <span>{otherTags.join(' ')}</span>}
                 </span>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           );
         })}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }

@@ -18,7 +18,7 @@ describe('inertiaBadges', () => {
     const badges = inertiaBadges(content({ versionMismatch: true }));
     const mismatch = badges.find((b) => b.label === '409');
     expect(mismatch).toBeDefined();
-    expect(mismatch?.className).toContain('red');
+    expect(mismatch?.variant).toBe('bad');
   });
 
   it('returns a partial chip for partial reloads', () => {

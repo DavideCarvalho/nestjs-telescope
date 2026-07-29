@@ -322,7 +322,7 @@ describe('OverviewPage', () => {
     // dropped = 0 is shown as the reassuring "keeping up" state
     const dropped = screen.getByText('keeping up');
     expect(dropped).toBeTruthy();
-    expect(dropped.previousElementSibling?.className).toContain('text-emerald-400');
+    expect(dropped.previousElementSibling?.className).toContain('text-good');
   });
 
   it('highlights the dropped figure when Telescope is shedding load', async () => {
@@ -335,10 +335,10 @@ describe('OverviewPage', () => {
     expect(await screen.findByText('Telescope health')).toBeTruthy();
     const hint = await screen.findByText('overflow 12 · store 3');
     expect(hint).toBeTruthy();
-    // the dropped value sits above the hint and turns red when > 0
+    // the dropped value sits above the hint and turns `--bad` when > 0
     const value = hint.previousElementSibling;
     expect(value?.textContent).toBe('15');
-    expect(value?.className).toContain('text-red-400');
+    expect(value?.className).toContain('text-bad');
   });
 
   it('surfaces the truncated counter when content is being clipped by redaction bounds', async () => {
@@ -347,6 +347,6 @@ describe('OverviewPage', () => {
     expect(hint).toBeTruthy();
     const value = hint.previousElementSibling;
     expect(value?.textContent).toBe('9');
-    expect(value?.className).toContain('text-amber-400');
+    expect(value?.className).toContain('text-warn');
   });
 });

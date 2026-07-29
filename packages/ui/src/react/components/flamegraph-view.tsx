@@ -32,7 +32,7 @@ export function Flamegraph({ tree }: { tree: FlameNode }): JSX.Element {
 
   if (tree.totalMs <= 0 || cells.length === 0) {
     return (
-      <div className="flex h-24 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40 text-xs text-zinc-500">
+      <div className="flex h-24 items-center justify-center rounded-lg border border-line bg-panel/40 text-xs text-muted-foreground">
         No samples — the capture was empty.
       </div>
     );
@@ -48,14 +48,14 @@ export function Flamegraph({ tree }: { tree: FlameNode }): JSX.Element {
         <button
           type="button"
           onClick={() => setFocusKey('0')}
-          className="mb-2 rounded border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800"
+          className="mb-2 rounded border border-line px-2 py-0.5 text-[10px] text-foreground hover:bg-panel-2"
         >
           ← Reset zoom
         </button>
       )}
       <div
         data-testid="flamegraph"
-        className="relative w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950"
+        className="relative w-full overflow-hidden rounded-lg border border-line bg-background"
         style={{ height: rows * ROW_HEIGHT + 2 }}
       >
         {visible.map((cell) => {
@@ -71,18 +71,19 @@ export function Flamegraph({ tree }: { tree: FlameNode }): JSX.Element {
               title={`${cell.node.name}${cell.node.file ? ` — ${cell.node.file}` : ''}\ntotal ${formatProfileMs(
                 cell.node.totalMs,
               )} (${pct}%) · self ${formatProfileMs(cell.node.selfMs)}`}
-              className="absolute flex items-center overflow-hidden border border-zinc-950/60 px-1 text-left text-[10px] leading-none text-black/80 hover:brightness-110"
+              className="absolute flex items-center overflow-hidden border border-line-soft/60 px-1 text-left text-[10px] leading-none text-black/80 hover:brightness-110"
               style={{
                 left: `${left}%`,
                 width: `${width}%`,
                 top,
                 height: ROW_HEIGHT - 1,
-                background: cell.node.name === '(root)' ? '#3f3f46' : flameColor(cell.node.name),
+                background:
+                  cell.node.name === '(root)' ? 'var(--line)' : flameColor(cell.node.name),
               }}
             >
               <span
                 className="truncate"
-                style={cell.node.name === '(root)' ? { color: '#e4e4e7' } : {}}
+                style={cell.node.name === '(root)' ? { color: 'var(--text)' } : {}}
               >
                 {cell.node.name}
               </span>

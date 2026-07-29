@@ -73,9 +73,9 @@ describe('ExportsPage', () => {
     expect(screen.getByText('Window')).toBeTruthy();
     expect(screen.getByText('Format')).toBeTruthy();
     expect(screen.getByText('Limit')).toBeTruthy();
-    // format options
-    expect(screen.getByRole('option', { name: 'JSON' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'CSV' })).toBeTruthy();
+    // Format is a listbox, not a native <select>: its options only exist once the popup is
+    // open, so assert the trigger's current value rather than the options behind it.
+    expect(screen.getByRole('combobox', { name: 'Export format' }).textContent).toContain('JSON');
     // the export action
     expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy();
   });

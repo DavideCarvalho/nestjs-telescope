@@ -21,7 +21,7 @@ export function EntryDetail({
     <div className="grid grid-cols-3 gap-6">
       <section className="col-span-2">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 text-sm text-emerald-400">
+          <h2 className="flex items-center gap-2 text-sm text-brand">
             {entry.type}
             {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
             {entry.type === 'inertia' ? <InertiaBadge content={entry.content} /> : null}
@@ -30,7 +30,7 @@ export function EntryDetail({
         </div>
         {showTimeline ? (
           <div className="mb-4">
-            <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Timeline</h3>
+            <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Timeline</h3>
             <RequestTimeline batch={entry.batch} requestId={entry.id} onSelect={onSelect} />
           </div>
         ) : null}
@@ -53,7 +53,7 @@ export function EntryDetail({
           </>
         ) : entry.type === 'exception' ? (
           <>
-            <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+            <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
               {JSON.stringify(entry.content, null, 2)}
             </pre>
             <DiagnosePanel entryId={entry.id} aiEnabled={meta?.ai?.enabled ?? false} />
@@ -67,7 +67,7 @@ export function EntryDetail({
             explainEnabled={meta?.explainEnabled ?? false}
           />
         ) : (
-          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+          <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
             {JSON.stringify(entry.content, null, 2)}
           </pre>
         )}
@@ -75,11 +75,11 @@ export function EntryDetail({
       <aside>
         {userTag !== null ? (
           <div className="mb-4">
-            <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">User</h3>
-            <div className="font-mono text-[11px] text-zinc-300">{userTagId(userTag)}</div>
+            <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">User</h3>
+            <div className="font-mono text-[11px] text-foreground">{userTagId(userTag)}</div>
             <a
               href={buildUserActivityHref(userTag)}
-              className="mt-1 inline-block text-[11px] text-emerald-400 hover:underline"
+              className="mt-1 inline-block text-[11px] text-brand hover:underline"
             >
               View all activity for this user
             </a>
@@ -87,7 +87,7 @@ export function EntryDetail({
         ) : null}
         {entry.traceId ? (
           <div className="mb-4">
-            <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Trace</h3>
+            <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Trace</h3>
             <TraceRow
               traceId={entry.traceId}
               spanId={entry.spanId}
@@ -96,7 +96,7 @@ export function EntryDetail({
           </div>
         ) : null}
         <RelatedLinks entry={entry} />
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+        <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
           Batch ({entry.batch.length})
         </h3>
         <BatchTimeline batch={entry.batch} currentId={entry.id} onSelect={onSelect} />
@@ -137,13 +137,13 @@ function RelatedLinks({ entry }: { entry: EntryWithBatch }): JSX.Element | null 
   if (links.length === 0) return null;
   return (
     <div className="mb-4">
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Related</h3>
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Related</h3>
       <div className="flex flex-col gap-1">
         {links.map((link) => (
           <a
             key={`${link.href}:${link.label}`}
             href={link.href}
-            className="text-[11px] text-emerald-400 hover:underline"
+            className="text-[11px] text-brand hover:underline"
           >
             {link.label} →
           </a>
@@ -169,7 +169,7 @@ function DumpBody({ content }: { content: unknown }): JSX.Element {
   return (
     <div>
       {label ? <h3 className="mb-2 font-mono text-sm text-fuchsia-400">{label}</h3> : null}
-      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+      <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
         {prettyJson(record.value)}
       </pre>
     </div>
@@ -180,14 +180,14 @@ function DumpBody({ content }: { content: unknown }): JSX.Element {
 function logLevelColor(level: string): string {
   switch (level) {
     case 'error':
-      return 'text-red-400';
+      return 'text-bad';
     case 'warn':
-      return 'text-amber-400';
+      return 'text-warn';
     case 'debug':
     case 'verbose':
-      return 'text-zinc-500';
+      return 'text-muted-foreground';
     default:
-      return 'text-zinc-300';
+      return 'text-foreground';
   }
 }
 
@@ -201,12 +201,12 @@ function EventBody({ content }: { content: unknown }): JSX.Element {
       <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-indigo-400">
         {name}
         {listenerCount !== null ? (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">
+          <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {listenerCount} listener{listenerCount === 1 ? '' : 's'}
           </span>
         ) : null}
       </h3>
-      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+      <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
         {prettyJson(record.payload)}
       </pre>
     </div>
@@ -217,13 +217,13 @@ function EventBody({ content }: { content: unknown }): JSX.Element {
 function modelActionColor(action: string): string {
   switch (action) {
     case 'create':
-      return 'text-emerald-400';
+      return 'text-brand';
     case 'update':
-      return 'text-amber-400';
+      return 'text-warn';
     case 'delete':
-      return 'text-red-400';
+      return 'text-bad';
     default:
-      return 'text-zinc-300';
+      return 'text-foreground';
   }
 }
 
@@ -237,14 +237,14 @@ function ModelBody({ content }: { content: unknown }): JSX.Element {
     <div>
       <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-lime-400">
         <span
-          className={`rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] uppercase ${modelActionColor(action)}`}
+          className={`rounded bg-panel px-1.5 py-0.5 text-[10px] uppercase ${modelActionColor(action)}`}
         >
           {action}
         </span>
         <span>{entity}</span>
-        {id !== null ? <span className="text-zinc-500">#{id}</span> : null}
+        {id !== null ? <span className="text-muted-foreground">#{id}</span> : null}
       </h3>
-      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+      <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
         {prettyJson(record.changes)}
       </pre>
     </div>
@@ -259,15 +259,15 @@ function RedisBody({ content }: { content: unknown }): JSX.Element {
   const durationMs = typeof record.durationMs === 'number' ? record.durationMs : null;
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-rose-400">
+      <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-bad">
         {command}
         {durationMs !== null ? (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">
+          <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {durationMs} ms
           </span>
         ) : null}
       </h3>
-      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+      <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
         {prettyJson(record.args)}
       </pre>
     </div>
@@ -282,8 +282,8 @@ function RedisBody({ content }: { content: unknown }): JSX.Element {
 function StackBlock({ label, value }: { label: string; value: string }): JSX.Element {
   return (
     <div className="mb-4">
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">{label}</h3>
-      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs leading-relaxed text-zinc-300">
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">{label}</h3>
+      <pre className="overflow-auto rounded bg-panel p-3 text-xs leading-relaxed text-foreground">
         {value}
       </pre>
     </div>
@@ -312,29 +312,29 @@ function ClientExceptionBody({ content }: { content: unknown }): JSX.Element {
     <div>
       <h3 className="mb-3 flex flex-wrap items-center gap-2 font-mono text-sm text-orange-400">
         {name ? (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] uppercase">{name}</span>
+          <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] uppercase">{name}</span>
         ) : null}
-        <span className="text-zinc-300">{message}</span>
-        {release ? <span className="text-[10px] text-zinc-500">{release}</span> : null}
+        <span className="text-foreground">{message}</span>
+        {release ? <span className="text-[10px] text-muted-foreground">{release}</span> : null}
       </h3>
       {url ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">URL</h3>
-          <div className="break-all font-mono text-xs text-zinc-300">{url}</div>
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">URL</h3>
+          <div className="break-all font-mono text-xs text-foreground">{url}</div>
         </div>
       ) : null}
       {userAgent ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">User agent</h3>
-          <div className="break-all font-mono text-[11px] text-zinc-400">{userAgent}</div>
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">User agent</h3>
+          <div className="break-all font-mono text-[11px] text-muted-foreground">{userAgent}</div>
         </div>
       ) : null}
       {stack ? <StackBlock label="Stack" value={stack} /> : null}
       {componentStack ? <StackBlock label="Component stack" value={componentStack} /> : null}
       {hasContent(record.extra) ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Extra</h3>
-          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Extra</h3>
+          <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
             {prettyJson(record.extra)}
           </pre>
         </div>
@@ -355,14 +355,14 @@ function RequestHeaders({ headers }: { headers: Record<string, unknown> }): JSX.
   const entries = Object.entries(headers);
   return (
     <details className="mb-4">
-      <summary className="cursor-pointer text-xs uppercase tracking-wide text-zinc-500">
+      <summary className="cursor-pointer text-xs uppercase tracking-wide text-muted-foreground">
         Headers ({entries.length})
       </summary>
-      <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded bg-zinc-900 p-3 text-xs">
+      <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded bg-panel p-3 text-xs">
         {entries.map(([key, value]) => (
           <div key={key} className="contents">
-            <dt className="font-mono text-zinc-500">{key}</dt>
-            <dd className="break-all font-mono text-zinc-300">
+            <dt className="font-mono text-muted-foreground">{key}</dt>
+            <dd className="break-all font-mono text-foreground">
               {typeof value === 'string' ? value : prettyJson(value)}
             </dd>
           </div>
@@ -386,32 +386,32 @@ function RequestBody({ content }: { content: unknown }): JSX.Element {
   const hasUser = 'user' in record && record.user !== null && record.user !== undefined;
   return (
     <div>
-      <h3 className="mb-3 flex items-center gap-2 font-mono text-sm text-emerald-400">
-        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] uppercase">{method}</span>
-        <span className="text-zinc-300">{uri}</span>
+      <h3 className="mb-3 flex items-center gap-2 font-mono text-sm text-brand">
+        <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] uppercase">{method}</span>
+        <span className="text-foreground">{uri}</span>
         {statusCode !== null ? (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">
+          <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {statusCode}
           </span>
         ) : null}
-        {ip ? <span className="text-[10px] text-zinc-500">{ip}</span> : null}
+        {ip ? <span className="text-[10px] text-muted-foreground">{ip}</span> : null}
       </h3>
       <RequestHeaders headers={headers} />
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Payload</h3>
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Payload</h3>
       {hasContent(record.payload) ? (
-        <pre className="mb-4 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+        <pre className="mb-4 overflow-auto rounded bg-panel p-3 text-xs text-foreground">
           {prettyJson(record.payload)}
         </pre>
       ) : (
-        <p className="mb-4 text-xs text-zinc-600">No payload</p>
+        <p className="mb-4 text-xs text-muted-foreground">No payload</p>
       )}
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-zinc-500">User</h3>
+      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">User</h3>
       {hasUser ? (
-        <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+        <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
           {prettyJson(record.user)}
         </pre>
       ) : (
-        <p className="text-xs text-zinc-600">anonymous</p>
+        <p className="text-xs text-muted-foreground">anonymous</p>
       )}
     </div>
   );
@@ -444,9 +444,7 @@ function QueryBody({
         <h3 className="flex items-center gap-2 font-mono text-sm text-sky-400">
           query
           {slow ? (
-            <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-amber-400">
-              slow
-            </span>
+            <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-warn">slow</span>
           ) : null}
         </h3>
         {explainEnabled ? (
@@ -454,32 +452,36 @@ function QueryBody({
             type="button"
             onClick={onExplain}
             disabled={explain.isPending}
-            className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded border border-line px-2 py-1 text-[11px] text-foreground hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
           >
             {explain.isPending ? 'Explaining…' : 'Explain'}
           </button>
         ) : null}
       </div>
-      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">{sql}</pre>
+      <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">{sql}</pre>
       {Array.isArray(record.bindings) && record.bindings.length > 0 ? (
         <>
-          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-zinc-500">Bindings</h3>
-          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+            Bindings
+          </h3>
+          <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
             {prettyJson(record.bindings)}
           </pre>
         </>
       ) : null}
       {explain.isPending ? (
-        <p className="mt-3 text-xs text-zinc-600">Running EXPLAIN…</p>
+        <p className="mt-3 text-xs text-muted-foreground">Running EXPLAIN…</p>
       ) : result === undefined ? null : result.ok ? (
         <>
-          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-zinc-500">Query plan</h3>
-          <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">
+          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+            Query plan
+          </h3>
+          <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
             {prettyJson(result.plan)}
           </pre>
         </>
       ) : (
-        <p className="mt-3 rounded bg-zinc-900 p-3 text-xs text-red-400">{result.message}</p>
+        <p className="mt-3 rounded bg-panel p-3 text-xs text-bad">{result.message}</p>
       )}
     </div>
   );
@@ -496,13 +498,15 @@ function LogBody({ content }: { content: unknown }): JSX.Element {
     <div>
       <h3 className="mb-2 flex items-center gap-2 text-sm">
         <span
-          className={`rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] uppercase ${logLevelColor(level)}`}
+          className={`rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] uppercase ${logLevelColor(level)}`}
         >
           {level}
         </span>
-        {context ? <span className="font-mono text-xs text-zinc-500">{context}</span> : null}
+        {context ? (
+          <span className="font-mono text-xs text-muted-foreground">{context}</span>
+        ) : null}
       </h3>
-      <pre className="overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-300">{message}</pre>
+      <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">{message}</pre>
     </div>
   );
 }
@@ -520,17 +524,17 @@ function TraceRow({
           href={href}
           target="_blank"
           rel="noreferrer"
-          className="font-mono text-[11px] text-emerald-400 hover:underline"
+          className="font-mono text-[11px] text-brand hover:underline"
         >
           {traceId}
         </a>
       ) : (
-        <div className="font-mono text-[11px] text-zinc-300">{traceId}</div>
+        <div className="font-mono text-[11px] text-foreground">{traceId}</div>
       )}
-      {spanId ? <div className="font-mono text-[10px] text-zinc-500">{spanId}</div> : null}
+      {spanId ? <div className="font-mono text-[10px] text-muted-foreground">{spanId}</div> : null}
       <a
         href={`#/traces/${traceId}`}
-        className="mt-1 inline-block text-[11px] text-emerald-400 hover:underline"
+        className="mt-1 inline-block text-[11px] text-brand hover:underline"
       >
         View all in this trace
       </a>
@@ -592,12 +596,12 @@ function DiagnosePanel({
   const checkingCache = ranResult === null && cachedQuery.isLoading;
 
   return (
-    <div className="mt-4 rounded border border-zinc-800 p-3">
+    <div className="mt-4 rounded border border-line p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+        <h3 className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
           AI diagnosis
           {isCached ? (
-            <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] normal-case text-amber-400">
+            <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] normal-case text-warn">
               cached
             </span>
           ) : null}
@@ -608,7 +612,7 @@ function DiagnosePanel({
               type="button"
               onClick={() => run(true)}
               disabled={diagnose.isPending}
-              className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-emerald-500 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded border border-line px-2 py-1 text-[11px] text-foreground hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
             >
               {diagnose.isPending ? 'Re-running…' : 'Re-run'}
             </button>
@@ -617,7 +621,7 @@ function DiagnosePanel({
               type="button"
               onClick={() => run(false)}
               disabled={diagnose.isPending}
-              className="rounded border border-zinc-700 px-2 py-1 text-[11px] text-emerald-400 hover:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded border border-line px-2 py-1 text-[11px] text-brand hover:border-brand disabled:cursor-not-allowed disabled:opacity-50"
             >
               {diagnose.isPending ? 'Diagnosing…' : 'Diagnose with AI'}
             </button>
@@ -625,19 +629,19 @@ function DiagnosePanel({
         </div>
       </div>
       {diagnose.isPending ? (
-        <p className="text-xs text-zinc-600">Asking the model…</p>
+        <p className="text-xs text-muted-foreground">Asking the model…</p>
       ) : checkingCache ? (
-        <p className="text-xs text-zinc-600">Checking for an existing diagnosis…</p>
+        <p className="text-xs text-muted-foreground">Checking for an existing diagnosis…</p>
       ) : ranResult !== null ? (
         ranResult.ok ? (
           <Markdown source={ranResult.markdown} />
         ) : (
-          <p className="rounded bg-zinc-900 p-3 text-xs text-red-400">{ranResult.message}</p>
+          <p className="rounded bg-panel p-3 text-xs text-bad">{ranResult.message}</p>
         )
       ) : cachedHit !== null ? (
         <Markdown source={cachedHit.markdown} />
       ) : (
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-muted-foreground">
           Get an AI-generated probable cause, where to look, and a suggested fix.
         </p>
       )}
@@ -703,18 +707,18 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
 function Markdown({ source }: { source: string }): JSX.Element {
   const blocks = parseMarkdownBlocks(source);
   return (
-    <div className="rounded bg-zinc-900 p-3">
+    <div className="rounded bg-panel p-3">
       {blocks.map((block) => {
         if (block.kind === 'heading') {
           return (
-            <h4 key={block.id} className="mt-3 mb-1 text-xs font-semibold text-emerald-400">
+            <h4 key={block.id} className="mt-3 mb-1 text-xs font-semibold text-brand">
               {block.text}
             </h4>
           );
         }
         if (block.kind === 'bullets') {
           return (
-            <ul key={block.id} className="ml-4 list-disc text-xs leading-relaxed text-zinc-300">
+            <ul key={block.id} className="ml-4 list-disc text-xs leading-relaxed text-foreground">
               {block.items.map((item) => (
                 <li key={item.id}>{item.text}</li>
               ))}
@@ -722,7 +726,7 @@ function Markdown({ source }: { source: string }): JSX.Element {
           );
         }
         return (
-          <p key={block.id} className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">
+          <p key={block.id} className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
             {block.text}
           </p>
         );
