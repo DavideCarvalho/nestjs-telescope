@@ -1,5 +1,18 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 1.20.1
+
+### Patch Changes
+
+- [#69](https://github.com/DavideCarvalho/nestjs-telescope/pull/69) [`acdfacb`](https://github.com/DavideCarvalho/nestjs-telescope/commit/acdfacba22495b6517bf89d7e50a25d3032c1933) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Clear the console launcher's pending state when the page is restored from the back/forward cache.
+
+  `useOpenTelescopeConsole` deliberately keeps `isPending` set after a successful mint so the button
+  does not flicker back to idle on a page that is navigating away. With bfcache the page does not die:
+  pressing Back restored the launcher with its React state intact, leaving a permanent "Opening…"
+  spinner on a button that could never be clicked again. The hook now listens for `pageshow` and
+  resets only when `event.persisted` is true, so a fresh load and a mint that is still genuinely in
+  flight both keep the original behaviour.
+
 ## 1.20.0
 
 ### Minor Changes
