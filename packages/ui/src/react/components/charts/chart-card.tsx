@@ -23,11 +23,18 @@ export function ChartCard({
   );
 }
 
-export function ChartEmptyState({ height = 220 }: { height?: number }): JSX.Element {
+/**
+ * "Nothing in this window" body. `height` is optional: given one it reserves
+ * exactly the space the chart would have taken, and without one it fills its
+ * parent — which is what a card that puts something else (percentile chips) above
+ * the chart needs, since there the chart's share of the body is not the card's
+ * height.
+ */
+export function ChartEmptyState({ height }: { height?: number }): JSX.Element {
   return (
     <div
-      className="flex items-center justify-center text-xs text-muted-foreground"
-      style={{ height }}
+      className="flex h-full items-center justify-center text-xs text-muted-foreground"
+      style={height === undefined ? undefined : { height }}
     >
       No data in window.
     </div>

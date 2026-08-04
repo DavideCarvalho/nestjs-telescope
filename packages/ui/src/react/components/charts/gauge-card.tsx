@@ -1,7 +1,11 @@
 import type { JSX } from 'react';
-import { RadialBar, RadialBarChart, ResponsiveContainer } from 'recharts';
+import { useMemo } from 'react';
+import { PolarAngleAxis, RadialBar, RadialBarChart } from 'recharts';
+import { ChartContainer, chartColorVar } from '../../ui/chart.js';
 import { ChartCard } from './chart-card.js';
+import { chartConfig } from './chart-theme.js';
 
+/** Half-dial gauge: one value against a min/max, with the reading over the arc. */
 export function GaugeCard({
   title,
   value,
@@ -23,13 +27,22 @@ export function GaugeCard({
   const pct = range === 0 ? 0 : Math.max(0, Math.min(1, (value - min) / range));
   const displayLabel = label ?? `${Math.round(pct * 100)}%`;
   const bodyHeight = height - 64;
+  const config = useMemo(
+    () =>
+      chartConfig(
+        ['value'],
+        () => color,
+        () => title,
+      ),
+    [color, title],
+  );
 
-  const data = [{ value: pct * 100, fill: color }];
+  const data = [{ value: pct * 100 }];
 
   return (
     <ChartCard title={title} height={bodyHeight}>
-      <div style={{ position: 'relative', height: bodyHeight }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="relative h-full">
+        <ChartContainer config={config}>
           <RadialBarChart
             innerRadius="60%"
             outerRadius="100%"
@@ -38,22 +51,22 @@ export function GaugeCard({
             endAngle={0}
             barSize={16}
           >
-            <RadialBar dataKey="value" cornerRadius={4} isAnimationActive={false} />
+            {/* The dial's scale, stated explicitly. Without it Recharts derives the
+                angular domain from the data itself — and with a single datum that
+                domain is `[0, value]`, so every gauge drew a full half-circle no
+                matter what it was reporting. */}
+            <PolarAngleAxis type="number" domain={[0, 100]} tick={false} axisLine={false} />
+            <RadialBar
+              dataKey="value"
+              fill={chartColorVar('value')}
+              background
+              cornerRadius={4}
+              isAnimationActive={false}
+            />
           </RadialBarChart>
-        </ResponsiveContainer>
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingTop: '40%',
-          }}
-        >
-          <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)' }}>
-            {displayLabel}
-          </span>
+        </ChartContainer>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[40%]">
+          <span className="text-xl font-semibold tabular-nums text-foreground">{displayLabel}</span>
         </div>
       </div>
     </ChartCard>

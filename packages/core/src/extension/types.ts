@@ -156,6 +156,29 @@ export interface Column {
   hideable?: boolean;
 }
 
+/**
+ * Drill-down: opt a chart-shaped panel into "clicking a bar/segment/bucket filters
+ * this dashboard".
+ *
+ * The UI holds the current selection and re-resolves EVERY panel on the dashboard
+ * with `param` set to the clicked item's id (or its label when the provider gave
+ * no id) merged onto each panel's own `DataBinding.query`. So a provider opts in
+ * by reading that one query key; a provider that ignores it renders exactly what
+ * it renders today.
+ *
+ * Omit this and the panel is inert: the UI attaches no click handler at all, which
+ * is the difference between "clicking does nothing" and "the cursor says it should".
+ *
+ * @example
+ * { kind: 'topN', title: 'Busiest workflows', data: { provider: 'durable.top' },
+ *   drilldown: { param: 'workflow' } }
+ * // click "checkout" → every panel re-resolves with `?workflow=checkout`
+ */
+export interface PanelDrilldown {
+  /** Query-parameter name the selection is written to. */
+  param: string;
+}
+
 export type Panel =
   | {
       kind: 'stat';
@@ -173,8 +196,17 @@ export type Panel =
       data: DataBinding;
       series: string[];
       style?: 'area' | 'stacked';
+      /** Clicking a bucket filters the dashboard by its label. See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
     }
-  | { kind: 'topN'; title: string; data: DataBinding; limit?: number }
+  | {
+      kind: 'topN';
+      title: string;
+      data: DataBinding;
+      limit?: number;
+      /** Clicking a bar filters the dashboard by the item's `id` (or label). See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
+    }
   | {
       kind: 'table';
       title: string;
@@ -196,6 +228,8 @@ export type Panel =
       data: DataBinding;
       markers?: Array<'p50' | 'p95' | 'p99'>;
       format?: 'duration' | 'number';
+      /** Clicking a bucket filters the dashboard by its label. See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
     }
   | {
       kind: 'gauge';
@@ -206,7 +240,14 @@ export type Panel =
       format?: 'number' | 'percent' | 'duration' | 'rate';
       thresholds?: PanelThresholds;
     }
-  | { kind: 'breakdown'; title: string; data: DataBinding; style?: 'donut' | 'bar' };
+  | {
+      kind: 'breakdown';
+      title: string;
+      data: DataBinding;
+      style?: 'donut' | 'bar';
+      /** Clicking a segment filters the dashboard by its label. See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
+    };
 
 /** A named server-side query a panel binds to. */
 export interface DataProvider {

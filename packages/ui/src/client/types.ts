@@ -90,6 +90,20 @@ export interface PanelThresholds {
   direction: 'up-bad' | 'down-bad';
 }
 
+/**
+ * Drill-down declaration on a chart-shaped panel, mirrored from the core
+ * `PanelDrilldown`.
+ *
+ * When present, clicking a bar/segment/bucket sets a dashboard-wide selection and
+ * every panel re-resolves with `param` merged onto its own `data.query`. When
+ * absent the panel gets no click handler at all — an inert chart is the default,
+ * so nothing an extension ships today starts responding to clicks.
+ */
+export interface PanelDrilldown {
+  /** Query-parameter name the selection is written to. */
+  param: string;
+}
+
 /** A group of panels rendered together with its own column count. */
 export interface DashboardSection {
   title?: string;
@@ -122,12 +136,16 @@ export type Panel =
       data: { provider: string; query?: Record<string, unknown> };
       series: string[];
       style?: 'area' | 'stacked';
+      /** Clicking a bucket filters the dashboard by its label. See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
     }
   | {
       kind: 'topN';
       title: string;
       data: { provider: string; query?: Record<string, unknown> };
       limit?: number;
+      /** Clicking a bar filters the dashboard by the item's `id` (or label). See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
     }
   | {
       kind: 'table';
@@ -169,6 +187,8 @@ export type Panel =
       data: { provider: string; query?: Record<string, unknown> };
       markers?: Array<'p50' | 'p95' | 'p99'>;
       format?: 'duration' | 'number';
+      /** Clicking a bucket filters the dashboard by its label. See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
     }
   | {
       kind: 'gauge';
@@ -184,6 +204,8 @@ export type Panel =
       title: string;
       data: { provider: string; query?: Record<string, unknown> };
       style?: 'donut' | 'bar';
+      /** Clicking a segment filters the dashboard by its label. See {@link PanelDrilldown}. */
+      drilldown?: PanelDrilldown;
     };
 
 export interface TelescopeMeta {
