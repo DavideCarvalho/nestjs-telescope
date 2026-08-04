@@ -68,9 +68,11 @@ const CHART_CHROME = [
   '[&_.recharts-radial-bar-background-sector]:fill-panel-2',
   '[&_.recharts-reference-line_line]:stroke-line',
   '[&_.recharts-brush-texts_text]:fill-muted-foreground',
+  // Clicking a sector/bar leaves a focus ring on a target that is not keyboard
+  // focusable; the drill-down affordance is the pointer cursor.
   '[&_.recharts-sector]:outline-none',
   '[&_.recharts-layer]:outline-none',
-  '[&_.recharts-surface]:overflow-visible',
+  '[&_.recharts-surface]:outline-none',
 ].join(' ');
 
 /**
