@@ -1,22 +1,15 @@
+import type { JSX, ReactNode } from 'react';
+import { useMemo } from 'react';
+import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from 'recharts';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  chartColorVar,
+} from '../../ui/chart.js';
 import { ChartCard, ChartEmptyState } from './chart-card.js';
-import {
-  ACCENT_HEX,
-  axisTickStyle,
-  chartTheme,
-  tooltipContentStyle,
-  tooltipItemStyle,
-  tooltipLabelStyle,
-} from './chart-theme.js';
+import { type ChartSelection, chartSelection } from './chart-selection.js';
+import { ACCENT_HEX, chartConfig } from './chart-theme.js';
 
 export interface BarChartDatum {
   /** Category label on the x-axis (or y-axis when horizontal). */
@@ -25,7 +18,7 @@ export interface BarChartDatum {
   value: number;
   /** Optional per-bar color override. */
   color?: string;
-  /** Optional stable identifier carried through to {@link onBarClick}. */
+  /** Optional stable identifier carried through to {@link BarChartCardProps.onSelect}. */
   id?: string;
 }
 
@@ -35,7 +28,30 @@ function truncate(label: string, max: number): string {
   return `${label.slice(0, Math.max(0, max - 1))}…`;
 }
 
-/** Categorical bar chart (e.g. per-queue failure rate) with a hover tooltip. */
+export interface BarChartCardProps {
+  title: string;
+  data: BarChartDatum[];
+  right?: ReactNode;
+  color?: string;
+  valueLabel?: string;
+  height?: number;
+  /** Render category labels down the Y axis so long labels read left-to-right. */
+  horizontal?: boolean;
+  /** Truncate tick labels to this many chars (full label stays in the hover card). */
+  truncateLabel?: number;
+  /** Format the value in the hover card (the axis is left alone). */
+  valueFormatter?: (value: number) => ReactNode;
+  /** Drill-down: called with the bar under a click. Omit and the chart is inert. */
+  onSelect?: (selection: ChartSelection) => void;
+  /**
+   * @deprecated Use {@link BarChartCardProps.onSelect}, which reports the same
+   * click in the shape every chart card uses. Still called, so existing callers
+   * keep working.
+   */
+  onBarClick?: (datum: BarChartDatum) => void;
+}
+
+/** Categorical bar chart (e.g. per-queue failure rate) with a hover card. */
 export function BarChartCard({
   title,
   data,
@@ -45,123 +61,92 @@ export function BarChartCard({
   height = 220,
   horizontal = false,
   truncateLabel,
+  valueFormatter,
+  onSelect,
   onBarClick,
-}: {
-  title: string;
-  data: BarChartDatum[];
-  right?: React.ReactNode;
-  color?: string;
-  valueLabel?: string;
-  height?: number;
-  /** Render category labels down the Y axis so long labels read left-to-right. */
-  horizontal?: boolean;
-  /** Truncate tick labels to this many chars (full label stays in the tooltip). */
-  truncateLabel?: number;
-  /** Called with the datum behind a clicked bar. */
-  onBarClick?: (datum: BarChartDatum) => void;
-}): JSX.Element {
+}: BarChartCardProps): JSX.Element {
   const bodyHeight = height - 64;
+  const config = useMemo(
+    () =>
+      chartConfig(
+        ['value'],
+        () => color,
+        () => valueLabel,
+      ),
+    [color, valueLabel],
+  );
 
   function handleBarClick(_value: unknown, index: number): void {
     const datum = data[index];
-    if (datum && onBarClick) onBarClick(datum);
+    if (!datum) return;
+    onBarClick?.(datum);
+    onSelect?.(chartSelection({ label: datum.label, id: datum.id, value: datum.value }));
   }
 
-  // Build optional props conditionally: under `exactOptionalPropertyTypes` an
+  // Optional props are built conditionally: under `exactOptionalPropertyTypes` an
   // explicit `undefined` is not assignable to Recharts' optional handlers.
   const tickFormatterProps =
     truncateLabel !== undefined
       ? { tickFormatter: (value: string) => truncate(value, truncateLabel) }
       : {};
-  const barInteractionProps =
-    onBarClick !== undefined ? { onClick: handleBarClick, cursor: 'pointer' } : {};
+  const interactive = onSelect !== undefined || onBarClick !== undefined;
+  const barInteractionProps = interactive
+    ? { onClick: handleBarClick, cursor: 'pointer' as const }
+    : {};
 
   return (
     <ChartCard title={title} right={right} height={bodyHeight}>
       {data.length === 0 ? (
         <ChartEmptyState height={bodyHeight} />
       ) : (
-        <ResponsiveContainer width="100%" height="100%">
-          {horizontal ? (
-            <BarChart
-              data={data}
-              layout="vertical"
-              margin={{ top: 4, right: 8, bottom: 0, left: 8 }}
-            >
-              <CartesianGrid stroke={chartTheme.gridStroke} horizontal={false} />
-              <XAxis
-                type="number"
-                tick={axisTickStyle}
-                stroke={chartTheme.axisStroke}
-                tickLine={false}
-                allowDecimals={false}
-              />
+        <ChartContainer config={config}>
+          {/* One chart, two layouts. The axes swap roles between them, which is the
+              whole difference — writing it twice is how the two drifted apart before. */}
+          <BarChart
+            data={data}
+            layout={horizontal ? 'vertical' : 'horizontal'}
+            margin={{ top: 4, right: 8, bottom: 0, left: horizontal ? 8 : -16 }}
+          >
+            <CartesianGrid horizontal={!horizontal} vertical={horizontal} />
+            {horizontal ? (
+              <XAxis type="number" tickLine={false} allowDecimals={false} />
+            ) : (
+              <XAxis dataKey="label" tickLine={false} interval={0} {...tickFormatterProps} />
+            )}
+            {horizontal ? (
               <YAxis
                 type="category"
                 dataKey="label"
-                tick={axisTickStyle}
-                {...tickFormatterProps}
-                stroke={chartTheme.axisStroke}
                 tickLine={false}
                 width={160}
                 interval={0}
-              />
-              <Tooltip
-                contentStyle={tooltipContentStyle}
-                labelStyle={tooltipLabelStyle}
-                itemStyle={tooltipItemStyle}
-                cursor={{ fill: '#ffffff08' }}
-              />
-              <Bar
-                dataKey="value"
-                name={valueLabel}
-                radius={[0, 3, 3, 0]}
-                isAnimationActive={false}
-                {...barInteractionProps}
-              >
-                {data.map((datum) => (
-                  <Cell key={datum.id ?? datum.label} fill={datum.color ?? color} />
-                ))}
-              </Bar>
-            </BarChart>
-          ) : (
-            <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-              <CartesianGrid stroke={chartTheme.gridStroke} vertical={false} />
-              <XAxis
-                dataKey="label"
-                tick={axisTickStyle}
                 {...tickFormatterProps}
-                stroke={chartTheme.axisStroke}
-                tickLine={false}
-                interval={0}
               />
-              <YAxis
-                tick={axisTickStyle}
-                stroke={chartTheme.axisStroke}
-                tickLine={false}
-                width={40}
-                allowDecimals={false}
-              />
-              <Tooltip
-                contentStyle={tooltipContentStyle}
-                labelStyle={tooltipLabelStyle}
-                itemStyle={tooltipItemStyle}
-                cursor={{ fill: '#ffffff08' }}
-              />
-              <Bar
-                dataKey="value"
-                name={valueLabel}
-                radius={[3, 3, 0, 0]}
-                isAnimationActive={false}
-                {...barInteractionProps}
-              >
-                {data.map((datum) => (
-                  <Cell key={datum.id ?? datum.label} fill={datum.color ?? color} />
-                ))}
-              </Bar>
-            </BarChart>
-          )}
-        </ResponsiveContainer>
+            ) : (
+              <YAxis tickLine={false} width={40} allowDecimals={false} />
+            )}
+            <ChartTooltip
+              cursor={{ fill: 'color-mix(in srgb, var(--text) 5%, transparent)' }}
+              content={
+                <ChartTooltipContent
+                  {...(valueFormatter ? { valueFormatter: (v: number) => valueFormatter(v) } : {})}
+                />
+              }
+            />
+            <Bar
+              dataKey="value"
+              name={valueLabel}
+              fill={chartColorVar('value')}
+              radius={horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0]}
+              isAnimationActive={false}
+              {...barInteractionProps}
+            >
+              {data.map((datum) => (
+                <Cell key={datum.id ?? datum.label} fill={datum.color ?? chartColorVar('value')} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ChartContainer>
       )}
     </ChartCard>
   );

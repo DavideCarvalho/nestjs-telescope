@@ -2,12 +2,14 @@ import type { JSX } from 'react';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Panel } from '../../client/types.js';
+import type { ChartSelection } from '../../react/components/charts/chart-selection.js';
 import { PanelView } from '../../react/components/extensions/panel-renderer.js';
 import {
   type TableFilterState,
   type TableSortState,
   buildTableQuery,
 } from '../../react/components/extensions/table-query.js';
+import { Button } from '../../react/ui/button.js';
 import { useExtensionData, useMeta } from '../../react/use-telescope-queries.js';
 import { type StreamStatus, useTelescopeStream } from '../../react/use-telescope-stream.js';
 
@@ -22,6 +24,29 @@ const colClass: Record<2 | 3 | 4, string> = {
  *  matches the `DEFAULT_LIMIT` convention used by the core's own paged reads
  *  (traces, storage providers). */
 const DEFAULT_PAGE_LIMIT = 50;
+
+/**
+ * The dashboard's current drill-down, set by clicking a chart on a panel that
+ * declares `drilldown`.
+ *
+ * One selection per dashboard rather than one per panel: "clicked the checkout
+ * workflow" is a statement about what the whole page is showing, and a per-panel
+ * version would leave the stat cards next to the chart describing a different
+ * population than the chart does.
+ */
+interface DashboardFocus {
+  /** Query-parameter name, from the clicked panel's `drilldown.param`. */
+  param: string;
+  /** Value sent to every provider — the datum's id when it has one, else its label. */
+  value: string;
+  /** What to show in the chip; may carry the series name the value alone loses. */
+  label: string;
+}
+
+/** The panel's drill-down declaration, if its kind can carry one. */
+function drilldownOf(panel: Panel): { param: string } | undefined {
+  return 'drilldown' in panel ? panel.drilldown : undefined;
+}
 
 /**
  * Small status badge driven by the SSE stream status. Green pulsing dot + "LIVE"
@@ -63,13 +88,38 @@ function LiveBadge({ status }: { status: StreamStatus }): JSX.Element {
  * hand and present that as the top of the list. Changing either therefore has to
  * become a new provider query, which is state that belongs to whoever owns the
  * query — this component.
+ *
+ * The dashboard's drill-down `focus` merges the same way, onto EVERY panel — that
+ * is what makes clicking one chart filter the page rather than just itself. It
+ * merges *under* the table state, as the base the panel's own query contributes
+ * to, so a focused table still sorts and pages within the focused set. With no
+ * focus and no table state the query object is the panel's own, untouched, so a
+ * dashboard declaring neither `drilldown` nor `sortable` issues byte-identical
+ * requests to before.
  */
-function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element {
+function BoundPanel({
+  ext,
+  panel,
+  focus,
+  onSelect,
+}: {
+  ext: string;
+  panel: Panel;
+  focus: DashboardFocus | null;
+  /** Passed only for panels that declare `drilldown`; see {@link drilldownOf}. */
+  onSelect?: (selection: ChartSelection) => void;
+}): JSX.Element {
   const isPagedTable = panel.kind === 'table' && panel.paged === true;
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<TableSortState | undefined>(undefined);
   const [filters, setFilters] = useState<TableFilterState>({});
-  const query = buildTableQuery(panel.data.query, {
+  // The focus is part of the panel's *base* query, not of its table state: it
+  // scopes what the provider is asked for, and sort/filter/paging then apply
+  // within that scope. Spread only when focused so `buildTableQuery` can still
+  // hand back `panel.data.query` by identity for an untouched panel.
+  const focusQuery = focus ? { [focus.param]: focus.value } : undefined;
+  const baseQuery = focusQuery ? { ...panel.data.query, ...focusQuery } : panel.data.query;
+  const query = buildTableQuery(baseQuery, {
     ...(isPagedTable ? { paging: { page, limit: DEFAULT_PAGE_LIMIT } } : {}),
     ...(sort ? { sort } : {}),
     filters,
@@ -100,6 +150,7 @@ function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element 
         setPage(1);
         setFilters(next);
       }}
+      {...(onSelect ? { onSelect } : {})}
     />
   );
 }
@@ -112,11 +163,19 @@ function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element 
  * `/api/meta.dashboards` by the `:dashboardId` route param. The convention is
  * `"<extName>.<page>"` (e.g. `durable.workflows`), so the owning extension is the
  * prefix before the first dot — used to scope each panel's data fetch.
+ *
+ * The page also owns the drill-down selection: a click on a panel that declares
+ * `drilldown` becomes a {@link DashboardFocus}, which every panel then re-resolves
+ * against. Clicking the same value again clears it, so the way out of a drill-down
+ * is the same gesture that got you in — plus the chip's Clear button, because a
+ * filtered dashboard that does not say so reads as missing data.
  */
 export function ExtensionDashboardPage(): JSX.Element {
   const { dashboardId } = useParams();
   const meta = useMeta();
   const { status } = useTelescopeStream();
+  // Declared before the not-found return: hooks cannot sit behind a branch.
+  const [focus, setFocus] = useState<DashboardFocus | null>(null);
   const dash = meta.data?.dashboards?.find((d) => d.id === dashboardId);
   if (!dash) {
     return <div className="p-6 text-sm text-muted-foreground">Dashboard not found.</div>;
@@ -124,11 +183,33 @@ export function ExtensionDashboardPage(): JSX.Element {
   const ext = dashboardId?.split('.')[0] ?? '';
   // Backward compat: dashboards without sections fall back to a single 2-column section.
   const sections = dash.sections ?? [{ panels: dash.panels, cols: 2 as const }];
+
+  function select(param: string, selection: ChartSelection): void {
+    const value = selection.id ?? selection.label;
+    const label = selection.series ? `${selection.series} · ${selection.label}` : selection.label;
+    setFocus((current) =>
+      current?.param === param && current.value === value ? null : { param, value, label },
+    );
+  }
+
   return (
     <div className="p-4">
       <div className="mb-4 flex items-center gap-3">
         <h2 className="text-sm font-semibold text-foreground">{dash.label}</h2>
         <LiveBadge status={status} />
+        {focus && (
+          <span className="tint-brand inline-flex items-center gap-1 rounded border py-0.5 pl-1.5 text-[10px]">
+            {focus.param}: {focus.label}
+            <Button
+              variant="ghost"
+              size="xs"
+              className="px-1 text-inherit"
+              onClick={() => setFocus(null)}
+            >
+              Clear
+            </Button>
+          </span>
+        )}
       </div>
       {sections.map((section, i) => (
         <section key={section.title ?? `s${i}`} className="mb-6">
@@ -138,9 +219,20 @@ export function ExtensionDashboardPage(): JSX.Element {
             </p>
           )}
           <div className={`grid grid-cols-1 gap-3 ${colClass[section.cols ?? 2]}`}>
-            {section.panels.map((panel) => (
-              <BoundPanel key={`${panel.kind}-${panel.title}`} ext={ext} panel={panel} />
-            ))}
+            {section.panels.map((panel) => {
+              const drilldown = drilldownOf(panel);
+              return (
+                <BoundPanel
+                  key={`${panel.kind}-${panel.title}`}
+                  ext={ext}
+                  panel={panel}
+                  focus={focus}
+                  {...(drilldown
+                    ? { onSelect: (s: ChartSelection) => select(drilldown.param, s) }
+                    : {})}
+                />
+              );
+            })}
           </div>
         </section>
       ))}

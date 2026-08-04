@@ -15,6 +15,21 @@ export { cn } from './cn.js';
 export { Badge, badgeVariants, type BadgeProps } from './badge.js';
 export { Button, buttonVariants, type ButtonProps } from './button.js';
 export {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  chartBrushProps,
+  chartColorVar,
+  useSeriesToggle,
+  type ChartConfig,
+  type ChartLegendContentProps,
+  type ChartSeriesConfig,
+  type ChartTooltipContentProps,
+  type SeriesToggle,
+} from './chart.js';
+export {
   Dialog,
   DialogBackdrop,
   DialogClose,

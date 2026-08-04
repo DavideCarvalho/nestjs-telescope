@@ -4,6 +4,7 @@ import { Button } from '../../ui/button.js';
 import { AreaChartCard } from '../charts/area-chart-card.js';
 import { BarChartCard } from '../charts/bar-chart-card.js';
 import { BreakdownCard } from '../charts/breakdown-card.js';
+import type { ChartSelection } from '../charts/chart-selection.js';
 import { DistributionChartCard } from '../charts/distribution-chart-card.js';
 import { GaugeCard } from '../charts/gauge-card.js';
 import { StackedAreaChartCard } from '../charts/stacked-area-chart-card.js';
@@ -122,6 +123,7 @@ export function PanelView({
   onSortChange,
   filters,
   onFiltersChange,
+  onSelect,
 }: {
   panel: Panel;
   data: unknown;
@@ -138,7 +140,17 @@ export function PanelView({
   onSortChange?: (sort: TableSortState | undefined) => void;
   filters?: TableFilterState | undefined;
   onFiltersChange?: (filters: TableFilterState) => void;
+  /**
+   * Drill-down: called when a chart-shaped panel is clicked. The view stays pure —
+   * it reports what was clicked and the caller decides what that filters. Omit it
+   * and no chart gets a click handler, which is the behaviour of every panel that
+   * does not declare `drilldown`.
+   */
+  onSelect?: (selection: ChartSelection) => void;
 }): JSX.Element | null {
+  // Spread rather than passed: under `exactOptionalPropertyTypes` an explicit
+  // `undefined` is not assignable to the cards' optional handlers.
+  const selectProps = onSelect ? { onSelect } : {};
   switch (panel.kind) {
     case 'stat': {
       const d = (data ?? {}) as {
@@ -174,6 +186,7 @@ export function PanelView({
           {...(d.p50 !== undefined ? { p50: d.p50 } : {})}
           {...(d.p95 !== undefined ? { p95: d.p95 } : {})}
           {...(d.p99 !== undefined ? { p99: d.p99 } : {})}
+          {...selectProps}
         />
       );
     }
@@ -195,6 +208,7 @@ export function PanelView({
           title={panel.title}
           segments={d.segments ?? []}
           {...(panel.style ? { style: panel.style } : {})}
+          {...selectProps}
         />
       );
     }
@@ -203,7 +217,12 @@ export function PanelView({
         (data as { rows?: Array<{ label: string } & Record<string, number>> })?.rows ?? [];
       const primary = panel.series[0];
       return panel.style === 'stacked' ? (
-        <StackedAreaChartCard title={panel.title} data={rows} series={panel.series} />
+        <StackedAreaChartCard
+          title={panel.title}
+          data={rows}
+          series={panel.series}
+          {...selectProps}
+        />
       ) : (
         <AreaChartCard
           title={panel.title}
@@ -211,6 +230,7 @@ export function PanelView({
             label: r.label,
             value: primary ? Number(r[primary] ?? 0) : 0,
           }))}
+          {...selectProps}
         />
       );
     }
@@ -219,7 +239,15 @@ export function PanelView({
         (data as { items?: Array<{ label: string; value: number; id?: string }> })?.items ?? [];
       const limited = panel.limit ? items.slice(0, panel.limit) : items;
       if (limited.length === 0) return <EmptyPanel title={panel.title} />;
-      return <BarChartCard title={panel.title} data={limited} horizontal truncateLabel={32} />;
+      return (
+        <BarChartCard
+          title={panel.title}
+          data={limited}
+          horizontal
+          truncateLabel={32}
+          {...selectProps}
+        />
+      );
     }
     case 'table': {
       // One `<PanelTable>` for both variants — the paged one only adds the pager

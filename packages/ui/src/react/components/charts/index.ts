@@ -1,4 +1,5 @@
 export * from './chart-theme.js';
+export * from './chart-selection.js';
 export * from './chart-card.js';
 export * from './area-chart-card.js';
 export * from './stacked-area-chart-card.js';
