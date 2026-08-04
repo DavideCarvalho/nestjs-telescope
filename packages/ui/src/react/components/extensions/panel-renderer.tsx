@@ -1,5 +1,7 @@
 import type { JSX } from 'react';
 import type { Panel } from '../../../client/types.js';
+import { Button } from '../../ui/button.js';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table.js';
 import { AreaChartCard } from '../charts/area-chart-card.js';
 import { BarChartCard } from '../charts/bar-chart-card.js';
 import { BreakdownCard } from '../charts/breakdown-card.js';
@@ -41,7 +43,7 @@ function EmptyPanel({ title }: { title: string }): JSX.Element {
 
 /** Shared `<tbody>` rows for a table panel — identical for the paged and
  *  non-paged variants, so factoring it out doesn't change either's markup. */
-function TableRows({
+function PanelRows({
   columns,
   rows,
 }: {
@@ -49,26 +51,23 @@ function TableRows({
   rows: Record<string, unknown>[];
 }): JSX.Element {
   return (
-    <tbody>
+    <TableBody>
       {rows.length === 0 ? (
-        <tr className="border-t border-line/60">
-          <td
-            colSpan={columns.length}
-            className="px-4 py-6 text-center text-xs text-muted-foreground"
-          >
+        <TableRow>
+          <TableCell colSpan={columns.length} className="py-6 text-center text-muted-foreground">
             No data in this window.
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       ) : null}
       {rows.map((row) => (
-        <tr
-          key={columns.map((c) => String(row[c.key] ?? '')).join('|')}
-          className="border-t border-line/60"
-        >
+        <TableRow key={columns.map((c) => String(row[c.key] ?? '')).join('|')}>
           {columns.map((c) => {
             const text = String(row[c.key] ?? '');
             return (
-              <td key={c.key} className="px-4 py-2 text-foreground">
+              // Cells stay on one line: wrapping is what turned durable's "Workers"
+              // panel into three-line rows. Anything wider than the card is reachable
+              // by scrolling the table now, which is the cheaper trade of the two.
+              <TableCell key={c.key} className="whitespace-nowrap text-foreground">
                 {c.link ? (
                   <a
                     className="text-sky-400 hover:underline"
@@ -80,30 +79,27 @@ function TableRows({
                 ) : (
                   text
                 )}
-              </td>
+              </TableCell>
             );
           })}
-        </tr>
+        </TableRow>
       ))}
-    </tbody>
+    </TableBody>
   );
 }
 
 /** `<thead>` shared by both table variants. */
-function TableHead({ columns }: { columns: TableColumn[] }): JSX.Element {
+function PanelHead({ columns }: { columns: TableColumn[] }): JSX.Element {
   return (
-    <thead>
-      <tr>
+    <TableHeader>
+      <TableRow>
         {columns.map((c) => (
-          <th
-            key={c.key}
-            className="px-4 py-2 text-left text-[10px] uppercase tracking-wide text-muted-foreground"
-          >
+          <TableHead key={c.key} className="whitespace-nowrap">
             {c.label}
-          </th>
+          </TableHead>
         ))}
-      </tr>
-    </thead>
+      </TableRow>
+    </TableHeader>
   );
 }
 
@@ -123,25 +119,27 @@ function PagerControls({
 }): JSX.Element {
   return (
     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="xs"
         disabled={page <= 1}
         onClick={() => onPageChange?.(page - 1)}
-        className="rounded border border-line px-1.5 py-0.5 text-muted-foreground hover:bg-panel-2 disabled:cursor-not-allowed disabled:opacity-40"
+        className="px-1.5 text-muted-foreground"
       >
         Prev
-      </button>
+      </Button>
       <span>
         Page {page} of {totalPages}
       </span>
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="xs"
         disabled={page >= totalPages}
         onClick={() => onPageChange?.(page + 1)}
-        className="rounded border border-line px-1.5 py-0.5 text-muted-foreground hover:bg-panel-2 disabled:cursor-not-allowed disabled:opacity-40"
+        className="px-1.5 text-muted-foreground"
       >
         Next
-      </button>
+      </Button>
     </div>
   );
 }
@@ -262,27 +260,26 @@ export function PanelView({
                 {...(onPageChange ? { onPageChange } : {})}
               />
             </div>
-            <table className="w-full text-sm">
-              <TableHead columns={panel.columns} />
-              <TableRows columns={panel.columns} rows={rows} />
-            </table>
+            <Table>
+              <PanelHead columns={panel.columns} />
+              <PanelRows columns={panel.columns} rows={rows} />
+            </Table>
           </div>
         );
       }
       // Non-paged (the original, unconditional-since-launch table): identical markup
-      // to before the paged convention was added — verbatim head/rows via the same
-      // shared helpers so it byte-for-byte matches what a paged table renders minus
-      // the pager row.
+      // to the paged variant — verbatim table/head/rows via the same shared helpers
+      // so it byte-for-byte matches what a paged table renders minus the pager row.
       const rows = (data as { rows?: Record<string, unknown>[] })?.rows ?? [];
       return (
         <div className="rounded-lg border border-line bg-panel/40">
           <p className="border-b border-line px-4 py-2 text-xs font-medium text-foreground">
             {panel.title}
           </p>
-          <table className="w-full text-sm">
-            <TableHead columns={panel.columns} />
-            <TableRows columns={panel.columns} rows={rows} />
-          </table>
+          <Table>
+            <PanelHead columns={panel.columns} />
+            <PanelRows columns={panel.columns} rows={rows} />
+          </Table>
         </div>
       );
     }
