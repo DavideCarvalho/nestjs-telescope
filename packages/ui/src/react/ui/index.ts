@@ -33,6 +33,14 @@ export {
   SelectTrigger,
   SelectValue,
 } from './select.js';
-export { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table.js';
+export {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  type TableProps,
+} from './table.js';
 export { Tabs, TabsList, TabsPanel, TabsTab } from './tabs.js';
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip.js';

@@ -79,6 +79,19 @@ vi.mock('../../react/use-telescope-queries.js', () => ({
             },
           ],
         },
+        {
+          id: 'demo.sortable',
+          label: 'Sortable Demo',
+          panels: [
+            {
+              kind: 'table',
+              title: 'Runs',
+              data: { provider: 'runs.list', query: { window: '24h' } },
+              columns: [{ key: 'runId', label: 'Run', sortable: true, filterable: true }],
+              paged: true,
+            },
+          ],
+        },
       ],
     },
   }),
@@ -191,5 +204,76 @@ describe('ExtensionDashboardPage', () => {
     });
     const flatCall = useExtensionDataMock.mock.calls.find((call) => call[1] === 'flat.provider');
     expect(flatCall?.[2]).toBeUndefined();
+  });
+
+  describe('server-side sort and filter', () => {
+    /** The query the most recent resolve of `runs.list` carried. */
+    function lastQuery(): Record<string, unknown> | undefined {
+      const call = useExtensionDataMock.mock.calls.at(-1) ?? [];
+      const query = call[2];
+      return typeof query === 'object' && query !== null ? query : undefined;
+    }
+
+    it('a table with no sortable column resolves exactly the query it always did', async () => {
+      // The compatibility guarantee for every dashboard a sibling library has
+      // already shipped: no new params appear unless a column asked for them.
+      renderPage('demo.paged');
+      await waitFor(() => {
+        expect(screen.getByText('r1')).toBeTruthy();
+      });
+      expect(lastQuery()).toEqual({ page: 1, limit: 50 });
+    });
+
+    it('clicking a sortable header re-resolves the provider with `sort` + `dir`', async () => {
+      renderPage('demo.sortable');
+      await waitFor(() => {
+        expect(screen.getByText('r1')).toBeTruthy();
+      });
+      // The panel's own static query survives the merge — it is the scope the
+      // extension author declared, not something the table may drop.
+      expect(lastQuery()).toEqual({ window: '24h', page: 1, limit: 50 });
+
+      fireEvent.click(screen.getByRole('button', { name: /Run/ }));
+      await waitFor(() => {
+        expect(lastQuery()).toEqual({
+          window: '24h',
+          page: 1,
+          limit: 50,
+          sort: 'runId',
+          dir: 'asc',
+        });
+      });
+    });
+
+    it('committing a filter re-resolves with a `filter.`-namespaced param', async () => {
+      renderPage('demo.sortable');
+      await waitFor(() => {
+        expect(screen.getByText('r1')).toBeTruthy();
+      });
+      const box = screen.getByLabelText('Filter by runId');
+      fireEvent.change(box, { target: { value: 'checkout' } });
+      fireEvent.keyDown(box, { key: 'Enter' });
+      await waitFor(() => {
+        expect(lastQuery()?.['filter.runId']).toBe('checkout');
+      });
+    });
+
+    it('returns to page 1 when the sort changes', async () => {
+      // "Page 4 of the runs sorted by id" has no counterpart in a differently
+      // sorted result set, and landing past the end of a shorter one is a table
+      // that looks empty for no visible reason.
+      renderPage('demo.sortable');
+      await waitFor(() => {
+        expect(screen.getByText('r1')).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      await waitFor(() => {
+        expect(lastQuery()?.page).toBe(2);
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Run/ }));
+      await waitFor(() => {
+        expect(lastQuery()?.page).toBe(1);
+      });
+    });
   });
 });

@@ -139,7 +139,21 @@ export type Panel =
        * path with no `#` targets a page in the host application instead. See the
        * core `LinkSpec` doc for the full convention.
        */
-      columns: { key: string; label: string; link?: { href: string; external?: boolean } }[];
+      columns: {
+        key: string;
+        label: string;
+        link?: { href: string; external?: boolean };
+        /**
+         * Header becomes a sort control; the choice is re-resolved through the
+         * provider as `sort=<key>` + `dir=asc|desc`. Server-side because the UI
+         * holds one page — see the core `Column` doc for the full reasoning.
+         */
+        sortable?: boolean;
+        /** Header gets a filter box; committed text is sent as `filter.<key>=<text>`. */
+        filterable?: boolean;
+        /** Column can be hidden from the table's column menu (client-side only). */
+        hideable?: boolean;
+      }[];
       /**
        * Paged-table opt-in (mirrors core's `Panel` table variant): when true, the
        * dashboard renders prev/next + "page X of Y" controls and re-resolves this

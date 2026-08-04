@@ -126,6 +126,34 @@ export interface Column {
   key: string;
   label: string;
   link?: LinkSpec;
+  /**
+   * Turns this column's header into a sort control. Clicking it cycles
+   * ascending → descending → unsorted and re-resolves the panel's provider with
+   * `sort=<key>` + `dir=asc|desc` merged into the query — see
+   * {@link readTableQuery}.
+   *
+   * Sorting is the provider's job, not the browser's: the UI holds one page, so
+   * a client-side sort would order 50 rows out of 50,000 and present the result
+   * as "the top of the list". Only mark a column sortable when the provider
+   * actually honours `sort`; the header otherwise looks like a control that
+   * silently does nothing.
+   */
+  sortable?: boolean;
+  /**
+   * Gives this column a filter box in the header. The typed text is committed on
+   * Enter (or blur) and re-resolves the provider with `filter.<key>=<text>` —
+   * see {@link TABLE_FILTER_PREFIX}. Matching semantics are entirely the
+   * provider's to choose (substring, prefix, exact).
+   */
+  filterable?: boolean;
+  /**
+   * Lets a viewer hide this column from the table's column menu. Purely a
+   * client-side display concern — a hidden column is not communicated to the
+   * provider, which keeps returning it. The menu itself only appears when at
+   * least one column opts in, so a table that declares none renders exactly as
+   * it did before this flag existed.
+   */
+  hideable?: boolean;
 }
 
 export type Panel =
@@ -195,6 +223,13 @@ export interface DataProvider {
    *                   (`page`/`limit` normally echo the requested `query.page` /
    *                   `query.limit`; `total` is the full, unpaginated row count so
    *                   the UI can compute "page X of Y")
+   *
+   * A `table` panel whose columns declare `sortable` / `filterable` additionally
+   * merges `sort` + `dir` and `filter.<columnKey>` params into `query`. Read
+   * them with {@link readTableQuery} rather than by hand — everything in `query`
+   * arrives as a **string** off the URL, so `query.page > 1` is silently `false`
+   * for `'2'`. A provider that ignores the new params is unaffected: the table
+   * simply keeps returning rows in the provider's own order.
    *  - distribution → `{ buckets: Array<{ label: string; count: number }>; p50?: number; p95?: number; p99?: number }`
    *  - gauge        → `{ value: number; min?: number; max?: number }`
    *  - breakdown    → `{ segments: Array<{ label: string; value: number; color?: string }> }`

@@ -1,18 +1,16 @@
 import type { JSX } from 'react';
 import type { Panel } from '../../../client/types.js';
 import { Button } from '../../ui/button.js';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table.js';
 import { AreaChartCard } from '../charts/area-chart-card.js';
 import { BarChartCard } from '../charts/bar-chart-card.js';
 import { BreakdownCard } from '../charts/breakdown-card.js';
 import { DistributionChartCard } from '../charts/distribution-chart-card.js';
 import { GaugeCard } from '../charts/gauge-card.js';
 import { StackedAreaChartCard } from '../charts/stacked-area-chart-card.js';
+import { PanelTable } from './panel-table.js';
 import { StatCard } from './stat-card.js';
-
-/** The `table` panel variant's column shape, pulled from the discriminated union
- *  rather than re-declared, so it can never drift from `Panel`. */
-type TableColumn = Extract<Panel, { kind: 'table' }>['columns'][number];
+import type { PanelRow } from './table-features.js';
+import type { TableFilterState, TableSortState } from './table-query.js';
 
 function formatStat(value: number, format?: 'number' | 'percent' | 'duration' | 'rate'): string {
   if (format === 'percent') return `${Math.round(value * 100)}%`;
@@ -22,12 +20,45 @@ function formatStat(value: number, format?: 'number' | 'percent' | 'duration' | 
   return new Intl.NumberFormat().format(value);
 }
 
-function fillTemplate(href: string, row: Record<string, unknown>): string {
-  const filled = href.replace(/\{(\w+)\}/g, (_m, k: string) => String(row[k] ?? ''));
-  // The template is author-controlled but the substituted values come from provider
-  // row data — never let a row turn the link into a `javascript:`/`data:` URL.
-  if (/^\s*(javascript|data|vbscript):/i.test(filled)) return '#';
-  return filled;
+/**
+ * Narrows a table provider's resolved payload to its rows.
+ *
+ * A guard rather than a cast: `data` is literally whatever came back over HTTP
+ * from an extension nobody in this package controls, and every field has a safe
+ * absent behaviour — a provider that returns `null`, or `{ rows: 'soon' }` while
+ * it is being written, renders the empty state instead of throwing inside the
+ * table instance where the stack says nothing about which panel is at fault.
+ */
+function readPanelRows(data: unknown): PanelRow[] {
+  if (typeof data !== 'object' || data === null || !('rows' in data)) return [];
+  const rows = data.rows;
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((row): row is PanelRow => typeof row === 'object' && row !== null);
+}
+
+/** Reads a number off a resolved payload, or `undefined` when it is missing or
+ *  isn't one — `NaN` reaching `Math.ceil` is a "Page 1 of NaN" indicator. */
+function readNumber(data: unknown, key: string): number | undefined {
+  if (typeof data !== 'object' || data === null || !(key in data)) return undefined;
+  const value = Reflect.get(data, key);
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/** The paged-table payload — `{ rows, total, page, limit }` — with each field
+ *  falling back to what a bare `{ rows }` implies. */
+function readPagedTable(data: unknown): {
+  rows: PanelRow[];
+  total: number;
+  page: number;
+  limit: number;
+} {
+  const rows = readPanelRows(data);
+  return {
+    rows,
+    total: readNumber(data, 'total') ?? rows.length,
+    page: readNumber(data, 'page') ?? 1,
+    limit: readNumber(data, 'limit') ?? 0,
+  };
 }
 
 /** Shared empty-state card so a provider that resolves with no rows reads as
@@ -38,68 +69,6 @@ function EmptyPanel({ title }: { title: string }): JSX.Element {
       <p className="border-b border-line px-4 py-2 text-xs font-medium text-foreground">{title}</p>
       <p className="px-4 py-8 text-center text-xs text-muted-foreground">No data in this window.</p>
     </div>
-  );
-}
-
-/** Shared `<tbody>` rows for a table panel — identical for the paged and
- *  non-paged variants, so factoring it out doesn't change either's markup. */
-function PanelRows({
-  columns,
-  rows,
-}: {
-  columns: TableColumn[];
-  rows: Record<string, unknown>[];
-}): JSX.Element {
-  return (
-    <TableBody>
-      {rows.length === 0 ? (
-        <TableRow>
-          <TableCell colSpan={columns.length} className="py-6 text-center text-muted-foreground">
-            No data in this window.
-          </TableCell>
-        </TableRow>
-      ) : null}
-      {rows.map((row) => (
-        <TableRow key={columns.map((c) => String(row[c.key] ?? '')).join('|')}>
-          {columns.map((c) => {
-            const text = String(row[c.key] ?? '');
-            return (
-              // Cells stay on one line: wrapping is what turned durable's "Workers"
-              // panel into three-line rows. Anything wider than the card is reachable
-              // by scrolling the table now, which is the cheaper trade of the two.
-              <TableCell key={c.key} className="whitespace-nowrap text-foreground">
-                {c.link ? (
-                  <a
-                    className="text-sky-400 hover:underline"
-                    href={fillTemplate(c.link.href, row)}
-                    {...(c.link.external ? { target: '_blank', rel: 'noreferrer' } : {})}
-                  >
-                    {text}
-                  </a>
-                ) : (
-                  text
-                )}
-              </TableCell>
-            );
-          })}
-        </TableRow>
-      ))}
-    </TableBody>
-  );
-}
-
-/** `<thead>` shared by both table variants. */
-function PanelHead({ columns }: { columns: TableColumn[] }): JSX.Element {
-  return (
-    <TableHeader>
-      <TableRow>
-        {columns.map((c) => (
-          <TableHead key={c.key} className="whitespace-nowrap">
-            {c.label}
-          </TableHead>
-        ))}
-      </TableRow>
-    </TableHeader>
   );
 }
 
@@ -149,11 +118,26 @@ export function PanelView({
   panel,
   data,
   onPageChange,
+  sort,
+  onSortChange,
+  filters,
+  onFiltersChange,
 }: {
   panel: Panel;
   data: unknown;
   /** Paged tables only: called with the requested 1-based page on prev/next. */
   onPageChange?: (page: number) => void;
+  /**
+   * Tables only. Sort and filter state live with the caller for the same reason
+   * `page` does: changing either has to re-resolve the provider, which is the
+   * caller's query, not this view's. Absent means "unsorted / unfiltered", which
+   * is exactly what a panel declaring no `sortable` or `filterable` column
+   * renders with.
+   */
+  sort?: TableSortState | undefined;
+  onSortChange?: (sort: TableSortState | undefined) => void;
+  filters?: TableFilterState | undefined;
+  onFiltersChange?: (filters: TableFilterState) => void;
 }): JSX.Element | null {
   switch (panel.kind) {
     case 'stat': {
@@ -238,18 +222,23 @@ export function PanelView({
       return <BarChartCard title={panel.title} data={limited} horizontal truncateLabel={32} />;
     }
     case 'table': {
+      // One `<PanelTable>` for both variants — the paged one only adds the pager
+      // to the card header and lets the rows scroll under a pinned header, since
+      // it is the variant whose row count is unbounded from the panel's side.
+      const table = (
+        <PanelTable
+          columns={panel.columns}
+          rows={readPanelRows(data)}
+          scrolls={panel.paged === true}
+          sort={sort}
+          {...(onSortChange ? { onSortChange } : {})}
+          filters={filters}
+          {...(onFiltersChange ? { onFiltersChange } : {})}
+        />
+      );
       if (panel.paged) {
-        const d = (data ?? {}) as {
-          rows?: Record<string, unknown>[];
-          total?: number;
-          page?: number;
-          limit?: number;
-        };
-        const rows = d.rows ?? [];
-        const page = d.page ?? 1;
-        const limit = d.limit ?? (rows.length || 1);
-        const total = d.total ?? rows.length;
-        const totalPages = Math.max(1, Math.ceil(total / limit));
+        const { rows, total, page, limit } = readPagedTable(data);
+        const totalPages = Math.max(1, Math.ceil(total / (limit || rows.length || 1)));
         return (
           <div className="rounded-lg border border-line bg-panel/40">
             <div className="flex items-center justify-between border-b border-line px-4 py-2">
@@ -260,26 +249,16 @@ export function PanelView({
                 {...(onPageChange ? { onPageChange } : {})}
               />
             </div>
-            <Table>
-              <PanelHead columns={panel.columns} />
-              <PanelRows columns={panel.columns} rows={rows} />
-            </Table>
+            {table}
           </div>
         );
       }
-      // Non-paged (the original, unconditional-since-launch table): identical markup
-      // to the paged variant — verbatim table/head/rows via the same shared helpers
-      // so it byte-for-byte matches what a paged table renders minus the pager row.
-      const rows = (data as { rows?: Record<string, unknown>[] })?.rows ?? [];
       return (
         <div className="rounded-lg border border-line bg-panel/40">
           <p className="border-b border-line px-4 py-2 text-xs font-medium text-foreground">
             {panel.title}
           </p>
-          <Table>
-            <PanelHead columns={panel.columns} />
-            <PanelRows columns={panel.columns} rows={rows} />
-          </Table>
+          {table}
         </div>
       );
     }

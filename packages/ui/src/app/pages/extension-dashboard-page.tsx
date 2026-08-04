@@ -3,6 +3,11 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Panel } from '../../client/types.js';
 import { PanelView } from '../../react/components/extensions/panel-renderer.js';
+import {
+  type TableFilterState,
+  type TableSortState,
+  buildTableQuery,
+} from '../../react/components/extensions/table-query.js';
 import { useExtensionData, useMeta } from '../../react/use-telescope-queries.js';
 import { type StreamStatus, useTelescopeStream } from '../../react/use-telescope-stream.js';
 
@@ -51,13 +56,24 @@ function LiveBadge({ status }: { status: StreamStatus }): JSX.Element {
  * onto the panel's static `data.query`, so clicking prev/next re-resolves the
  * provider with a distinct query (a distinct React Query cache key) instead of
  * mutating the panel's declared query in place.
+ *
+ * Sort and filter state are threaded exactly the same way, and for the same
+ * reason they are not held inside the table: a table panel renders one page of
+ * the provider's result, so sorting it in the browser would order the 50 rows in
+ * hand and present that as the top of the list. Changing either therefore has to
+ * become a new provider query, which is state that belongs to whoever owns the
+ * query — this component.
  */
 function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element {
   const isPagedTable = panel.kind === 'table' && panel.paged === true;
   const [page, setPage] = useState(1);
-  const query = isPagedTable
-    ? { ...panel.data.query, page, limit: DEFAULT_PAGE_LIMIT }
-    : panel.data.query;
+  const [sort, setSort] = useState<TableSortState | undefined>(undefined);
+  const [filters, setFilters] = useState<TableFilterState>({});
+  const query = buildTableQuery(panel.data.query, {
+    ...(isPagedTable ? { paging: { page, limit: DEFAULT_PAGE_LIMIT } } : {}),
+    ...(sort ? { sort } : {}),
+    filters,
+  });
   const q = useExtensionData(ext, panel.data.provider, query);
   if (q.isError) {
     return (
@@ -67,7 +83,24 @@ function BoundPanel({ ext, panel }: { ext: string; panel: Panel }): JSX.Element 
     );
   }
   return (
-    <PanelView panel={panel} data={q.data} {...(isPagedTable ? { onPageChange: setPage } : {})} />
+    <PanelView
+      panel={panel}
+      data={q.data}
+      {...(isPagedTable ? { onPageChange: setPage } : {})}
+      sort={sort}
+      onSortChange={(next) => {
+        // Back to page 1: "page 4 of the runs sorted by start time" has no
+        // meaningful counterpart in a differently sorted result set, and landing
+        // past the end of a shorter one shows an empty table.
+        setPage(1);
+        setSort(next);
+      }}
+      filters={filters}
+      onFiltersChange={(next) => {
+        setPage(1);
+        setFilters(next);
+      }}
+    />
   );
 }
 

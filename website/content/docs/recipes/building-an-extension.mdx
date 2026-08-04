@@ -115,7 +115,7 @@ dashboards: () => [
         data: { provider: 'durable.recentFailures' },
         paged: true, // adds prev/next + "Page X of Y"; see below
         columns: [
-          { key: 'workflow', label: 'Workflow' },
+          { key: 'workflow', label: 'Workflow', filterable: true }, // adds a filter box
           {
             key: 'traceId',
             label: 'Trace',
@@ -139,6 +139,16 @@ A `table` column's `link.href` is a URL template — `{runId}` / `{traceId}` are
 - `'/durable/runs/{runId}'` — a **host-console page** (your app, not Telescope). Set `external: true` to open it in a new tab.
 
 Because this table declares `paged: true`, `durable.recentFailures`'s `resolve()` must return `{ rows, total, page, limit }` (not a bare `{ rows }`) — `total` is the full, unpaginated count so the UI can render "Page X of Y". A non-paged table is unaffected; add `paged: true` only when a table's row count can outgrow one screen. See [Extensions → Paged tables](/docs/concepts/extensions#paged-tables) for the full contract.
+
+The `filterable: true` on the workflow column works the same way: it adds a filter box whose committed text reaches `resolve()` as `filter.workflow=<text>`, and `sortable: true` on a column sends `sort` + `dir`. Both are **server-side** — the panel only ever holds one page, so a browser-side sort would order those rows and pass the result off as the top of the list. Read them with `readTableQuery(query)`, which also parses `page`/`limit` out of the strings the URL delivers:
+
+```ts
+import { readTableQuery } from '@dudousxd/nestjs-telescope';
+
+const { page = 1, limit = 50, sort, filters } = readTableQuery(query);
+```
+
+Only flag a column once the provider actually honours it — nothing checks, and a sort control that returns the same rows is worse than no sort control. See [Extensions → Sortable and filterable columns](/docs/concepts/extensions#sortable-and-filterable-columns).
 
 ---
 
