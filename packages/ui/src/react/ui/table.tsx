@@ -10,15 +10,29 @@ import { cn } from './cn.js';
  * header casing and divider colour.
  */
 
-export const Table = forwardRef<HTMLTableElement, React.TableHTMLAttributes<HTMLTableElement>>(
-  function Table({ className, ...props }, ref) {
-    return (
-      <div className="w-full overflow-x-auto">
-        <table ref={ref} className={cn('w-full border-collapse text-xs', className)} {...props} />
-      </div>
-    );
-  },
-);
+export interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> {
+  /**
+   * Classes for the scroll container that wraps the `<table>`.
+   *
+   * Exposed because that div — not the table, and not anything the caller can
+   * reach around it — is the element a sticky header positions against: it is
+   * already a scroll container (an `overflow-x` other than `visible` computes
+   * `overflow-y` to `auto`), so a `max-h-*` applied anywhere further out gives
+   * a scrolling ancestor the sticky cells cannot see.
+   */
+  containerClassName?: string;
+}
+
+export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
+  { className, containerClassName, ...props },
+  ref,
+) {
+  return (
+    <div className={cn('w-full overflow-x-auto', containerClassName)}>
+      <table ref={ref} className={cn('w-full border-collapse text-xs', className)} {...props} />
+    </div>
+  );
+});
 
 export const TableHeader = forwardRef<
   HTMLTableSectionElement,

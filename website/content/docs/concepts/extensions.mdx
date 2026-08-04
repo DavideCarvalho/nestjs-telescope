@@ -69,7 +69,7 @@ A `Panel` is one of four kinds. Each binds its `data` to a provider via a `DataB
 | `stat` | `{ kind:'stat', title, data, format?: 'number'\|'percent'\|'duration', accent? }` | `{ value: number }` |
 | `timeseries` | `{ kind:'timeseries', title, data, series: string[], style?: 'area'\|'stacked' }` | `{ rows: ({ label } & Record<string, number>)[] }` |
 | `topN` | `{ kind:'topN', title, data, limit? }` | `{ items: { label, value, id? }[] }` |
-| `table` | `{ kind:'table', title, data, columns: { key, label, link? }[], paged? }` | `{ rows: Record<string, unknown>[] }` — or paged shape below |
+| `table` | `{ kind:'table', title, data, columns: { key, label, link?, sortable?, filterable?, hideable? }[], paged? }` | `{ rows: Record<string, unknown>[] }` — or paged shape below |
 
 A `table` column can **deep-link out** with `link.href` — a URL template with `{key}` placeholders filled from the row:
 
@@ -112,6 +112,54 @@ This changes both sides of the contract:
 
 Omit `paged` (or set it `false`) for the original bare-`{ rows }` table — that variant is byte-identical to before pagination existed, so existing extensions don't need to change anything.
 
+### Sortable and filterable columns
+
+Sorting and filtering a table panel are **server-side**, and that is a deliberate choice rather than an unfinished one. A panel renders the one page the provider returned; sorting that in the browser would order the 50 rows in hand and present the result as "the top of the list", which is worse than not offering to sort at all. So a column opts in, and the choice travels back to the provider:
+
+```ts
+columns: [
+  { key: 'runId', label: 'Run', filterable: true },
+  { key: 'duration', label: 'Duration', sortable: true },
+  { key: 'worker', label: 'Worker', hideable: true },
+]
+```
+
+| Flag | UI | Reaches the provider as |
+|---|---|---|
+| `sortable` | The header becomes a button that cycles ascending → descending → unsorted | `sort=<column key>` and `dir=asc\|desc` (both absent when unsorted) |
+| `filterable` | A filter box appears under the header, committed on Enter or blur | `filter.<column key>=<text>` (absent when the box is empty) |
+| `hideable` | The column appears in the panel's **Columns** menu | nothing — hiding a column is display-only, and the provider keeps returning it |
+
+Filters are namespaced with `filter.` so a filterable column can never collide with a key the panel already declared in `data.query`: a panel scoped to `{ status: 'running' }` **and** carrying a filterable `status` column is an ordinary combination, and unprefixed one would silently overwrite the other.
+
+On the provider side, read the state with `readTableQuery` rather than by hand:
+
+```ts
+import { readTableQuery } from '@dudousxd/nestjs-telescope';
+
+{
+  name: 'durable.runs',
+  async resolve(query) {
+    const { page = 1, limit = 50, sort, filters } = readTableQuery(query);
+    const result = await store.findRuns({
+      offset: (page - 1) * limit,
+      limit,
+      orderBy: sort ? { [sort.key]: sort.dir } : { startedAt: 'desc' },
+      where: filters,
+    });
+    return { rows: result.items, total: result.total, page, limit };
+  },
+}
+```
+
+The helper exists because everything in `query` arrives as a **string** off the URL — `query.page > 1` is silently `false` for `'2'`, with no type error to catch it — and because a hand-typed `?page=banana` should degrade to "first page" rather than reach a `LIMIT` clause as `NaN`. It returns `{ page?, limit?, sort?: { key, dir }, filters }`, normalizing numbers, dropping an emptied filter (`filter.status=` means *no* filter, not "match the empty string"), and reading an unrecognized `dir` as ascending. Matching semantics for a filter — substring, prefix, exact — are entirely the provider's to choose.
+
+All of this is additive. A provider that never reads the new params keeps working exactly as before, and a panel whose columns declare none of the three flags renders exactly the table it rendered before they existed: no header buttons, no filter row, no column menu, and the identical query on the wire.
+
+<Callout type="warn" title="Only mark a column sortable if the provider honours it">
+  Nothing validates the flag against the provider. A `sortable` column whose provider ignores `sort` gives the viewer a header that visibly changes state and returns the same rows — a control that lies. Same for `filterable`.
+</Callout>
+
 <Callout type="warn" title="DataProvider output bypasses entry-level redact">
   A `DataProvider`'s return value is sent to the browser **as-is** — `GET .../api/ext/:ext/data/:provider` returns whatever `resolve()` returns with no redaction pass in between (unlike `Entry.content`, which always goes through the Recorder's `redact()` step before it's ever stored). If a provider reads live data from a host service — a durable run's payload, a job's arguments, anything that might carry a secret — **the provider itself is responsible for masking it** before returning. Don't assume "it's rendered through Telescope's dashboard" implies "it's redacted"; that guarantee only applies to captured `Entry` content, not to extension-provider responses.
 </Callout>
@@ -137,7 +185,7 @@ When the UI renders a panel, it fetches that panel's binding from a single endpo
 GET <path>/api/ext/:ext/data/:provider?<query>
 ```
 
-The server looks up the provider by name, builds an `ExtensionContext`, and calls `resolve(query, ctx)`. Query params arrive as strings and are passed through verbatim. An unknown provider is a `404`; a provider that throws surfaces a `502` with its message (so a panel author can see *why* a panel is empty).
+The server looks up the provider by name, builds an `ExtensionContext`, and calls `resolve(query, ctx)`. Query params arrive as strings and are passed through verbatim — including the paging, sort and filter params a table panel adds (see [Sortable and filterable columns](#sortable-and-filterable-columns), and use `readTableQuery` to read them back as numbers). An unknown provider is a `404`; a provider that throws surfaces a `502` with its message (so a panel author can see *why* a panel is empty).
 
 <Callout type="warn" title="The read gate applies">
   The data endpoint sits behind the **same read `authorizer`** as the rest of the dashboard API — which **denies in production by default** until you configure one. Extension data is never a side door: if the dashboard is gated, the panels are gated too. See [The gate](/docs/reference/configuration#the-gate).
