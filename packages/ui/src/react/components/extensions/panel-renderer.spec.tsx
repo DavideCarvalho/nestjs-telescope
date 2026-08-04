@@ -167,4 +167,60 @@ describe('PanelView (pure render from resolved data)', () => {
       expect(screen.getByRole('button', { name: 'Next' }).hasAttribute('disabled')).toBe(true);
     });
   });
+
+  describe('a table stays inside its card', () => {
+    // A dashboard section is a `grid-cols-N` of fixed-width cells, so a card is
+    // routinely narrower than the natural width of the table inside it (a 7-column
+    // table in a `cols: 3` section). `w-full` is only a *preferred* width: with
+    // `table-layout: auto` the browser still lays the table out at its min-content
+    // width, and with nothing clipping it the extra columns paint OUTSIDE the card,
+    // on top of the neighbouring panel. Every table therefore scrolls inside its own
+    // container instead of overflowing the card.
+    const columns = [
+      { key: 'group', label: 'Group' },
+      { key: 'worker', label: 'Worker' },
+      { key: 'status', label: 'Status' },
+    ];
+    const rows = [
+      { group: 'handle_stats_by_plan_name', worker: 'py-flip-flask-58974', status: 'ok' },
+    ];
+
+    it('scrolls a plain table horizontally rather than letting it overflow', () => {
+      const { container } = render(
+        <PanelView
+          panel={{ kind: 'table', title: 'Workers', data: { provider: 'p' }, columns }}
+          data={{ rows }}
+        />,
+      );
+      const table = container.querySelector('table');
+      expect(table?.parentElement?.className).toContain('overflow-x-auto');
+    });
+
+    it('scrolls a paged table too, leaving the pager header fixed above it', () => {
+      const { container } = render(
+        <PanelView
+          panel={{ kind: 'table', title: 'Workers', data: { provider: 'p' }, columns, paged: true }}
+          data={{ rows, total: 30, page: 1, limit: 10 }}
+        />,
+      );
+      const table = container.querySelector('table');
+      const scroller = table?.parentElement;
+      expect(scroller?.className).toContain('overflow-x-auto');
+      // The pager is a sibling of the scroller, not inside it — it must not scroll away.
+      expect(scroller?.contains(screen.getByRole('button', { name: 'Next' }))).toBe(false);
+    });
+
+    it('keeps a cell on one line so a long value widens the scroll area, not the row', () => {
+      // Wrapping is what turned the durable "Workers" table into three-line rows: with a
+      // scroller in place, a long worker id belongs on one line behind a scrollbar.
+      render(
+        <PanelView
+          panel={{ kind: 'table', title: 'Workers', data: { provider: 'p' }, columns }}
+          data={{ rows }}
+        />,
+      );
+      expect(screen.getByText('py-flip-flask-58974').className).toContain('whitespace-nowrap');
+      expect(screen.getByText('Worker').className).toContain('whitespace-nowrap');
+    });
+  });
 });
