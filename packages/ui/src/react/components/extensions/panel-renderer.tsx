@@ -1,14 +1,7 @@
 import type { JSX } from 'react';
 import type { Panel } from '../../../client/types.js';
 import { Button } from '../../ui/button.js';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../ui/table.js';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table.js';
 import { AreaChartCard } from '../charts/area-chart-card.js';
 import { BarChartCard } from '../charts/bar-chart-card.js';
 import { BreakdownCard } from '../charts/breakdown-card.js';
