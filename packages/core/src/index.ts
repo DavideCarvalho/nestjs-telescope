@@ -48,6 +48,7 @@ export * from './nest/watcher-context.factory.js';
 export * from './nest/telescope-request.middleware.js';
 export * from './nest/telescope-exception.interceptor.js';
 export * from './nest/telescope-crash-capture.service.js';
+export * from './nest/exception-capture.js';
 export * from './nest/telescope-watcher-registrar.service.js';
 export * from './nest/telescope-mount-paths.js';
 

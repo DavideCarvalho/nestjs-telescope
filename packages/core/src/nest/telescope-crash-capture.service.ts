@@ -8,8 +8,8 @@ import {
 } from '@nestjs/common';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import type { ExceptionContent } from '../entry/content.js';
-import { EntryType, type RecordInput } from '../entry/entry.js';
-import { exceptionFamilyHash } from '../entry/exception-family-hash.js';
+import type { RecordInput } from '../entry/entry.js';
+import { toExceptionRecordInput } from './exception-capture.js';
 import {
   TELESCOPE_CONFIG,
   TELESCOPE_OPTIONS,
@@ -102,15 +102,19 @@ function toError(raw: unknown): Error {
 }
 
 /**
- * Build the `exception` RecordInput for a captured error.
+ * Build the `exception` RecordInput for a captured crash.
  *
- * DELIBERATELY identical in shape and family-hash inputs to what
- * `TelescopeExceptionInterceptor` builds, so a crash and a route-handler throw
- * of the same error land in the SAME family and the `new-exception` alert dedups
- * across both sources. A sibling change is extracting exactly this into a shared
- * capture helper in this directory; when it lands, delete this function and call
- * that one instead — the single call site in `capture()` below is the only edit
- * needed, which is why the shape is factored out here rather than inlined.
+ * The shape and the family-hash inputs come from the shared
+ * `toExceptionRecordInput`, the same builder `TelescopeExceptionInterceptor` and
+ * the watchers use, so a crash and a route-handler throw of the same error land
+ * in the SAME family and the `new-exception` alert dedups across both sources.
+ * This function is now only the crash-specific tags and context.
+ *
+ * NOT routed through `captureException`: that applies the 4xx control-flow skip,
+ * and a 4xx is expected control flow only while something is handling it. A
+ * `NotFoundException` that reached `unhandledRejection` is a bug wherever its
+ * status came from, and dropping it would put the crash with the least
+ * observability back where it started.
  */
 function crashRecordInput(
   error: Error,
@@ -119,21 +123,10 @@ function crashRecordInput(
 ): RecordInput<ExceptionContent> {
   const tags = [CRASH_TAG, KIND_TAG[kind], 'failed'];
   if (orphaned) tags.push(ORPHANED_TAG);
-  return {
-    type: EntryType.Exception,
-    familyHash: exceptionFamilyHash({
-      name: error.name,
-      message: error.message,
-      stack: error.stack ?? null,
-    }),
+  return toExceptionRecordInput(error, {
+    context: { source: kind, orphaned },
     tags,
-    content: {
-      class: error.name,
-      message: error.message,
-      stack: error.stack ?? null,
-      context: { source: kind, orphaned },
-    },
-  };
+  });
 }
 
 /**

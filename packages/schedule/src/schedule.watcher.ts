@@ -267,10 +267,46 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
             watcher.clock.now() - startedAt,
             error,
           );
+          watcher.safeRecordException(ctx, schedulerName, label, error);
           throw error; // never break the scheduled task
         }
       });
     };
+  }
+
+  /**
+   * Turn a scheduled task's throw into an `exception` entry, in the run's batch.
+   *
+   * WHY this is not redundant with the `failed` run entry above: that entry
+   * carries the failure only as a `failureReason` string, which opens no
+   * exception family. A nightly cron that has been throwing for a week would
+   * never fire `new-exception`, never get an AI diagnosis, and never appear in
+   * the exceptions view — precisely the job you least want to find out about by
+   * accident. Routing through `ctx.recordException` gives it the same family
+   * hash and the same 4xx policy as a route that throws the same error.
+   *
+   * Guarded twice over: the `typeof` check keeps the watcher working against a
+   * `WatcherContext` from an older core, and the try/catch means recording can
+   * never add a second throw on top of the task's own.
+   */
+  private safeRecordException(
+    ctx: WatcherContext,
+    name: string,
+    label: string,
+    error: unknown,
+  ): void {
+    try {
+      if (typeof ctx.recordException !== 'function') return;
+      ctx.recordException(error, {
+        // No sibling `request` entry exists off the request path, so the
+        // exception has to name the task that produced it.
+        context: { task: name, kind: label, queue: 'schedule' },
+        tags: ['schedule', `schedule:${label}`, `task:${name}`],
+      });
+    } catch (recordError) {
+      const message = recordError instanceof Error ? recordError.message : String(recordError);
+      this.logger.error(`ScheduleWatcher: failed to record scheduled exception: ${message}`);
+    }
   }
 
   /** Build + record a job entry for a scheduled run, swallowing any failure so a

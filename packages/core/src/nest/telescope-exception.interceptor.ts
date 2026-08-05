@@ -2,14 +2,12 @@
 import {
   type CallHandler,
   type ExecutionContext,
-  HttpException,
   Inject,
   Injectable,
   type NestInterceptor,
 } from '@nestjs/common';
 import { type Observable, catchError, throwError } from 'rxjs';
-import { EntryType } from '../entry/entry.js';
-import { exceptionFamilyHash } from '../entry/exception-family-hash.js';
+import { captureException } from './exception-capture.js';
 import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
@@ -17,6 +15,14 @@ import { TelescopeService } from './telescope.service.js';
  * Captures exceptions thrown out of route handlers as `exception` entries so
  * they group into families, drive the `new-exception` alert, and feed AI
  * diagnosis.
+ *
+ * This is the HTTP/RPC/WS door. It is not the only one: a NestInterceptor runs
+ * on the Nest execution pipeline and nowhere else, so a job body, a `@Cron`
+ * callback or a durable step needs its own door. The decision (the 4xx policy),
+ * the family hash and the entry shape live in `exception-capture.ts` and are
+ * shared by every door — see the WHY there. If they were reimplemented per door
+ * they would drift, and the dashboard would group the same error two ways
+ * depending on which thread it was thrown on.
  *
  * WHY a 4xx default-skip: expected 4xx control flow is NOT an incident. A
  * `ForbiddenException` (403), `NotFoundException` (404) or a validation 400 is
@@ -55,52 +61,12 @@ export class TelescopeExceptionInterceptor implements NestInterceptor {
   intercept(_context: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       catchError((error: unknown) => {
-        if (this.shouldSkipAsControlFlow(error)) {
-          // Re-throw untouched so the real exception filter still builds the 4xx
-          // response — we only decline to RECORD it as an exception entry.
-          return throwError(() => error);
-        }
-        const err = error instanceof Error ? error : new Error(String(error));
-        this.service.record({
-          type: EntryType.Exception,
-          // Include the top stack frame so two unrelated call sites that throw
-          // the same name+message stay distinct families (shared with the
-          // client-error controller so both sources group identically).
-          familyHash: exceptionFamilyHash({
-            name: err.name,
-            message: err.message,
-            stack: err.stack ?? null,
-          }),
-          content: {
-            class: err.name,
-            message: err.message,
-            stack: err.stack ?? null,
-            context: {},
-          },
-        });
-        // Re-throw the original error — the real exception filter still handles the response.
+        // `captureException` applies the 4xx skip and never throws, so whatever
+        // it decides, the error re-thrown below is the ORIGINAL one and the real
+        // exception filter still builds the response exactly as before.
+        captureException((input) => this.service.record(input), error, this.options.exceptions);
         return throwError(() => error);
       }),
     );
-  }
-
-  /**
-   * Decides whether a thrown error is expected 4xx control flow that should NOT
-   * become an exception entry. True only for a NestJS `HttpException` whose
-   * `getStatus()` is a 4xx (>= 400 and < 500), and only while the
-   * `captureHttp4xx` escape hatch is off (the default). Detected via
-   * `instanceof HttpException` from `@nestjs/common` (a peer dep), which also
-   * covers all the built-in subclasses (`ForbiddenException`,
-   * `NotFoundException`, `BadRequestException`, the validation-pipe 400, …).
-   */
-  private shouldSkipAsControlFlow(error: unknown): boolean {
-    if (this.options.exceptions?.captureHttp4xx === true) {
-      return false;
-    }
-    if (!(error instanceof HttpException)) {
-      return false;
-    }
-    const status = error.getStatus();
-    return status >= 400 && status < 500;
   }
 }

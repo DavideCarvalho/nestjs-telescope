@@ -5,8 +5,10 @@ import {
   type BatchOrigin,
   type RecordInput,
   type WatcherContext,
+  captureException,
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
+import { NotFoundException } from '@nestjs/common';
 import type { DiscoveryService, ModuleRef } from '@nestjs/core';
 import { Cron, Interval, SchedulerRegistry } from '@nestjs/schedule';
 import { describe, expect, it } from 'vitest';
@@ -43,6 +45,17 @@ function makeHarness(
     record: (input) => {
       if (options.recordThrows) throw new Error('recorder boom');
       recorded.push({ ...input, batch: currentBatch });
+    },
+    // The REAL capture (family hash + 4xx policy), so these tests assert on the
+    // entry production would store, not on a stand-in of it.
+    recordException: (error, details) => {
+      if (options.recordThrows) throw new Error('recorder boom');
+      captureException(
+        (input) => recorded.push({ ...input, batch: currentBatch }),
+        error,
+        undefined,
+        details,
+      );
     },
     runInBatch: async <T>(origin: BatchOrigin, fn: () => Promise<T>): Promise<T> => {
       origins.push(origin);
@@ -153,6 +166,73 @@ describe('ScheduleWatcher', () => {
     const jobEntry = recorded.find((e) => e.type === 'job');
     expect(jobEntry!.content).toMatchObject({ status: 'failed', failureReason: 'cron boom' });
     expect(jobEntry!.tags).toContain('failed');
+  });
+
+  it('records an exception entry for a failed run, in the run’s own batch', async () => {
+    class ExplodingTask {
+      @Cron('* * * * * *', { name: 'nightly-report' })
+      async run(): Promise<never> {
+        throw new TypeError('report generator blew up');
+      }
+    }
+    const task = new ExplodingTask();
+    const { ctx, recorded } = makeHarness([{ instance: task }]);
+    new ScheduleWatcher().register(ctx);
+
+    await expect(task.run()).rejects.toThrow('report generator blew up');
+
+    const jobEntry = recorded.find((e) => e.type === 'job');
+    const exception = recorded.find((e) => e.type === 'exception');
+    expect(exception).toBeDefined();
+    // A cron that has been throwing all week used to be visible only as a
+    // failureReason string on its own run entry — no family, no alert, no
+    // diagnosis. This is the entry that changes that.
+    expect(exception!.familyHash).toMatch(/^TypeError:report generator blew up:at /);
+    expect((exception!.content as { context: Record<string, unknown> }).context).toEqual({
+      task: 'nightly-report',
+      kind: 'cron',
+      queue: 'schedule',
+    });
+    expect(exception!.tags).toEqual(['schedule', 'schedule:cron', 'task:nightly-report']);
+    // One run, one batch — the exception and the run entry are the same story.
+    expect(exception!.batch).toBe(jobEntry!.batch);
+    expect(exception!.batch).not.toBeNull();
+  });
+
+  // A scheduled task calling a service that throws NotFoundException is the same
+  // expected control flow it is on a route; a cron firing every minute must not
+  // be able to open a family (and page) through the back door.
+  it('applies the shared 4xx skip: a NotFoundException from a task records no exception', async () => {
+    class MissingTask {
+      @Cron('* * * * * *', { name: 'sync-missing' })
+      async run(): Promise<never> {
+        throw new NotFoundException('nothing to sync');
+      }
+    }
+    const task = new MissingTask();
+    const { ctx, recorded } = makeHarness([{ instance: task }]);
+    new ScheduleWatcher().register(ctx);
+
+    await expect(task.run()).rejects.toThrow('nothing to sync');
+
+    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
+    expect(recorded.filter((e) => e.type === 'job')).toHaveLength(1);
+  });
+
+  it('records no exception entry for a run that succeeds', async () => {
+    class QuietTask {
+      @Cron('* * * * * *', { name: 'quiet' })
+      async run(): Promise<string> {
+        return 'ok';
+      }
+    }
+    const task = new QuietTask();
+    const { ctx, recorded } = makeHarness([{ instance: task }]);
+    new ScheduleWatcher().register(ctx);
+
+    await task.run();
+
+    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
   });
 
   it('correlates work emitted during the task to the same schedule batch', async () => {

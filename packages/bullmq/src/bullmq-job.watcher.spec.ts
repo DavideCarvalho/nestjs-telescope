@@ -5,9 +5,11 @@ import {
   type BatchOrigin,
   type RecordInput,
   type WatcherContext,
+  captureException,
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
 import { WorkerHost } from '@nestjs/bullmq';
+import { NotFoundException } from '@nestjs/common';
 import type { DiscoveryService } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
 import { BullMqJobWatcher } from './bullmq-job.watcher.js';
@@ -68,6 +70,17 @@ function makeHarness(
     record: (input) => {
       if (options.recordThrows) throw new Error('recorder boom');
       recorded.push({ ...input, batch: currentBatch });
+    },
+    // The REAL capture (family hash + 4xx policy), so these tests assert on the
+    // entry production would store, not on a stand-in of it.
+    recordException: (error, details) => {
+      if (options.recordThrows) throw new Error('recorder boom');
+      captureException(
+        (input) => recorded.push({ ...input, batch: currentBatch }),
+        error,
+        undefined,
+        details,
+      );
     },
     runInBatch: async <T>(origin: BatchOrigin, fn: () => Promise<T>): Promise<T> => {
       origins.push(origin);
@@ -131,9 +144,79 @@ describe('BullMqJobWatcher', () => {
       proc.process({ id: '2', name: 'send', queueName: 'mail', data: { boom: true } }),
     ).rejects.toThrow('SMTP down');
 
-    expect(recorded).toHaveLength(1);
-    expect(recorded[0]!.content).toMatchObject({ status: 'failed', failureReason: 'SMTP down' });
-    expect(recorded[0]!.tags).toContain('failed');
+    const jobEntry = recorded.find((e) => e.type === 'job');
+    expect(jobEntry!.content).toMatchObject({ status: 'failed', failureReason: 'SMTP down' });
+    expect(jobEntry!.tags).toContain('failed');
+  });
+
+  it('records an exception entry for a failed job, in the job’s own batch', async () => {
+    const proc = new EmailProcessor();
+    const { ctx, recorded } = makeHarness([{ instance: proc }]);
+    await new BullMqJobWatcher().register(ctx);
+
+    await expect(
+      proc.process({
+        id: '2',
+        name: 'send',
+        queueName: 'mail',
+        attemptsMade: 2,
+        data: { boom: true },
+      }),
+    ).rejects.toThrow('SMTP down');
+
+    const jobEntry = recorded.find((e) => e.type === 'job');
+    const exception = recorded.find((e) => e.type === 'exception');
+    expect(exception).toBeDefined();
+    // The failed job entry alone carries the message as a string only — it opens
+    // no family, so nothing alerts or diagnoses on it. The exception entry is
+    // what makes the failure visible to the rest of Telescope.
+    expect(exception!.familyHash).toMatch(/^Error:SMTP down:at /);
+    expect(exception!.content).toMatchObject({ class: 'Error', message: 'SMTP down' });
+    // Off the request path nothing else names the unit of work, so the entry does.
+    expect((exception!.content as { context: Record<string, unknown> }).context).toEqual({
+      queue: 'mail',
+      job: 'send',
+      jobId: '2',
+      attempts: 2,
+    });
+    expect(exception!.tags).toEqual(['queue:mail', 'job:send']);
+    // One failure, one batch — not a job entry here and an orphan exception there.
+    expect(exception!.batch).toBe(jobEntry!.batch);
+    expect(exception!.batch).not.toBeNull();
+  });
+
+  // A worker that re-uses a service throwing NotFoundException is expected
+  // control flow, exactly as it is on a route. If a retrying queue could open a
+  // family here it would page on-call through the back door the front door was
+  // hardened against.
+  it('applies the shared 4xx skip: a NotFoundException from a job records no exception', async () => {
+    class NotFoundProcessor extends WorkerHost {
+      async process(_job: JobStub): Promise<never> {
+        throw new NotFoundException('no such user');
+      }
+    }
+    const proc = new NotFoundProcessor();
+    const { ctx, recorded } = makeHarness([{ instance: proc }]);
+    await new BullMqJobWatcher().register(ctx);
+
+    await expect(proc.process({ id: '7', name: 'lookup', queueName: 'users' })).rejects.toThrow(
+      'no such user',
+    );
+
+    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
+    // The failed job entry is still recorded — the 4xx is not lost, it just
+    // doesn't spawn an exception family.
+    expect(recorded.filter((e) => e.type === 'job')).toHaveLength(1);
+  });
+
+  it('records no exception entry for a job that succeeds', async () => {
+    const proc = new EmailProcessor();
+    const { ctx, recorded } = makeHarness([{ instance: proc }]);
+    await new BullMqJobWatcher().register(ctx);
+
+    await proc.process({ id: '8', name: 'send', queueName: 'mail' });
+
+    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
   });
 
   it('tags slow jobs whose duration meets slowMs', async () => {

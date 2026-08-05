@@ -108,10 +108,55 @@ export class BullMqJobWatcher implements Watcher {
           return result;
         } catch (error) {
           watcher.safeRecord(ctx, job, 'failed', watcher.clock.now() - startedAt, error);
+          watcher.safeRecordException(ctx, job, error);
           throw error; // never swallow the host's error
         }
       });
     };
+  }
+
+  /**
+   * Turn the job's throw into an `exception` entry, in the job's own batch.
+   *
+   * WHY this is not redundant with the `failed` job entry above: that entry
+   * carries the failure only as a `failureReason` string on its content. It
+   * opens no exception family, so a job that has been failing all night never
+   * fires `new-exception`, never gets an AI diagnosis, and never shows up in the
+   * exceptions view — the throw is observable only if someone happens to open
+   * that job. `ctx.recordException` routes through the SAME capture the Nest
+   * interceptor uses, so a `TypeError` thrown in a job groups with the identical
+   * `TypeError` thrown in a request, and a 4xx `HttpException` re-used by a
+   * worker is skipped by the same control-flow policy.
+   *
+   * Guarded twice over: the `typeof` check keeps the watcher working against a
+   * `WatcherContext` from an older core (or a hand-rolled one in a host's
+   * tests), and the try/catch means a failure while building the context object
+   * can never turn into a second throw on the host's own failure path.
+   */
+  private safeRecordException(ctx: WatcherContext, job: unknown, error: unknown): void {
+    try {
+      if (typeof ctx.recordException !== 'function') return;
+      const jobLike = toJobLike(job);
+      const queue = jobLike.queueName ?? '';
+      const name = jobLike.name ?? '';
+      const tags: string[] = [];
+      if (queue) tags.push(`queue:${queue}`);
+      if (name) tags.push(`job:${name}`);
+      ctx.recordException(error, {
+        // Off the request path there is no sibling `request` entry naming the
+        // unit of work, so the exception has to carry that itself.
+        context: {
+          queue,
+          job: name,
+          jobId: jobLike.id != null ? String(jobLike.id) : null,
+          attempts: typeof jobLike.attemptsMade === 'number' ? jobLike.attemptsMade : 0,
+        },
+        tags,
+      });
+    } catch (recordError) {
+      const message = recordError instanceof Error ? recordError.message : String(recordError);
+      this.logger.error(`BullMqJobWatcher: failed to record job exception: ${message}`);
+    }
   }
 
   /** Build + hand a job entry to the Recorder, swallowing any failure. Core's
