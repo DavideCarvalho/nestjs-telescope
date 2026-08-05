@@ -53,6 +53,17 @@ vi.mock('../../react/use-telescope-queries.js', () => ({
                 },
               ],
             },
+            {
+              title: 'Wide',
+              cols: 1,
+              panels: [
+                {
+                  kind: 'stat',
+                  title: 'Full width panel',
+                  data: { provider: 'jobs.wide' },
+                },
+              ],
+            },
           ],
         },
         {
@@ -151,6 +162,29 @@ describe('ExtensionDashboardPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Demo')).toBeTruthy();
     });
+  });
+
+  // `cols: 1` is the full-width row. A section is a fixed `grid-cols-N` with no `colSpan`, so
+  // before it existed the widest panel a dashboard has could only be declared in a 2-column grid,
+  // where it took half the viewport and left a hole beside it. The grid is already `grid-cols-1`
+  // at every breakpoint, so a full-width row is the absence of a responsive override — assert that
+  // rather than the presence of a class, since adding `md:grid-cols-1` would be the bug.
+  it('gives a cols:1 section a full-width row, with no responsive column override', async () => {
+    const { container } = renderPage('demo.page');
+    await waitFor(() => expect(screen.getByText('Wide')).toBeTruthy());
+
+    const gridOf = (title: string) => {
+      const heading = [...container.querySelectorAll('section')].find((s) =>
+        s.textContent?.startsWith(title),
+      );
+      return heading?.querySelector('div.grid')?.className ?? '';
+    };
+
+    expect(gridOf('Wide')).toContain('grid-cols-1');
+    expect(gridOf('Wide')).not.toMatch(/md:grid-cols-|lg:grid-cols-/);
+    // The sections beside it still get theirs, so this is not "the override stopped working".
+    expect(gridOf('Trends')).toContain('md:grid-cols-2');
+    expect(gridOf('Health')).toContain('lg:grid-cols-4');
   });
 
   it('renders flat-panels dashboards (backward compat: no sections)', async () => {

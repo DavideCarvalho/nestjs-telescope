@@ -65,10 +65,18 @@ export interface PanelThresholds {
   direction: 'up-bad' | 'down-bad';
 }
 
-/** A group of panels rendered together with its own column count. */
+/**
+ * A group of panels rendered together with its own column count.
+ *
+ * `cols: 1` is the full-width row: one panel spanning the section. It exists because a section
+ * renders as a fixed `grid-cols-N` with no `colSpan`, so without it the widest panel a dashboard
+ * has — a table with ten or more columns — could only be declared in a 2-column grid, where it got
+ * half the viewport and left a hole beside it while scrolling sideways inside its own card. That is
+ * exactly how `@dudousxd/nestjs-durable-telescope`'s worker table shipped.
+ */
 export interface DashboardSection {
   title?: string;
-  cols?: 2 | 3 | 4;
+  cols?: 1 | 2 | 3 | 4;
   panels: Panel[];
 }
 
