@@ -95,6 +95,45 @@ TelescopeModule.forRoot({
 });
 ```
 
+### Process-level crashes — `exceptions.processCrashes`
+
+Exception capture rides the Nest pipeline, so it only ever sees errors thrown **out of a route handler**. A promise rejected with nobody awaiting it, or a throw that escapes to the event loop from a timer, a stream callback or an event emitter, never touches that pipeline — so it produced no entry, no exception family and no `new-exception` alert. Those are precisely the failures that take the process down: the incident with the least observability was the one that ended the process.
+
+`exceptions.processCrashes` closes that gap by recording `process.on('unhandledRejection')` and `process.on('uncaughtException')` as ordinary `exception` entries — same family hash, so a crash and a route-handler throw of the same error group together.
+
+```ts
+TelescopeModule.forRoot({
+  exceptions: {
+    processCrashes: {
+      enabled: true,        // default false — this is opt-in, see below
+      onCrash: 'auto',      // 'auto' (default) | 'exit' | 'passthrough'
+      flushTimeoutMs: 2000, // bounded best-effort flush before the exit contract
+      exitCode: 1,          // used by 'exit'
+    },
+  },
+});
+```
+
+**Why it is opt-in.** Registering a `process.on('uncaughtException')` listener *suppresses* Node's default fatal exit — the process keeps running instead of dying. The same holds for `unhandledRejection` under Node's default `--unhandled-rejections=throw`. A library that attached these behind your back would silently convert "crashed, restarted clean by the orchestrator" into "limping along with half-initialised state", which is a worse failure than the blind spot it fixes. So you have to ask for it, and Telescope reproduces the crash it suppressed.
+
+**The exit contract.** After the entry is recorded and the bounded flush settles:
+
+| `onCrash` | What happens |
+|---|---|
+| `'auto'` (default) | Decided once at bootstrap from the number of **pre-existing** `uncaughtException` + `unhandledRejection` listeners. Zero ⇒ `'exit'` (nothing else was deciding, Node would have crashed). One or more ⇒ `'passthrough'` (your handler, or an APM agent's, was already deciding — don't yank the exit out from under it). The resolved mode is logged once at boot. |
+| `'exit'` | Reproduce Node's default: write the stack to stderr, then `process.exit(exitCode)`. |
+| `'passthrough'` | Record only, then return. Use this **only** when something else exits — otherwise every crash becomes a zombie process. |
+
+Because `'auto'` samples at bootstrap, a host that registers its own handler *after* Nest boots must pass `onCrash` explicitly.
+
+**To keep Node's original crash behaviour exactly:** leave `onCrash` at `'auto'` and register no competing handler. Telescope then records the crash and exits 1, which is what Node would have done.
+
+**Recording is bounded, never blocking.** The flush is *raced* against `flushTimeoutMs` on an unref'd timer rather than awaited — a wedged storage provider delays a dying process by at most that budget instead of hanging it. Exceeding the budget loses the entry; that is the right trade for a process that is leaving. Every step is wrapped so a failure inside the recording path can never mask the original error.
+
+**Correlation.** The active batch survives into the process handler via `AsyncLocalStorage`, so a rejection raised inside a request, a BullMQ job or a `@Cron` tick inherits that batch's `batchId`, `origin` and `traceId` and lands in the same trace. With no active batch the crash is genuinely unattributable, and is recorded *as such* — tagged `orphaned`, origin `manual` — rather than dropped. Every entry from this path also carries `unhandled` plus `unhandled-rejection` / `uncaught-exception`, so you can filter the whole family in the dashboard.
+
+Registration is idempotent per process (two `TelescopeModule` instances, or a duplicate copy of the package, install one set of listeners, not two), and `onModuleDestroy` removes them.
+
 ## Request body capture gate — `requestCapture`
 
 The request-capture middleware used to hand the raw, already-decoded body straight to `record()`, so a multi-MB JSON/string body always paid for the Recorder's synchronous redaction walk before its size bounds could kick in. `requestCapture` gates the body **before** `record()` ever sees it — the walk never runs over a skipped body:

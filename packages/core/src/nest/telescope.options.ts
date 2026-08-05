@@ -94,6 +94,77 @@ export interface ExceptionsOptions {
    * your host genuinely treats 4xx as exceptions worth grouping/alerting on.
    */
   captureHttp4xx?: boolean;
+  /**
+   * Opt-in capture of process-level crashes (`unhandledRejection` /
+   * `uncaughtException`) as `exception` entries. Off by default; see
+   * {@link ProcessCrashCaptureOptions} for the exit contract, which you MUST
+   * read before enabling — attaching these listeners changes whether your
+   * process dies.
+   */
+  processCrashes?: ProcessCrashCaptureOptions;
+}
+
+/**
+ * Opt-in capture of the failures that never reach the Nest pipeline: a promise
+ * rejected with no handler, and a throw that escapes to the event loop (from a
+ * timer, a stream callback, an event emitter). The exception interceptor only
+ * sees errors thrown out of a route handler, so before this option those
+ * failures produced nothing at all — no entry, no exception family, no
+ * `new-exception` alert — and they are exactly the failures that take a process
+ * down.
+ *
+ * ## Why this is opt-in
+ *
+ * Registering a `process.on('uncaughtException')` listener SUPPRESSES Node's
+ * default fatal exit. A library that did that behind the host's back would
+ * silently convert "crashed, restarted clean by the orchestrator" into "limping
+ * along with half-initialised state" — worse than the blind spot it was fixing.
+ * The same applies to `unhandledRejection` under Node's default
+ * `--unhandled-rejections=throw`. So this is `enabled: false` until you say
+ * otherwise, and Telescope reproduces the crash it suppressed.
+ *
+ * ## Keeping Node's original crash behaviour
+ *
+ * Leave `onCrash` at its `'auto'` default and register no competing handler:
+ * Telescope sees zero pre-existing listeners, picks `'exit'`, and after
+ * recording writes the stack to stderr and calls `process.exit(1)` — what Node
+ * would have done. If you already have your own handler (or an APM agent's),
+ * `'auto'` picks `'passthrough'` and leaves the exit decision entirely to it.
+ */
+export interface ProcessCrashCaptureOptions {
+  /**
+   * Master switch. Default `false` — no process listeners are registered and
+   * crash semantics are untouched.
+   */
+  enabled: boolean;
+  /**
+   * What happens after the entry is recorded and the bounded flush settles.
+   *
+   * - `'exit'` — reproduce Node's default: stack to stderr, then
+   *   `process.exit(exitCode)`.
+   * - `'passthrough'` — record only and return; something else owns the exit.
+   *   Setting this WITHOUT another handler that exits turns every crash into a
+   *   zombie process.
+   * - `'auto'` (default) — decided once at `onModuleInit` from the number of
+   *   pre-existing `uncaughtException` + `unhandledRejection` listeners: zero ⇒
+   *   `'exit'` (nothing else was deciding, Node would have crashed), otherwise
+   *   `'passthrough'` (the host was already deciding, so don't yank the exit out
+   *   from under it). The resolved mode is logged once at boot.
+   *
+   * Because `'auto'` samples at bootstrap, a host that registers its own
+   * handler LATER must pass `onCrash` explicitly.
+   */
+  onCrash?: 'exit' | 'passthrough' | 'auto';
+  /**
+   * Budget in milliseconds for flushing the crash entry before the exit
+   * contract is applied. Default `2000`. The flush is RACED against this on an
+   * unref'd timer, never awaited unbounded: a wedged storage provider must delay
+   * a dying process by at most a known amount, not hang it forever. Exceeding
+   * the budget loses the entry — the right trade for a process that is leaving.
+   */
+  flushTimeoutMs?: number;
+  /** Exit code used by `onCrash: 'exit'`. Default `1`, matching Node. */
+  exitCode?: number;
 }
 
 /**
