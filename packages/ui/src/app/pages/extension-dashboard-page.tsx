@@ -14,7 +14,10 @@ import { useExtensionData, useMeta } from '../../react/use-telescope-queries.js'
 import { type StreamStatus, useTelescopeStream } from '../../react/use-telescope-stream.js';
 
 /** Responsive grid column class per section `cols` value. */
-const colClass: Record<2 | 3 | 4, string> = {
+const colClass: Record<1 | 2 | 3 | 4, string> = {
+  // Already `grid-cols-1` at every breakpoint from the base class, so a full-width row needs no
+  // responsive override — it is the one column count the grid never has to widen into.
+  1: '',
   2: 'md:grid-cols-2',
   3: 'md:grid-cols-3',
   4: 'md:grid-cols-2 lg:grid-cols-4',

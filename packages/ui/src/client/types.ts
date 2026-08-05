@@ -104,10 +104,15 @@ export interface PanelDrilldown {
   param: string;
 }
 
-/** A group of panels rendered together with its own column count. */
+/**
+ * A group of panels rendered together with its own column count.
+ *
+ * `cols: 1` is the full-width row: one panel spanning the section, for a panel too wide to share
+ * one (a table with ten or more columns). Mirrors the core `DashboardSection`.
+ */
 export interface DashboardSection {
   title?: string;
-  cols?: 2 | 3 | 4;
+  cols?: 1 | 2 | 3 | 4;
   panels: Panel[];
 }
 
@@ -259,7 +264,7 @@ export interface TelescopeMeta {
     label: string;
     navGroup?: string;
     panels: Panel[];
-    sections?: { title?: string; cols?: 2 | 3 | 4; panels: Panel[] }[];
+    sections?: { title?: string; cols?: 1 | 2 | 3 | 4; panels: Panel[] }[];
   }[];
   /**
    * CPU flamegraph profiling state. `enabled` gates the Profiles nav item;
