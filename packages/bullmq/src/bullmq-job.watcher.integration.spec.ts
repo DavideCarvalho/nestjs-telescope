@@ -1,20 +1,21 @@
 // packages/bullmq/src/bullmq-job.watcher.integration.spec.ts
 //
-// Integration: real @nestjs/bullmq wiring + real Redis + real TelescopeModule.
+// The real thing: a real Redis, a real BullMQ `Worker` draining a real queue,
+// real `@nestjs/bullmq` wiring, a real `TelescopeModule`. Nothing here invokes
+// `process()` by hand — jobs are enqueued and the framework picks them up on its
+// own schedule, which is the only way to prove the watcher instruments the
+// handler that ACTUALLY runs.
 //
-// Validates the LINCHPIN assumption of BullMqJobWatcher: @nestjs/bullmq resolves
-// instance.process(job, token) at CALL-TIME per job, so the prototype patch the
-// watcher applies during register() (at onApplicationBootstrap, AFTER workers are
-// created at onModuleInit) still takes effect for jobs (which only run after the
-// app has bootstrapped). This is the only path that exercises that timing against
-// the real framework, rather than a mocked WorkerHost.
+// It has to be this suite, because everything cheaper missed the defect: the
+// watcher used to patch the processor's prototype at `onApplicationBootstrap`,
+// long after `BullExplorer` had bound `instance['process']` at `onModuleInit`,
+// and a job driven by a real worker produced zero entries — no `job` entry, no
+// exception, no batch. This file previously passed `connection: { url: REDIS_URL }`
+// to BullMQ; ioredis `RedisOptions` has no `url` field, so it silently connected
+// to localhost:6379 and never tested what its own header claimed.
 //
-// REQUIRES Redis. Skipped via describe.skipIf(!process.env.REDIS_URL) so CI
-// without Redis stays green and reports the suite as skipped (0 failures).
-//
-// Read path mirrors mikro-orm-query.watcher.integration.spec.ts exactly: flush
-// the TelescopeService, then GET /telescope/api/entries via supertest and read
-// the { data: Entry[] } response shape.
+// Redis comes from REDIS_URL if set, else a throwaway docker container; when
+// neither is available the suite skips loudly (see test/redis-container.ts).
 //
 // Note: Vitest uses esbuild, which does NOT emit decorator metadata, so the
 // processor relies only on @Processor() (handled by @nestjs/bullmq's own
@@ -22,21 +23,46 @@
 //
 import 'reflect-metadata';
 import type { Entry } from '@dudousxd/nestjs-telescope';
-import { TelescopeModule, TelescopeService } from '@dudousxd/nestjs-telescope';
+import {
+  InMemoryStorageProvider,
+  TelescopeModule,
+  TelescopeService,
+  type TraceContext,
+  type TraceContextProvider,
+} from '@dudousxd/nestjs-telescope';
 import { BullModule, Processor, WorkerHost, getQueueToken } from '@nestjs/bullmq';
-import { type INestApplication, Module } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Module } from '@nestjs/common';
+import { Test, type TestingModule } from '@nestjs/testing';
 import type { Job, Queue } from 'bullmq';
-import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { startRedis } from '../test/redis-container.js';
 import { BullMqJobWatcher } from './bullmq-job.watcher.js';
+import { isInstrumentedProcessor } from './processor-instrumentation.js';
 
-const REDIS_URL = process.env.REDIS_URL;
-const connection = REDIS_URL ? { url: REDIS_URL } : { host: '127.0.0.1', port: 6379 };
+// Top-level await: the connection has to be known before the module metadata
+// below is built, and before describe.skipIf decides whether to run.
+const redis = await startRedis();
+const connection = redis?.connection ?? { host: '127.0.0.1', port: 6379 };
+
+const storage = new InMemoryStorageProvider();
+const watcher = new BullMqJobWatcher({ slowMs: 999999 });
+
+let telescope: TelescopeService | undefined;
+/** One trace id per Telescope batch — an entry recorded outside a job's batch
+ *  scope gets none, which is what makes the trace assertions mean something. */
+const traceContext: TraceContextProvider = {
+  current(): TraceContext | null {
+    const batch = telescope?.context.current();
+    if (!batch) return null;
+    const traceId = batch.id.replace(/-/g, '');
+    return { traceId, spanId: traceId.slice(0, 16) };
+  },
+};
 
 /** Narrow the loosely-typed job payload without `any` (esbuild-safe). */
 function isBoom(data: unknown): boolean {
-  return typeof data === 'object' && data !== null && (data as { boom?: unknown }).boom === true;
+  if (typeof data !== 'object' || data === null) return false;
+  return Reflect.get(data, 'boom') === true;
 }
 
 @Processor('telescope-test')
@@ -52,7 +78,9 @@ class TestProcessor extends WorkerHost {
     TelescopeModule.forRoot({
       enabled: true,
       authorizer: () => true,
-      watchers: [new BullMqJobWatcher({ slowMs: 999999 })],
+      storage,
+      traceContext,
+      watchers: [watcher],
     }),
     BullModule.forRoot({ connection }),
     BullModule.registerQueue({ name: 'telescope-test' }),
@@ -61,70 +89,86 @@ class TestProcessor extends WorkerHost {
 })
 class AppModule {}
 
-/** Poll up to ~5s (50 × 100ms): flush, GET entries, return the first matching
- *  job entry, or undefined if none appears within the budget. */
-async function pollForJobEntry(
-  app: INestApplication,
-  predicate: (entry: Entry) => boolean,
-): Promise<Entry | undefined> {
-  const service = app.get(TelescopeService);
-  for (let i = 0; i < 50; i++) {
-    await service.flush();
-    const res = await request(app.getHttpServer()).get('/telescope/api/entries');
-    const entries: Entry[] = (res.body as { data: Entry[] }).data;
-    const match = entries.find((entry) => entry.type === 'job' && predicate(entry));
+/** Poll up to ~15s for an entry the worker produces on its own. */
+async function pollForEntry(predicate: (entry: Entry) => boolean): Promise<Entry | undefined> {
+  for (let i = 0; i < 150; i++) {
+    await telescope?.flush();
+    const match = (await storage.get({})).data.find(predicate);
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return undefined;
 }
 
-describe.skipIf(!REDIS_URL)('BullMqJobWatcher integration (real Redis)', () => {
-  let app: INestApplication;
+function named(entry: Entry, name: string): boolean {
+  if (typeof entry.content !== 'object' || entry.content === null) return false;
+  return Reflect.get(entry.content, 'name') === name;
+}
+
+describe.skipIf(!redis)(`BullMqJobWatcher integration (real Redis: ${redis?.describedAs})`, () => {
+  let app: TestingModule;
   let queue: Queue;
+  let processor: TestProcessor;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    app.enableShutdownHooks();
+    app = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    telescope = app.get(TelescopeService);
+    processor = app.get(TestProcessor);
     await app.init();
-    queue = moduleRef.get<Queue>(getQueueToken('telescope-test'));
-  });
+    queue = app.get<Queue>(getQueueToken('telescope-test'));
+    await queue.obliterate({ force: true }).catch(() => {});
+  }, 120_000);
 
   afterAll(async () => {
     await queue?.obliterate({ force: true }).catch(() => {});
     await app?.close();
+    await redis?.stop();
+  }, 60_000);
+
+  // THE regression assertion, against the real explorer and the real Worker:
+  // this is the function BullMQ calls for every job. Move instrumentation back
+  // to register() and it is the raw bound `process` again.
+  it('gives the real Worker Telescope’s wrapper, not the raw bound process()', () => {
+    expect(isInstrumentedProcessor(Reflect.get(processor.worker, 'processFn'))).toBe(true);
+    expect(watcher.instrumentedBeforeRegister).toBe(1);
   });
 
-  it('records a completed job entry correlated to a queue batch', async () => {
+  it('records a completed job entry, correlated to a queue batch with a trace', async () => {
     await queue.add('greet', { hello: 'world' });
 
-    const jobEntry = await pollForJobEntry(
-      app,
-      (entry) => (entry.content as { name?: string }).name === 'greet',
-    );
+    const jobEntry = await pollForEntry((entry) => entry.type === 'job' && named(entry, 'greet'));
 
     expect(jobEntry).toBeDefined();
-    const completed = jobEntry as Entry;
-    expect(completed.origin).toBe('queue');
-    const content = completed.content as { status: string; queue: string; name: string };
-    expect(content.status).toBe('completed');
-    expect(content.queue).toBe('telescope-test');
-    expect(content.name).toBe('greet');
-  });
+    expect(jobEntry?.origin).toBe('queue');
+    expect(jobEntry?.traceId).not.toBeNull();
+    expect(jobEntry?.content).toMatchObject({
+      status: 'completed',
+      queue: 'telescope-test',
+      name: 'greet',
+    });
+  }, 60_000);
 
-  it('records a failed job entry with a failure reason', async () => {
-    await queue.add('boom', { boom: true });
+  it('records a failed job entry and an exception entry sharing its trace', async () => {
+    await queue.add('boom', { boom: true }, { attempts: 1 });
 
-    const jobEntry = await pollForJobEntry(
-      app,
-      (entry) => (entry.content as { name?: string }).name === 'boom',
+    const failed = await pollForEntry((entry) => entry.type === 'job' && named(entry, 'boom'));
+    expect(failed).toBeDefined();
+    expect(failed?.content).toMatchObject({ status: 'failed' });
+    expect(Reflect.get(failed?.content ?? {}, 'failureReason')).not.toBeNull();
+
+    const exception = await pollForEntry(
+      (entry) => entry.type === 'exception' && entry.batchId === failed?.batchId,
     );
-
-    expect(jobEntry).toBeDefined();
-    const failed = jobEntry as Entry;
-    const content = failed.content as { status: string; failureReason: string | null };
-    expect(content.status).toBe('failed');
-    expect(content.failureReason).not.toBeNull();
-  });
+    expect(exception).toBeDefined();
+    expect(exception?.origin).toBe('queue');
+    expect(exception?.familyHash).toMatch(/^Error:intentional failure:at /);
+    expect(exception?.content).toMatchObject({
+      class: 'Error',
+      message: 'intentional failure',
+      context: { queue: 'telescope-test', job: 'boom' },
+    });
+    // One failure, one trace — not a job entry here and an orphan exception there.
+    expect(exception?.traceId).not.toBeNull();
+    expect(exception?.traceId).toBe(failed?.traceId);
+  }, 60_000);
 });

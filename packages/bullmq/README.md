@@ -15,9 +15,12 @@ Peer deps: `@dudousxd/nestjs-telescope`, `@nestjs/bullmq`, `bullmq`,
 
 ## Usage
 
-Add the watcher to `TelescopeModule`. No host wiring is required — the watcher
-discovers your `@Processor` (`WorkerHost`) classes and instruments them
-automatically.
+Add the watcher to `TelescopeModule`. No host wiring is required, and no import
+ordering matters: constructing the watcher hooks
+`ProcessorDecoratorService.decorate` — `@nestjs/bullmq`'s own processor-wrapping
+extension point — so the function the framework hands `new Worker(...)` is
+already instrumented. Static and request-scoped `@Processor` classes are both
+covered.
 
 ```ts
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
@@ -135,6 +138,16 @@ read gate: browsing a queue should not imply the right to drain it.
 | `slowMs` | `1000` | Jobs taking at least this long get a `slow` tag. |
 | `includeJobData` | `true` | Capture `job.data` as the entry payload (core redaction still applies). |
 | `clock` | wall clock | Injectable time source (for tests). |
+
+## If the seam is missing
+
+`ProcessorDecoratorService` arrived in `@nestjs/bullmq` v11. On an older version
+— or if your app replaces that provider with its own subclass — the watcher says
+so at boot (a warning naming the installed version) and falls back to
+re-pointing `worker.processFn`, which BullMQ reads on every job. That fallback
+happens at `onApplicationBootstrap`, after the workers have started, so jobs
+picked up in that window are not captured; the warning names that too. What it
+will never do is register quietly and record nothing.
 
 ## Not included
 

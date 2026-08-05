@@ -22,7 +22,7 @@ import { ScheduleWatcher } from '@dudousxd/nestjs-telescope-schedule';
 
 @Module({
   imports: [
-    // Import Telescope BEFORE ScheduleModule (see ordering note below).
+    // Import order does not matter (see "Ordering" below).
     TelescopeModule.forRoot({ watchers: [new ScheduleWatcher({ slowMs: 1000 })] }),
     ScheduleModule.forRoot(),
   ],
@@ -32,11 +32,16 @@ export class AppModule {}
 
 ## How it works
 
-At registration the watcher uses NestJS `DiscoveryService` + `MetadataScanner`
-to find every provider method carrying a `@nestjs/schedule` metadata key
-(`SCHEDULER_TYPE` / `SCHEDULE_CRON_OPTIONS` / `SCHEDULE_INTERVAL_OPTIONS` /
-`SCHEDULE_TIMEOUT_OPTIONS`) and prototype-patches it with a wrapper that runs the
-original inside `ctx.runInBatch('schedule', ...)`.
+Constructing the watcher patches `ScheduleExplorer.wrapFunctionInTryCatchBlocks`
+— the last point at which `@nestjs/schedule` still holds the raw handler — so
+every function the explorer hands to the scheduler already runs inside
+`ctx.runInBatch('schedule', ...)`. `register()` then points that seam at the live
+`WatcherContext`.
+
+The decorators' metadata (`SCHEDULER_TYPE` / `SCHEDULE_CRON_OPTIONS` /
+`SCHEDULE_INTERVAL_OPTIONS` / `SCHEDULE_TIMEOUT_OPTIONS`) is read by the explorer
+from the original handler and is carried onto the wrapper as well, so wrapping
+can never stop a task from being scheduled.
 
 Entries are recorded as **`EntryType.Job`** (a scheduled task *is* a job; the
 `'schedule'` batch origin distinguishes it from a queue job). The watcher's own
@@ -49,14 +54,20 @@ On failure it records a `failed` entry and re-throws so `@nestjs/schedule`'s own
 error handling is untouched. Recording failures are swallowed — a telescope
 error can never break a scheduled task.
 
-## Ordering caveat
+## Ordering
 
-`@nestjs/schedule`'s explorer captures each handler reference at its own
-`onModuleInit`. For the prototype patch to take effect, **Telescope's module must
-initialize before `ScheduleModule`** (import it first / higher in the module
-tree). If `ScheduleModule` initializes first it will have bound the un-wrapped
-handler and that task won't be captured (the watcher logs a "no scheduled
-methods found" warning only when nothing matched at all).
+**No import ordering is required.** The seam is installed when the watcher is
+constructed — while your `@Module` metadata is still being built, before
+`NestFactory.create` and therefore before `ScheduleExplorer.onModuleInit`
+whichever way round the imports go.
+
+This used not to be true, and the version that claimed it was wrong: the watcher
+patched provider prototypes at `onApplicationBootstrap`, by which time the
+explorer had already closed over `instance[key]`, and a timer-driven `@Cron`
+recorded nothing at all — importing Telescope first did not change that. If a
+future `@nestjs/schedule` moves the seam, the watcher warns at boot with the
+installed version and the fact that runs are not being captured, rather than
+registering and silently recording nothing.
 
 ## License
 

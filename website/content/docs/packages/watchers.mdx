@@ -160,7 +160,7 @@ import { ScheduleWatcher } from '@dudousxd/nestjs-telescope-schedule';
 
 @Module({
   imports: [
-    // Import Telescope BEFORE ScheduleModule (see ordering note).
+    // Import order does not matter.
     TelescopeModule.forRoot({ watchers: [new ScheduleWatcher({ slowMs: 1000 })] }),
     ScheduleModule.forRoot(),
   ],
@@ -168,8 +168,8 @@ import { ScheduleWatcher } from '@dudousxd/nestjs-telescope-schedule';
 export class AppModule {}
 ```
 
-<Callout type="warn" title="Ordering caveat">
-  `@nestjs/schedule`'s explorer captures each handler reference at its own `onModuleInit`. For the prototype patch to take effect, **Telescope's module must initialize before `ScheduleModule`** — import it first / higher in the tree. If `ScheduleModule` initializes first, it binds the un-wrapped handler and that task isn't captured.
+<Callout type="info" title="No ordering caveat">
+  Instrumentation is installed when the watcher is **constructed** — while your `@Module` metadata is still being built, before `NestFactory.create` and therefore before `ScheduleExplorer` captures its handler references at `onModuleInit`. Import Telescope wherever you like. (Earlier versions patched provider prototypes at `onApplicationBootstrap` and asked you to import Telescope first; that never worked — a timer-driven `@Cron` recorded nothing either way.)
 </Callout>
 
 ### Events — `@dudousxd/nestjs-telescope-events`

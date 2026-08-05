@@ -1,4 +1,15 @@
 // packages/schedule/src/schedule.watcher.spec.ts
+//
+// Unit-level tests drive the SEAM, not the decorated method: they build the
+// function `ScheduleExplorer` would build (`instrumentScheduledMethod`, which is
+// what the patched `wrapFunctionInTryCatchBlocks` calls) and invoke that. This
+// is deliberate — calling `task.run()` directly is exactly the shortcut that let
+// a totally dead instrumentation strategy keep a green suite.
+//
+// The wrap always happens BEFORE `register()` here, mirroring the real
+// lifecycle: the explorer wraps at its `onModuleInit`, Telescope binds its
+// context at `onApplicationBootstrap`.
+//
 import 'reflect-metadata';
 import {
   type BatchHandle,
@@ -9,14 +20,15 @@ import {
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
 import { NotFoundException } from '@nestjs/common';
-import type { DiscoveryService, ModuleRef } from '@nestjs/core';
+import type { ModuleRef } from '@nestjs/core';
 import { Cron, Interval, SchedulerRegistry } from '@nestjs/schedule';
 import { describe, expect, it } from 'vitest';
+import {
+  type ScheduledFn,
+  installExplorerInstrumentation,
+  instrumentScheduledMethod,
+} from './explorer-instrumentation.js';
 import { ScheduleWatcher } from './schedule.watcher.js';
-
-// Each test defines its own task class so the prototype it patches is pristine
-// (the watcher patches prototypes once, guarded by a module-global marker —
-// sharing a class across tests would leak the first test's wrapper/ctx).
 
 interface RecordedEntry extends RecordInput {
   batch: string | null;
@@ -26,20 +38,34 @@ interface Harness {
   ctx: WatcherContext;
   recorded: RecordedEntry[];
   origins: BatchOrigin[];
+  /** Build the function the explorer would hand the scheduler for `method`, and
+   *  return a caller that invokes it on `instance` the way the framework's own
+   *  try/catch wrapper does (`methodRef.call(instance, …)`). */
+  schedule(instance: object, method: ScheduledFn): () => Promise<unknown>;
 }
 
-function makeHarness(
-  providers: Array<{ instance: unknown }>,
-  options: { recordThrows?: boolean; registry?: unknown } = {},
-): Harness {
+/** Structural stand-in for ModuleRef — the watcher only ever calls `get`. */
+function asModuleRef(source: { get(token: unknown): unknown }): ModuleRef {
+  const candidate: unknown = source;
+  if (isModuleRef(candidate)) return candidate;
+  throw new Error('unreachable: the stand-in exposes get()');
+}
+
+function isModuleRef(value: unknown): value is ModuleRef {
+  if (typeof value !== 'object' || value === null) return false;
+  return typeof Reflect.get(value, 'get') === 'function';
+}
+
+function makeHarness(options: { recordThrows?: boolean; registry?: unknown } = {}): Harness {
   const recorded: RecordedEntry[] = [];
   const origins: BatchOrigin[] = [];
   let batchSeq = 0;
   let currentBatch: string | null = null;
-  const discovery = { getProviders: () => providers } as unknown as DiscoveryService;
-  const moduleRef = {
-    get: (token: unknown) => (token === SchedulerRegistry ? options.registry : discovery),
-  } as unknown as ModuleRef;
+
+  // Stands in for the app's ScheduleExplorer instance: the watcher recognises it
+  // by the patched wrapper factory, and the per-app state hangs off it.
+  const { wrapFunction } = installExplorerInstrumentation();
+  const explorer = { wrapFunctionInTryCatchBlocks: wrapFunction };
 
   const ctx: WatcherContext = {
     record: (input) => {
@@ -69,9 +95,20 @@ function makeHarness(
     },
     beginBatch: (): BatchHandle => ({ id: 'batch', end: () => {} }),
     config: resolveConfig({}),
-    moduleRef,
+    moduleRef: asModuleRef({
+      get: (token: unknown) => (token === SchedulerRegistry ? options.registry : explorer),
+    }),
   };
-  return { ctx, recorded, origins };
+
+  return {
+    ctx,
+    recorded,
+    origins,
+    schedule: (instance, method) => {
+      const scheduled = instrumentScheduledMethod(explorer, method);
+      return () => Promise.resolve(scheduled.call(instance));
+    },
+  };
 }
 
 describe('ScheduleWatcher', () => {
@@ -89,15 +126,16 @@ describe('ScheduleWatcher', () => {
       }
     }
     const tasks = new CronTasks();
-    const { ctx, recorded, origins } = makeHarness([{ instance: tasks }]);
-    new ScheduleWatcher().register(ctx);
+    const harness = makeHarness();
+    const run = harness.schedule(tasks, CronTasks.prototype.beat);
+    new ScheduleWatcher().register(harness.ctx);
 
-    const result = await tasks.beat();
+    const result = await run();
 
     expect(result).toBe('beat'); // original behavior preserved
     expect(tasks.calls).toBe(1); // original actually ran
-    expect(origins).toEqual(['schedule']); // ran inside a 'schedule' batch
-    const jobEntry = recorded.find((e) => e.type === 'job');
+    expect(harness.origins).toEqual(['schedule']); // ran inside a 'schedule' batch
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
     expect(jobEntry).toBeDefined();
     expect(jobEntry!.content).toMatchObject({
       name: 'heartbeat',
@@ -110,6 +148,22 @@ describe('ScheduleWatcher', () => {
     expect(jobEntry!.batch).not.toBeNull();
   });
 
+  it('reports the wraps that happened before register() — the ordering proof', () => {
+    class CronTasks {
+      @Cron('*/5 * * * * *', { name: 'ordered' })
+      async beat(): Promise<string> {
+        return 'beat';
+      }
+    }
+    const harness = makeHarness();
+    // The explorer wraps at ITS onModuleInit, i.e. before Telescope registers.
+    harness.schedule(new CronTasks(), CronTasks.prototype.beat);
+    const watcher = new ScheduleWatcher();
+    watcher.register(harness.ctx);
+
+    expect(watcher.instrumentedBeforeRegister).toBe(1);
+  });
+
   it('wraps a @Interval method, defaulting the name to the method name', async () => {
     class IntervalTasks {
       @Interval(1000)
@@ -117,37 +171,16 @@ describe('ScheduleWatcher', () => {
         return 'poll';
       }
     }
-    const tasks = new IntervalTasks();
-    const { ctx, recorded, origins } = makeHarness([{ instance: tasks }]);
-    new ScheduleWatcher().register(ctx);
+    const harness = makeHarness();
+    const run = harness.schedule(new IntervalTasks(), IntervalTasks.prototype.poll);
+    new ScheduleWatcher().register(harness.ctx);
 
-    await tasks.poll();
+    await run();
 
-    expect(origins).toEqual(['schedule']);
-    const jobEntry = recorded.find((e) => e.type === 'job');
+    expect(harness.origins).toEqual(['schedule']);
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
     expect(jobEntry!.content).toMatchObject({ name: 'poll', status: 'completed' });
     expect(jobEntry!.tags).toContain('schedule:interval');
-  });
-
-  it('leaves non-scheduled methods alone', async () => {
-    class MixedTasks {
-      @Cron('* * * * * *', { name: 'c' })
-      async scheduled(): Promise<string> {
-        return 's';
-      }
-      async plain(): Promise<string> {
-        return 'plain';
-      }
-    }
-    const tasks = new MixedTasks();
-    const { ctx, recorded, origins } = makeHarness([{ instance: tasks }]);
-    new ScheduleWatcher().register(ctx);
-
-    const result = await tasks.plain();
-
-    expect(result).toBe('plain');
-    expect(origins).toEqual([]); // no batch opened for the plain method
-    expect(recorded).toHaveLength(0);
   });
 
   it('records a failed run and re-throws so @nestjs/schedule still sees the error', async () => {
@@ -157,13 +190,13 @@ describe('ScheduleWatcher', () => {
         throw new Error('cron boom');
       }
     }
-    const task = new BoomTask();
-    const { ctx, recorded } = makeHarness([{ instance: task }]);
-    new ScheduleWatcher().register(ctx);
+    const harness = makeHarness();
+    const run = harness.schedule(new BoomTask(), BoomTask.prototype.explode);
+    new ScheduleWatcher().register(harness.ctx);
 
-    await expect(task.explode()).rejects.toThrow('cron boom');
+    await expect(run()).rejects.toThrow('cron boom');
 
-    const jobEntry = recorded.find((e) => e.type === 'job');
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
     expect(jobEntry!.content).toMatchObject({ status: 'failed', failureReason: 'cron boom' });
     expect(jobEntry!.tags).toContain('failed');
   });
@@ -175,14 +208,14 @@ describe('ScheduleWatcher', () => {
         throw new TypeError('report generator blew up');
       }
     }
-    const task = new ExplodingTask();
-    const { ctx, recorded } = makeHarness([{ instance: task }]);
-    new ScheduleWatcher().register(ctx);
+    const harness = makeHarness();
+    const run = harness.schedule(new ExplodingTask(), ExplodingTask.prototype.run);
+    new ScheduleWatcher().register(harness.ctx);
 
-    await expect(task.run()).rejects.toThrow('report generator blew up');
+    await expect(run()).rejects.toThrow('report generator blew up');
 
-    const jobEntry = recorded.find((e) => e.type === 'job');
-    const exception = recorded.find((e) => e.type === 'exception');
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
+    const exception = harness.recorded.find((e) => e.type === 'exception');
     expect(exception).toBeDefined();
     // A cron that has been throwing all week used to be visible only as a
     // failureReason string on its own run entry — no family, no alert, no
@@ -209,14 +242,14 @@ describe('ScheduleWatcher', () => {
         throw new NotFoundException('nothing to sync');
       }
     }
-    const task = new MissingTask();
-    const { ctx, recorded } = makeHarness([{ instance: task }]);
-    new ScheduleWatcher().register(ctx);
+    const harness = makeHarness();
+    const run = harness.schedule(new MissingTask(), MissingTask.prototype.run);
+    new ScheduleWatcher().register(harness.ctx);
 
-    await expect(task.run()).rejects.toThrow('nothing to sync');
+    await expect(run()).rejects.toThrow('nothing to sync');
 
-    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
-    expect(recorded.filter((e) => e.type === 'job')).toHaveLength(1);
+    expect(harness.recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
+    expect(harness.recorded.filter((e) => e.type === 'job')).toHaveLength(1);
   });
 
   it('records no exception entry for a run that succeeds', async () => {
@@ -226,13 +259,39 @@ describe('ScheduleWatcher', () => {
         return 'ok';
       }
     }
-    const task = new QuietTask();
-    const { ctx, recorded } = makeHarness([{ instance: task }]);
-    new ScheduleWatcher().register(ctx);
+    const harness = makeHarness();
+    const run = harness.schedule(new QuietTask(), QuietTask.prototype.run);
+    new ScheduleWatcher().register(harness.ctx);
 
-    await task.run();
+    await run();
 
-    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
+    expect(harness.recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
+  });
+
+  it('tags slow runs whose duration meets slowMs', async () => {
+    class SlowTask {
+      @Cron('* * * * * *', { name: 'slow' })
+      async run(): Promise<string> {
+        return 'ok';
+      }
+    }
+    let t = 0;
+    const clock = {
+      now: () => {
+        const value = t;
+        t += 150;
+        return value;
+      },
+    };
+    const harness = makeHarness();
+    const run = harness.schedule(new SlowTask(), SlowTask.prototype.run);
+    new ScheduleWatcher({ slowMs: 100, clock }).register(harness.ctx);
+
+    await run();
+
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
+    expect(jobEntry!.durationMs).toBe(150);
+    expect(jobEntry!.tags).toContain('slow');
   });
 
   it('correlates work emitted during the task to the same schedule batch', async () => {
@@ -244,34 +303,16 @@ describe('ScheduleWatcher', () => {
         return 'ok';
       }
     }
-    const provider = { instance: undefined as unknown };
-    const { ctx, recorded } = makeHarness([provider]);
-    const instance = new Correlating(ctx);
-    provider.instance = instance;
-    new ScheduleWatcher().register(ctx);
+    const harness = makeHarness();
+    const instance = new Correlating(harness.ctx);
+    const run = harness.schedule(instance, Correlating.prototype.run);
+    new ScheduleWatcher().register(harness.ctx);
 
-    await instance.run();
+    await run();
 
-    const query = recorded.find((e) => e.type === 'query');
-    const job = recorded.find((e) => e.type === 'job');
+    const query = harness.recorded.find((e) => e.type === 'query');
+    const job = harness.recorded.find((e) => e.type === 'job');
     expect(query!.batch).toBe(job!.batch);
-  });
-
-  it('patches a shared prototype only once across instances', async () => {
-    class SharedTasks {
-      @Cron('* * * * * *', { name: 'shared' })
-      async beat(): Promise<string> {
-        return 'beat';
-      }
-    }
-    const a = new SharedTasks();
-    const b = new SharedTasks();
-    const { ctx, recorded } = makeHarness([{ instance: a }, { instance: b }]);
-    new ScheduleWatcher().register(ctx);
-
-    await a.beat();
-
-    expect(recorded.filter((e) => e.type === 'job')).toHaveLength(1);
   });
 
   it('never corrupts the run outcome when ctx.record throws', async () => {
@@ -287,24 +328,41 @@ describe('ScheduleWatcher', () => {
         throw new Error('cron boom');
       }
     }
-    const ok = new OkTask();
-    const okHarness = makeHarness([{ instance: ok }], { recordThrows: true });
+    const okHarness = makeHarness({ recordThrows: true });
+    const runOk = okHarness.schedule(new OkTask(), OkTask.prototype.run);
     new ScheduleWatcher().register(okHarness.ctx);
-    await expect(ok.run()).resolves.toBe('ok');
+    await expect(runOk()).resolves.toBe('ok');
 
-    const boom = new BoomTask();
-    const boomHarness = makeHarness([{ instance: boom }], { recordThrows: true });
+    const boomHarness = makeHarness({ recordThrows: true });
+    const runBoom = boomHarness.schedule(new BoomTask(), BoomTask.prototype.run);
     new ScheduleWatcher().register(boomHarness.ctx);
-    await expect(boom.run()).rejects.toThrow('cron boom');
+    await expect(runBoom()).rejects.toThrow('cron boom');
   });
 
-  it('warns and no-ops cleanly when no scheduled methods are present', () => {
-    class NoSchedule {
-      async work(): Promise<void> {}
+  it('calls the handler straight through before register() has bound a context', async () => {
+    class EarlyTask {
+      public calls = 0;
+      @Cron('* * * * * *', { name: 'early' })
+      async run(): Promise<string> {
+        this.calls++;
+        return 'ok';
+      }
     }
-    const { ctx, recorded } = makeHarness([{ instance: new NoSchedule() }]);
-    expect(() => new ScheduleWatcher().register(ctx)).not.toThrow();
-    expect(recorded).toHaveLength(0);
+    const task = new EarlyTask();
+    const harness = makeHarness();
+    const run = harness.schedule(task, EarlyTask.prototype.run);
+
+    // A tick between the explorer's onModuleInit and Telescope's registration:
+    // untraced, but it must still run and still return normally.
+    await expect(run()).resolves.toBe('ok');
+    expect(task.calls).toBe(1);
+    expect(harness.recorded).toHaveLength(0);
+  });
+
+  it('warns and no-ops cleanly when the explorer wrapped nothing', () => {
+    const harness = makeHarness();
+    expect(() => new ScheduleWatcher().register(harness.ctx)).not.toThrow();
+    expect(harness.recorded).toHaveLength(0);
   });
 });
 
@@ -331,13 +389,9 @@ function fakeRegistry(
 describe('ScheduleWatcher.listTasks (ScheduleManager)', () => {
   it('lists cron + interval tasks with schedule and next-run from the registry', async () => {
     const next = new Date('2026-06-04T00:00:00.000Z');
-    class CronTasks {
-      @Cron('0 0 * * *', { name: 'nightly' })
-      async run(): Promise<void> {}
-    }
-    const { ctx } = makeHarness([{ instance: new CronTasks() }], { registry: fakeRegistry(next) });
+    const harness = makeHarness({ registry: fakeRegistry(next) });
     const watcher = new ScheduleWatcher();
-    watcher.register(ctx);
+    watcher.register(harness.ctx);
 
     const tasks = await watcher.listTasks();
 
@@ -355,21 +409,15 @@ describe('ScheduleWatcher.listTasks (ScheduleManager)', () => {
 
   it('reports a stopped cron as running:false (registered but will not fire)', async () => {
     const next = new Date('2026-06-04T00:00:00.000Z');
-    class CronTasks {
-      @Cron('0 0 * * *', { name: 'nightly' })
-      async run(): Promise<void> {}
-    }
-    const { ctx } = makeHarness([{ instance: new CronTasks() }], {
-      registry: fakeRegistry(next, false),
-    });
+    const harness = makeHarness({ registry: fakeRegistry(next, false) });
     const watcher = new ScheduleWatcher();
-    watcher.register(ctx);
+    watcher.register(harness.ctx);
 
     const cron = (await watcher.listTasks()).find((t) => t.name === 'nightly');
     expect(cron?.running).toBe(false);
   });
 
-  it('merges last-run info recorded by a simulated run', async () => {
+  it('merges last-run info recorded by a real run', async () => {
     const next = new Date('2026-06-04T00:00:00.000Z');
     let nowMs = 1_000;
     class CronTasks {
@@ -378,13 +426,13 @@ describe('ScheduleWatcher.listTasks (ScheduleManager)', () => {
         return 'ok';
       }
     }
-    const tasks = new CronTasks();
-    const { ctx } = makeHarness([{ instance: tasks }], { registry: fakeRegistry(next) });
+    const harness = makeHarness({ registry: fakeRegistry(next) });
+    const run = harness.schedule(new CronTasks(), CronTasks.prototype.run);
     const watcher = new ScheduleWatcher({ clock: { now: () => nowMs } });
-    watcher.register(ctx);
+    watcher.register(harness.ctx);
 
     nowMs = 5_000; // run finishes "later" so a duration is recorded
-    await tasks.run();
+    await run();
 
     const listed = await watcher.listTasks();
     const cron = listed.find((t) => t.name === 'nightly');
@@ -394,16 +442,16 @@ describe('ScheduleWatcher.listTasks (ScheduleManager)', () => {
   });
 
   it('degrades gracefully when registry methods are missing', async () => {
-    const { ctx } = makeHarness([], { registry: {} });
+    const harness = makeHarness({ registry: {} });
     const watcher = new ScheduleWatcher();
-    watcher.register(ctx);
+    watcher.register(harness.ctx);
     await expect(watcher.listTasks()).resolves.toEqual([]);
   });
 
   it('returns an empty list when no registry is resolvable', async () => {
-    const { ctx } = makeHarness([]);
+    const harness = makeHarness();
     const watcher = new ScheduleWatcher();
-    watcher.register(ctx);
+    watcher.register(harness.ctx);
     await expect(watcher.listTasks()).resolves.toEqual([]);
   });
 });
