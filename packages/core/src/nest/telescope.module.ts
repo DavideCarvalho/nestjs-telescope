@@ -37,6 +37,7 @@ import { dynamicController } from './dynamic-controller.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { TelescopeAuthController } from './telescope-auth.controller.js';
+import { TelescopeCrashCapture } from './telescope-crash-capture.service.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
 import { TelescopeMcpController } from './telescope-mcp.controller.js';
 import { TelescopeOverloadGuard } from './telescope-overload-guard.service.js';
@@ -161,6 +162,10 @@ const SHARED_PROVIDERS: Provider[] = [
   },
   TelescopeRequestMiddleware,
   TelescopeWatcherRegistrar,
+  // Process-level crash capture. Constructed unconditionally (cheap); it
+  // registers NO process listeners unless `exceptions.processCrashes.enabled`
+  // is true, because attaching them changes the host's crash semantics.
+  TelescopeCrashCapture,
   TelescopeOverloadGuard,
   QueueManagerRegistry,
   ScheduleManagerRegistry,
