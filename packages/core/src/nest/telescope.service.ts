@@ -26,6 +26,7 @@ import { setTelescopeRecordSink } from '../record/telescope-record.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { type ExceptionCaptureDetails, captureException } from './exception-capture.js';
 import {
   TELESCOPE_CONFIG,
   TELESCOPE_DASHBOARD_AUTH,
@@ -310,6 +311,28 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   record(input: RecordInput): void {
     if (!this.config.enabled) return;
     this.recorder.record(input);
+  }
+
+  /**
+   * Turn a thrown error into the same `exception` entry the Nest interceptor
+   * produces — same family hash, same 4xx control-flow policy, same content
+   * shape — for code that runs OFF the Nest execution pipeline: a queue job
+   * body, a scheduled callback, a durable workflow step, an event listener.
+   *
+   * Records into whatever batch is active on the current async context, so an
+   * exception thrown inside a watcher's `runInBatch` scope correlates to that
+   * job/run instead of standing alone. Never throws (see `captureException`),
+   * so a caller on its own failure path can call this immediately before
+   * re-throwing the host's error without any risk of replacing it.
+   */
+  recordException(error: unknown, details?: ExceptionCaptureDetails): void {
+    if (!this.config.enabled) return;
+    captureException(
+      (input) => this.recorder.record(input),
+      error,
+      this.options.exceptions,
+      details,
+    );
   }
 
   runInBatch<T>(origin: BatchOrigin, fn: () => Promise<T>): Promise<T> {

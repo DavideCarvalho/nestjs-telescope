@@ -3,6 +3,7 @@ import {
   type RecordInput,
   type Watcher,
   type WatcherContext,
+  captureException,
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
 
@@ -20,6 +21,12 @@ export async function collectWatcherEntries(watcher: Watcher): Promise<Collected
   const context: WatcherContext = {
     record: (input) => {
       recorded.push(input);
+    },
+    // Runs the REAL capture (family hash + 4xx skip), so a watcher spec that
+    // asserts on the collected entries sees exactly what production would
+    // record — including a 4xx HttpException producing nothing at all.
+    recordException: (error, details) => {
+      captureException((input) => recorded.push(input), error, undefined, details);
     },
     runInBatch: (_origin, fn) => fn(),
     beginBatch: (): BatchHandle => ({ id: `batch-${counter++}`, end: () => {} }),

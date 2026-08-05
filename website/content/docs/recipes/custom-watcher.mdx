@@ -25,6 +25,7 @@ interface Watcher {
 
 interface WatcherContext {
   record(input: RecordInput): void;          // fire-and-forget, never throws/blocks
+  recordException?(error: unknown, details?: ExceptionCaptureDetails): void;
   runInBatch<T>(origin: BatchOrigin, fn: () => Promise<T>): Promise<T>;
   beginBatch(origin: BatchOrigin): BatchHandle;
   readonly config: ResolvedCoreConfig;
@@ -33,6 +34,31 @@ interface WatcherContext {
 ```
 
 A `RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt? }`. Everything else (id, batchId, sequence, traceId, ...) is enriched by the recorder.
+
+### Capturing a throw off the Nest pipeline
+
+`exception` entries are normally produced by a `NestInterceptor`, which only runs on the Nest execution pipeline — HTTP routes and bound RPC/WS handlers. A queue job body, a scheduled callback, a durable step or an event listener never goes through it, so a throw there used to leave no exception entry at all: no family, no `new-exception` alert, no AI diagnosis, nothing in the exceptions view.
+
+An **entry-point** watcher — one that already catches and re-throws to record a `failed` status — should hand that error to `ctx.recordException`:
+
+```ts
+try {
+  return await original.call(this, job);
+} catch (error) {
+  this.safeRecord(ctx, job, 'failed', error);
+  ctx.recordException?.(error, {
+    context: { queue: 'mail', job: 'send-welcome' }, // where it happened
+    tags: ['queue:mail'],
+  });
+  throw error; // never swallow the host's error
+}
+```
+
+It routes through the **same** capture the interceptor uses, so the entry gets the same family hash (an identical `TypeError` groups whether it was thrown in a request or in a job) and the same 4xx policy (an `HttpException` with a 4xx status is skipped unless `exceptions.captureHttp4xx` is on — see [Alerts & AI](/docs/alerts-ai)). Call it inside the batch scope so the exception correlates to the job or run it came from. Like `record`, it is fire-and-forget and never throws, so it is safe immediately before re-throwing.
+
+<Callout type="info" title="Optional for compatibility">
+  `recordException` is declared optional so hand-rolled `WatcherContext` objects (the fixtures in a watcher package's own specs) keep type-checking. Core always supplies it; call it as `ctx.recordException?.(…)` and your watcher stays compatible with an older core too.
+</Callout>
 
 ---
 
