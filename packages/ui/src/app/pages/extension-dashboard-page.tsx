@@ -136,7 +136,7 @@ function BoundPanel({
     <PanelView
       panel={panel}
       data={q.data}
-      {...(isPagedTable ? { onPageChange: setPage } : {})}
+      {...(isPagedTable ? { onPageChange: setPage, requestedPage: page } : {})}
       sort={sort}
       onSortChange={(next) => {
         // Back to page 1: "page 4 of the runs sorted by start time" has no

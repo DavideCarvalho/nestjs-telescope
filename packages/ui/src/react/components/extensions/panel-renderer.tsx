@@ -119,6 +119,7 @@ export function PanelView({
   panel,
   data,
   onPageChange,
+  requestedPage,
   sort,
   onSortChange,
   filters,
@@ -129,6 +130,22 @@ export function PanelView({
   data: unknown;
   /** Paged tables only: called with the requested 1-based page on prev/next. */
   onPageChange?: (page: number) => void;
+  /**
+   * Paged tables only: the page the caller has ASKED for, which takes precedence over the page the
+   * response reports.
+   *
+   * The two are normally the same, and when they are this changes nothing. They diverge when a
+   * provider ignores `query.page` — and driving the control off the response there does not merely
+   * show a stale number, it wedges the pager permanently: the handler computes `page + 1` from the
+   * pinned page, so the second click re-requests the page the caller is already on, the state does
+   * not change, nothing re-renders, and neither button ever does anything again short of a reload.
+   * That is a real incident (`@dudousxd/nestjs-agent-telescope`'s providers read `?page=2` as a
+   * string and answered page 1 for every request).
+   *
+   * Preferring the requested page keeps every click moving, so the worst a broken provider can do
+   * is fail to change the rows — visible, and recoverable with Prev.
+   */
+  requestedPage?: number | undefined;
   /**
    * Tables only. Sort and filter state live with the caller for the same reason
    * `page` does: changing either has to re-resolve the provider, which is the
@@ -272,7 +289,7 @@ export function PanelView({
             <div className="flex items-center justify-between border-b border-line px-4 py-2">
               <p className="text-xs font-medium text-foreground">{panel.title}</p>
               <PagerControls
-                page={page}
+                page={requestedPage ?? page}
                 totalPages={totalPages}
                 {...(onPageChange ? { onPageChange } : {})}
               />

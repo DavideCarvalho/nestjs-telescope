@@ -166,6 +166,48 @@ describe('PanelView (pure render from resolved data)', () => {
       expect(screen.getByRole('button', { name: 'Prev' }).hasAttribute('disabled')).toBe(false);
       expect(screen.getByRole('button', { name: 'Next' }).hasAttribute('disabled')).toBe(true);
     });
+
+    // A provider that ignores `query.page` used to freeze the pager, not just pin the rows: the
+    // control read its page off the RESPONSE, so it recomputed `1 + 1` on every click, the caller's
+    // state never moved past 2, and no further render or request happened at all. `requestedPage`
+    // makes the caller's own page win, so each click still advances and Prev still re-enables —
+    // the failure degrades to "the rows don't change", which is visible and recoverable.
+    it('keeps advancing when the provider pins the page it reports', () => {
+      const onPageChange = vi.fn();
+      const pinned = { rows: [{ runId: 'r1' }], total: 30, page: 1, limit: 10 };
+      const panel = {
+        kind: 'table',
+        title: 'Runs',
+        data: { provider: 'p' },
+        columns,
+        paged: true,
+      } as const;
+
+      const { rerender } = render(
+        <PanelView panel={panel} data={pinned} requestedPage={1} onPageChange={onPageChange} />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      expect(onPageChange).toHaveBeenLastCalledWith(2);
+
+      // The caller advanced its state; the provider still answers `page: 1`.
+      rerender(
+        <PanelView panel={panel} data={pinned} requestedPage={2} onPageChange={onPageChange} />,
+      );
+      expect(screen.getByText('Page 2 of 3')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Prev' }).hasAttribute('disabled')).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      expect(onPageChange).toHaveBeenLastCalledWith(3);
+    });
+
+    it('still reads the page off the response when the caller reports none', () => {
+      render(
+        <PanelView
+          panel={{ kind: 'table', title: 'Runs', data: { provider: 'p' }, columns, paged: true }}
+          data={{ rows: [], total: 30, page: 2, limit: 10 }}
+        />,
+      );
+      expect(screen.getByText('Page 2 of 3')).toBeTruthy();
+    });
   });
 
   describe('a table stays inside its card', () => {
