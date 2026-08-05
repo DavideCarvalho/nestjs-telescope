@@ -28,7 +28,7 @@ This package has **two halves**: a *job watcher* (what jobs did) and a *queue ma
 
 ### Job watcher
 
-Captures every processed job (id, name, queue, outcome, duration, attempts) and correlates the queries and exceptions a job emits to that job's batch. No host wiring — it discovers your `@Processor` (`WorkerHost`) classes automatically.
+Captures every processed job (id, name, queue, outcome, duration, attempts) and correlates the queries and exceptions a job emits to that job's batch. No host wiring: constructing the watcher hooks `ProcessorDecoratorService.decorate`, `@nestjs/bullmq`'s own processor-wrapping extension point, so the function the framework hands `new Worker(...)` is already instrumented — static and request-scoped `@Processor` classes alike, in whatever order the modules are imported.
 
 ```ts
 import { BullMqJobWatcher } from '@dudousxd/nestjs-telescope-bullmq';

@@ -9,6 +9,14 @@ import { WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { type JobLike, type JobStatus, buildJobContent } from './job-content.js';
+import {
+  type JobRunner,
+  type ProcessorInstrumentation,
+  bindJobRunner,
+  installProcessorInstrumentation,
+  instrumentProcessor,
+  isInstrumentedProcessor,
+} from './processor-instrumentation.js';
 
 export interface BullMqJobWatcherOptions {
   /** Jobs whose processing time is >= this (ms) get a 'slow' tag. Default 1000. */
@@ -19,37 +27,61 @@ export interface BullMqJobWatcherOptions {
   clock?: { now(): number };
 }
 
-/** The prototype-level method we patch. `process(job, token?)` per BullMQ. */
-type ProcessHost = { process: (job: unknown, token?: string) => Promise<unknown> };
+/** Every `JobLike` field is optional and read defensively in `buildJobContent`,
+ *  so any object qualifies and a non-object degrades to {}. */
+function isJobLike(value: unknown): value is JobLike {
+  return typeof value === 'object' && value !== null;
+}
 
-/** Narrow an unknown BullMQ job to the structural `JobLike` we read. Every field
- *  is accessed defensively in `buildJobContent`, so a non-object degrades to {}. */
+/** Narrow an unknown BullMQ job to the structural `JobLike` we read. */
 function toJobLike(job: unknown): JobLike {
-  return typeof job === 'object' && job !== null ? (job as JobLike) : {};
+  return isJobLike(job) ? job : {};
+}
+
+/** The BullMQ `Worker` field the fallback path re-points: the function
+ *  `callProcessJob` reads on every job (`return this.processFn(job, token, …)`). */
+interface WorkerLike {
+  processFn: (...args: unknown[]) => unknown;
+}
+
+function isWorkerLike(value: unknown): value is WorkerLike {
+  if (typeof value !== 'object' || value === null) return false;
+  return typeof Reflect.get(value, 'processFn') === 'function';
 }
 
 /**
  * Captures BullMQ jobs and correlates each job's queries/exceptions to its batch.
  *
  * ## How it works
- * At registration the watcher uses NestJS `DiscoveryService` to find every
- * `WorkerHost` provider and replaces its subclass-prototype `process` method
- * with a wrapper that runs the original inside `ctx.runInBatch('queue', ...)`.
+ * The watcher's CONSTRUCTOR patches `ProcessorDecoratorService.prototype.decorate`
+ * — `@nestjs/bullmq`'s own processor-wrapping extension point — so the function
+ * the framework hands to `new Worker(...)` is already a Telescope wrapper. See
+ * `processor-instrumentation.ts` for why the seam is there and not on the
+ * processor's prototype: the explorer binds `instance.process` ONCE at
+ * `onModuleInit`, so a prototype patch applied at `onApplicationBootstrap` (when
+ * Telescope registers its watchers) is never seen by the worker again. That was
+ * this watcher's previous strategy, and against a real Redis it captured
+ * literally nothing — no `job` entry, no exception, no batch.
  *
- * `@nestjs/bullmq` resolves `instance.process(job, token)` at call-time per job
- * (to support request-scoped processors), and jobs only run after the app has
- * bootstrapped -- so a prototype patch applied during `register()` (which the
- * registrar invokes at `onApplicationBootstrap`) always precedes the first job.
+ * `register()` then points that seam at the live `WatcherContext`. The binding
+ * is deliberately late: a job that manages to run before Telescope registers
+ * calls the processor straight through rather than waiting on it.
+ *
+ * Both of the framework's branches are covered — a static processor (decorated
+ * once at `onModuleInit`) and a request-scoped one (decorated per job, around
+ * the instance resolved for that job's context).
  *
  * The wrapper never swallows the host's error: on failure it records a `failed`
  * job entry and re-throws so BullMQ's own retry/lifecycle is unaffected.
  *
  * @remarks
- * Processor detection uses `instanceof WorkerHost`. If the host application
- * resolves two distinct copies of `@nestjs/bullmq` in its module tree,
- * processors from the other copy won't match and will be left un-instrumented
- * (surfaced only by the "no processors found" warning). A single, deduped
- * `@nestjs/bullmq` is assumed.
+ * If the installed `@nestjs/bullmq` predates the decorator seam, or the host
+ * replaced `ProcessorDecoratorService` with its own subclass, `register()` says
+ * so in a warning naming the version and falls back to re-pointing
+ * `worker.processFn` on each discovered `WorkerHost`. The fallback runs at
+ * `onApplicationBootstrap`, after the workers have already started, so jobs
+ * picked up in that window are not captured — the warning names that too.
+ * Whichever path is taken, silence is not one of the options.
  */
 export class BullMqJobWatcher implements Watcher {
   readonly type = EntryType.Job;
@@ -57,62 +89,131 @@ export class BullMqJobWatcher implements Watcher {
   private readonly slowMs: number;
   private readonly includeJobData: boolean;
   private readonly clock: { now(): number };
-  /** Prototypes already patched, so shared prototypes wrap exactly once. */
-  private readonly patched = new WeakSet<object>();
+  private readonly instrumentation: ProcessorInstrumentation;
+  /**
+   * Processors the seam had already wrapped when `register()` ran. A non-zero
+   * count is the machine-checkable proof that instrumentation preceded the
+   * framework's explorer; a regression to late patching drives it to zero.
+   */
+  private wrappedBeforeRegister = 0;
 
   constructor(options: BullMqJobWatcherOptions = {}) {
     this.slowMs = options.slowMs ?? 1000;
     this.includeJobData = options.includeJobData ?? true;
     this.clock = options.clock ?? { now: () => Date.now() };
+    // Runs while the host is still building its module metadata — before
+    // NestFactory.create, therefore before BullRegistrar.onModuleInit.
+    this.instrumentation = installProcessorInstrumentation();
+  }
+
+  /** Processors instrumented before `register()` ran. Read by the ordering
+   *  regression test; carries no meaning for request-scoped processors, which
+   *  the framework decorates per job. */
+  get instrumentedBeforeRegister(): number {
+    return this.wrappedBeforeRegister;
   }
 
   async register(ctx: WatcherContext): Promise<void> {
-    const discovery = ctx.moduleRef.get(DiscoveryService, { strict: false });
-    let count = 0;
-    for (const wrapper of discovery.getProviders()) {
-      const instance: unknown = wrapper.instance;
-      if (!(instance instanceof WorkerHost)) continue;
-      const proto = Object.getPrototypeOf(instance) as object;
-      if (this.patched.has(proto)) continue;
-      this.patched.add(proto);
-      this.patchProcess(proto as ProcessHost, ctx);
-      count++;
+    const runner: JobRunner = (job, invoke) => this.runJob(ctx, job, invoke);
+    const processors = this.discoverProcessors(ctx);
+    const host = this.resolveSeamHost(ctx);
+
+    if (host) {
+      this.wrappedBeforeRegister = bindJobRunner(host, runner);
+    } else {
+      const fallback = this.instrumentWorkers(processors, runner);
+      const reason =
+        this.instrumentation.reason ??
+        'the resolved ProcessorDecoratorService is not the one Telescope patched (replaced by the host?)';
+      this.logger.warn(
+        `BullMqJobWatcher: ${reason}. Fell back to instrumenting ${fallback} running worker(s) — jobs picked up before the app finished bootstrapping are NOT captured.`,
+      );
     }
-    if (count === 0) {
+
+    if (processors.length === 0) {
       this.logger.warn(
         'BullMqJobWatcher: no @Processor (WorkerHost) providers found. ' +
-          'Jobs will not be captured. Ensure your processors are registered before Telescope bootstraps.',
+          'Jobs will not be captured. Ensure BullModule and your processors are part of the module tree.',
       );
-    } else {
-      this.logger.log(`BullMqJobWatcher: instrumented ${count} processor class(es).`);
+      return;
+    }
+    this.logger.log(`BullMqJobWatcher: watching ${processors.length} processor class(es).`);
+  }
+
+  /** Every `WorkerHost` provider in the graph — used for the boot warning and,
+   *  when the seam is unavailable, as the fallback's list of workers. */
+  private discoverProcessors(ctx: WatcherContext): unknown[] {
+    try {
+      const discovery = ctx.moduleRef.get(DiscoveryService, { strict: false });
+      const found: unknown[] = [];
+      for (const wrapper of discovery.getProviders()) {
+        const instance: unknown = wrapper.instance;
+        if (instance instanceof WorkerHost) found.push(instance);
+      }
+      return found;
+    } catch {
+      return [];
     }
   }
 
-  private patchProcess(proto: ProcessHost, ctx: WatcherContext): void {
-    const original = proto.process;
-    if (typeof original !== 'function') return;
-    const watcher = this;
+  /**
+   * The app's `ProcessorDecoratorService` instance, but only if its `decorate`
+   * is the function this package installed. A host that overrides the provider
+   * with its own subclass shadows our patch, and reporting that as instrumented
+   * would be the same lie this watcher is being fixed for.
+   */
+  private resolveSeamHost(ctx: WatcherContext): object | null {
+    const { serviceClass, decorate } = this.instrumentation;
+    if (!serviceClass || !decorate) return null;
+    try {
+      const found: unknown = ctx.moduleRef.get(serviceClass, { strict: false });
+      if (typeof found !== 'object' || found === null) return null;
+      return Reflect.get(found, 'decorate') === decorate ? found : null;
+    } catch {
+      return null;
+    }
+  }
 
-    proto.process = function patchedProcess(
-      this: unknown,
-      job: unknown,
-      token?: string,
-    ): Promise<unknown> {
-      return ctx.runInBatch('queue', async () => {
-        const startedAt = watcher.clock.now();
-        try {
-          const result = await original.call(this, job, token);
-          // safeRecord never throws, so a telescope failure cannot turn a
-          // successful job into a failed one.
-          watcher.safeRecord(ctx, job, 'completed', watcher.clock.now() - startedAt, undefined);
-          return result;
-        } catch (error) {
-          watcher.safeRecord(ctx, job, 'failed', watcher.clock.now() - startedAt, error);
-          watcher.safeRecordException(ctx, job, error);
-          throw error; // never swallow the host's error
-        }
-      });
-    };
+  /** Fallback: re-point `worker.processFn`, which BullMQ reads per job. */
+  private instrumentWorkers(processors: unknown[], runner: JobRunner): number {
+    let count = 0;
+    for (const processor of processors) {
+      try {
+        if (typeof processor !== 'object' || processor === null) continue;
+        const worker: unknown = Reflect.get(processor, '_worker');
+        if (!isWorkerLike(worker)) continue;
+        if (isInstrumentedProcessor(worker.processFn)) continue;
+        bindJobRunner(worker, runner);
+        worker.processFn = instrumentProcessor(worker, worker.processFn);
+        count++;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`BullMqJobWatcher: failed to instrument a worker: ${message}`);
+      }
+    }
+    return count;
+  }
+
+  /** One job: its own `queue` batch, its entry, and its throw re-thrown. */
+  private runJob(
+    ctx: WatcherContext,
+    job: unknown,
+    invoke: () => Promise<unknown>,
+  ): Promise<unknown> {
+    return ctx.runInBatch('queue', async () => {
+      const startedAt = this.clock.now();
+      try {
+        const result = await invoke();
+        // safeRecord never throws, so a telescope failure cannot turn a
+        // successful job into a failed one.
+        this.safeRecord(ctx, job, 'completed', this.clock.now() - startedAt, undefined);
+        return result;
+      } catch (error) {
+        this.safeRecord(ctx, job, 'failed', this.clock.now() - startedAt, error);
+        this.safeRecordException(ctx, job, error);
+        throw error; // never swallow the host's error
+      }
+    });
   }
 
   /**

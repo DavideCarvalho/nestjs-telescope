@@ -1,4 +1,15 @@
 // packages/bullmq/src/bullmq-job.watcher.spec.ts
+//
+// Unit-level tests drive the SEAM, not `processor.process()`: they build the
+// function `BullExplorer` would hand `new Worker(...)` — `decorate(bound
+// process)` — and call that. Invoking `process()` directly is exactly the
+// shortcut that let a completely dead instrumentation strategy keep a green
+// suite while a real Redis produced zero entries per job.
+//
+// The decoration always happens BEFORE `register()` here, mirroring the real
+// lifecycle: the explorer decorates at `BullRegistrar.onModuleInit`, Telescope
+// binds its context at `onApplicationBootstrap`.
+//
 import 'reflect-metadata';
 import {
   type BatchHandle,
@@ -10,12 +21,15 @@ import {
 } from '@dudousxd/nestjs-telescope';
 import { WorkerHost } from '@nestjs/bullmq';
 import { NotFoundException } from '@nestjs/common';
-import type { DiscoveryService } from '@nestjs/core';
+import { DiscoveryService, type ModuleRef } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
 import { BullMqJobWatcher } from './bullmq-job.watcher.js';
+import {
+  installProcessorInstrumentation,
+  isInstrumentedProcessor,
+} from './processor-instrumentation.js';
 
-// A realistic WorkerHost subclass. `process` is what the watcher must wrap.
-// A loose stand-in for the BullMQ Job shape the test processor reads.
+/** A loose stand-in for the BullMQ Job shape the test processors read. */
 type JobStub = {
   id?: string;
   name?: string;
@@ -25,6 +39,8 @@ type JobStub = {
   data?: { boom?: boolean; to?: string };
 };
 
+// A realistic WorkerHost subclass. Its bound `process` is what the explorer
+// decorates, and the decorated function is what the worker calls per job.
 class EmailProcessor extends WorkerHost {
   public calls = 0;
   async process(job: JobStub): Promise<string> {
@@ -47,6 +63,37 @@ interface Harness {
   recorded: RecordedEntry[];
   origins: BatchOrigin[];
   providers: Array<{ instance: unknown }>;
+  /** The function BullExplorer would give the worker for this processor. */
+  processorFor(instance: {
+    process: (job: JobStub, token?: string) => Promise<unknown>;
+  }): (job: JobStub, token?: string) => Promise<unknown>;
+}
+
+/** Structural stand-in for ModuleRef — the watcher only ever calls `get`. */
+function asModuleRef(source: { get(token: unknown): unknown }): ModuleRef {
+  const candidate: unknown = source;
+  if (isModuleRef(candidate)) return candidate;
+  throw new Error('unreachable: the stand-in exposes get()');
+}
+
+function isModuleRef(value: unknown): value is ModuleRef {
+  if (typeof value !== 'object' || value === null) return false;
+  return typeof Reflect.get(value, 'get') === 'function';
+}
+
+/** Call the decorated processor without pretending to know BullMQ's Job type. */
+function callProcessor(fn: unknown, job: JobStub, token?: string): Promise<unknown> {
+  if (typeof fn !== 'function') throw new Error('expected a processor function');
+  return Promise.resolve(fn(job, token));
+}
+
+/** The seam forwards `unknown[]`; narrow it back to what a processor is given. */
+function toJobArgs(args: unknown[]): [JobStub, string | undefined] {
+  const [job, token] = args;
+  return [
+    typeof job === 'object' && job !== null ? job : {},
+    typeof token === 'string' ? token : undefined,
+  ];
 }
 
 // The fake context simulates batch scoping: runInBatch assigns a batch id for
@@ -55,16 +102,24 @@ interface Harness {
 // job's batch. `recordThrows` simulates a hostile/regressed Recorder.
 function makeHarness(
   initialProviders: Array<{ instance: unknown }> = [],
-  options: { recordThrows?: boolean } = {},
+  options: { recordThrows?: boolean; seamUnavailable?: boolean } = {},
 ): Harness {
   const providers = [...initialProviders];
   const recorded: RecordedEntry[] = [];
   const origins: BatchOrigin[] = [];
   let batchSeq = 0;
   let currentBatch: string | null = null;
-  const discovery = {
-    getProviders: () => providers,
-  } as unknown as DiscoveryService;
+  const discovery = { getProviders: () => providers };
+
+  // Stands in for the app's ProcessorDecoratorService instance: the watcher
+  // recognises it by the patched `decorate`, and per-app state hangs off it.
+  const { decorate } = installProcessorInstrumentation();
+  const decoratorService = { decorate };
+  // A host that replaced ProcessorDecoratorService with its own subclass: the
+  // patch is shadowed, so the watcher must notice and take the fallback.
+  const resolvedDecorator = options.seamUnavailable
+    ? { decorate: (processor: unknown) => processor }
+    : decoratorService;
 
   const ctx: WatcherContext = {
     record: (input) => {
@@ -94,9 +149,26 @@ function makeHarness(
     },
     beginBatch: (): BatchHandle => ({ id: 'batch', end: () => {} }),
     config: resolveConfig({}),
-    moduleRef: { get: () => discovery } as unknown as WatcherContext['moduleRef'],
+    moduleRef: asModuleRef({
+      get: (token: unknown) => (token === DiscoveryService ? discovery : resolvedDecorator),
+    }),
   };
-  return { ctx, recorded, origins, providers };
+
+  return {
+    ctx,
+    recorded,
+    origins,
+    providers,
+    processorFor: (instance) => {
+      // Exactly BullExplorer.handleProcessor's static branch.
+      const bound = (...args: unknown[]): unknown => {
+        const [job, token] = toJobArgs(args);
+        return instance.process(job, token);
+      };
+      const decorated: unknown = decoratorService.decorate?.(bound);
+      return (job, token) => callProcessor(decorated, job, token);
+    },
+  };
 }
 
 describe('BullMqJobWatcher', () => {
@@ -104,12 +176,13 @@ describe('BullMqJobWatcher', () => {
     expect(new BullMqJobWatcher().type).toBe('job');
   });
 
-  it('wraps a WorkerHost process() and records a completed job correlated to a queue batch', async () => {
+  it('wraps the decorated processor and records a completed job in a queue batch', async () => {
     const proc = new EmailProcessor();
-    const { ctx, recorded, origins } = makeHarness([{ instance: proc }]);
-    await new BullMqJobWatcher().register(ctx);
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher().register(harness.ctx);
 
-    const result = await proc.process({
+    const result = await run({
       id: '1',
       name: 'send-welcome-email',
       queueName: 'mail',
@@ -120,9 +193,9 @@ describe('BullMqJobWatcher', () => {
 
     expect(result).toBe('ok'); // original behavior preserved
     expect(proc.calls).toBe(1); // original actually ran
-    expect(origins).toEqual(['queue']); // ran inside a 'queue' batch
-    expect(recorded).toHaveLength(1);
-    const entry = recorded[0]!;
+    expect(harness.origins).toEqual(['queue']); // ran inside a 'queue' batch
+    expect(harness.recorded).toHaveLength(1);
+    const entry = harness.recorded[0]!;
     expect(entry.type).toBe('job');
     expect(entry.content).toMatchObject({
       id: '1',
@@ -135,27 +208,40 @@ describe('BullMqJobWatcher', () => {
     expect(entry.familyHash).toBe('mail:send-welcome-email');
   });
 
+  it('reports the processors decorated before register() — the ordering proof', async () => {
+    const proc = new EmailProcessor();
+    const harness = makeHarness([{ instance: proc }]);
+    // The explorer decorates at ITS onModuleInit, i.e. before Telescope registers.
+    harness.processorFor(proc);
+    const watcher = new BullMqJobWatcher();
+    await watcher.register(harness.ctx);
+
+    expect(watcher.instrumentedBeforeRegister).toBe(1);
+  });
+
   it('records a failed job and re-throws so the host still sees the error', async () => {
     const proc = new EmailProcessor();
-    const { ctx, recorded } = makeHarness([{ instance: proc }]);
-    await new BullMqJobWatcher().register(ctx);
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher().register(harness.ctx);
 
     await expect(
-      proc.process({ id: '2', name: 'send', queueName: 'mail', data: { boom: true } }),
+      run({ id: '2', name: 'send', queueName: 'mail', data: { boom: true } }),
     ).rejects.toThrow('SMTP down');
 
-    const jobEntry = recorded.find((e) => e.type === 'job');
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
     expect(jobEntry!.content).toMatchObject({ status: 'failed', failureReason: 'SMTP down' });
     expect(jobEntry!.tags).toContain('failed');
   });
 
   it('records an exception entry for a failed job, in the job’s own batch', async () => {
     const proc = new EmailProcessor();
-    const { ctx, recorded } = makeHarness([{ instance: proc }]);
-    await new BullMqJobWatcher().register(ctx);
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher().register(harness.ctx);
 
     await expect(
-      proc.process({
+      run({
         id: '2',
         name: 'send',
         queueName: 'mail',
@@ -164,8 +250,8 @@ describe('BullMqJobWatcher', () => {
       }),
     ).rejects.toThrow('SMTP down');
 
-    const jobEntry = recorded.find((e) => e.type === 'job');
-    const exception = recorded.find((e) => e.type === 'exception');
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
+    const exception = harness.recorded.find((e) => e.type === 'exception');
     expect(exception).toBeDefined();
     // The failed job entry alone carries the message as a string only — it opens
     // no family, so nothing alerts or diagnoses on it. The exception entry is
@@ -187,8 +273,8 @@ describe('BullMqJobWatcher', () => {
 
   // A worker that re-uses a service throwing NotFoundException is expected
   // control flow, exactly as it is on a route. If a retrying queue could open a
-  // family here it would page on-call through the back door the front door was
-  // hardened against.
+  // family here it would page on-call through the back door that the front door
+  // was hardened against.
   it('applies the shared 4xx skip: a NotFoundException from a job records no exception', async () => {
     class NotFoundProcessor extends WorkerHost {
       async process(_job: JobStub): Promise<never> {
@@ -196,27 +282,29 @@ describe('BullMqJobWatcher', () => {
       }
     }
     const proc = new NotFoundProcessor();
-    const { ctx, recorded } = makeHarness([{ instance: proc }]);
-    await new BullMqJobWatcher().register(ctx);
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher().register(harness.ctx);
 
-    await expect(proc.process({ id: '7', name: 'lookup', queueName: 'users' })).rejects.toThrow(
+    await expect(run({ id: '7', name: 'lookup', queueName: 'users' })).rejects.toThrow(
       'no such user',
     );
 
-    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
+    expect(harness.recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
     // The failed job entry is still recorded — the 4xx is not lost, it just
     // doesn't spawn an exception family.
-    expect(recorded.filter((e) => e.type === 'job')).toHaveLength(1);
+    expect(harness.recorded.filter((e) => e.type === 'job')).toHaveLength(1);
   });
 
   it('records no exception entry for a job that succeeds', async () => {
     const proc = new EmailProcessor();
-    const { ctx, recorded } = makeHarness([{ instance: proc }]);
-    await new BullMqJobWatcher().register(ctx);
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher().register(harness.ctx);
 
-    await proc.process({ id: '8', name: 'send', queueName: 'mail' });
+    await run({ id: '8', name: 'send', queueName: 'mail' });
 
-    expect(recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
+    expect(harness.recorded.filter((e) => e.type === 'exception')).toHaveLength(0);
   });
 
   it('tags slow jobs whose duration meets slowMs', async () => {
@@ -230,65 +318,90 @@ describe('BullMqJobWatcher', () => {
         return value;
       },
     };
-    const { ctx, recorded } = makeHarness([{ instance: proc }]);
-    await new BullMqJobWatcher({ slowMs: 100, clock }).register(ctx);
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher({ slowMs: 100, clock }).register(harness.ctx);
 
-    await proc.process({ id: '3', name: 'slow', queueName: 'reports' });
+    await run({ id: '3', name: 'slow', queueName: 'reports' });
 
-    expect(recorded[0]!.durationMs).toBe(150);
-    expect(recorded[0]!.tags).toContain('slow');
+    expect(harness.recorded[0]!.durationMs).toBe(150);
+    expect(harness.recorded[0]!.tags).toContain('slow');
   });
 
-  it('ignores non-WorkerHost providers and null instances', async () => {
-    const proc = new EmailProcessor();
-    const { ctx, recorded } = makeHarness([
-      { instance: null },
-      { instance: new NotAProcessor() },
-      { instance: proc },
-    ]);
-    await new BullMqJobWatcher().register(ctx);
+  it('forwards the token BullMQ passes alongside the job', async () => {
+    const seen: Array<string | undefined> = [];
+    class TokenProcessor extends WorkerHost {
+      async process(_job: JobStub, token?: string): Promise<string> {
+        seen.push(token);
+        return 'ok';
+      }
+    }
+    const proc = new TokenProcessor();
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher().register(harness.ctx);
 
-    await new NotAProcessor().process(); // must NOT be wrapped
-    expect(recorded).toHaveLength(0);
+    await run({ id: '9', name: 'tok', queueName: 'q' }, 'token-123');
 
-    await proc.process({ id: '4', name: 'x', queueName: 'q' });
-    expect(recorded).toHaveLength(1);
+    expect(seen).toEqual(['token-123']);
   });
 
-  it('patches a shared prototype only once even with multiple instances', async () => {
-    const a = new EmailProcessor();
-    const b = new EmailProcessor();
-    const { ctx, recorded } = makeHarness([{ instance: a }, { instance: b }]);
-    await new BullMqJobWatcher().register(ctx);
+  // The fallback exists so an older @nestjs/bullmq (or a host that replaced the
+  // decorator provider) still gets captured jobs instead of silence. It
+  // re-points `worker.processFn`, the function BullMQ reads on every job.
+  it('falls back to instrumenting worker.processFn when the seam is shadowed', async () => {
+    class FallbackProcessor extends WorkerHost {
+      public calls = 0;
+      async process(_job: JobStub): Promise<string> {
+        this.calls++;
+        return 'ok';
+      }
+    }
+    const proc = new FallbackProcessor();
+    // What @nestjs/bullmq's explorer leaves behind on the host: the worker it
+    // created, holding the bound (un-instrumented) processor.
+    Reflect.set(proc, '_worker', { processFn: proc.process.bind(proc) });
+    const harness = makeHarness([{ instance: proc }], { seamUnavailable: true });
 
-    await a.process({ id: '5', name: 'x', queueName: 'q' });
-    expect(recorded).toHaveLength(1); // not double-wrapped
+    await new BullMqJobWatcher().register(harness.ctx);
+
+    const worker: unknown = Reflect.get(proc, '_worker');
+    const processFn =
+      typeof worker === 'object' && worker !== null && Reflect.get(worker, 'processFn');
+    expect(isInstrumentedProcessor(processFn)).toBe(true);
+
+    await expect(callProcessor(processFn, { id: '5', name: 'fb', queueName: 'q' })).resolves.toBe(
+      'ok',
+    );
+    expect(proc.calls).toBe(1);
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
+    expect(jobEntry?.content).toMatchObject({ name: 'fb', queue: 'q', status: 'completed' });
   });
 
-  it('registers cleanly when no processors are present', async () => {
-    const { ctx, recorded } = makeHarness([{ instance: new NotAProcessor() }]);
-    await expect(new BullMqJobWatcher().register(ctx)).resolves.toBeUndefined();
-    expect(recorded).toHaveLength(0);
+  it('warns but does not throw when no processors are present', async () => {
+    const harness = makeHarness([{ instance: new NotAProcessor() }]);
+    await expect(new BullMqJobWatcher().register(harness.ctx)).resolves.toBeUndefined();
+    expect(harness.recorded).toHaveLength(0);
   });
 
   it('correlates work emitted during process to the same queue batch as the job entry', async () => {
-    const { ctx, recorded, providers } = makeHarness();
-    // Fresh subclass -> pristine prototype, isolated from other tests.
+    const harness = makeHarness();
     class CorrelatingProcessor extends WorkerHost {
       async process(_job: JobStub): Promise<string> {
         // Simulate a query/exception emitted while the job runs.
-        ctx.record({ type: 'query', content: { sql: 'select 1' } });
+        harness.ctx.record({ type: 'query', content: { sql: 'select 1' } });
         return 'ok';
       }
     }
     const proc = new CorrelatingProcessor();
-    providers.push({ instance: proc });
-    await new BullMqJobWatcher().register(ctx);
+    harness.providers.push({ instance: proc });
+    const run = harness.processorFor(proc);
+    await new BullMqJobWatcher().register(harness.ctx);
 
-    await proc.process({ id: '9', name: 'corr', queueName: 'q' });
+    await run({ id: '9', name: 'corr', queueName: 'q' });
 
-    const innerQuery = recorded.find((e) => e.type === 'query');
-    const jobEntry = recorded.find((e) => e.type === 'job');
+    const innerQuery = harness.recorded.find((e) => e.type === 'query');
+    const jobEntry = harness.recorded.find((e) => e.type === 'job');
     expect(innerQuery).toBeDefined();
     expect(jobEntry).toBeDefined();
     expect(jobEntry!.batch).not.toBeNull();
@@ -296,8 +409,19 @@ describe('BullMqJobWatcher', () => {
     expect(innerQuery!.batch).toBe(jobEntry!.batch);
   });
 
+  it('runs the job untraced when it fires before register() bound a context', async () => {
+    const proc = new EmailProcessor();
+    const harness = makeHarness([{ instance: proc }]);
+    const run = harness.processorFor(proc);
+
+    // A job picked up between onModuleInit and onApplicationBootstrap: not
+    // captured, but it must still run and still return normally.
+    await expect(run({ id: '10', name: 'early', queueName: 'q' })).resolves.toBe('ok');
+    expect(proc.calls).toBe(1);
+    expect(harness.recorded).toHaveLength(0);
+  });
+
   it('never corrupts the job outcome when ctx.record throws', async () => {
-    // Fresh subclasses -> pristine prototypes (no wrapper nesting from prior tests).
     class OkProc extends WorkerHost {
       async process(_job: JobStub): Promise<string> {
         return 'ok';
@@ -311,16 +435,16 @@ describe('BullMqJobWatcher', () => {
 
     const okProc = new OkProc();
     const okHarness = makeHarness([{ instance: okProc }], { recordThrows: true });
+    const runOk = okHarness.processorFor(okProc);
     await new BullMqJobWatcher().register(okHarness.ctx);
     // Success must stay success even though record() throws.
-    await expect(okProc.process({ id: '1', name: 'x', queueName: 'q' })).resolves.toBe('ok');
+    await expect(runOk({ id: '1', name: 'x', queueName: 'q' })).resolves.toBe('ok');
 
     const boomProc = new BoomProc();
     const boomHarness = makeHarness([{ instance: boomProc }], { recordThrows: true });
+    const runBoom = boomHarness.processorFor(boomProc);
     await new BullMqJobWatcher().register(boomHarness.ctx);
     // The host's original error must propagate, not the recorder's.
-    await expect(boomProc.process({ id: '2', name: 'x', queueName: 'q' })).rejects.toThrow(
-      'SMTP down',
-    );
+    await expect(runBoom({ id: '2', name: 'x', queueName: 'q' })).rejects.toThrow('SMTP down');
   });
 });

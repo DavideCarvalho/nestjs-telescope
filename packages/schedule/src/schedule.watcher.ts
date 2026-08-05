@@ -13,8 +13,15 @@ import {
   isScheduleKind,
 } from '@dudousxd/nestjs-telescope';
 import { Logger } from '@nestjs/common';
-import { DiscoveryService, MetadataScanner, type ModuleRef } from '@nestjs/core';
+import type { ModuleRef } from '@nestjs/core';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import {
+  type ExplorerInstrumentation,
+  type ScheduleRunner,
+  type ScheduledFn,
+  bindScheduleRunner,
+  installExplorerInstrumentation,
+} from './explorer-instrumentation.js';
 
 /** The `@nestjs/schedule` metadata keys its decorators set on each handler.
  *  Read from the installed package's `schedule.constants` (v4); a method
@@ -32,13 +39,6 @@ const SCHEDULER_TYPE_LABEL: Record<number, string> = {
   2: 'timeout',
   3: 'interval',
 };
-
-/** Marks a prototype whose scheduled methods we've already wrapped. */
-const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:schedulePatched');
-
-type AnyFn = (...args: unknown[]) => unknown;
-type ProviderWrapper = { instance?: unknown };
-type DiscoveryLike = { getProviders(): ProviderWrapper[] };
 
 /** What we read off a `@nestjs/schedule` CronJob — structural, never the import. */
 interface CronJobLike {
@@ -116,10 +116,10 @@ export interface ScheduleWatcherOptions {
 
 /** Reflect.getMetadata, defensively (target may be a non-decorable value). */
 function readMetadata(key: string, target: unknown): unknown {
-  if (typeof target !== 'function' && (typeof target !== 'object' || target === null)) {
-    return undefined;
+  if (typeof target === 'function' || (typeof target === 'object' && target !== null)) {
+    return Reflect.getMetadata(key, target);
   }
-  return Reflect.getMetadata(key, target as object);
+  return undefined;
 }
 
 /** Is this method decorated by a `@nestjs/schedule` decorator? Returns the
@@ -143,11 +143,20 @@ function schedulerLabel(methodRef: unknown): string | null {
  * records a job-type entry for the run itself.
  *
  * ## How it works
- * At registration the watcher uses NestJS `DiscoveryService` + `MetadataScanner`
- * to find every provider method carrying a `@nestjs/schedule` metadata key
- * (`SCHEDULER_TYPE` / `SCHEDULE_*_OPTIONS`) and replaces it on the provider's
- * prototype with a wrapper that runs the original inside
- * `ctx.runInBatch('schedule', ...)` and records the run.
+ * The watcher's CONSTRUCTOR patches
+ * `ScheduleExplorer.prototype.wrapFunctionInTryCatchBlocks` — the last point at
+ * which the framework still holds the RAW handler — so every function the
+ * explorer hands to the scheduler is already a Telescope wrapper. See
+ * `explorer-instrumentation.ts` for why that seam and not the provider's
+ * prototype: the explorer reads `instance[key]` once at its own `onModuleInit`,
+ * so a prototype patch applied at `onApplicationBootstrap` is never seen by a
+ * timer-driven run. Importing Telescope first does not change that (measured: a
+ * `@Cron` firing every second for ten seconds produced zero entries), and
+ * neither does moving the registrar to `onModuleInit`.
+ *
+ * `register()` then points that seam at the live `WatcherContext`. The binding
+ * is deliberately late: a tick that fires before Telescope has registered calls
+ * the handler straight through rather than waiting on it.
  *
  * Entries are recorded as `EntryType.Job` (a scheduled task *is* a job; the
  * `'schedule'` batch origin distinguishes it from a queue job), while the
@@ -155,15 +164,14 @@ function schedulerLabel(methodRef: unknown): string | null {
  * `/meta`.
  *
  * The wrapper never swallows the host's error: on failure it records a `failed`
- * entry and re-throws so `@nestjs/schedule`'s own error handling is unaffected.
+ * entry and re-throws, so `@nestjs/schedule`'s own try/catch — which sits
+ * outside Telescope's wrapper — logs it exactly as it would have.
  *
  * @remarks
- * `@nestjs/schedule`'s explorer captures each handler reference at its own
- * `onModuleInit`. For the prototype patch to take effect, Telescope's module
- * must initialize **before** `ScheduleModule` (import it first / higher in the
- * module tree). If `ScheduleModule` initializes first, it will have bound the
- * un-wrapped handler and that task won't be captured (surfaced by the
- * "no scheduled methods found" warning only when nothing matched at all).
+ * If the installed `@nestjs/schedule` exposes no such seam, `register()` warns
+ * with the version and the fact that scheduled runs are not captured, rather
+ * than registering and recording nothing — silence is what let the previous
+ * strategy survive.
  */
 export class ScheduleWatcher implements Watcher, ScheduleManager {
   /** String `type` (allowed by the SPI) so the watcher shows distinctly in
@@ -172,106 +180,113 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
   private readonly logger = new Logger(ScheduleWatcher.name);
   private readonly slowMs: number;
   private readonly clock: { now(): number };
-  private readonly scanner = new MetadataScanner();
-  /** Prototypes already patched, so shared prototypes wrap exactly once. */
-  private readonly patched = new WeakSet<object>();
+  private readonly instrumentation: ExplorerInstrumentation;
   /** Last observed run per task name, fed by the record path (Schedule console). */
   private readonly lastRuns = new Map<string, LastRun>();
   /** Captured at register() so `listTasks` can resolve `SchedulerRegistry`. */
   private moduleRef: ModuleRef | undefined;
+  /**
+   * Handlers the seam had already wrapped when `register()` ran. A non-zero
+   * count is the machine-checkable proof that instrumentation preceded the
+   * framework's explorer; a regression to late patching drives it to zero.
+   */
+  private wrappedBeforeRegister = 0;
 
   constructor(options: ScheduleWatcherOptions = {}) {
     this.slowMs = options.slowMs ?? 1000;
     this.clock = options.clock ?? { now: () => Date.now() };
+    // Runs while the host is still building its module metadata — before
+    // NestFactory.create, therefore before ScheduleExplorer.onModuleInit.
+    this.instrumentation = installExplorerInstrumentation();
+  }
+
+  /** Scheduled handlers instrumented before `register()` ran. Read by the
+   *  ordering regression test, and by nothing else. */
+  get instrumentedBeforeRegister(): number {
+    return this.wrappedBeforeRegister;
   }
 
   register(ctx: WatcherContext): void {
     this.moduleRef = ctx.moduleRef;
-    const discovery = ctx.moduleRef.get(DiscoveryService, { strict: false }) as DiscoveryLike;
-    let count = 0;
-    for (const wrapper of discovery.getProviders()) {
-      const instance = wrapper.instance;
-      if (!instance || typeof instance !== 'object') continue;
-      const proto = Object.getPrototypeOf(instance) as (object & { [PATCHED]?: boolean }) | null;
-      if (!proto || proto[PATCHED]) continue;
-
-      const methodNames = this.methodNames(proto);
-      let wrappedOnProto = 0;
-      for (const name of methodNames) {
-        const label = schedulerLabel((proto as Record<string, unknown>)[name]);
-        if (!label) continue;
-        this.patchMethod(proto as Record<string, AnyFn>, name, label, ctx);
-        wrappedOnProto++;
-      }
-      if (wrappedOnProto > 0) {
-        proto[PATCHED] = true;
-        count += wrappedOnProto;
-      }
+    const host = this.resolveSeamHost(ctx);
+    if (!host) {
+      const reason =
+        this.instrumentation.reason ??
+        'no ScheduleExplorer is present in the module tree (is ScheduleModule.forRoot() imported?)';
+      this.logger.warn(`ScheduleWatcher: ${reason}. Scheduled runs will NOT be captured.`);
+      return;
     }
-    if (count === 0) {
+
+    const runner: ScheduleRunner = (methodRef, invoke) => this.runScheduled(ctx, methodRef, invoke);
+    this.wrappedBeforeRegister = bindScheduleRunner(host, runner);
+    if (this.wrappedBeforeRegister === 0) {
       this.logger.warn(
-        'ScheduleWatcher: no @nestjs/schedule (@Cron/@Interval/@Timeout) methods found. ' +
-          'Scheduled tasks will not be captured. Ensure Telescope initializes before ScheduleModule.',
+        'ScheduleWatcher: no @nestjs/schedule (@Cron/@Interval/@Timeout) methods were found by the ' +
+          'explorer. Scheduled tasks will not be captured (request-scoped providers are skipped by ' +
+          '@nestjs/schedule itself).',
       );
-    } else {
-      this.logger.log(`ScheduleWatcher: instrumented ${count} scheduled method(s).`);
+      return;
+    }
+    this.logger.log(
+      `ScheduleWatcher: instrumented ${this.wrappedBeforeRegister} scheduled method(s).`,
+    );
+  }
+
+  /**
+   * The app's `ScheduleExplorer` instance, but only if its wrapper factory is
+   * the function this package installed — a host that somehow supplied its own
+   * explorer would otherwise be reported as instrumented while recording
+   * nothing, which is the failure this watcher is being fixed for.
+   */
+  private resolveSeamHost(ctx: WatcherContext): object | null {
+    const { explorerClass, wrapFunction } = this.instrumentation;
+    if (!explorerClass || !wrapFunction) return null;
+    try {
+      const found: unknown = ctx.moduleRef.get(explorerClass, { strict: false });
+      if (typeof found !== 'object' || found === null) return null;
+      return Reflect.get(found, 'wrapFunctionInTryCatchBlocks') === wrapFunction ? found : null;
+    } catch {
+      return null;
     }
   }
 
-  /** Method names on a prototype, via MetadataScanner when available (NestJS
-   *  10/11), else a defensive own-property scan. */
-  private methodNames(proto: object): string[] {
-    const scanner = this.scanner as MetadataScanner & {
-      getAllMethodNames?: (prototype: object) => string[];
-    };
-    if (typeof scanner.getAllMethodNames === 'function') {
-      return scanner.getAllMethodNames(proto);
+  /** Name + kind for a handler, from the decorator metadata `@nestjs/schedule`
+   *  itself reads. Falls back to the method name, then to `'unnamed'`. */
+  private describe(methodRef: ScheduledFn): { name: string; label: string } {
+    try {
+      const named = readMetadata(SCHEDULER_NAME, methodRef);
+      const name =
+        typeof named === 'string' && named.length > 0 ? named : methodRef.name || 'unnamed';
+      return { name, label: schedulerLabel(methodRef) ?? 'cron' };
+    } catch {
+      return { name: 'unnamed', label: 'cron' };
     }
-    return Object.getOwnPropertyNames(proto).filter((name) => {
-      if (name === 'constructor') return false;
-      return typeof (proto as Record<string, unknown>)[name] === 'function';
-    });
   }
 
-  private patchMethod(
-    proto: Record<string, AnyFn>,
-    name: string,
-    label: string,
+  /** One scheduled run: its own `schedule` batch, its entry, and its throw
+   *  re-thrown so `@nestjs/schedule`'s own handler still sees it. */
+  private runScheduled(
     ctx: WatcherContext,
-  ): void {
-    const original = proto[name];
-    if (typeof original !== 'function') return;
-    const watcher = this;
-    const schedulerName = (readMetadata(SCHEDULER_NAME, original) as string | undefined) ?? name;
+    methodRef: ScheduledFn,
+    invoke: () => Promise<unknown>,
+  ): Promise<unknown> {
+    // Reading metadata happens on the host's own thread, before the task runs,
+    // so it gets the same guard the record path has: a hostile getter must not
+    // be able to stop a cron from firing.
+    const { name, label } = this.describe(methodRef);
 
-    proto[name] = function patchedScheduled(this: unknown, ...args: unknown[]): unknown {
-      return ctx.runInBatch('schedule', async () => {
-        const startedAt = watcher.clock.now();
-        try {
-          const result = await original.apply(this, args);
-          watcher.safeRecord(
-            ctx,
-            schedulerName,
-            label,
-            'completed',
-            watcher.clock.now() - startedAt,
-            undefined,
-          );
-          return result;
-        } catch (error) {
-          watcher.safeRecord(
-            ctx,
-            schedulerName,
-            label,
-            'failed',
-            watcher.clock.now() - startedAt,
-            error,
-          );
-          watcher.safeRecordException(ctx, schedulerName, label, error);
-          throw error; // never break the scheduled task
-        }
-      });
-    };
+    return ctx.runInBatch('schedule', async () => {
+      const startedAt = this.clock.now();
+      try {
+        const result = await invoke();
+        this.safeRecord(ctx, name, label, 'completed', this.clock.now() - startedAt, undefined);
+        return result;
+      } catch (error) {
+        this.safeRecord(ctx, name, label, 'failed', this.clock.now() - startedAt, error);
+        this.safeRecordException(ctx, name, label, error);
+        throw error; // never break the scheduled task
+      }
+    });
   }
 
   /**
