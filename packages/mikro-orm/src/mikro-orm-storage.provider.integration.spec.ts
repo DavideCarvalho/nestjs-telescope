@@ -415,6 +415,74 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect((await provider.get({})).data.map((e) => e.id)).toEqual(['e2']);
   });
 
+  it('pruneScopedBatch deletes at most `limit`, oldest first, and reports the remainder', async () => {
+    await provider.init();
+    const cutoff = new Date(Date.UTC(2025, 0, 1));
+    await provider.store(
+      Array.from({ length: 5 }, (_unused, index) =>
+        makeEntry({ id: `e${index}`, createdAt: new Date(Date.UTC(2024, 0, 1 + index)) }),
+      ),
+    );
+
+    // The bound is the point: this must never become the unbounded DELETE that
+    // holds row locks for the length of a table scan.
+    expect(await provider.pruneScopedBatch({ before: cutoff, limit: 2 })).toEqual({
+      deleted: 2,
+      hasMore: true,
+    });
+    // Oldest first, so a partial cycle still lowers the age of the oldest row.
+    expect((await provider.get({})).data.map((e) => e.id).sort()).toEqual(['e2', 'e3', 'e4']);
+
+    expect(await provider.pruneScopedBatch({ before: cutoff, limit: 10 })).toEqual({
+      deleted: 3,
+      hasMore: false,
+    });
+    expect((await provider.get({})).data).toHaveLength(0);
+  });
+
+  it('pruneScopedBatch honours the same type selectors as pruneScoped', async () => {
+    await provider.init();
+    const cutoff = new Date(Date.UTC(2025, 0, 1));
+    const old = new Date(Date.UTC(2024, 0, 1));
+    await provider.store([
+      makeEntry({ id: 'req-old', type: 'request', createdAt: old }),
+      makeEntry({ id: 'exc-old', type: 'exception', createdAt: old }),
+      makeEntry({ id: 'req-new', type: 'request', createdAt: new Date(Date.UTC(2026, 0, 1)) }),
+    ]);
+
+    expect(
+      await provider.pruneScopedBatch({ before: cutoff, excludeTypes: ['exception'], limit: 10 }),
+    ).toEqual({ deleted: 1, hasMore: false });
+    expect((await provider.get({})).data.map((e) => e.id).sort()).toEqual(['exc-old', 'req-new']);
+  });
+
+  it('lease SPI: one owner at a time, expiry reclaims, release is owner-checked', async () => {
+    await provider.init();
+    const now = Date.UTC(2026, 0, 1);
+
+    expect(await provider.tryAcquireLease('telescope:prune', 'pod-a', 60_000, now)).toBe(true);
+    expect(await provider.tryAcquireLease('telescope:prune', 'pod-b', 60_000, now)).toBe(false);
+    // Re-entrant for the same owner, so a restart is not locked out by itself.
+    expect(await provider.tryAcquireLease('telescope:prune', 'pod-a', 60_000, now)).toBe(true);
+
+    await provider.releaseLease('telescope:prune', 'pod-a');
+    expect(await provider.tryAcquireLease('telescope:prune', 'pod-b', 1_000, now)).toBe(true);
+
+    // A holder that died never releases; only the expiry frees the fleet.
+    expect(await provider.tryAcquireLease('telescope:prune', 'pod-c', 60_000, now + 500)).toBe(
+      false,
+    );
+    expect(await provider.tryAcquireLease('telescope:prune', 'pod-c', 60_000, now + 2_000)).toBe(
+      true,
+    );
+
+    // The stale holder finally releases; it must not hand pod-c's lease away.
+    await provider.releaseLease('telescope:prune', 'pod-b');
+    expect(await provider.tryAcquireLease('telescope:prune', 'pod-d', 60_000, now + 2_100)).toBe(
+      false,
+    );
+  });
+
   it('tags() returns counts, filtered by prefix', async () => {
     await provider.init();
     await provider.store([

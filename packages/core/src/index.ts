@@ -11,6 +11,7 @@ export * from './context/telescope-context.js';
 export * from './context/context-accessor.js';
 export * from './storage/storage-provider.js';
 export * from './storage/in-memory-storage-provider.js';
+export * from './prune/prune-lock.js';
 export * from './tagging/tagger.js';
 export * from './recorder/recorder.js';
 export * from './config/options.js';

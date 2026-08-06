@@ -1,6 +1,7 @@
 // packages/core/src/config/options.ts
 import type { Entry } from '../entry/entry.js';
 import type { ProfilingOptions, ResolvedProfilingConfig } from '../profiling/profiling-config.js';
+import type { TelescopePruneLock } from '../prune/prune-lock.js';
 import type { RedactOptions } from '../redaction/redact.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
@@ -66,6 +67,71 @@ export interface PruneOptions {
    * ```
    */
   perType?: Record<string, Duration>;
+  /**
+   * Rows deleted per bounded `DELETE` when the storage provider supports batched
+   * pruning (`pruneScopedBatch`). Default `1000`.
+   *
+   * This is a LOCK-DURATION knob, not a throughput knob. One unbounded delete
+   * over a big table can hold row locks for tens of minutes and every other
+   * writer queues behind it; a thousand-row delete commits in milliseconds and
+   * releases them. Larger values amortise round-trips but lengthen the lock
+   * each statement holds — which is the thing being fixed. Smaller values are
+   * gentler and slower. 1000 keeps the id list well inside every driver's bound
+   * parameter limit.
+   */
+  batchSize?: number;
+  /**
+   * Hard cap on batches per prune SCOPE per cycle. Default `50` — so ~50k rows
+   * per scope per cycle at the default `batchSize`.
+   *
+   * Without a ceiling, a table that has fallen badly behind turns a single tick
+   * into an hour-long loop, which is the failure mode batching is meant to end,
+   * merely spelled differently. With one, a backlog drains over several cycles
+   * and every cycle has a predictable, bounded cost. Reaching the ceiling logs a
+   * warning; the levers are this value, `batchSize`, and `intervalMs`.
+   */
+  maxBatchesPerCycle?: number;
+  /**
+   * Pause between consecutive batches, in ms. Default `50`. Set `0` to delete
+   * back-to-back.
+   *
+   * Only paid BETWEEN batches, so a store that drains in one batch — the healthy
+   * steady state — never pauses at all and this default costs nothing. It exists
+   * for the unhealthy case: on a small instance with a fixed IOPS budget, a tight
+   * delete loop can starve the application even though no single statement holds
+   * locks for long. The pause bounds the pruner's duty cycle. At the defaults a
+   * fully saturated cycle adds ~2.5s of pausing, against a 60s interval.
+   */
+  batchPauseMs?: number;
+  /**
+   * Cross-process prune lock, so a FLEET prunes once per cycle instead of once
+   * per pod. The per-process in-flight guard cannot see other replicas; this can.
+   *
+   *  - omitted / `true` — use the storage-backed lease when the configured
+   *    provider supports one (`tryAcquireLease` + `releaseLease`), otherwise no
+   *    locking. This is the default.
+   *  - `false` — never lock. Every replica prunes on its own schedule (the
+   *    behaviour before this option existed).
+   *  - a {@link TelescopePruneLock} — use this host-supplied implementation, e.g.
+   *    one backed by a job engine's singleton mutex. Read the interface's doc
+   *    before writing one; the contract is short but it is exact.
+   *
+   * The lock is ADVISORY. Losing it costs a duplicated delete, never a wrong
+   * result, so the pruner fails OPEN: if the lock mechanism itself is broken it
+   * warns and prunes anyway rather than letting retention silently stop.
+   */
+  lock?: boolean | TelescopePruneLock;
+  /**
+   * Lease TTL for the prune lock, in ms. Defaults to `max(intervalMs * 3, 60_000)`.
+   *
+   * The TTL only matters when a holder DIES mid-cycle (a normal cycle releases in
+   * a `finally`), so it is the answer to "how long may the whole fleet go without
+   * pruning after one pod is killed". Three intervals is short enough to recover
+   * quickly and long enough that a slow-but-alive cycle does not routinely lose
+   * its own lease. Losing it early is not an error — the second pruner simply
+   * deletes rows the first is already deleting.
+   */
+  lockTtlMs?: number;
 }
 
 export interface RecorderTuning {
@@ -165,6 +231,24 @@ export interface ResolvedCoreConfig {
      * pruner runs a single global cycle exactly as before.
      */
     perTypeMs: Record<string, number>;
+    /**
+     * Batched-delete tuning, all REQUIRED here even though every author-facing
+     * field is optional: `resolveConfig` is the single place defaults are
+     * applied, so a future field added to `PruneOptions` and forgotten there is
+     * a compile error rather than an `undefined` that reaches the delete loop.
+     */
+    batchSize: number;
+    maxBatchesPerCycle: number;
+    batchPauseMs: number;
+    lockTtlMs: number;
+    /**
+     * Whether cross-process locking is wanted at all. `false` when the host set
+     * `prune.lock: false`; otherwise `true` — which still yields no locking when
+     * neither a host lock nor a lease-capable provider is available.
+     */
+    lockEnabled: boolean;
+    /** Host-supplied lock. Absent means "use the storage lease if there is one". */
+    lock?: TelescopePruneLock;
   };
   /**
    * Resolved archive config (with `batchSize`/`maxBatchesPerCycle` defaulted),

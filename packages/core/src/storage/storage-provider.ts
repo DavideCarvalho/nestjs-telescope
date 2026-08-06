@@ -70,6 +70,48 @@ export interface PruneScope {
   keepLast?: number;
 }
 
+/**
+ * A {@link PruneScope} with a hard cap on how many rows one call may delete —
+ * the unit of work behind the pruner's batched delete loop (see
+ * {@link StorageProvider.pruneScopedBatch}).
+ *
+ * `keepLast` is deliberately ABSENT from this type, and that omission is
+ * load-bearing rather than an oversight: "keep the newest N of the doomed rows"
+ * is a property of the WHOLE matched set, so it cannot be evaluated correctly
+ * one bounded batch at a time without re-deriving the reprieve boundary on every
+ * batch (a full ordered scan per batch — the opposite of the point). Modelling
+ * it out means neither the pruner nor a provider can accidentally combine the
+ * two: a `keepLast` scope is a compile error here, and the pruner falls back to
+ * the unbounded {@link StorageProvider.pruneScoped} for those scopes.
+ */
+export interface BoundedPruneScope extends Omit<PruneScope, 'keepLast'> {
+  /**
+   * Maximum rows this single call may delete. Always >= 1. A provider MUST NOT
+   * delete more than this, because the whole point is bounding how long one
+   * statement holds locks.
+   */
+  limit: number;
+}
+
+/** Outcome of one bounded delete (see {@link StorageProvider.pruneScopedBatch}). */
+export interface BoundedPruneResult {
+  /** Rows actually deleted by this call. Never greater than `limit`. */
+  deleted: number;
+  /**
+   * `true` when the provider stopped because it reached `limit` and in-scope
+   * rows MAY remain — the pruner's cue to run another batch. `false` means the
+   * scope was drained and the pruner stops for this cycle.
+   *
+   * Being wrong in the `false` direction is safe (the remainder is deleted next
+   * cycle); being wrong in the `true` direction only wastes a round-trip, since
+   * the loop is also capped by `prune.maxBatchesPerCycle`. Providers SHOULD
+   * derive it from the number of rows they SELECTED (`selected === limit`), not
+   * from the number they managed to delete — a racing pruner can shrink the
+   * latter while plenty of work remains.
+   */
+  hasMore: boolean;
+}
+
 export interface TagCount {
   tag: string;
   count: number;
@@ -115,6 +157,63 @@ export interface StorageProvider {
    * rows. Returns the number of rows deleted.
    */
   pruneScoped?(input: PruneScope): Promise<number>;
+  /**
+   * BOUNDED sibling of {@link pruneScoped}: delete at most `input.limit` of the
+   * scope's rows, OLDEST FIRST, and report whether more remain. ADDITIVE and
+   * OPTIONAL — providers that omit it keep working, with the pruner falling back
+   * to the unbounded `pruneScoped` (and logging the capability warning once).
+   *
+   * WHY this exists: `pruneScoped` is one unbounded `DELETE`. On a large table
+   * whose retention predicate matches nearly every row, the planner correctly
+   * picks a full scan, and that ONE statement can hold row locks for tens of
+   * minutes — every other writer on the database queues behind it, and a fleet
+   * of replicas piles more of them on. Deleting the same rows in short,
+   * committed batches releases locks between batches, so the co-tenants of the
+   * database get windows even while a badly-behind table is draining.
+   *
+   * Contract:
+   *  - Delete OLDEST FIRST (ascending `createdAt`). Oldest-first is what makes
+   *    the loop converge and what makes a partial cycle still reduce the age of
+   *    the oldest surviving entry, which is the number retention is judged on.
+   *  - Each call MUST be independently committed. Wrapping the whole loop in one
+   *    transaction would recreate exactly the long-lock problem this replaces.
+   *  - `limit` is a hard cap, not a hint.
+   *  - Return `hasMore: true` iff the call was cut short by `limit`.
+   *  - Type selection (`type` / `excludeTypes`) is identical to `pruneScoped`.
+   *
+   * Idempotent and safe to call concurrently: two processes running this against
+   * the same store simply race for the same rows and one wins.
+   */
+  pruneScopedBatch?(input: BoundedPruneScope): Promise<BoundedPruneResult>;
+  /**
+   * Best-effort NAMED LEASE, backing the default cross-process prune lock
+   * (`StorageLeasePruneLock`). ADDITIVE and OPTIONAL; must be implemented
+   * together with {@link releaseLease} (see {@link isLeaseCapableStorage}).
+   *
+   * Atomically grants `key` to `owner` until `nowMs + ttlMs` and returns `true`,
+   * IFF one of the following holds at `nowMs`:
+   *  - no lease row exists for `key`;
+   *  - the existing lease has EXPIRED (`expiresAt <= nowMs`) — this is what stops
+   *    a holder that crashed mid-cycle from blocking the fleet forever; or
+   *  - the existing lease is already held by this same `owner` (re-entrant
+   *    refresh, so a restarted pod with a stable identity is not locked out by
+   *    its own previous run).
+   *
+   * Otherwise it MUST return `false` and leave the row untouched.
+   *
+   * The check-and-set MUST be atomic against other processes sharing the store,
+   * because that atomicity is the entire value of the lease. It does NOT need to
+   * be linearizable, fenced, or clock-skew-proof: this lock is ADVISORY. Two
+   * winners cost a duplicated delete, never corruption.
+   */
+  tryAcquireLease?(key: string, owner: string, ttlMs: number, nowMs: number): Promise<boolean>;
+  /**
+   * Releases a lease previously granted by {@link tryAcquireLease}. MUST be a
+   * no-op unless `owner` still holds `key` — otherwise a slow holder whose lease
+   * already expired and was re-granted would release SOMEBODY ELSE's lease.
+   * MUST be idempotent.
+   */
+  releaseLease?(key: string, owner: string): Promise<void>;
   clear(): Promise<void>;
   /**
    * SHARED dedup for the `new-exception` alert. ADDITIVE and OPTIONAL.
@@ -145,4 +244,39 @@ export interface StorageProvider {
    * this as a no-op. Providers with no owned resources omit it.
    */
   close?(): void | Promise<void>;
+}
+
+/**
+ * A {@link StorageProvider} that supports bounded batched pruning.
+ *
+ * `pruneScopedBatch` has to stay OPTIONAL on `StorageProvider` — making it
+ * required would break every third-party provider on a minor release — but the
+ * providers shipped in this repo must all have it. Declaring them
+ * `implements BoundedPruneCapable` turns "somebody added a provider, or dropped
+ * the method from one, and the pruner silently fell back to a one-hour DELETE"
+ * from an invisible production regression into a compile error.
+ */
+export type BoundedPruneCapable = StorageProvider &
+  Required<Pick<StorageProvider, 'pruneScopedBatch'>>;
+
+/**
+ * A {@link StorageProvider} that can back the default cross-process prune lock.
+ * Same reasoning as {@link BoundedPruneCapable}: optional on the interface for
+ * third parties, compile-enforced on the providers in this repo — and it binds
+ * the PAIR, so a provider cannot ship `tryAcquireLease` without `releaseLease`
+ * and leave the fleet unable to prune until every lease times out.
+ */
+export type LeaseCapableStorage = StorageProvider &
+  Required<Pick<StorageProvider, 'tryAcquireLease' | 'releaseLease'>>;
+
+/**
+ * Runtime counterpart of {@link LeaseCapableStorage}: narrows an arbitrary
+ * provider (possibly third-party, possibly older than this SPI) to one that can
+ * back the default prune lease. Both halves are required — a provider with only
+ * one of them is treated as not lease-capable rather than half-used.
+ */
+export function isLeaseCapableStorage(storage: StorageProvider): storage is LeaseCapableStorage {
+  return (
+    typeof storage.tryAcquireLease === 'function' && typeof storage.releaseLease === 'function'
+  );
 }

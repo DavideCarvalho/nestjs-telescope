@@ -22,6 +22,9 @@ interface StorageProvider {
   tags(prefix?: string): Promise<TagCount[]>;
   prune(olderThan: Date, keepLast?: number): Promise<number>;
   pruneScoped?(input: PruneScope): Promise<number>; // optional: per-type retention
+  pruneScopedBatch?(input: BoundedPruneScope): Promise<BoundedPruneResult>; // optional: bounded deletes
+  tryAcquireLease?(key, owner, ttlMs, nowMs): Promise<boolean>; // optional: cross-process prune lock
+  releaseLease?(key, owner): Promise<void>;
   clear(): Promise<void>;
 }
 ```
@@ -87,6 +90,108 @@ Each cycle the pruner runs **one bulk delete** for every non-overridden type at 
 <Callout type="info">
   Per-type retention uses a new optional `pruneScoped()` method on the storage contract. Every in-repo adapter (SQLite, MikroORM, Redis, in-memory) implements it. A third-party provider that predates it keeps working — the pruner falls back to the global cutoff for all types and logs a one-time warning.
 </Callout>
+
+### Bounded batched deletes
+
+A retention delete is `DELETE FROM telescope_entries WHERE created_at < ? AND type NOT IN (...)`. On a large table that predicate matches nearly every row, so the planner correctly picks a full scan — and that **one statement holds row locks for as long as the scan takes**. Measured on a shared MySQL instance: 755k rows / 1.3 GB, 21 concurrent prune deletes, the oldest 63 minutes in. Everything else writing to that database queued behind them, and the pruner still was not meeting its own 24h window.
+
+So the pruner does not issue one unbounded delete. It issues a **loop of short, individually-committed deletes**, oldest first, until the scope is drained or the cycle budget runs out:
+
+```ts
+TelescopeModule.forRoot({
+  prune: {
+    after: '24h',
+    intervalMs: 300_000,
+    batchSize: 1_000,          // rows per DELETE (default 1000)
+    maxBatchesPerCycle: 50,    // hard ceiling per scope per cycle (default 50)
+    batchPauseMs: 50,          // pause between batches (default 50)
+  },
+});
+```
+
+The same rows are deleted; the difference is that locks are released between batches, so a fleet of pruners and every co-tenant of the database get windows even while a badly-behind table drains.
+
+- **`batchSize`** is a lock-duration knob, not a throughput knob. Bigger batches amortise round-trips but lengthen each statement's lock — the thing being fixed.
+- **`maxBatchesPerCycle`** stops a badly-behind table from turning one tick into an hour-long loop, which would be the original failure spelled differently. A backlog drains over several cycles instead of monopolising one; hitting the ceiling logs a warning.
+- **`batchPauseMs`** is only ever paid *between* batches, so a store that drains in one batch — the healthy steady state — never waits. It exists so a tight delete loop cannot starve a small instance's IOPS budget.
+
+Deletes are **oldest-first**, which is what makes a partial cycle still lower the age of the oldest surviving entry — the number retention is actually judged on.
+
+<Callout type="info">
+  Batching rides a new optional `pruneScopedBatch()` on the storage contract, implemented by every in-repo adapter (SQLite, MikroORM, Redis, in-memory). A third-party provider without it keeps working with one unbounded delete and logs a one-time warning. `keepLast` scopes always take the unbounded path: "keep the newest N of the doomed rows" is a whole-set property that a per-batch bound cannot express, so `keepLast` is deliberately absent from the bounded scope type.
+</Callout>
+
+<Callout type="info">
+  **Portability.** `DELETE ... ORDER BY created_at LIMIT n` is MySQL/MariaDB-only. PostgreSQL has no `ORDER BY`/`LIMIT` on `DELETE` at all, SQLite only has it when compiled with `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`, and SQL Server spells it `DELETE TOP (n)` with no ordering. Since one MikroORM adapter serves all of them, the bound is expressed as **select the oldest `limit` ids, then delete by primary key** — plain SQL everywhere, and the better plan anyway: the `created_at` index walk stops after `limit` matches and takes no row locks, and the delete then touches exactly those primary keys.
+</Callout>
+
+### Pruning once per fleet, not once per pod
+
+The pruner refuses to start a cycle while one is already running **in that process**. It cannot see other replicas — so eight pods sharing one store still run eight cycles, deleting the same rows eight times over.
+
+`prune.lock` closes that. By default, when the configured provider supports it, Telescope takes a **lease row in the database it already writes to**:
+
+```ts
+// nothing to configure — this is the default on every in-repo adapter
+TelescopeModule.forRoot({ prune: { after: '24h' } });
+```
+
+One replica wins the lease and prunes; the others skip the tick and try again next time. The lease carries a TTL (`prune.lockTtlMs`, default `max(intervalMs * 3, 60s)`) so a pod that is killed mid-prune costs at most one TTL of fleet-wide silence instead of blocking retention forever. Set `prune: { lock: false }` to opt out.
+
+The lock is **advisory**. Two concurrent prunes are not wrong — they delete the same rows and one wins; the only cost is waste. So the pruner deliberately **fails open**: if the lock mechanism itself breaks, it warns once and prunes anyway, because a broken lock must never turn into "retention silently stopped and the table grew without bound".
+
+#### Supplying your own lock
+
+If you already run a primitive with cross-process exclusion — a job engine's singleton mutex, a Redis lock, a Postgres advisory lock — pass an implementation of `TelescopePruneLock` instead:
+
+```ts
+import type {
+  TelescopePruneLock,
+  TelescopePruneLockRequest,
+  TelescopePruneLockResult,
+} from '@dudousxd/nestjs-telescope';
+import { pruneLockAcquired, pruneLockHeld, pruneLockUnavailable } from '@dudousxd/nestjs-telescope';
+
+class SingletonMutexPruneLock implements TelescopePruneLock {
+  constructor(private readonly engine: MyJobEngine) {}
+
+  async acquire({ key, owner, ttlMs }: TelescopePruneLockRequest): Promise<TelescopePruneLockResult> {
+    try {
+      const started = await this.engine.tryStartSingleton(key, { ttlMs, owner });
+      if (!started) return pruneLockHeld('another pod holds the singleton');
+      return pruneLockAcquired({
+        key,
+        owner,
+        expiresAtMs: Date.now() + ttlMs,
+        release: () => this.engine.finish(key, owner).catch(() => undefined),
+      });
+    } catch (error) {
+      return pruneLockUnavailable(String(error));
+    }
+  }
+}
+
+TelescopeModule.forRootAsync({
+  inject: [MyJobEngine],
+  useFactory: (engine: MyJobEngine) => ({
+    prune: { after: '24h', lock: new SingletonMutexPruneLock(engine) },
+  }),
+});
+```
+
+The whole contract:
+
+1. `acquire` **must not throw** — return `{ acquired: false, reason: 'unavailable' }` instead. (The pruner catches a throw and treats it as `unavailable`, but do not rely on the backstop.)
+2. `acquire` **must be atomic** across processes for a given `key`: at most one caller sees `acquired: true` while a lease is live.
+3. A lease **must expire on its own** after roughly `ttlMs` even if `release` is never called. A `SIGKILL`ed holder must not wedge the fleet.
+4. Re-acquiring with the **same `owner`** while that owner still holds the lease **should succeed** (refresh), so a restart with a stable identity is not locked out by its own previous lease.
+5. `lease.release()` **must be idempotent, must not throw, and must not release a lease that has since been granted to a different owner.**
+6. **Precision is not required.** Clock skew, an expiry that fires while the holder is still working, two simultaneous winners — all acceptable. The lock is advisory; getting it wrong costs a duplicated delete, never a wrong result. Do not build consensus machinery.
+7. `acquire` **must return promptly and must not block waiting** for the lock. "Held" means "skip this tick", not "queue up" — waiting would rebuild the pile-up this exists to remove.
+
+`reason` matters: **`'held'`** (somebody else has it) makes the pruner stand down silently, **`'unavailable'`** (the mechanism is broken) makes it prune anyway with a warning. If you cannot tell the two apart, return `'unavailable'`.
+
+`owner` is `<instanceId>#<pid>`, stable for the life of the process and distinct between replicas. `key` is `telescope:prune` — one fleet-wide name, because every replica pruning the same store is exactly the set that should contend.
 
 ### Archiving before prune
 

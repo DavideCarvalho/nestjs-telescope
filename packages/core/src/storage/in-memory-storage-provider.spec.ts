@@ -258,6 +258,73 @@ describe('InMemoryStorageProvider', () => {
     });
   });
 
+  describe('pruneScopedBatch', () => {
+    const cutoff = new Date('2026-02-01T00:00:00Z');
+
+    async function seedOld(count: number): Promise<InMemoryStorageProvider> {
+      const store = new InMemoryStorageProvider();
+      const base = Date.parse('2026-01-01T00:00:00Z');
+      await store.store(
+        Array.from({ length: count }, (_unused, index) =>
+          entry({ id: `e${index}`, type: 'request', createdAt: new Date(base + index * 60_000) }),
+        ),
+      );
+      return store;
+    }
+
+    it('deletes at most `limit` rows, oldest first, and reports that more remain', async () => {
+      const store = await seedOld(5);
+      expect(await store.pruneScopedBatch({ before: cutoff, limit: 2 })).toEqual({
+        deleted: 2,
+        hasMore: true,
+      });
+      // The two OLDEST went; a partial cycle must lower the age of the oldest row.
+      expect((await store.get({})).data.map((e) => e.id).sort()).toEqual(['e2', 'e3', 'e4']);
+    });
+
+    it('reports hasMore false once the scope is drained', async () => {
+      const store = await seedOld(2);
+      expect(await store.pruneScopedBatch({ before: cutoff, limit: 10 })).toEqual({
+        deleted: 2,
+        hasMore: false,
+      });
+    });
+
+    it('honours the type selectors exactly as pruneScoped does', async () => {
+      const store = new InMemoryStorageProvider();
+      const old = new Date('2026-01-01T00:00:00Z');
+      await store.store([
+        entry({ id: 'req', type: 'request', createdAt: old }),
+        entry({ id: 'exc', type: 'exception', createdAt: old }),
+        entry({ id: 'fresh', type: 'request', createdAt: new Date('2026-03-01T00:00:00Z') }),
+      ]);
+      expect(
+        await store.pruneScopedBatch({ before: cutoff, excludeTypes: ['exception'], limit: 10 }),
+      ).toEqual({ deleted: 1, hasMore: false });
+      expect((await store.get({})).data.map((e) => e.id).sort()).toEqual(['exc', 'fresh']);
+    });
+  });
+
+  describe('lease SPI', () => {
+    it('grants to one owner, refuses another, and re-grants after release', async () => {
+      const store = new InMemoryStorageProvider();
+      expect(await store.tryAcquireLease('k', 'pod-a', 60_000, 1_000)).toBe(true);
+      expect(await store.tryAcquireLease('k', 'pod-b', 60_000, 1_000)).toBe(false);
+      expect(await store.tryAcquireLease('k', 'pod-a', 60_000, 1_000)).toBe(true);
+      await store.releaseLease('k', 'pod-a');
+      expect(await store.tryAcquireLease('k', 'pod-b', 60_000, 1_000)).toBe(true);
+    });
+
+    it("re-grants an expired lease and ignores the stale holder's release", async () => {
+      const store = new InMemoryStorageProvider();
+      expect(await store.tryAcquireLease('k', 'pod-a', 1_000, 0)).toBe(true);
+      expect(await store.tryAcquireLease('k', 'pod-b', 60_000, 500)).toBe(false);
+      expect(await store.tryAcquireLease('k', 'pod-b', 60_000, 2_000)).toBe(true);
+      await store.releaseLease('k', 'pod-a');
+      expect(await store.tryAcquireLease('k', 'pod-c', 60_000, 2_100)).toBe(false);
+    });
+  });
+
   describe('markFamilySeen', () => {
     it('reports new on first sight, repeat within window, new again after window', async () => {
       const store = new InMemoryStorageProvider();

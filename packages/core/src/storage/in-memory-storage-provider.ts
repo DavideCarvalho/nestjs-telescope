@@ -4,25 +4,48 @@ import type { RollupBucket, RollupDelta, RollupStore } from '../rollup/rollup-st
 import { mergeHistograms, normalizeHistogram } from '../rollup/rollup-store.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import type {
+  BoundedPruneCapable,
+  BoundedPruneResult,
+  BoundedPruneScope,
   EntryQuery,
   EntryWithBatch,
+  LeaseCapableStorage,
   Page,
   PruneScope,
-  StorageProvider,
   TagCount,
 } from './storage-provider.js';
 
 const DEFAULT_LIMIT = 50;
 
+/** One held lease in the process-local lease table. */
+interface HeldLease {
+  owner: string;
+  expiresAtMs: number;
+}
+
 /**
  * Process-local store. Used as a test double and as a zero-dependency option
  * for single-instance/serverless setups. Newest-first ordering by createdAt
  * then id; cursor is an opaque keyset (createdAt-ms, id) position.
+ *
+ * Declared against {@link BoundedPruneCapable} and {@link LeaseCapableStorage}
+ * (both of which extend `StorageProvider`) so dropping either capability from
+ * this class is a compile error rather than a silent fall back to unbounded,
+ * unlocked pruning.
  */
-export class InMemoryStorageProvider implements StorageProvider, RollupStore {
+export class InMemoryStorageProvider
+  implements BoundedPruneCapable, LeaseCapableStorage, RollupStore
+{
   private entries: Entry[] = [];
   /** Materialized rollups keyed `${metric}|${bucketStart}`. */
   private rollups = new Map<string, RollupBucket>();
+  /**
+   * Process-local lease table. Only ever exclusive WITHIN this process, which is
+   * exactly right: an in-memory store is not shared between replicas, so there is
+   * no fleet to coordinate — this exists so the lock path behaves identically on
+   * every provider rather than being a special case.
+   */
+  private readonly leases = new Map<string, HeldLease>();
 
   async store(entries: Entry[]): Promise<void> {
     this.entries.push(...entries);
@@ -132,10 +155,41 @@ export class InMemoryStorageProvider implements StorageProvider, RollupStore {
     return before_ - this.entries.length;
   }
 
+  async pruneScopedBatch(input: BoundedPruneScope): Promise<BoundedPruneResult> {
+    const doomed = this.entries.filter((entry) => inBoundedScope(entry, input));
+    if (doomed.length === 0) return { deleted: 0, hasMore: false };
+    // Oldest first, matching the SPI: a partial cycle must reduce the age of the
+    // oldest surviving entry, which is the number retention is judged on.
+    doomed.sort(this.oldestFirst);
+    const batch = new Set(doomed.slice(0, input.limit).map((entry) => entry.id));
+    this.entries = this.entries.filter((entry) => !batch.has(entry.id));
+    return { deleted: batch.size, hasMore: doomed.length > input.limit };
+  }
+
+  async tryAcquireLease(
+    key: string,
+    owner: string,
+    ttlMs: number,
+    nowMs: number,
+  ): Promise<boolean> {
+    const held = this.leases.get(key);
+    // Grant when free, expired (the crashed-holder case), or already ours.
+    if (held !== undefined && held.expiresAtMs > nowMs && held.owner !== owner) return false;
+    this.leases.set(key, { owner, expiresAtMs: nowMs + ttlMs });
+    return true;
+  }
+
+  async releaseLease(key: string, owner: string): Promise<void> {
+    // Owner-checked: a holder whose lease already expired and was re-granted
+    // must not release the new holder's lease.
+    if (this.leases.get(key)?.owner === owner) this.leases.delete(key);
+  }
+
   async clear(): Promise<void> {
     this.entries = [];
     this.rollups.clear();
     this.seenFamilies.clear();
+    this.leases.clear();
   }
 
   /** Last-seen wall time (ms) per error family, backing the shared new-exception
@@ -215,4 +269,16 @@ export class InMemoryStorageProvider implements StorageProvider, RollupStore {
     const delta = b.createdAt.getTime() - a.createdAt.getTime();
     return delta !== 0 ? delta : b.id.localeCompare(a.id);
   };
+
+  private oldestFirst = (a: Entry, b: Entry): number => -this.newestFirst(a, b);
+}
+
+/** Same selection as `pruneScoped`, minus `keepLast` (not part of a bounded scope). */
+function inBoundedScope(entry: Entry, scope: BoundedPruneScope): boolean {
+  if (entry.createdAt >= scope.before) return false;
+  if (scope.type !== undefined) return entry.type === scope.type;
+  if (scope.excludeTypes !== undefined && scope.excludeTypes.length > 0) {
+    return !scope.excludeTypes.includes(entry.type);
+  }
+  return true;
 }

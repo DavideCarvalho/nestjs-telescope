@@ -51,15 +51,18 @@ import { createHash } from 'node:crypto';
 //    not match 'slowest'). The `tags` JSON column stays the source of truth.
 //
 import type {
+  BoundedPruneCapable,
+  BoundedPruneResult,
+  BoundedPruneScope,
   Entry,
   EntryQuery,
   EntryWithBatch,
+  LeaseCapableStorage,
   Page,
   PruneScope,
   RollupBucket,
   RollupDelta,
   RollupStore,
-  StorageProvider,
   TagCount,
 } from '@dudousxd/nestjs-telescope';
 import {
@@ -72,6 +75,7 @@ import {
 import type { EntityManager, EntityMetadata, FilterQuery, Options } from '@mikro-orm/core';
 import { MikroORM, raw } from '@mikro-orm/core';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
+import { TelescopeLease } from './telescope-lease.entity.js';
 import { TelescopeRollup, type TelescopeRollupRow } from './telescope-rollup.entity.js';
 import { TelescopeSchemaMeta } from './telescope-schema-meta.entity.js';
 
@@ -177,6 +181,26 @@ function entryToRowData(entry: Entry): TelescopeEntryRow {
   return { ...entry, tagsText: padTags(entry.tags) };
 }
 
+/**
+ * `createdAt < before` plus the type selector (single type, or all-except a set,
+ * or — when neither is given — no type filter). MikroORM renders the type clause
+ * to `type = ?` / `type not in (?, …)` on every driver. Shared by the unbounded
+ * and the batched prune so the two can never select different rows.
+ */
+function scopedWhere(scope: {
+  before: Date;
+  type?: string;
+  excludeTypes?: string[];
+}): FilterQuery<TelescopeEntryRow> {
+  const where: FilterQuery<TelescopeEntryRow> = { createdAt: { $lt: scope.before } };
+  if (scope.type !== undefined) {
+    where.type = scope.type;
+  } else if (scope.excludeTypes !== undefined && scope.excludeTypes.length > 0) {
+    where.type = { $nin: scope.excludeTypes };
+  }
+  return where;
+}
+
 function resolveLimit(limit: number | undefined): number {
   return typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT;
 }
@@ -252,14 +276,25 @@ interface SchemaFingerprintPayload {
 }
 
 /**
- * Table names the gate owns and fingerprints — `telescope_entries` and
- * `telescope_rollups`. Derived from metadata (never hardcoded) so a future
- * tableName rename flows through automatically. Deliberately EXCLUDES the marker
- * table, whose own shape must never invalidate the gate.
+ * Table names the gate owns and fingerprints — `telescope_entries`,
+ * `telescope_rollups`, and `telescope_leases`. Derived from metadata (never
+ * hardcoded) so a future tableName rename flows through automatically.
+ * Deliberately EXCLUDES the marker table, whose own shape must never invalidate
+ * the gate.
+ *
+ * `telescope_leases` is INSIDE the fingerprint on purpose: that is what makes an
+ * existing deployment notice the new table and create it on the next boot,
+ * through the same additive `schema.update` path as any other schema change. If
+ * it were excluded, the fingerprint would still match and the lease table would
+ * never be created.
  */
 function collectOwnedTableNames(orm: MikroORM): string[] {
   const metadata = orm.getMetadata();
-  return [metadata.get(TelescopeEntry).tableName, metadata.get(TelescopeRollup).tableName];
+  return [
+    metadata.get(TelescopeEntry).tableName,
+    metadata.get(TelescopeRollup).tableName,
+    metadata.get(TelescopeLease).tableName,
+  ];
 }
 
 function compareStrings(left: string, right: string): number {
@@ -426,7 +461,14 @@ async function acquireSchemaLock(orm: MikroORM): Promise<SchemaLock> {
   return noop;
 }
 
-export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
+/**
+ * Declared against {@link BoundedPruneCapable} and {@link LeaseCapableStorage}
+ * (both extend `StorageProvider`) so dropping either capability is a compile
+ * error rather than a silent fall back to unbounded, unlocked pruning.
+ */
+export class MikroOrmStorageProvider
+  implements BoundedPruneCapable, LeaseCapableStorage, RollupStore
+{
   private readonly source: MikroORM | MikroOrmStorageProviderOptions;
   private readonly ensureSchema: boolean;
   private orm: MikroORM | null = null;
@@ -450,7 +492,7 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
       const connection = pickHostConnection(this.source.config.getAll());
       return {
         ...connection,
-        entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta],
+        entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta, TelescopeLease],
         contextName: TELESCOPE_CONTEXT_NAME,
         allowGlobalContext: true,
       };
@@ -459,7 +501,7 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
     const { ensureSchema: _ensureSchema, entities: _entities, ...rest } = this.source;
     return {
       ...rest,
-      entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta],
+      entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta, TelescopeLease],
       contextName: TELESCOPE_CONTEXT_NAME,
       allowGlobalContext: true,
     };
@@ -673,17 +715,84 @@ export class MikroOrmStorageProvider implements StorageProvider, RollupStore {
     return em.nativeDelete(TelescopeEntry, { id: { $in: toDelete } });
   }
 
+  async pruneScopedBatch(input: BoundedPruneScope): Promise<BoundedPruneResult> {
+    const em = this.forkEm();
+    const where = scopedWhere(input);
+    // SELECT the oldest `limit` ids, then DELETE BY PRIMARY KEY. This shape is
+    // chosen for PORTABILITY, and the obvious alternative is not portable:
+    // `DELETE ... ORDER BY created_at LIMIT n` is MySQL/MariaDB-only. PostgreSQL
+    // has no ORDER BY/LIMIT on DELETE at all (it needs exactly this subquery on
+    // the primary key), SQLite only has it when compiled with
+    // SQLITE_ENABLE_UPDATE_DELETE_LIMIT, and SQL Server spells it `DELETE TOP (n)`
+    // with no ordering. Since this provider is driver-agnostic — it is the same
+    // class on MySQL, PostgreSQL, MariaDB and SQLite — it cannot emit a dialect's
+    // private syntax. Expressing the bound at the ORM level as find-then-delete
+    // renders correctly on every driver MikroORM supports.
+    //
+    // It is also the better plan on the table that motivated this. The SELECT
+    // walks the `created_at` index from the oldest row and stops after `limit`
+    // matches instead of scanning the table, and it takes no row locks; the
+    // DELETE then touches exactly those primary keys and commits in milliseconds.
+    const doomed = await em.find(TelescopeEntry, where, {
+      orderBy: { createdAt: 'asc', id: 'asc' },
+      limit: input.limit,
+      fields: ['id'],
+    });
+    if (doomed.length === 0) return { deleted: 0, hasMore: false };
+    const deleted = await em.nativeDelete(TelescopeEntry, {
+      id: { $in: doomed.map((row) => row.id) },
+    });
+    // `hasMore` comes from what was SELECTED, not from what was deleted: another
+    // pruner racing us can delete some of these rows first, which lowers
+    // `deleted` while saying nothing about whether work remains.
+    return { deleted, hasMore: doomed.length === input.limit };
+  }
+
+  async tryAcquireLease(
+    key: string,
+    owner: string,
+    ttlMs: number,
+    nowMs: number,
+  ): Promise<boolean> {
+    const em = this.forkEm();
+    const expiresAt = nowMs + ttlMs;
+    // Atomicity comes from the CONDITIONAL UPDATE, not from the transaction
+    // isolation level: `update ... where key = ? and (expires_at <= ? or owner = ?)`
+    // is a single statement that takes a row lock, so exactly one of two racing
+    // pods can match. Whoever matches gets the lease; the other's update affects
+    // zero rows.
+    return em.transactional(async (tx) => {
+      const updated = await tx.nativeUpdate(
+        TelescopeLease,
+        { key, $or: [{ expiresAt: { $lte: nowMs } }, { owner }] },
+        { owner, expiresAt },
+      );
+      if (updated > 0) return true;
+      // No row matched: either somebody else holds a live lease, or there is no
+      // row at all. Distinguish by trying the insert — the primary key makes a
+      // concurrent double-insert impossible, and a duplicate-key failure simply
+      // means the other pod won the race.
+      const existing = await tx.findOne(TelescopeLease, { key });
+      if (existing !== null) return false;
+      try {
+        await tx.insert(TelescopeLease, { key, owner, expiresAt });
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  async releaseLease(key: string, owner: string): Promise<void> {
+    const em = this.forkEm();
+    // Owner-scoped: a holder whose lease already expired and was re-granted must
+    // not delete the new holder's row.
+    await em.nativeDelete(TelescopeLease, { key, owner });
+  }
+
   async pruneScoped(input: PruneScope): Promise<number> {
     const em = this.forkEm();
-    // `createdAt < before` plus the type selector (single type, or all-except a
-    // set, or — when neither is given — no type filter). MikroORM renders the
-    // type clause to `type = ?` / `type not in (?, …)` on every driver.
-    const where: FilterQuery<TelescopeEntryRow> = { createdAt: { $lt: input.before } };
-    if (input.type !== undefined) {
-      where.type = input.type;
-    } else if (input.excludeTypes !== undefined && input.excludeTypes.length > 0) {
-      where.type = { $nin: input.excludeTypes };
-    }
+    const where = scopedWhere(input);
     if (input.keepLast === undefined) {
       return em.nativeDelete(TelescopeEntry, where);
     }

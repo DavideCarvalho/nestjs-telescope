@@ -7,7 +7,18 @@ import {
   type OnApplicationShutdown,
 } from '@nestjs/common';
 import type { ResolvedCoreConfig } from '../config/options.js';
-import type { PruneScope, StorageProvider } from '../storage/storage-provider.js';
+import type { TelescopePruneLock } from '../prune/prune-lock.js';
+import {
+  PRUNE_LOCK_KEY,
+  StorageLeasePruneLock,
+  pruneLockUnavailable,
+} from '../prune/prune-lock.js';
+import type {
+  BoundedPruneScope,
+  PruneScope,
+  StorageProvider,
+} from '../storage/storage-provider.js';
+import { isLeaseCapableStorage } from '../storage/storage-provider.js';
 import { TELESCOPE_CONFIG, TELESCOPE_STORAGE } from './telescope.options.js';
 
 /** What kicked off a prune cycle: the interval timer, or an on-demand request. */
@@ -87,15 +98,48 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
    * Cleared by the first cycle that completes without dropping a tick behind it.
    */
   private warnedOverlap = false;
+  /**
+   * Latches once after the first scope that falls back to an UNBOUNDED delete
+   * because the provider has no `pruneScopedBatch`, so a legacy/third-party
+   * provider says so once rather than every tick.
+   */
+  private warnedUnboundedDelete = false;
+  /**
+   * Latches while cycles keep hitting `maxBatchesPerCycle`, so a store with a
+   * real backlog logs once per streak instead of once per cycle forever.
+   * Cleared by the first cycle that drains every scope inside the ceiling.
+   */
+  private warnedBatchCeiling = false;
+  /** Batch ceilings hit during the CURRENT cycle; re-arms the warning at zero. */
+  private ceilingHitsThisCycle = 0;
+  /** Latches while the prune lock's BACKEND is broken (not merely held). */
+  private warnedLockUnavailable = false;
   /** Recent prune cycles, newest-first, capped at {@link MAX_PRUNE_RUNS}. */
   private readonly runs: PruneRun[] = [];
   /** Start time (epoch ms) of the most recent SCHEDULED cycle, for nextRunAt. */
   private lastScheduledRunAtMs: number | null = null;
+  /**
+   * The cross-process lock, or `null` when this deployment prunes unlocked (the
+   * host set `prune.lock: false`, or supplied nothing and the provider has no
+   * lease SPI). Resolved ONCE in the constructor: the host's own implementation
+   * wins, else the database lease, else nothing.
+   */
+  private readonly lock: TelescopePruneLock | null;
+  /**
+   * This process's identity as a lease holder. `instanceId` is the pod name
+   * under Kubernetes, which is unique per replica but NOT per process on a host
+   * running two of them, so the pid is appended — two pruners must never be able
+   * to mistake each other's lease for a re-entrant refresh of their own.
+   */
+  private readonly lockOwner: string;
 
   constructor(
     @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
-  ) {}
+  ) {
+    this.lockOwner = `${config.instanceId}#${process.pid}`;
+    this.lock = resolvePruneLock(config, storage);
+  }
 
   onApplicationBootstrap(): void {
     const prune = this.config.prune;
@@ -158,11 +202,8 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
    * lets the timer queue a second, then a third, each holding write locks on
    * overlapping rows in the same store, and the backlog only grows.
    *
-   * This is deliberately a per-process guard and nothing more. Every replica
-   * still prunes on its own timer against a SHARED store, so a fleet of N pods
-   * can still put N cycles in flight at once. Bounding that needs either a
-   * distributed lock or a deployment where only one role configures `prune`,
-   * both of which are the host application's call, not this library's.
+   * This guard sees only THIS process. Bounding the FLEET is the job of the
+   * cross-process lock layered on top of it in {@link runLockedCycle}.
    */
   private runGuardedCycle(
     prune: NonNullable<ResolvedCoreConfig['prune']>,
@@ -184,15 +225,81 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
       // actually runs simply deletes at a fresher cutoff.
       return Promise.resolve(0);
     }
-    const cycle = this.runCycle(prune, trigger).finally(() => {
+    const cycle = this.runLockedCycle(prune, trigger).finally(() => {
       this.inFlight = null;
-      // A clean cycle re-arms the warning, so a store that degrades again later
+      // A clean cycle re-arms the warnings, so a store that degrades again later
       // says so instead of staying silent for the life of the process.
       if (this.skippedThisCycle === 0) this.warnedOverlap = false;
+      if (this.ceilingHitsThisCycle === 0) this.warnedBatchCeiling = false;
       this.skippedThisCycle = 0;
+      this.ceilingHitsThisCycle = 0;
     });
     this.inFlight = cycle;
     return cycle;
+  }
+
+  /**
+   * Serializes prune cycles ACROSS PROCESSES, when a lock is available.
+   *
+   * The per-process guard above bounds one pod to one cycle; a fleet of eight
+   * still put eight concurrent deletes on the same table, doing the same work
+   * eight times. This takes the advisory lease first and stands down when
+   * somebody else already has it.
+   *
+   * Three outcomes, all deliberate:
+   *  - no lock configured → prune, exactly as before;
+   *  - lease HELD by another replica → skip the cycle entirely and return 0. No
+   *    `PruneRun` is recorded, because this pod did not prune — reporting a
+   *    zero-deletion run would read as "nothing to delete", which is a different
+   *    and much more alarming statement;
+   *  - lock backend UNAVAILABLE (or it threw) → warn once per streak and prune
+   *    ANYWAY. A broken lock must never be able to stop retention: failing open
+   *    is at worst the behaviour that existed before the lock did, whereas
+   *    failing closed silently lets the table grow without bound.
+   */
+  private async runLockedCycle(
+    prune: NonNullable<ResolvedCoreConfig['prune']>,
+    trigger: PruneTrigger,
+  ): Promise<number> {
+    const lock = this.lock;
+    if (lock === null) return this.runCycle(prune, trigger);
+
+    // The seam's contract says acquire never throws, but a host implementation
+    // that breaks that promise must not take retention down with it.
+    const result = await lock
+      .acquire({ key: PRUNE_LOCK_KEY, owner: this.lockOwner, ttlMs: prune.lockTtlMs })
+      .catch((error: unknown) => pruneLockUnavailable(asError(error).message));
+
+    if (!result.acquired) {
+      if (result.reason === 'held') {
+        // The healthy path in a multi-replica deployment: most pods take this
+        // branch on most ticks. Debug, never warn — it is the feature working.
+        this.logger.debug(`Telescope prune skipped: ${PRUNE_LOCK_KEY} held by another instance.`);
+        return 0;
+      }
+      if (!this.warnedLockUnavailable) {
+        this.warnedLockUnavailable = true;
+        const detail = result.detail === undefined ? '' : `: ${result.detail}`;
+        this.logger.warn(
+          `Telescope prune lock is unavailable${detail}; pruning WITHOUT cross-process exclusion until it recovers. Replicas may prune concurrently (wasteful, not unsafe).`,
+        );
+      }
+      return this.runCycle(prune, trigger);
+    }
+
+    this.warnedLockUnavailable = false;
+    try {
+      return await this.runCycle(prune, trigger);
+    } finally {
+      // Released whether the cycle succeeded, failed, or threw. `release` is
+      // contractually non-throwing, but a host that breaks that must not turn a
+      // successful prune into a rejected cycle.
+      await result.lease.release().catch((error: unknown) => {
+        this.logger.warn(
+          `Telescope prune lock release failed (the lease TTL will reclaim it): ${asError(error).message}`,
+        );
+      });
+    }
   }
 
   /**
@@ -232,7 +339,7 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
     //    delete spans many types and returns a single aggregate count, so it
     //    contributes to `deletedTotal` but is not attributed to any type key.
     const globalCutoff = new Date(startedAtMs - prune.afterMs);
-    const bulk = await this.pruneArchivedThenDelete(globalCutoff, prune.keepLast, {
+    const bulk = await this.pruneArchivedThenDelete(prune, globalCutoff, prune.keepLast, {
       before: globalCutoff,
       ...(individualTypes.size > 0 ? { excludeTypes: [...individualTypes] } : {}),
       ...(prune.keepLast !== undefined ? { keepLast: prune.keepLast } : {}),
@@ -249,6 +356,7 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
       const afterMs = prune.perTypeMs[type] ?? prune.afterMs;
       const cutoff = new Date(startedAtMs - afterMs);
       const step = await this.pruneArchivedThenDelete(
+        prune,
         cutoff,
         prune.keepLast,
         {
@@ -301,6 +409,7 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
    * fallback path when the provider lacks `pruneScoped`.
    */
   private async pruneArchivedThenDelete(
+    prune: NonNullable<ResolvedCoreConfig['prune']>,
     fallbackOlderThan: Date,
     fallbackKeepLast: number | undefined,
     scope: PruneScope,
@@ -311,7 +420,7 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
       // single-type scope, bail WITHOUT deleting so the data survives.
       const { proceed, archived } = await this.archiveScope(scope, archivableType);
       if (!proceed) return { deleted: 0, archived };
-      const deleted = await this.deleteScope(scope, fallbackOlderThan, fallbackKeepLast);
+      const deleted = await this.deleteScope(prune, scope, fallbackOlderThan, fallbackKeepLast);
       return { deleted, archived };
     } catch (error: unknown) {
       const message = asError(error).message;
@@ -385,18 +494,43 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
   }
 
   /**
-   * Deletes the scope via the provider's `pruneScoped` when available, else
-   * falls back ONCE (with a logged warning) to the legacy global `prune` — which
-   * uses the global cutoff for ALL types, the best a provider without per-type
-   * support can do. The fallback runs only for the global scope to avoid
-   * deleting more than intended on a per-type scope.
+   * Deletes the scope, preferring BOUNDED BATCHES.
+   *
+   * Order of preference:
+   *  1. `pruneScopedBatch` — a loop of short, individually-committed deletes.
+   *     This is the whole point: the unbounded form is a single statement that,
+   *     on a large table, holds row locks for as long as it takes to scan the
+   *     table, and every other writer on that database waits behind it. Batching
+   *     deletes the same rows while giving the locks up between batches.
+   *  2. `pruneScoped` — one unbounded delete, per-type-aware.
+   *  3. the legacy global `prune` — the global cutoff for ALL types, the best a
+   *     provider without per-type support can do. Run only for the global scope,
+   *     to avoid deleting more than intended on a per-type scope.
+   *
+   * A `keepLast` scope always takes the unbounded path: "keep the newest N of
+   * the doomed rows" is a whole-set property that a bounded batch cannot express
+   * (hence `keepLast` is absent from {@link BoundedPruneScope}). `keepLast` is
+   * off by default, so the common configuration batches.
    */
   private async deleteScope(
+    prune: NonNullable<ResolvedCoreConfig['prune']>,
     scope: PruneScope,
     fallbackOlderThan: Date,
     fallbackKeepLast: number | undefined,
   ): Promise<number> {
+    const pruneScopedBatch = this.storage.pruneScopedBatch;
+    if (pruneScopedBatch !== undefined && scope.keepLast === undefined) {
+      return this.deleteScopeInBatches(prune, scope);
+    }
     if (this.storage.pruneScoped !== undefined) {
+      if (pruneScopedBatch === undefined && !this.warnedUnboundedDelete) {
+        this.warnedUnboundedDelete = true;
+        this.logger.warn(
+          'Storage provider does not implement pruneScopedBatch(); prune deletes are ' +
+            'UNBOUNDED. On a large store one such delete can hold row locks for minutes ' +
+            'and block every other writer.',
+        );
+      }
       return this.storage.pruneScoped(scope);
     }
     if (!this.warnedNoScopedPrune) {
@@ -414,6 +548,83 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
     }
     return 0;
   }
+
+  /**
+   * Drains one scope in bounded deletes: at most `batchSize` rows per statement,
+   * at most `maxBatchesPerCycle` statements, pausing `batchPauseMs` between
+   * them, stopping as soon as the provider says the scope is drained.
+   *
+   * The ceiling is not a nicety. Without it, a table far enough behind turns one
+   * tick into an unbounded loop — the same "one prune runs for an hour" failure
+   * this replaces, only now spelled as a thousand statements instead of one. With
+   * it, every cycle has a known worst case and a backlog drains over several
+   * cycles instead of monopolising one.
+   *
+   * The pause is only ever paid BETWEEN batches, so the healthy case — one batch,
+   * `hasMore: false` — never waits at all. It exists for the unhealthy case,
+   * where a tight delete loop can starve co-tenants of a small instance's IOPS
+   * budget even though no individual statement holds locks for long.
+   */
+  private async deleteScopeInBatches(
+    prune: NonNullable<ResolvedCoreConfig['prune']>,
+    scope: PruneScope,
+  ): Promise<number> {
+    // Rebuilt field-by-field rather than spread: `keepLast` must not reach a
+    // bounded scope (it is not in the type, and a spread of a wider object would
+    // smuggle it through at runtime), and `exactOptionalPropertyTypes` forbids
+    // writing `type: undefined`.
+    const bounded: BoundedPruneScope = {
+      before: scope.before,
+      limit: prune.batchSize,
+      ...(scope.type !== undefined ? { type: scope.type } : {}),
+      ...(scope.excludeTypes !== undefined ? { excludeTypes: scope.excludeTypes } : {}),
+    };
+    let deletedTotal = 0;
+    for (let batch = 0; batch < prune.maxBatchesPerCycle; batch += 1) {
+      if (batch > 0 && prune.batchPauseMs > 0) await sleep(prune.batchPauseMs);
+      // Called off `this.storage` so a provider implemented with `this` keeps it.
+      const result = await this.storage.pruneScopedBatch?.(bounded);
+      // Cannot happen — `deleteScope` checked the method exists — but reading it
+      // back off the provider means TypeScript wants the guard, and a provider
+      // that mutates its own methods at runtime gets a clean exit instead of a
+      // TypeError inside the retention path.
+      if (result === undefined) return deletedTotal;
+      deletedTotal += result.deleted;
+      if (!result.hasMore) return deletedTotal;
+    }
+    this.ceilingHitsThisCycle += 1;
+    if (!this.warnedBatchCeiling) {
+      this.warnedBatchCeiling = true;
+      this.logger.warn(
+        `Telescope prune hit its per-cycle batch ceiling (${prune.maxBatchesPerCycle} × ${prune.batchSize} rows); entries older than the retention window remain and will be deleted over the next cycles. Raise prune.maxBatchesPerCycle or prune.batchSize, or shorten prune.intervalMs, if the backlog is not shrinking.`,
+      );
+    }
+    return deletedTotal;
+  }
+}
+
+/**
+ * Picks the cross-process lock for this deployment, once, at construction:
+ * the host's own implementation if it supplied one, else a lease in the store
+ * Telescope is already writing to, else nothing (prune unlocked, as before).
+ */
+function resolvePruneLock(
+  config: ResolvedCoreConfig,
+  storage: StorageProvider,
+): TelescopePruneLock | null {
+  const prune = config.prune;
+  if (prune === undefined || !prune.lockEnabled) return null;
+  if (prune.lock !== undefined) return prune.lock;
+  if (isLeaseCapableStorage(storage)) return new StorageLeasePruneLock(storage);
+  return null;
+}
+
+/** Unref'd so a pending inter-batch pause can never hold a shutting-down process open. */
+function sleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
 }
 
 function asError(error: unknown): Error {

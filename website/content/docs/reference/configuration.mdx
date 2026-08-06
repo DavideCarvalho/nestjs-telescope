@@ -30,6 +30,11 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 | `storage` | embedded SQLite | A `StorageProvider`. Swap for Redis / MikroORM / in-memory. See [Storage](/docs/concepts/storage). |
 | `prune` | _none_ | Retention window driving the scheduled pruner (e.g. `{ after: '24h' }`); `perType` for [per-type cutoffs](/docs/concepts/storage#per-type-retention). |
 | `archive` | _none_ | Export a type's entries to a sink **before** the pruner deletes them. See [Archiving before prune](/docs/concepts/storage#archiving-before-prune). |
+| `prune.batchSize` | `1000` | Rows per bounded `DELETE`. A lock-duration knob — see [Bounded batched deletes](/docs/concepts/storage#bounded-batched-deletes). |
+| `prune.maxBatchesPerCycle` | `50` | Hard ceiling on batches per scope per cycle, so a backlog cannot turn one tick into an hour-long loop. |
+| `prune.batchPauseMs` | `50` | Pause between batches. Only paid when a second batch is needed, so a healthy store never waits. |
+| `prune.lock` | storage lease | Cross-process prune lock, so a fleet prunes once per cycle rather than once per pod. `false` to opt out, or your own `TelescopePruneLock`. See [Pruning once per fleet](/docs/concepts/storage#pruning-once-per-fleet-not-once-per-pod). |
+| `prune.lockTtlMs` | `max(intervalMs * 3, 60s)` | Lease TTL — how long the fleet may go unpruned after a holder is killed mid-cycle. |
 
 ## The gate
 

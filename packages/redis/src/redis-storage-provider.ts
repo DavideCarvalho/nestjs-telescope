@@ -1,14 +1,17 @@
 import {
+  type BoundedPruneCapable,
+  type BoundedPruneResult,
+  type BoundedPruneScope,
   type Entry,
   type EntryQuery,
   type EntryWithBatch,
   HISTOGRAM_BUCKET_COUNT,
+  type LeaseCapableStorage,
   type Page,
   type PruneScope,
   type RollupBucket,
   type RollupDelta,
   type RollupStore,
-  type StorageProvider,
   type TagCount,
   emptyHistogram,
   isBatchOrigin,
@@ -27,6 +30,44 @@ export interface RedisStorageOptions {
 const DEFAULT_PREFIX = 'telescope:';
 const SCAN_COUNT = 200;
 const DEFAULT_LIMIT = 50;
+/**
+ * How many index members one bounded prune call will walk, as a multiple of its
+ * `limit`, before giving up and reporting `hasMore`. Only relevant when an
+ * `excludeTypes` carve-out makes some candidates unremovable; see
+ * {@link RedisStorageProvider.pruneScopedBatch}.
+ */
+const SCAN_BUDGET_MULTIPLE = 20;
+
+/**
+ * Acquire a named lease. Grants when the key is free OR already held by the same
+ * owner (re-entrant refresh), and lets Redis own the expiry via `PX` — so the
+ * lease is reclaimed after a holder crashes without any caller's clock being
+ * involved. GET-then-SET inside one script, so the check and the set cannot
+ * interleave with another pod.
+ *
+ * KEYS: [leaseKey]  ARGV: [owner, ttlMs]
+ */
+const ACQUIRE_LEASE_LUA = `
+local cur = redis.call('GET', KEYS[1])
+if (not cur) or (cur == ARGV[1]) then
+  redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+  return 1
+end
+return 0
+`;
+
+/**
+ * Release a named lease, but ONLY if this owner still holds it — otherwise a
+ * holder whose lease expired mid-cycle would delete its successor's.
+ *
+ * KEYS: [leaseKey]  ARGV: [owner]
+ */
+const RELEASE_LEASE_LUA = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
 
 /**
  * Atomically merge one rollup delta into its `(metric, bucket)` hash, server-side.
@@ -80,9 +121,15 @@ return 1
  *                                    legacy rows may instead carry a JSON `histogram`
  * - `rz:<metric>`          ZSET    — score = bucketStart, member = bucketStart
  *
+ * - `lease:<key>`          string  — prune-lock lease value = owner, TTL via PX
+ *
  * The host owns the injected ioredis connection; {@link close} is a no-op.
+ *
+ * Declared against {@link BoundedPruneCapable} and {@link LeaseCapableStorage}
+ * (both extend `StorageProvider`) so dropping either capability is a compile
+ * error rather than a silent fall back to unbounded, unlocked pruning.
  */
-export class RedisStorageProvider implements StorageProvider, RollupStore {
+export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableStorage, RollupStore {
   private readonly redis: Redis;
   private readonly prefix: string;
 
@@ -356,11 +403,29 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
     const toRemoveMembers = candidates.slice(keep);
     if (toRemoveMembers.length === 0) return 0;
 
+    return (await this.removeMembers(toRemoveMembers, excludeTypes)).removed;
+  }
+
+  /**
+   * Deletes the given index members' entries and every secondary index
+   * reference, in one pipeline, sparing any whose type is in `excludeTypes`.
+   *
+   * `skipped` is the count that were SPARED and therefore remain in the source
+   * index. The batched pruner needs that number: a spared member does not move,
+   * so the next page must start after it, or the scan re-reads the same spared
+   * prefix forever.
+   */
+  private async removeMembers(
+    members: string[],
+    excludeTypes: Set<string> | null,
+  ): Promise<{ removed: number; skipped: number }> {
+    const toRemoveMembers = members;
     const ids = toRemoveMembers.map(idFromMember);
     const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
 
     const pipeline = this.redis.multi();
     let removed = 0;
+    let skipped = 0;
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       const member = toRemoveMembers[i];
@@ -371,6 +436,7 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
       // with no readable entry can't be type-checked, so it is removed (it is
       // already orphaned/old and would otherwise leak its index members).
       if (excludeTypes !== null && entry !== null && excludeTypes.has(entry.type)) {
+        skipped++;
         continue;
       }
       removed++;
@@ -389,7 +455,85 @@ export class RedisStorageProvider implements StorageProvider, RollupStore {
       }
     }
     await pipeline.exec();
-    return removed;
+    return { removed, skipped };
+  }
+
+  /**
+   * Bounded, oldest-first sibling of {@link pruneScoped}.
+   *
+   * Scans the source index from the OLD end (`ZREVRANGEBYLEX`, since members
+   * carry an inverted timestamp so descending lex order is ascending time) and
+   * removes at most `limit` entries. Members spared by the `excludeTypes`
+   * carve-out stay in the index, so the scan offset advances past them — without
+   * that, every page would re-read the same spared prefix.
+   *
+   * `SCAN_BUDGET_MULTIPLE` bounds how far one call will walk looking for
+   * deletable members. It is never approached in the common configuration (no
+   * `perType` overrides, no archive ⇒ nothing is excluded ⇒ the first page fills
+   * the batch); it exists so a scope that excludes a type holding most of the old
+   * entries cannot turn one batch into a full index walk.
+   */
+  async pruneScopedBatch(input: BoundedPruneScope): Promise<BoundedPruneResult> {
+    const boundary = invBound(input.before.getTime());
+    // A single-type scope reads that type's own index, so nothing is excluded.
+    const sourceIndex = input.type !== undefined ? this.typeIndexKey(input.type) : this.indexKey();
+    const excluded =
+      input.type === undefined && input.excludeTypes !== undefined && input.excludeTypes.length > 0
+        ? new Set(input.excludeTypes)
+        : null;
+
+    const scanBudget = input.limit * SCAN_BUDGET_MULTIPLE;
+    let deleted = 0;
+    let skipped = 0;
+    let scanned = 0;
+    while (deleted < input.limit && scanned < scanBudget) {
+      const want = input.limit - deleted;
+      const page = await this.redis.zrevrangebylex(
+        sourceIndex,
+        '+',
+        `(${boundary}`,
+        'LIMIT',
+        skipped,
+        want,
+      );
+      if (page.length === 0) return { deleted, hasMore: false };
+      scanned += page.length;
+      const outcome = await this.removeMembers(page, excluded);
+      deleted += outcome.removed;
+      skipped += outcome.skipped;
+      // A short page means the index end was reached: nothing is left in scope.
+      if (page.length < want) return { deleted, hasMore: false };
+    }
+    return { deleted, hasMore: true };
+  }
+
+  async tryAcquireLease(
+    key: string,
+    owner: string,
+    ttlMs: number,
+    _nowMs: number,
+  ): Promise<boolean> {
+    // Redis owns the expiry (PX), so the caller's `nowMs` is unused here — which
+    // also means this lease cannot be confused by clock skew between pods. The
+    // parameter is still declared, so the signature matches the SPI exactly.
+    const result = await this.redis.eval(
+      ACQUIRE_LEASE_LUA,
+      1,
+      this.leaseKey(key),
+      owner,
+      String(ttlMs),
+    );
+    return result === 1;
+  }
+
+  async releaseLease(key: string, owner: string): Promise<void> {
+    // Compare-and-delete, so a holder whose lease already expired and was
+    // re-granted cannot delete the new holder's key.
+    await this.redis.eval(RELEASE_LEASE_LUA, 1, this.leaseKey(key), owner);
+  }
+
+  private leaseKey(key: string): string {
+    return `${this.prefix}lease:${key}`;
   }
 
   /** The host owns the injected connection, so closing it is its responsibility. */

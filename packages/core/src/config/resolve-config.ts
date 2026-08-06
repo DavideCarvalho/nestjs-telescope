@@ -39,6 +39,15 @@ const optionsSchema = z.object({
       keepLast: z.number().int().nonnegative().optional(),
       intervalMs: z.number().int().positive().default(60_000),
       perType: z.record(z.union([z.number().positive(), z.string()])).optional(),
+      batchSize: z.number().int().positive().default(1_000),
+      maxBatchesPerCycle: z.number().int().positive().default(50),
+      batchPauseMs: z.number().int().nonnegative().default(50),
+      lockTtlMs: z.number().int().positive().optional(),
+      // `lock` is a boolean OR a runtime object with a method; zod could only
+      // assert "callable", and the precise TelescopePruneLock shape is already
+      // enforced by PruneOptions at the call site. Left out of the schema (zod
+      // strips it) and read from the typed options object below, exactly as
+      // `archive.sink` is.
     })
     .optional(),
   archive: z
@@ -109,11 +118,32 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
         perTypeMs[type] = durationToMs(duration);
       }
     }
+    // `lock: false` disables locking outright; a lock OBJECT is the host's own
+    // implementation; anything else (omitted, or `true`) means "use the storage
+    // lease if the provider has one". `lock` is typed `boolean |
+    // TelescopePruneLock`, so the boolean check narrows the object arm with no
+    // assertion.
+    const lockOption = options.prune?.lock;
+    const lockEnabled = lockOption !== false;
+    const hostLock = typeof lockOption === 'boolean' ? undefined : lockOption;
     const pruneEntry: ResolvedCoreConfig['prune'] = {
       afterMs: durationToMs(parsed.prune.after),
       intervalMs: parsed.prune.intervalMs,
       perTypeMs,
+      batchSize: parsed.prune.batchSize,
+      maxBatchesPerCycle: parsed.prune.maxBatchesPerCycle,
+      batchPauseMs: parsed.prune.batchPauseMs,
+      // Derived rather than a flat literal default: the TTL is only meaningful
+      // relative to the tick rate — it answers "how long may the fleet go
+      // unpruned after a holder is killed" — so it tracks `intervalMs`, with a
+      // floor so a very fast interval cannot produce a lease too short to
+      // outlive its own cycle.
+      lockTtlMs: parsed.prune.lockTtlMs ?? Math.max(parsed.prune.intervalMs * 3, 60_000),
+      lockEnabled,
     };
+    if (hostLock !== undefined) {
+      pruneEntry.lock = hostLock;
+    }
     if (parsed.prune.keepLast !== undefined) {
       pruneEntry.keepLast = parsed.prune.keepLast;
     }

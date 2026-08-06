@@ -3,9 +3,33 @@ import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import type { Entry } from '../entry/entry.js';
+import type {
+  TelescopePruneLock,
+  TelescopePruneLockRequest,
+  TelescopePruneLockResult,
+} from '../prune/prune-lock.js';
+import { pruneLockAcquired, pruneLockHeld, pruneLockUnavailable } from '../prune/prune-lock.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import type { StorageProvider } from '../storage/storage-provider.js';
+import type {
+  BoundedPruneResult,
+  BoundedPruneScope,
+  StorageProvider,
+} from '../storage/storage-provider.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
+
+/** The StorageProvider methods the pruner never touches, so fakes stay short. */
+function inertStorage(): StorageProvider {
+  return {
+    store: () => Promise.resolve(),
+    update: () => Promise.resolve(),
+    find: () => Promise.resolve(null),
+    get: () => Promise.resolve({ data: [], nextCursor: null }),
+    batch: () => Promise.resolve([]),
+    tags: () => Promise.resolve([]),
+    prune: () => Promise.resolve(0),
+    clear: () => Promise.resolve(),
+  };
+}
 
 function makeRejectingStorage(): StorageProvider {
   return {
@@ -421,6 +445,346 @@ describe('TelescopePruner', () => {
 
       pruner.onApplicationShutdown();
       warnSpy.mockRestore();
+    });
+  });
+
+  describe('bounded batched deletes', () => {
+    /**
+     * A store holding `total` doomed rows that honours `limit` exactly. Records
+     * every bounded call, and separately counts any UNBOUNDED `pruneScoped` so a
+     * test can assert the pruner never fell back to the long-lock path.
+     */
+    function makeBatchedStorage(total: number): {
+      storage: StorageProvider;
+      batchCalls: BoundedPruneScope[];
+      unboundedCalls: () => number;
+      remaining: () => number;
+    } {
+      let remaining = total;
+      let unbounded = 0;
+      const batchCalls: BoundedPruneScope[] = [];
+      const storage: StorageProvider = {
+        ...inertStorage(),
+        pruneScoped: () => {
+          unbounded += 1;
+          const deleted = remaining;
+          remaining = 0;
+          return Promise.resolve(deleted);
+        },
+        pruneScopedBatch: (input: BoundedPruneScope): Promise<BoundedPruneResult> => {
+          batchCalls.push(input);
+          const deleted = Math.min(input.limit, remaining);
+          remaining -= deleted;
+          return Promise.resolve({ deleted, hasMore: remaining > 0 });
+        },
+      };
+      return {
+        storage,
+        batchCalls,
+        unboundedCalls: () => unbounded,
+        remaining: () => remaining,
+      };
+    }
+
+    it('drains a scope in bounded batches instead of one unbounded DELETE', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 1_000;
+      const { storage, batchCalls, unboundedCalls, remaining } = makeBatchedStorage(2_500);
+      const config = resolveConfig({
+        enabled: true,
+        prune: { after: '1h', intervalMs, batchSize: 1_000, batchPauseMs: 0 },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      // 1000 + 1000 + 500: the loop stops on the first short batch.
+      expect(batchCalls.map((call) => call.limit)).toEqual([1_000, 1_000, 1_000]);
+      expect(remaining()).toBe(0);
+      // The unbounded path — one statement holding row locks for the whole scan —
+      // must never be taken when the provider can do bounded deletes.
+      expect(unboundedCalls()).toBe(0);
+      expect(pruner.getRuns()[0]?.deletedTotal).toBe(2_500);
+    });
+
+    it('never sends keepLast to a bounded batch, using the unbounded path instead', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 1_000;
+      const { storage, batchCalls, unboundedCalls } = makeBatchedStorage(2_500);
+      const config = resolveConfig({
+        enabled: true,
+        // keepLast is a whole-set property that a per-batch bound cannot express.
+        prune: { after: '1h', intervalMs, keepLast: 10, batchSize: 1_000, batchPauseMs: 0 },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      expect(batchCalls).toHaveLength(0);
+      expect(unboundedCalls()).toBe(1);
+    });
+
+    it('stops at the per-cycle ceiling and warns once per streak', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 1_000;
+      // Far more rows than the cycle budget: 3 batches × 10 rows against 1000.
+      const { storage, batchCalls } = makeBatchedStorage(1_000);
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({
+        enabled: true,
+        prune: {
+          after: '1h',
+          intervalMs,
+          batchSize: 10,
+          maxBatchesPerCycle: 3,
+          batchPauseMs: 0,
+        },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+
+      await tick(intervalMs);
+      // The ceiling holds: one cycle does 3 batches and stops, it does not loop
+      // until the table is drained.
+      expect(batchCalls).toHaveLength(3);
+      expect(pruner.getRuns()[0]?.deletedTotal).toBe(30);
+
+      // The next cycle picks the backlog up where this one left off.
+      await tick(intervalMs);
+      expect(batchCalls).toHaveLength(6);
+
+      const ceilingWarnings = warnSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('per-cycle batch ceiling'),
+      );
+      expect(ceilingWarnings).toHaveLength(1);
+
+      pruner.onApplicationShutdown();
+      warnSpy.mockRestore();
+    });
+
+    it('pauses between batches but never before the first one', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 1_000;
+      const batchPauseMs = 250;
+      const { storage, batchCalls } = makeBatchedStorage(30);
+      const config = resolveConfig({
+        enabled: true,
+        prune: { after: '1h', intervalMs, batchSize: 10, batchPauseMs },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+
+      // The tick itself runs exactly ONE batch: no pause is paid up front, so a
+      // healthy store that drains in one batch never waits.
+      await vi.advanceTimersByTimeAsync(intervalMs);
+      expect(batchCalls).toHaveLength(1);
+
+      // The second batch only lands after the pause has elapsed — that gap is
+      // what keeps a tight delete loop from monopolising the database.
+      await vi.advanceTimersByTimeAsync(batchPauseMs);
+      expect(batchCalls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(batchPauseMs);
+      expect(batchCalls).toHaveLength(3);
+
+      pruner.onApplicationShutdown();
+    });
+
+    it('warns once when the provider cannot bound its deletes', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const storage: StorageProvider = {
+        ...inertStorage(),
+        pruneScoped: () => Promise.resolve(0),
+      };
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      const warnings = warnSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('does not implement pruneScopedBatch'),
+      );
+      expect(warnings).toHaveLength(1);
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('cross-process prune lock', () => {
+    /** A lock whose every acquire returns a scripted result, recording requests. */
+    function scriptedLock(result: () => TelescopePruneLockResult): {
+      lock: TelescopePruneLock;
+      requests: TelescopePruneLockRequest[];
+    } {
+      const requests: TelescopePruneLockRequest[] = [];
+      return {
+        lock: {
+          acquire: (request) => {
+            requests.push(request);
+            return Promise.resolve(result());
+          },
+        },
+        requests,
+      };
+    }
+
+    it('skips the whole cycle — no deletes, no recorded run — when another instance holds it', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const pruneScoped = vi.fn(() => Promise.resolve(0));
+      const storage: StorageProvider = { ...inertStorage(), pruneScoped };
+      const { lock, requests } = scriptedLock(() => pruneLockHeld('pod-2 has it'));
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs, lock } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      expect(requests).toHaveLength(2);
+      // Not one delete was issued, and no run was recorded: this pod did not
+      // prune, which is a different statement from "pruned and found nothing".
+      expect(pruneScoped).not.toHaveBeenCalled();
+      expect(pruner.getRuns()).toHaveLength(0);
+    });
+
+    it('prunes and then releases the lease, even when the cycle throws', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const released: string[] = [];
+      const storage: StorageProvider = {
+        ...inertStorage(),
+        pruneScoped: () => Promise.reject(new Error('delete blew up')),
+      };
+      const { lock } = scriptedLock(() =>
+        pruneLockAcquired({
+          key: 'telescope:prune',
+          owner: 'me',
+          expiresAtMs: Date.now() + 1_000,
+          release: async () => {
+            released.push('telescope:prune');
+          },
+        }),
+      );
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs, lock } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      // A failed delete must not leak the lease: without the release the whole
+      // fleet would stop pruning until the TTL expired.
+      expect(released).toEqual(['telescope:prune']);
+      warnSpy.mockRestore();
+    });
+
+    it('fails OPEN: a broken lock warns once and prunes anyway', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const pruneScoped = vi.fn(() => Promise.resolve(3));
+      const storage: StorageProvider = { ...inertStorage(), pruneScoped };
+      const { lock } = scriptedLock(() => pruneLockUnavailable('lease table missing'));
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs, lock } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      // Retention must not stop because the LOCK broke — that would let the
+      // table grow without bound over a problem the lock only exists to optimise.
+      expect(pruneScoped).toHaveBeenCalledTimes(2);
+      const warnings = warnSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('prune lock is unavailable'),
+      );
+      expect(warnings).toHaveLength(1);
+      warnSpy.mockRestore();
+    });
+
+    it('treats a throwing acquire as unavailable rather than crashing the cycle', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const pruneScoped = vi.fn(() => Promise.resolve(0));
+      const storage: StorageProvider = { ...inertStorage(), pruneScoped };
+      const lock: TelescopePruneLock = {
+        acquire: () => Promise.reject(new Error('lock backend exploded')),
+      };
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs, lock } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      expect(pruneScoped).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('lock backend exploded'));
+      warnSpy.mockRestore();
+    });
+
+    /**
+     * Two pruners over ONE store — the shape of a two-pod deployment. Driven
+     * through `pruneNow()` rather than the interval timer on purpose: a fake
+     * timer flushes each callback's whole microtask chain before firing the next,
+     * so a timer-driven version would let the first pruner finish AND release
+     * before the second one ever asked, and would prove nothing.
+     */
+    function twoPruners(
+      storage: InMemoryStorageProvider,
+      lock: boolean,
+    ): [TelescopePruner, TelescopePruner] {
+      const build = (instanceId: string): TelescopePruner =>
+        new TelescopePruner(
+          resolveConfig({
+            enabled: true,
+            instanceId,
+            prune: { after: '1h', intervalMs: 100, lock },
+          }),
+          storage,
+        );
+      return [build('pod-a'), build('pod-b')];
+    }
+
+    async function seedOneDoomedEntry(storage: InMemoryStorageProvider): Promise<void> {
+      await storage.store([
+        entry({ id: 'old', type: 'request', createdAt: new Date('2026-05-31T22:00:00Z') }),
+      ]);
+    }
+
+    it('lock: false keeps every replica pruning independently', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+      const storage = new InMemoryStorageProvider();
+      await seedOneDoomedEntry(storage);
+      const [first, second] = twoPruners(storage, false);
+
+      await Promise.all([first.pruneNow(), second.pruneNow()]);
+
+      // BOTH pruned: opting out really does restore the every-pod-for-itself
+      // behaviour, which is also what proves the test below measures the lock.
+      expect(first.getRuns()).toHaveLength(1);
+      expect(second.getRuns()).toHaveLength(1);
+    });
+
+    it('two pruners on one lease-capable store: only one prunes', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+      const storage = new InMemoryStorageProvider();
+      await seedOneDoomedEntry(storage);
+      // No host wiring: the default lock is the store's own lease.
+      const [first, second] = twoPruners(storage, true);
+
+      await Promise.all([first.pruneNow(), second.pruneNow()]);
+
+      // One ran the cycle; the other stood down on the lease it could not take.
+      expect(first.getRuns()).toHaveLength(1);
+      expect(second.getRuns()).toHaveLength(0);
+      expect((await storage.get({})).data).toHaveLength(0);
     });
   });
 });

@@ -407,6 +407,104 @@ describe('RedisStorageProvider', () => {
     });
   });
 
+  describe('pruneScopedBatch', () => {
+    const base = Date.parse('2026-01-01T00:00:00Z');
+    const cutoff = new Date(base + 100_000);
+
+    async function seedOld(count: number, type = 'request'): Promise<void> {
+      await store.store(
+        Array.from({ length: count }, (_unused, index) =>
+          entry({ id: `e${index}`, type, createdAt: new Date(base + index * 1_000) }),
+        ),
+      );
+    }
+
+    it('deletes at most `limit` entries, oldest first, and reports that more remain', async () => {
+      await seedOld(5);
+      expect(await store.pruneScopedBatch({ before: cutoff, limit: 2 })).toEqual({
+        deleted: 2,
+        hasMore: true,
+      });
+      // Oldest-first: e0/e1 went, the newest of the doomed set survive.
+      expect(await store.find('e0')).toBeNull();
+      expect(await store.find('e1')).toBeNull();
+      expect(await store.find('e2')).not.toBeNull();
+    });
+
+    it('reports hasMore false once the scope is drained', async () => {
+      await seedOld(2);
+      expect(await store.pruneScopedBatch({ before: cutoff, limit: 10 })).toEqual({
+        deleted: 2,
+        hasMore: false,
+      });
+    });
+
+    it('advances past excluded types instead of re-reading them every batch', async () => {
+      // The excluded entries are the OLDEST, so a scan that did not advance its
+      // offset past them would return the same spared members forever.
+      await store.store([
+        entry({ id: 'exc-0', type: 'exception', createdAt: new Date(base) }),
+        entry({ id: 'exc-1', type: 'exception', createdAt: new Date(base + 1_000) }),
+        entry({ id: 'req-0', type: 'request', createdAt: new Date(base + 2_000) }),
+        entry({ id: 'req-1', type: 'request', createdAt: new Date(base + 3_000) }),
+      ]);
+      expect(
+        await store.pruneScopedBatch({ before: cutoff, excludeTypes: ['exception'], limit: 1 }),
+      ).toEqual({ deleted: 1, hasMore: true });
+      expect(await store.find('req-0')).toBeNull();
+      expect(await store.find('exc-0')).not.toBeNull();
+
+      const second = await store.pruneScopedBatch({
+        before: cutoff,
+        excludeTypes: ['exception'],
+        limit: 1,
+      });
+      expect(second.deleted).toBe(1);
+      expect(await store.find('req-1')).toBeNull();
+      expect(await store.find('exc-1')).not.toBeNull();
+    });
+
+    it('a loop of bounded batches deletes exactly what one unbounded prune would', async () => {
+      await seedOld(7);
+      let deleted = 0;
+      for (;;) {
+        const result = await store.pruneScopedBatch({ before: cutoff, limit: 3 });
+        deleted += result.deleted;
+        if (!result.hasMore) break;
+      }
+      expect(deleted).toBe(7);
+      expect((await store.get({})).data).toHaveLength(0);
+    });
+  });
+
+  describe('lease SPI', () => {
+    it('grants to one owner, refuses another, and re-grants after release', async () => {
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-a', 60_000, Date.now())).toBe(
+        true,
+      );
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-b', 60_000, Date.now())).toBe(
+        false,
+      );
+      // Re-entrant for the same owner, so a restart is not locked out by itself.
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-a', 60_000, Date.now())).toBe(
+        true,
+      );
+
+      await store.releaseLease('telescope:prune', 'pod-a');
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-b', 60_000, Date.now())).toBe(
+        true,
+      );
+    });
+
+    it('ignores a release from an owner that does not hold the lease', async () => {
+      await store.tryAcquireLease('telescope:prune', 'pod-a', 60_000, Date.now());
+      await store.releaseLease('telescope:prune', 'pod-b');
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-c', 60_000, Date.now())).toBe(
+        false,
+      );
+    });
+  });
+
   describe('RollupStore SPI', () => {
     it('is detected as a RollupStore (both methods present)', () => {
       expect(isRollupStore(store)).toBe(true);

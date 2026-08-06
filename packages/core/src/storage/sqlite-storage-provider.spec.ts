@@ -213,6 +213,105 @@ describe('SqliteStorageProvider', () => {
     });
   });
 
+  describe('pruneScopedBatch', () => {
+    const cutoff = new Date('2026-02-01T00:00:00Z');
+
+    /** `count` doomed rows, each a minute older than the last. */
+    async function seedOld(count: number, type = 'request'): Promise<void> {
+      const base = Date.parse('2026-01-01T00:00:00Z');
+      await store.store(
+        Array.from({ length: count }, (_unused, index) =>
+          entry({ id: `e${index}`, type, createdAt: new Date(base + index * 60_000) }),
+        ),
+      );
+    }
+
+    it('deletes at most `limit` rows and reports that more remain', async () => {
+      await seedOld(5);
+      // The bound is the whole point: one call must never turn into the
+      // unbounded delete this replaces.
+      expect(await store.pruneScopedBatch({ before: cutoff, limit: 2 })).toEqual({
+        deleted: 2,
+        hasMore: true,
+      });
+      expect((await store.get({})).data).toHaveLength(3);
+    });
+
+    it('deletes OLDEST first', async () => {
+      await seedOld(3);
+      await store.pruneScopedBatch({ before: cutoff, limit: 2 });
+      // e0/e1 are the oldest; the survivor must be the newest of the doomed set,
+      // so that a partial cycle still lowers the age of the oldest entry.
+      expect((await store.get({})).data.map((row) => row.id)).toEqual(['e2']);
+    });
+
+    it('reports hasMore false once the scope is drained', async () => {
+      await seedOld(2);
+      expect(await store.pruneScopedBatch({ before: cutoff, limit: 10 })).toEqual({
+        deleted: 2,
+        hasMore: false,
+      });
+    });
+
+    it('honours the type selectors exactly as pruneScoped does', async () => {
+      await store.store([
+        entry({ id: 'req', type: 'request', createdAt: new Date('2026-01-01T00:00:00Z') }),
+        entry({ id: 'exc', type: 'exception', createdAt: new Date('2026-01-01T00:00:00Z') }),
+        entry({ id: 'fresh', type: 'request', createdAt: new Date('2026-03-01T00:00:00Z') }),
+      ]);
+      expect(
+        await store.pruneScopedBatch({ before: cutoff, excludeTypes: ['exception'], limit: 10 }),
+      ).toEqual({ deleted: 1, hasMore: false });
+      expect((await store.get({})).data.map((row) => row.id).sort()).toEqual(['exc', 'fresh']);
+    });
+
+    it('a loop of bounded batches deletes exactly what one unbounded prune would', async () => {
+      await seedOld(7);
+      let deleted = 0;
+      for (;;) {
+        const result = await store.pruneScopedBatch({ before: cutoff, limit: 3 });
+        deleted += result.deleted;
+        if (!result.hasMore) break;
+      }
+      expect(deleted).toBe(7);
+      expect((await store.get({})).data).toHaveLength(0);
+    });
+  });
+
+  describe('lease SPI', () => {
+    it('grants to one owner, refuses another, and re-grants after release', async () => {
+      const now = Date.now();
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-a', 60_000, now)).toBe(true);
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-b', 60_000, now)).toBe(false);
+      // Re-entrant for the same owner, so a restart is not locked out by itself.
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-a', 60_000, now)).toBe(true);
+
+      await store.releaseLease('telescope:prune', 'pod-a');
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-b', 60_000, now)).toBe(true);
+    });
+
+    it('re-grants an expired lease, so a crashed holder cannot wedge the fleet', async () => {
+      const now = Date.now();
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-a', 1_000, now)).toBe(true);
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-b', 1_000, now + 500)).toBe(false);
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-b', 1_000, now + 1_500)).toBe(
+        true,
+      );
+    });
+
+    it('ignores a release from an owner that no longer holds the lease', async () => {
+      const now = Date.now();
+      await store.tryAcquireLease('telescope:prune', 'pod-a', 1_000, now);
+      await store.tryAcquireLease('telescope:prune', 'pod-b', 60_000, now + 2_000);
+
+      // The stale holder finally releases; it must not hand pod-b's lease away.
+      await store.releaseLease('telescope:prune', 'pod-a');
+      expect(await store.tryAcquireLease('telescope:prune', 'pod-c', 60_000, now + 3_000)).toBe(
+        false,
+      );
+    });
+  });
+
   it('falls back to DEFAULT_LIMIT when limit is NaN', async () => {
     await store.store([entry({ id: '1' }), entry({ id: '2' })]);
     const page = await store.get({ limit: Number.NaN });

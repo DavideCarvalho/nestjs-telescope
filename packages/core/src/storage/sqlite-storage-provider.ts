@@ -7,11 +7,14 @@ import { mergeHistograms, normalizeHistogram } from '../rollup/rollup-store.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import { safeJsonParse } from './safe-json.js';
 import type {
+  BoundedPruneCapable,
+  BoundedPruneResult,
+  BoundedPruneScope,
   EntryQuery,
   EntryWithBatch,
+  LeaseCapableStorage,
   Page,
   PruneScope,
-  StorageProvider,
   TagCount,
 } from './storage-provider.js';
 
@@ -53,8 +56,16 @@ interface RollupRow {
   histogram: string | null;
 }
 
-/** Default storage provider: embedded SQLite via better-sqlite3, JSON1 for tags. */
-export class SqliteStorageProvider implements StorageProvider, RollupStore {
+/**
+ * Default storage provider: embedded SQLite via better-sqlite3, JSON1 for tags.
+ *
+ * Declared against {@link BoundedPruneCapable} and {@link LeaseCapableStorage}
+ * (both extend `StorageProvider`) so dropping either capability is a compile
+ * error rather than a silent fall back to unbounded, unlocked pruning.
+ */
+export class SqliteStorageProvider
+  implements BoundedPruneCapable, LeaseCapableStorage, RollupStore
+{
   private readonly db: Database.Database;
   /** Prepared once; reused by store() and update(). */
   private readonly stmtInsert: Database.Statement;
@@ -111,6 +122,12 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
       create table if not exists telescope_seen_families (
         family_hash text primary key,
         last_seen integer not null
+      );
+
+      create table if not exists telescope_leases (
+        lease_key text primary key,
+        owner text not null,
+        expires_at integer not null
       );
     `);
 
@@ -355,6 +372,59 @@ export class SqliteStorageProvider implements StorageProvider, RollupStore {
            )`,
       )
       .run(cutoff, ...typeParams, cutoff, ...typeParams, input.keepLast).changes;
+  }
+
+  async pruneScopedBatch(input: BoundedPruneScope): Promise<BoundedPruneResult> {
+    const cutoff = input.before.getTime();
+    const { typeSql, typeParams } = this.scopedTypePredicate(input);
+    const where = `created_at < ?${typeSql ? ` and ${typeSql}` : ''}`;
+    // `delete ... where id in (select ... order by ... limit ?)`, NOT
+    // `delete ... order by ... limit ?`: the latter needs SQLite to have been
+    // compiled with SQLITE_ENABLE_UPDATE_DELETE_LIMIT, which is not the default
+    // and is not something a library gets to assume about the host's build. The
+    // subquery form is plain SQL that every SQLite has, and it is the same shape
+    // the other providers use, so the batching semantics stay identical across
+    // engines. `ix_te_created` (created_at, id) serves the ordered scan.
+    const changes = this.db
+      .prepare(
+        `delete from telescope_entries
+         where id in (
+           select id from telescope_entries where ${where}
+           order by created_at asc, id asc limit ?
+         )`,
+      )
+      .run(cutoff, ...typeParams, input.limit).changes;
+    // A single-statement delete-by-subquery deletes exactly what it selected, so
+    // a short batch means the scope is drained.
+    return { deleted: changes, hasMore: changes >= input.limit };
+  }
+
+  async tryAcquireLease(
+    key: string,
+    owner: string,
+    ttlMs: number,
+    nowMs: number,
+  ): Promise<boolean> {
+    // One statement, so the check and the set cannot interleave with another
+    // connection on the same file. `on conflict do update ... where` applies the
+    // update ONLY when the existing lease is expired or already ours; when the
+    // predicate fails the row is untouched and `changes` is 0.
+    const changes = this.db
+      .prepare(
+        `insert into telescope_leases (lease_key, owner, expires_at) values (?, ?, ?)
+         on conflict(lease_key) do update set owner = excluded.owner, expires_at = excluded.expires_at
+         where telescope_leases.expires_at <= ? or telescope_leases.owner = excluded.owner`,
+      )
+      .run(key, owner, nowMs + ttlMs, nowMs).changes;
+    return changes > 0;
+  }
+
+  async releaseLease(key: string, owner: string): Promise<void> {
+    // Owner-scoped: a holder whose lease expired and was re-granted must not
+    // delete the new holder's row.
+    this.db
+      .prepare('delete from telescope_leases where lease_key = ? and owner = ?')
+      .run(key, owner);
   }
 
   /**
