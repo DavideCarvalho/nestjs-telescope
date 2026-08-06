@@ -300,4 +300,127 @@ describe('TelescopePruner', () => {
       warnSpy.mockRestore();
     });
   });
+  describe('overlap guard', () => {
+    /**
+     * A storage whose `pruneScoped` never settles on its own: each call parks on
+     * a promise the test resolves by hand, so a cycle can be held open across
+     * several timer ticks.
+     */
+    function makeBlockingStorage(): {
+      storage: StorageProvider;
+      calls: () => number;
+      releaseAll: () => void;
+    } {
+      const pending: Array<() => void> = [];
+      let calls = 0;
+      const storage: StorageProvider = {
+        store: () => Promise.resolve(),
+        update: () => Promise.resolve(),
+        find: () => Promise.resolve(null),
+        get: () => Promise.resolve({ data: [], nextCursor: null }),
+        batch: () => Promise.resolve([]),
+        tags: () => Promise.resolve([]),
+        prune: () => Promise.resolve(0),
+        pruneScoped: () => {
+          calls += 1;
+          return new Promise<number>((resolve) => {
+            pending.push(() => resolve(1));
+          });
+        },
+        clear: () => Promise.resolve(),
+      };
+      return {
+        storage,
+        calls: () => calls,
+        releaseAll: () => {
+          for (const resolve of pending.splice(0)) resolve();
+        },
+      };
+    }
+
+    it('drops scheduled ticks while a cycle is still running, and warns once', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const { storage, calls, releaseAll } = makeBlockingStorage();
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+
+      // First tick opens a cycle that parks inside pruneScoped. Five more ticks
+      // fire while it is still in flight and must ALL be dropped, so the store
+      // still sees exactly the one delete from the first cycle.
+      await tick(intervalMs);
+      expect(calls()).toBe(1);
+      for (let i = 0; i < 5; i += 1) await tick(intervalMs);
+      expect(calls()).toBe(1);
+
+      // The overlap warning is latched: one line for the whole streak, not one
+      // per dropped tick.
+      const overlapWarnings = warnSpy.mock.calls.filter(
+        (args) =>
+          typeof args[0] === 'string' && args[0].includes('still running when the next tick fired'),
+      );
+      expect(overlapWarnings).toHaveLength(1);
+
+      // Nothing was recorded for the dropped ticks — one cycle ran, so once it
+      // finishes there is exactly one run.
+      releaseAll();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pruner.getRuns()).toHaveLength(1);
+
+      pruner.onApplicationShutdown();
+      warnSpy.mockRestore();
+    });
+
+    it('resumes on the next tick once the slow cycle finishes', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const { storage, calls, releaseAll } = makeBlockingStorage();
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+
+      await tick(intervalMs);
+      await tick(intervalMs);
+      expect(calls()).toBe(1);
+
+      releaseAll();
+      await vi.advanceTimersByTimeAsync(0);
+      await tick(intervalMs);
+      expect(calls()).toBe(2);
+
+      pruner.onApplicationShutdown();
+      warnSpy.mockRestore();
+    });
+
+    it('pruneNow() joins the in-flight cycle instead of starting a second one', async () => {
+      vi.useFakeTimers();
+      const intervalMs = 100;
+      const { storage, calls, releaseAll } = makeBlockingStorage();
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({ enabled: true, prune: { after: '1h', intervalMs } });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+
+      await tick(intervalMs);
+      expect(calls()).toBe(1);
+
+      const manual = pruner.pruneNow();
+      const alsoManual = pruner.pruneNow();
+      expect(calls()).toBe(1);
+
+      releaseAll();
+      // Both manual calls resolve with the joined cycle's deleted count, and only
+      // that one cycle was ever recorded.
+      expect(await manual).toBe(1);
+      expect(await alsoManual).toBe(1);
+      expect(pruner.getRuns()).toHaveLength(1);
+      expect(pruner.getRuns()[0]?.trigger).toBe('scheduled');
+
+      pruner.onApplicationShutdown();
+      warnSpy.mockRestore();
+    });
+  });
 });

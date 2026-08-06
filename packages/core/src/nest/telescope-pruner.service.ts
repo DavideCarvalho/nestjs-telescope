@@ -63,6 +63,30 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
    * per-type support logs the capability warning a single time, not every tick.
    */
   private warnedNoScopedPrune = false;
+  /**
+   * The cycle currently running, or `null` when idle. A cycle can easily outlive
+   * its own interval on a large store — the bulk delete is one unbounded
+   * `DELETE`, and on a store whose retention predicate is not indexable it
+   * degrades to a full scan — while the timer below is fire-and-forget. Without
+   * this handle the ticks STACK: the process accumulates one more concurrent
+   * delete per interval, every one of them contending for the same rows, and
+   * the pile never drains. Scheduled ticks are dropped while a cycle is in
+   * flight; a manual {@link pruneNow} joins the in-flight cycle instead of
+   * adding a second one.
+   */
+  private inFlight: Promise<number> | null = null;
+  /**
+   * Scheduled ticks dropped during the cycle that is currently in flight. Reset
+   * at the end of every cycle, so it measures the CURRENT cycle's overrun, not
+   * a lifetime total.
+   */
+  private skippedThisCycle = 0;
+  /**
+   * Latches while ticks are being dropped so a persistently slow store logs the
+   * overlap warning once per streak rather than once per interval forever.
+   * Cleared by the first cycle that completes without dropping a tick behind it.
+   */
+  private warnedOverlap = false;
   /** Recent prune cycles, newest-first, capped at {@link MAX_PRUNE_RUNS}. */
   private readonly runs: PruneRun[] = [];
   /** Start time (epoch ms) of the most recent SCHEDULED cycle, for nextRunAt. */
@@ -81,7 +105,7 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
       // must never become an unhandled rejection or crash the host, so we always
       // catch. Individual sub-steps already swallow their own failures so one bad
       // type can't abort the rest of the cycle; this is the final backstop.
-      this.runCycle(prune, 'scheduled').catch((error: unknown) => {
+      this.runGuardedCycle(prune, 'scheduled').catch((error: unknown) => {
         this.logger.warn(`Telescope prune failed: ${asError(error).message}`);
       });
     }, prune.intervalMs);
@@ -93,11 +117,15 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
    * controller's `retention/prune` route), recording it as a `manual` run.
    * Returns the total number of entries deleted. Throws only if `prune` is
    * unconfigured — the caller (controller) gates that and the mutation guard.
+   *
+   * When a cycle is already running this JOINS it (resolving with its deleted
+   * count) rather than starting a competing one, so hammering the button cannot
+   * pile deletes onto a store that is already struggling.
    */
   async pruneNow(): Promise<number> {
     const prune = this.config.prune;
     if (!prune) return 0;
-    return this.runCycle(prune, 'manual');
+    return this.runGuardedCycle(prune, 'manual');
   }
 
   /** Recent prune runs (newest-first), copied so callers can't mutate the ring. */
@@ -124,7 +152,53 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
   }
 
   /**
-   * One prune tick. The retention model is:
+   * Serializes prune cycles WITHIN THIS PROCESS: at most one runs at a time.
+   * A scheduled tick that lands on a busy pruner is dropped; a manual one joins
+   * the cycle already running. Without this, a cycle slower than `intervalMs`
+   * lets the timer queue a second, then a third, each holding write locks on
+   * overlapping rows in the same store, and the backlog only grows.
+   *
+   * This is deliberately a per-process guard and nothing more. Every replica
+   * still prunes on its own timer against a SHARED store, so a fleet of N pods
+   * can still put N cycles in flight at once. Bounding that needs either a
+   * distributed lock or a deployment where only one role configures `prune`,
+   * both of which are the host application's call, not this library's.
+   */
+  private runGuardedCycle(
+    prune: NonNullable<ResolvedCoreConfig['prune']>,
+    trigger: PruneTrigger,
+  ): Promise<number> {
+    const running = this.inFlight;
+    if (running !== null) {
+      // A manual request waits for the cycle already doing the work.
+      if (trigger === 'manual') return running;
+      this.skippedThisCycle += 1;
+      if (!this.warnedOverlap) {
+        this.warnedOverlap = true;
+        this.logger.warn(
+          `Telescope prune is still running when the next tick fired (interval ${prune.intervalMs}ms); dropping ticks until it finishes. Raise prune.intervalMs, widen prune.after, or index the store for the retention predicate.`,
+        );
+      }
+      // Nothing is lost by dropping the tick: a cycle is idempotent and its
+      // cutoffs are computed from `Date.now()` at start, so the next one that
+      // actually runs simply deletes at a fresher cutoff.
+      return Promise.resolve(0);
+    }
+    const cycle = this.runCycle(prune, trigger).finally(() => {
+      this.inFlight = null;
+      // A clean cycle re-arms the warning, so a store that degrades again later
+      // says so instead of staying silent for the life of the process.
+      if (this.skippedThisCycle === 0) this.warnedOverlap = false;
+      this.skippedThisCycle = 0;
+    });
+    this.inFlight = cycle;
+    return cycle;
+  }
+
+  /**
+   * One prune tick, unguarded — every caller goes through
+   * {@link runGuardedCycle}, so at most one of these is in flight per process.
+   * The retention model is:
    *  - Each type that needs INDIVIDUAL handling — one with a `perType` override
    *    OR an archived type (which must be exported before its own delete) — is
    *    pruned in its OWN scope, at its own cutoff (its `perType` value, else the
