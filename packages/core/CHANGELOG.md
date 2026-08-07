@@ -1,5 +1,80 @@
 # @dudousxd/nestjs-telescope
 
+## 1.28.0
+
+### Minor Changes
+
+- [`8c68625`](https://github.com/DavideCarvalho/nestjs-telescope/commit/8c686250872dd4d5ba1691a5fa0ead90af3495c0) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Prune in bounded batches, and let a fleet prune once instead of once per pod.
+
+  **Why `minor` and not `patch`:** this adds public API — `pruneScopedBatch`,
+  `tryAcquireLease`/`releaseLease` on the storage contract, the `TelescopePruneLock`
+  seam, and five `prune.*` options. **Why not `major`:** nothing existing breaks.
+  Every new SPI method is optional, so a third-party provider compiles and runs
+  unchanged (it just keeps the old unbounded delete and logs a one-time warning),
+  and every new option is defaulted. The MikroORM adapter does add a
+  `telescope_leases` table, created by the same additive, never-dropping
+  `schema.update` that already manages `telescope_entries` — no migration to write,
+  nothing dropped, and it is in `telescopeManagedTables()` so a host's own migration
+  differ still skips it.
+
+  **Bounded batched deletes.** The retention delete was one unbounded
+  `DELETE ... WHERE created_at < ? AND type NOT IN (...)`. On a large table that
+  predicate matches nearly every row, so the planner correctly picks a full scan —
+  and that single statement holds row locks for the length of the scan. Measured on
+  a shared MySQL store: 755,614 rows / 1.3 GB, **21 concurrent prune deletes, the
+  oldest 63 minutes in**, with everything else writing to that database queued
+  behind them, and the pruner still 25h44m behind its own 24h window. The pruner now
+  issues a loop of short, individually-committed deletes, oldest first, tuned by
+  `prune.batchSize` (1000), `prune.maxBatchesPerCycle` (50) and `prune.batchPauseMs`
+  (50). Same rows deleted; locks released between batches. The ceiling matters as
+  much as the batching: without it a badly-behind table turns one tick into an
+  hour-long loop, which is the original failure spelled differently.
+
+  This is expressed portably. `DELETE ... ORDER BY ... LIMIT` is MySQL/MariaDB-only —
+  PostgreSQL has no `ORDER BY`/`LIMIT` on `DELETE`, SQLite needs a non-default
+  compile flag, SQL Server spells it `DELETE TOP (n)` — so the bound is "select the
+  oldest `limit` ids, then delete by primary key", which every driver renders, and
+  which is the better plan anyway (the `created_at` index walk stops after `limit`
+  matches and takes no row locks). `keepLast` scopes keep the unbounded path:
+  "keep the newest N of the doomed rows" is a whole-set property a per-batch bound
+  cannot express, so `keepLast` is absent from `BoundedPruneScope` by construction.
+
+  **A prune lock, so N replicas do not do the same work N times.** The in-flight
+  guard bounds one process; it cannot see the other seven pods. `prune.lock` adds a
+  small advisory seam — acquire a named lease with a TTL, release it, or be told
+  somebody else holds it — defaulting to a lease row in the database Telescope
+  already writes to, so it needs no new dependency and works on every in-repo
+  provider. A host that already runs a better primitive (a job engine's singleton
+  mutex, a Redis lock) supplies its own `TelescopePruneLock`; the acquire result is a
+  discriminated union, so an implementation cannot reach the lease without handling
+  the refusal. The lock is advisory by design — two concurrent prunes delete the same
+  rows and one wins, costing waste and never correctness — so the pruner **fails
+  open**: a broken lock warns once and prunes anyway rather than letting retention
+  silently stop while the table grows.
+
+### Patch Changes
+
+- [`61ab000`](https://github.com/DavideCarvalho/nestjs-telescope/commit/61ab00007a12991031a7afc0023c4dd68a98c3e0) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Stop prune cycles from stacking on top of each other.
+
+  `TelescopePruner` drove its cycles from a fire-and-forget `setInterval` with no
+  in-flight guard, so a cycle that outran `prune.intervalMs` did not delay the next
+  tick — it ran alongside it. On a large store each tick added one more concurrent
+  `DELETE` over an overlapping row range, they blocked each other on row locks,
+  every one got slower, and the backlog never drained. Seen in production as 25
+  simultaneous prune deletes against one MySQL store, the oldest 63 minutes old.
+
+  A scheduled tick that lands while a cycle is in flight is now dropped (nothing is
+  lost: cutoffs are computed from `Date.now()` at the start of a cycle, so the next
+  one that runs simply deletes at a fresher cutoff), and it logs one warning per
+  overlap streak pointing at `prune.intervalMs` / `prune.after` / store indexing.
+  `pruneNow()` now joins the cycle already running instead of starting a competing
+  one, so repeated dashboard "Prune now" clicks cannot pile deletes onto a store
+  that is already struggling.
+
+  The guard is per-process. Replicas still prune independently against a shared
+  store, so bounding a fleet to one pruner at a time remains the host application's
+  job — a distributed lock, or configuring `prune` on only one role.
+
 ## 1.27.0
 
 ### Minor Changes

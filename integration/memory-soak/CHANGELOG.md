@@ -1,5 +1,13 @@
 # memory-soak
 
+## 0.0.40
+
+### Patch Changes
+
+- Updated dependencies [[`61ab000`](https://github.com/DavideCarvalho/nestjs-telescope/commit/61ab00007a12991031a7afc0023c4dd68a98c3e0), [`8c68625`](https://github.com/DavideCarvalho/nestjs-telescope/commit/8c686250872dd4d5ba1691a5fa0ead90af3495c0)]:
+  - @dudousxd/nestjs-telescope@1.28.0
+  - @dudousxd/nestjs-telescope-cache@1.13.1
+
 ## 0.0.39
 
 ### Patch Changes
