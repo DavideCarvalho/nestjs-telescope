@@ -54,7 +54,7 @@ try {
 }
 ```
 
-It routes through the **same** capture the interceptor uses, so the entry gets the same family hash (an identical `TypeError` groups whether it was thrown in a request or in a job) and the same 4xx policy (an `HttpException` with a 4xx status is skipped unless `exceptions.captureHttp4xx` is on — see [Alerts & AI](/docs/alerts-ai)). Call it inside the batch scope so the exception correlates to the job or run it came from. Like `record`, it is fire-and-forget and never throws, so it is safe immediately before re-throwing.
+It routes through the **same** capture the interceptor uses, so the entry gets the same family hash (an identical `TypeError` groups whether it was thrown in a request or in a job) and the same 4xx policy (an `HttpException` with a 4xx status is skipped unless `exceptions.captureHttp4xx` is on — see [Exception capture](/docs/concepts/capture#exception-capture)). Call it inside the batch scope so the exception correlates to the job or run it came from. Like `record`, it is fire-and-forget and never throws, so it is safe immediately before re-throwing.
 
 <Callout type="info" title="Optional for compatibility">
   `recordException` is declared optional so hand-rolled `WatcherContext` objects (the fixtures in a watcher package's own specs) keep type-checking. Core always supplies it; call it as `ctx.recordException?.(…)` and your watcher stays compatible with an older core too.

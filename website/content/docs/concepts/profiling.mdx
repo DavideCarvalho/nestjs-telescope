@@ -137,4 +137,4 @@ The whole design is built so the cost is where you asked for it and nowhere else
 - **Enabled, request not selected:** the gate plus — only if sampling is on — a single `Math.random()` call.
 - **Selected:** a V8 sampling profiler runs for that request. Real overhead, which is exactly why captures are capped by `maxConcurrent` (default 1) and can be floored by `minDurationMs`. `node:inspector` is required lazily on the *first* capture and never before.
 
-This composes with Telescope's other guards — sampling for store volume, [overload protection](/docs/concepts/performance#overload-protection-pause-under-event-loop-pressure) for event-loop pressure — so profiling is a scalpel you pick up deliberately, not a cost you carry by default.
+This composes with Telescope's other guards — sampling for store volume, [overload protection](/docs/concepts/performance#overload-protection--pause-under-event-loop-pressure) for event-loop pressure — so profiling is a scalpel you pick up deliberately, not a cost you carry by default.

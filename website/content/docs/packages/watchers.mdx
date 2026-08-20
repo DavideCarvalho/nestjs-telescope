@@ -30,7 +30,7 @@ MikroORM.init({
 });
 ```
 
-`telescopeRecord` (exported from core, alongside `setTelescopeRecordSink`) is a free-function record sink for exactly this kind of boot-time integration — it mirrors `telescopeDump`'s pattern (see [Request context](/docs/recipes/request-context#ad-hoc-debugging-telescopedump)). `TelescopeService`'s constructor binds the sink automatically and `onApplicationShutdown` clears it; a call made before binding (or after shutdown) is **dropped, not buffered** — there's no unbounded queue replaying boot noise once the module comes up. An explicit `record` function, when passed, still takes precedence over the global sink.
+`telescopeRecord` (exported from core, alongside `setTelescopeRecordSink`) is a free-function record sink for exactly this kind of boot-time integration — it mirrors `telescopeDump`'s pattern (see [Request context](/docs/recipes/request-context#ad-hoc-debugging--telescopedump)). `TelescopeService`'s constructor binds the sink automatically and `onApplicationShutdown` clears it; a call made before binding (or after shutdown) is **dropped, not buffered** — there's no unbounded queue replaying boot noise once the module comes up. An explicit `record` function, when passed, still takes precedence over the global sink.
 
 If you'd rather wire the callback explicitly (or need `TelescopeService` for other reasons at that point), use `forRootAsync` so it can be injected first:
 
