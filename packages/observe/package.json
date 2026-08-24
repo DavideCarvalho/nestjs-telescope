@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-observe",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Forward @dudousxd/nestjs-telescope entries to NestJS Observe (observe.nestjs.com).",
   "license": "MIT",
   "repository": {
