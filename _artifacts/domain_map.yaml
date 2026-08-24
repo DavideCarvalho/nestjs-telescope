@@ -42,6 +42,7 @@ secondary_packages:
   - "@dudousxd/nestjs-telescope-sqs"
   - "@dudousxd/nestjs-telescope-ai"
   - "@dudousxd/nestjs-telescope-otel"
+  - "@dudousxd/nestjs-telescope-observe"
   - "@dudousxd/nestjs-telescope-testing"
 
 domains:
