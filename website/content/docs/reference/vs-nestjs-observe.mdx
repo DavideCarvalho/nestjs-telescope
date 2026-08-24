@@ -1,0 +1,137 @@
+---
+title: Telescope vs NestJS Observe
+description: An honest side-by-side with the official @nestjs/observe SDK and its hosted dashboard — what each one captures, where each one wins, and how to send Telescope entries to Observe.
+icon: GitCompare
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+[NestJS Observe](https://observe.nestjs.com) is the official observability product from the
+creator of NestJS: an MIT-licensed SDK (`@nestjs/observe`) reporting into a closed, hosted
+backend. It answers a different question than Telescope does, and the two compose — see
+[Sending Telescope entries to Observe](#sending-telescope-entries-to-observe).
+
+<Callout type="info">
+  Compared against `@nestjs/observe` 0.1.3 (August 2026). Observe is young and moving; check
+  their docs before relying on any row below.
+</Callout>
+
+## The short version
+
+Telescope is a console **inside your application**, reading a store you own. Observe is an
+**agent reporting to a SaaS**. If your data cannot leave the network, only one of these is
+available to you. If you want retention, alerting and SLOs without operating anything, the
+other is far less work.
+
+## Shape
+
+| | Telescope | NestJS Observe |
+| --- | --- | --- |
+| Model | In-app console | Agent + hosted backend |
+| Where data lives | Your store (SQLite / Redis / MySQL / Postgres) | Their infrastructure |
+| Licence | MIT, end to end | SDK MIT; collector and dashboard closed |
+| Cost | Your infrastructure | Free tier, then metered per event |
+| Retention | Your choice, via `prune` and `archive` | Fixed by plan tier |
+| Self-hosting the backend | It *is* self-hosted | Not offered |
+| NestJS support | 10 and 11, Express and Fastify | 11 only, Express exercised |
+
+## How they instrument
+
+This is the difference everything else follows from.
+
+Observe wraps **every provider in the Nest container in a `Proxy`**, so every method of every
+provider becomes a span automatically. There are no per-library integrations in its source at
+all. Telescope instruments **each library through its public API** — an axios interceptor, a
+MikroORM `EventSubscriber`, a Prisma `$on`, an ioredis command hook.
+
+The trade is direct:
+
+- Observe needs no wiring and knows the **class and method** of every span, which is what powers
+  its per-class timing view. Telescope has no equivalent.
+- Observe sees **only what is a Nest provider**. A Prisma query arrives as `PrismaService.user`
+  with no SQL; raw `pg`, `ioredis`, `fetch` and `nodemailer` calls are invisible to it. Database
+  spans in its UI are ones you wrote by hand with `TracerService.createSpan()`.
+
+## What gets captured
+
+| | Telescope | Observe |
+| --- | --- | --- |
+| Entry types | 15+ | 5 (request, job, error, log, custom metric) + runtime |
+| SQL | statement, bindings, slow flag, `EXPLAIN` | — |
+| N+1 detection | yes, with 1+N parent attribution | — |
+| Cache | hit/miss, tier, stale, TTL | — |
+| Redis | command and arguments | — |
+| Outbound HTTP | fetch and axios | — |
+| Mail | recipients, subject, preview | — |
+| ORM entity changes | create/update/delete diffs | — |
+| Browser errors | `client_exception`, same family hash as server errors | — |
+| Runtime metrics | CPU, RSS, heap | CPU, memory, GC by kind, event-loop lag and utilization |
+| Custom metrics | — | counters, gauges, summaries |
+
+## Where Observe is ahead
+
+Stated plainly, because knowing this is more useful than a flattering table.
+
+- **Per-class, per-method timing.** Self time versus total time for your own classes. Telescope
+  has nothing equivalent.
+- **SLOs and error budgets**, with burn-rate alerting.
+- **Alerting depth.** Sixteen metrics, anomaly detection, and — notably — *absence* detection:
+  telemetry silence and job silence. Telescope's rules are code-only, threshold-only, and cannot
+  fire on something that stopped arriving.
+- **Release comparison.** Error rate, latency and throughput diffed across deploys.
+- **Multi-service in one place**, with long retention and nothing for you to run. Telescope
+  aggregates across pods only via a shared store, and its live tail is per-process.
+- **A built-in issue tracker** that watches the telemetry to see whether a fix held.
+
+## Where Telescope is ahead
+
+- **The data does not leave your network.** For air-gapped, regulated or government
+  environments this is not a preference.
+- **Depth per integration** — the capture table above.
+- **Batch correlation.** Everything one request caused, in capture order, with a waterfall, and
+  without any OpenTelemetry setup.
+- **An operational console that acts.** Retry, promote, remove and redrive jobs; replay a
+  request with credentials stripped; prune on demand; arm the profiler. Observe's dashboard and
+  MCP server are read-only by design.
+- **On-demand CPU flamegraphs.** Observe's profiler is shelved in the shipped SDK.
+- **AI exception diagnosis** with a model you choose, cached per family and attached to the
+  alert. Observe's AI story is copying context out to your editor.
+- **An extension SPI.** Other libraries contribute whole dashboard pages.
+- **No per-event cost.** Sampling stays an engineering decision. Observe meters spans too, so
+  fine-grained instrumentation is a line item.
+- **Nothing of your source code is transmitted.** Observe's `sourceContext` defaults to on,
+  which sends fragments of your source files with each error.
+
+## Sending Telescope entries to Observe
+
+They are not exclusive. [`@dudousxd/nestjs-telescope-observe`](/docs/packages/observe) forwards
+what Telescope captures into an Observe project, so the depth Telescope has locally shows up in
+their UI as spans on the request that caused them — without adopting the provider proxy.
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { ObserveExporter } from '@dudousxd/nestjs-telescope-observe';
+
+TelescopeModule.forRoot({
+  storage,
+  extensions: [
+    new ObserveExporter({
+      appKey: process.env.OBSERVE_APP_KEY!,
+      appSecret: process.env.OBSERVE_APP_SECRET!,
+      serviceId: 'orders-api',
+    }),
+  ],
+});
+```
+
+Observe's ingest API is private and unversioned, so read that package's notes before depending
+on it in production.
+
+## Choosing
+
+- **Data cannot leave your network** — Telescope. Observe has no self-hosted collector.
+- **You want SLOs, anomaly alerting and long retention, and would rather not run storage** —
+  Observe, and add the exporter if you want Telescope's depth alongside it.
+- **You are debugging a slow endpoint right now** — Telescope. The batch waterfall with the
+  actual SQL is what answers that question.
+- **You want per-class timing across a fleet of services** — Observe.

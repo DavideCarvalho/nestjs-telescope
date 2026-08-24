@@ -1,0 +1,109 @@
+---
+title: "@dudousxd/nestjs-telescope-observe"
+description: Forward Telescope entries to NestJS Observe — requests as snapshots, everything they caused as child spans, jobs and logs alongside.
+icon: Send
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-observe
+```
+
+Reports what Telescope captures into a [NestJS Observe](https://observe.nestjs.com) project.
+A request becomes a snapshot; the queries, cache operations, Redis commands and outbound HTTP
+calls it caused become child spans positioned by their offset into it; queue and schedule runs
+become job snapshots. Process CPU, memory, GC and event-loop readings fill Observe's Profiler,
+and every record — counted before sampling — becomes a custom metric. See
+[Telescope vs NestJS Observe](/docs/reference/vs-nestjs-observe) for how the two products differ.
+
+No runtime dependencies — gzip comes from `node:zlib` and the POST from global `fetch`.
+
+## Usage
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { ObserveExporter } from '@dudousxd/nestjs-telescope-observe';
+
+const observe = new ObserveExporter({
+  appKey: process.env.OBSERVE_APP_KEY!,
+  appSecret: process.env.OBSERVE_APP_SECRET!,
+  serviceId: 'orders-api',
+  serviceVersion: process.env.GIT_SHA,
+});
+
+TelescopeModule.forRoot({ storage, watchers: [...], extensions: [observe] });
+```
+
+`appKey` and `appSecret` come from your project's **API Keys** page and are scoped to the
+project, not to one application; `serviceId` is the application id within it. Call
+`await observe.close()` on shutdown to flush what is still buffered.
+
+## Options
+
+| Option | Default | |
+| --- | --- | --- |
+| `appKey`, `appSecret`, `serviceId` | — | Required. Missing ones throw at construction. |
+| `serviceVersion` | — | Powers Observe's release comparison. |
+| `endpoint` | `https://observe-api.nestjs.com` | |
+| `include` | all on | `{ requests, spans, jobs, logs, runtime, metrics }` |
+| `sampleRate` | `1` | Per batch. A batch holding a failure is always sent. |
+| `filter` | — | `(entry) => boolean`, the last word on any single entry. |
+| `batchGraceMs` | `5000` | How long a batch waits for the rest of its entries. |
+| `flushIntervalMs` | `5000` | |
+| `maxRecordsPerRequest` | `1000` | Ceiling on `snapshots` and on `jobs` per POST. |
+| `maxLogsPerRequest` | `250` | |
+| `runtimeIntervalMs` | `60000` | Floored at 30s. Process snapshots describe the process, not the traffic. |
+| `maxSeriesPerMetric` | `1000` | Cardinality ceiling per custom metric. |
+| `maxRetries` | `3` | |
+
+## Controlling the bill
+
+Observe meters per ingested record — a request, job, error or log is one event, a span a
+quarter — so `include`, `sampleRate` and `filter` are the knobs that decide the invoice.
+
+```ts
+new ObserveExporter({
+  // ...credentials,
+  include: { requests: true, spans: true, jobs: true, logs: false },
+  sampleRate: 0.2,
+  filter: (entry) => entry.type !== 'cache',
+});
+```
+
+These are deliberately separate from Telescope's own `sampling`: what is worth keeping locally
+for an hour is not the same question as what is worth paying to retain for ninety days.
+
+Sampling is decided **per batch**, from a hash of the batch id, so a sampled request keeps all
+of its spans rather than a random half — and a batch containing a failure is forwarded whatever
+the rate says.
+
+## What you should know
+
+<Callout type="warn">
+  Observe's ingest API is private, undocumented and unversioned, and its collector validates
+  against a strict allowlist. A field renamed on their side becomes a `400` here. That failure
+  is logged with the status and the collector's own message; it is not retried, because
+  retrying cannot fix it.
+</Callout>
+
+- **`runtime` is all-or-nothing.** Their collector answers `500` — not a validation `400` — to a
+  `runtime` object missing any of CPU, memory, GC or event loop, an empty one included. An
+  incomplete snapshot is withheld and retried on the next flush rather than sent partially.
+- **Wrong credentials trip a breaker.** Consecutive `401`/`403` responses disable the exporter
+  and re-log on a decaying schedule, so a bad key shows up in the log instead of becoming a
+  silent daily 401 storm.
+- **Failures that can succeed later are retried.** Network errors, `408`, `429` and `5xx`, with
+  exponential backoff and jitter, honouring `Retry-After`.
+- **Nothing blocks the host.** The Telescope flush hook only buffers; encoding and the POST run
+  on the exporter's own unref'd timer, and no error escapes into capture.
+- **User data stays out of span tags.** SQL bindings, cache keys and values, request and job
+  payloads, mail bodies and recipients are never put on the wire.
+- **It cannot be pointed somewhere private.** `endpoint` is configurable, but no open-source
+  collector for this protocol exists. Where data may not leave the network, Telescope's own
+  storage is the answer — not this package.
+
+## Diagnostics
+
+`exporter.metrics` reports what has been accepted, filtered, encoded, sampled out and sent,
+plus how many batches are still open and whether the transport has disabled itself.
