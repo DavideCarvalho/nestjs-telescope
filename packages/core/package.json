@@ -19,12 +19,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md",
-    "CHANGELOG.md",
-    "skills"
-  ],
+  "files": ["dist/", "README.md", "CHANGELOG.md", "skills"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
