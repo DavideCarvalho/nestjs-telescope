@@ -61,7 +61,7 @@ const page = await telescope.entries({ type: 'job' });
 
 ## Peer dependencies
 
-The module (`.`) needs `@nestjs/common` / `@nestjs/core` (>= 11). `/react` needs `react`, `react-dom`, and `@tanstack/react-query` — but only if you import it; they're optional peers. The turnkey dashboard bundles its own copies, so a plain `TelescopeUiModule.forRoot()` adds no React to your app.
+The module (`.`) needs `@nestjs/common` / `@nestjs/core` (>= 11, including 12). `/react` needs `react`, `react-dom`, and `@tanstack/react-query` — but only if you import it; they're optional peers. The turnkey dashboard bundles its own copies, so a plain `TelescopeUiModule.forRoot()` adds no React to your app.
 
 ## Gating the page
 
