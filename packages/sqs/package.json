@@ -36,8 +36,8 @@
   "devDependencies": {
     "@aws-sdk/client-sqs": "3.1060.0",
     "@dudousxd/nestjs-telescope": "workspace:*",
-    "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0",
+    "@nestjs/common": "^12.0.0",
+    "@nestjs/core": "^12.0.0",
     "@types/node": "^20.0.0",
     "reflect-metadata": "^0.2.2",
     "typescript": "^5.4.0",

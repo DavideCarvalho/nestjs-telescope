@@ -45,9 +45,9 @@
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
-    "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0",
-    "@nestjs/event-emitter": "^2.1.1",
+    "@nestjs/common": "^12.0.0",
+    "@nestjs/core": "^12.0.0",
+    "@nestjs/event-emitter": "^12.0.0",
     "@types/node": "^20.0.0",
     "eventemitter2": "^6.4.9",
     "reflect-metadata": "^0.2.2",
