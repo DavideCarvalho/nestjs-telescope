@@ -158,6 +158,7 @@ configured). When a `token` is set every request must carry
 | `@dudousxd/nestjs-telescope-redis` | Redis-backed shared storage (multi-instance) |
 | `@dudousxd/nestjs-telescope-ai` | AI exception diagnoser (Vercel AI SDK — Bedrock, OpenAI, any model) |
 | `@dudousxd/nestjs-telescope-otel` | OpenTelemetry trace-context provider + bridge |
+| `@dudousxd/nestjs-telescope-observe` | Forward entries to NestJS Observe (hosted dashboard) |
 | `@dudousxd/nestjs-telescope-testing` | In-memory store, `FakeClock`, watcher test harness |
 
 ## License
