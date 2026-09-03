@@ -1,9 +1,17 @@
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  infiniteQueryOptions,
+  queryOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import type {
   BulkActionName,
   EntriesQuery,
   JobActionName,
   QueueState,
+  TagCount,
   TelescopeClient,
 } from '../client/index.js';
 import { usePaused, useTelescopeClient } from './telescope-context.js';
@@ -32,6 +40,35 @@ export function tagsQuery(client: TelescopeClient, prefix = '') {
   return queryOptions({
     queryKey: ['telescope', 'tags', prefix],
     queryFn: () => client.tags(prefix === '' ? undefined : prefix),
+    staleTime: REFETCH_MS,
+  });
+}
+
+/** Tags per request. Two screenfuls, so the first page fills the list and the second arrives before
+ *  an operator scrolls to the end of it. */
+export const TAG_PAGE_SIZE = 50;
+
+/**
+ * A tag picker's list: ordered by count, narrowed by `search` on the SERVER, and paged.
+ *
+ * All three matter together. The list is bounded because tag cardinality grows with the data, which
+ * makes the values an operator searches for routinely the ones the bound cut — so a search that
+ * filtered the fetched page could not find them, and a bound with no paging past it is a ceiling.
+ */
+export function tagsInfiniteQuery(client: TelescopeClient, prefix = '', search = '') {
+  return infiniteQueryOptions({
+    queryKey: ['telescope', 'tags', 'page', prefix, search],
+    queryFn: ({ pageParam }) =>
+      client.tags(prefix === '' ? undefined : prefix, {
+        search,
+        limit: TAG_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    // A short page is the last one. Counting what is already loaded (rather than multiplying a page
+    // number) keeps the offset right even when a page comes back trimmed.
+    getNextPageParam: (last: TagCount[], all: TagCount[][]) =>
+      last.length < TAG_PAGE_SIZE ? undefined : all.reduce((n, page) => n + page.length, 0),
     staleTime: REFETCH_MS,
   });
 }
@@ -380,6 +417,9 @@ export function useHealth() {
 }
 export function useTags(prefix = '') {
   return useQuery(tagsQuery(useTelescopeClient(), prefix));
+}
+export function useTagsInfinite(prefix = '', search = '') {
+  return useInfiniteQuery(tagsInfiniteQuery(useTelescopeClient(), prefix, search));
 }
 export function useStats(type: string, window: string) {
   return useQuery(statsQuery(useTelescopeClient(), type, window, usePaused()));

@@ -121,6 +121,20 @@ export interface EntryWithBatch extends Entry {
   batch: Entry[];
 }
 
+/**
+ * How much of the tag list to return, for a picker that searches and pages instead of showing a
+ * fixed top-N.
+ *
+ * `search` matches anywhere in the tag, unlike `prefix` which anchors — a picker's search box is the
+ * way to reach values a bound cut, and those are rarely reachable by their first characters. Both
+ * can be set: `prefix` is the control's fixed scope (`user:`), `search` is what was typed into it.
+ */
+export interface TagQuery {
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface StorageProvider {
   store(entries: Entry[]): Promise<void>;
   /** Patches `patch` fields onto the entry with the given `id`. The `id` field is immutable; other fields are patched as given. */
@@ -136,8 +150,17 @@ export interface StorageProvider {
   get(query: EntryQuery): Promise<Page<Entry>>;
   /** Returned entries may share object references with the store; callers must not mutate them. */
   batch(batchId: string): Promise<Entry[]>;
-  /** Returns tag counts for entries matching `prefix`. The returned order is unspecified. */
-  tags(prefix?: string): Promise<TagCount[]>;
+  /**
+   * Tag counts for entries matching `prefix`, most-used first with ties broken alphabetically.
+   *
+   * The order is part of the contract because {@link TagQuery.offset} is: an unordered listing
+   * cannot be paged, since page two would be taken over a different arrangement of the same rows and
+   * would both repeat and skip.
+   *
+   * A provider that ignores `query` is still CORRECT, only unbounded — every caller re-applies the
+   * bound, so a picker never renders more than it asked for. It just does the work in memory.
+   */
+  tags(prefix?: string, query?: TagQuery): Promise<TagCount[]>;
   prune(olderThan: Date, keepLast?: number): Promise<number>;
   /**
    * Type-scoped prune for per-type retention. ADDITIVE and OPTIONAL: providers

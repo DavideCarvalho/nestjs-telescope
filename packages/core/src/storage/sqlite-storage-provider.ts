@@ -16,6 +16,7 @@ import type {
   Page,
   PruneScope,
   TagCount,
+  TagQuery,
 } from './storage-provider.js';
 
 export interface SqliteStorageOptions {
@@ -311,22 +312,35 @@ export class SqliteStorageProvider
     return rows.map((row) => this.fromRow(row));
   }
 
-  async tags(prefix?: string): Promise<TagCount[]> {
-    const sql =
-      prefix !== undefined
-        ? `select value as tag, count(*) as count
-           from telescope_entries, json_each(telescope_entries.tags)
-           where value like @prefix || '%'
-           group by value
-           order by count desc`
-        : `select value as tag, count(*) as count
-           from telescope_entries, json_each(telescope_entries.tags)
-           group by value
-           order by count desc`;
-    const rows = this.db.prepare(sql).all(prefix !== undefined ? { prefix } : {}) as {
-      tag: string;
-      count: number;
-    }[];
+  async tags(prefix?: string, query?: TagQuery): Promise<TagCount[]> {
+    const conditions: string[] = [];
+    const params: Record<string, unknown> = {};
+    if (prefix !== undefined) {
+      conditions.push(`value like @prefix || '%'`);
+      params.prefix = prefix;
+    }
+    // Applied in SQL, before the bound: a picker searches precisely for the values the bound cut,
+    // so narrowing the already-cut page could never find them.
+    const search = query?.search?.trim();
+    if (search) {
+      conditions.push(`lower(value) like '%' || @search || '%'`);
+      params.search = search.toLowerCase();
+    }
+    // `tag asc` is not decoration — it makes the order total, which is what lets `offset` continue a
+    // page instead of re-cutting an arbitrary arrangement of equal counts.
+    const where = conditions.length ? `where ${conditions.join(' and ')}` : '';
+    const page = query?.limit !== undefined ? 'limit @limit offset @offset' : '';
+    const sql = `select value as tag, count(*) as count
+       from telescope_entries, json_each(telescope_entries.tags)
+       ${where}
+       group by value
+       order by count desc, tag asc
+       ${page}`;
+    if (query?.limit !== undefined) {
+      params.limit = query.limit;
+      params.offset = query.offset ?? 0;
+    }
+    const rows = this.db.prepare(sql).all(params) as { tag: string; count: number }[];
     return rows.map((row) => ({ tag: row.tag, count: row.count }));
   }
 

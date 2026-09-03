@@ -1,10 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { TagCount } from '../../client/index.js';
 import { Input } from '../ui/index.js';
-import { useTags } from '../use-telescope-queries.js';
+import { useTagsInfinite } from '../use-telescope-queries.js';
 
-/** Top-N suggestions shown in the dropdown, sorted by count desc. */
-const MAX_SUGGESTIONS = 10;
+/** How long typing settles before it becomes a request. Long enough that a word costs one query,
+ *  short enough that the list feels attached to the keyboard. */
+const SEARCH_DEBOUNCE_MS = 200;
+
+/** How close to the bottom of the list a scroll gets before the next page is asked for. */
+const LOAD_MORE_MARGIN_PX = 48;
 
 interface TagAutocompleteProps {
   /** Applies the chosen tag as the active entries filter (same effect as the old input). */
@@ -23,20 +26,25 @@ interface TagAutocompleteProps {
   ariaLabel?: string;
 }
 
-/** Sorts by count desc, caps to the top N, and (defensively) filters by the typed prefix
- *  in case a stale/over-broad cache entry is served while a narrower query loads. */
-function rankSuggestions(tags: TagCount[], prefix: string): TagCount[] {
-  const needle = prefix.trim().toLowerCase();
-  return tags
-    .filter((entry) => needle === '' || entry.tag.toLowerCase().includes(needle))
-    .sort((left, right) => right.count - left.count)
-    .slice(0, MAX_SUGGESTIONS);
+/** Settles a value that changes on every keystroke into one that changes once typing stops. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
 }
 
 /**
- * Tag filter rendered as an accessible combobox: typing queries `GET /tags?prefix=`
- * and surfaces matching tags with their entry counts. Selecting one applies it as the
- * active `tag` filter and closes the list. Empty input shows no dropdown.
+ * Tag filter rendered as an accessible combobox: it lists the tags that exist, most-used first, with
+ * their entry counts. Selecting one applies it as the active `tag` filter; typing something the list
+ * does not offer still applies as typed, which a bounded list has to allow.
+ *
+ * Focus alone opens it — an operator should not have to guess a first character to discover what is
+ * there. Both the search and the paging happen on the SERVER: the list is bounded because tag
+ * cardinality grows with the data, so the values worth searching for are routinely the ones the
+ * bound cut, and a search over the fetched page could never find them.
  */
 export function TagAutocomplete({
   onSelect,
@@ -51,13 +59,22 @@ export function TagAutocomplete({
   const listboxId = useId();
 
   const trimmed = input.trim();
-  // The full tag the user is narrowing to — `user:` + `42` etc. The input shows
-  // only the stripped portion (the id), but the query and ranking work against
-  // the real, prefixed tag namespace so counts and matches stay correct.
+  // The full tag the user is narrowing to — `user:` + `42` etc. The input shows only the stripped
+  // portion (the id), while the query works against the real, prefixed namespace so counts match.
   const fullQuery = `${prefix}${trimmed}`;
-  const { data } = useTags(fullQuery);
-  const suggestions = trimmed === '' ? [] : rankSuggestions(data ?? [], fullQuery);
+  const debouncedSearch = useDebounced(trimmed, SEARCH_DEBOUNCE_MS);
+  const tags = useTagsInfinite(prefix, debouncedSearch);
+  const suggestions = tags.data?.pages.flat() ?? [];
   const showList = open && suggestions.length > 0;
+
+  const listRef = useRef<HTMLDivElement>(null);
+  function onListScroll(): void {
+    const el = listRef.current;
+    if (!el || !tags.hasNextPage || tags.isFetchingNextPage) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - LOAD_MORE_MARGIN_PX) {
+      void tags.fetchNextPage();
+    }
+  }
 
   /** What we show in the row / input for a tag — the prefix stripped off. */
   function displayOf(tag: string): string {
@@ -138,6 +155,8 @@ export function TagAutocomplete({
           role="listbox"
           aria-label="Tag suggestions"
           tabIndex={-1}
+          ref={listRef}
+          onScroll={onListScroll}
           className="absolute left-0 top-full z-10 mt-1 max-h-64 w-48 overflow-auto rounded border border-line bg-popover py-1 shadow-lg"
         >
           {suggestions.map((suggestion, index) => (
@@ -162,6 +181,9 @@ export function TagAutocomplete({
               <span className="shrink-0 text-muted-foreground">{suggestion.count}</span>
             </div>
           ))}
+          {tags.isFetchingNextPage ? (
+            <p className="px-2 py-1 text-[10px] text-muted-foreground">loading more…</p>
+          ) : null}
         </div>
       ) : null}
     </div>

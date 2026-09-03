@@ -13,6 +13,7 @@ import type {
   Page,
   PruneScope,
   TagCount,
+  TagQuery,
 } from './storage-provider.js';
 
 const DEFAULT_LIMIT = 50;
@@ -106,16 +107,25 @@ export class InMemoryStorageProvider
       .sort((a, b) => a.sequence - b.sequence);
   }
 
-  async tags(prefix?: string): Promise<TagCount[]> {
+  async tags(prefix?: string, query?: TagQuery): Promise<TagCount[]> {
+    const search = query?.search?.trim().toLowerCase();
     const counts = new Map<string, number>();
     for (const entry of this.entries) {
       for (const tag of entry.tags) {
-        if (!prefix || tag.startsWith(prefix)) {
-          counts.set(tag, (counts.get(tag) ?? 0) + 1);
-        }
+        if (prefix && !tag.startsWith(prefix)) continue;
+        // Before the bound below, for the same reason the SQL provider searches before its LIMIT.
+        if (search && !tag.toLowerCase().includes(search)) continue;
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
       }
     }
-    return [...counts.entries()].map(([tag, count]) => ({ tag, count }));
+    const ordered = [...counts.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      // Most-used first, ties alphabetical — a total order, which is what makes `offset` mean
+      // "continue" rather than "re-cut".
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+    if (query?.limit === undefined) return ordered;
+    const offset = query.offset ?? 0;
+    return ordered.slice(offset, offset + query.limit);
   }
 
   async prune(olderThan: Date, keepLast?: number): Promise<number> {

@@ -67,6 +67,13 @@ function defaultBaseUrl(): string {
 export type JobActionName = 'retry' | 'remove' | 'promote';
 export type BulkActionName = 'retry-all' | 'redrive';
 
+/** One page of a tag picker's list. See {@link TelescopeClient.tags}. */
+export interface TagPageOptions {
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface TelescopeClient {
   /** The resolved API base URL (e.g. `/telescope/api`). Used by hooks that need to construct URLs directly (e.g. SSE EventSource). */
   readonly baseUrl: string;
@@ -79,7 +86,13 @@ export interface TelescopeClient {
   /** Nested span waterfall for one trace (`GET traces/:traceId/waterfall`). */
   waterfall(traceId: string): Promise<Waterfall>;
   stats(type: string, window: string): Promise<StatsResult>;
-  tags(prefix?: string): Promise<TagCount[]>;
+  /**
+   * Tag counts, most-used first. `prefix` is the control's fixed scope (`user:`); `search` is what
+   * was typed into it and matches anywhere in the tag. Both the search and the page happen on the
+   * SERVER — a picker that narrowed its own fetched page could only ever find what the bound
+   * already let through.
+   */
+  tags(prefix?: string, opts?: TagPageOptions): Promise<TagCount[]>;
   meta(): Promise<TelescopeMeta>;
   /**
    * Fetches data for an extension dashboard panel from a registered provider:
@@ -375,7 +388,13 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     traces: (window, limit) => get<TracesResult>('/traces', { window, limit }),
     waterfall: (traceId) => get<Waterfall>(`/traces/${encodeURIComponent(traceId)}/waterfall`),
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
-    tags: (prefix) => get<TagCount[]>('/tags', { prefix }),
+    tags: (prefix, opts) =>
+      get<TagCount[]>('/tags', {
+        prefix,
+        search: opts?.search?.trim() || undefined,
+        limit: opts?.limit,
+        offset: opts?.offset,
+      }),
     meta: () => get<TelescopeMeta>('/meta'),
     extData: (ext, provider, query) => {
       const qs =

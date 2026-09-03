@@ -13,6 +13,7 @@ export { createTelescopeClient } from './telescope-client.js';
 export type {
   BulkActionName,
   JobActionName,
+  TagPageOptions,
   TelescopeClient,
   TelescopeClientOptions,
 } from './telescope-client.js';

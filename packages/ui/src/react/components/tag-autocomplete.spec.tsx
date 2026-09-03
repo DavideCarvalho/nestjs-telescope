@@ -12,10 +12,24 @@ const ALL_TAGS: TagCount[] = [
   { tag: 'slow-query', count: 19 },
 ];
 
+/** A stand-in for the server's `GET /tags`: it scopes by `prefix`, narrows by `search`, orders by
+ *  count and cuts a page — the same contract the storage providers implement, so a component tested
+ *  against it is tested against what it will actually be given. */
 function mockClient(tags: TagCount[] = ALL_TAGS) {
-  const tagsFn = vi.fn<(prefix?: string) => Promise<TagCount[]>>(async (prefix) =>
-    prefix ? tags.filter((entry) => entry.tag.toLowerCase().includes(prefix.toLowerCase())) : tags,
-  );
+  const tagsFn = vi.fn<
+    (
+      prefix?: string,
+      opts?: { search?: string; limit?: number; offset?: number },
+    ) => Promise<TagCount[]>
+  >(async (prefix, opts) => {
+    const search = opts?.search?.trim().toLowerCase();
+    const matching = tags
+      .filter((entry) => !prefix || entry.tag.startsWith(prefix))
+      .filter((entry) => !search || entry.tag.toLowerCase().includes(search))
+      .sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag));
+    const offset = opts?.offset ?? 0;
+    return opts?.limit === undefined ? matching : matching.slice(offset, offset + opts.limit);
+  });
   const client: TelescopeClient = mockTelescopeClient({
     tags: tagsFn,
     meta: async () => ({
@@ -53,8 +67,11 @@ describe('TagAutocomplete', () => {
     renderAutocomplete();
     fireEvent.change(screen.getByLabelText('Filter by tag'), { target: { value: 'slow' } });
 
-    const options = await screen.findAllByRole('option');
-    expect(options).toHaveLength(2);
+    // The list narrows once typing SETTLES: the search is debounced into one request, and until it
+    // lands the previous answer stays on screen rather than blanking on every keystroke.
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+
+    const options = screen.getAllByRole('option');
     // sorted by count desc → slow (42) before slow-query (19)
     expect(options[0]?.textContent).toContain('slow');
     expect(options[0]?.textContent).toContain('42');
@@ -64,12 +81,54 @@ describe('TagAutocomplete', () => {
     expect(screen.queryByText('schedule')).toBeNull();
   });
 
-  it('does not open a dropdown for empty input', async () => {
+  it('offers what exists as soon as it is focused, before anything is typed', async () => {
+    // It used to require typing first, which asks an operator to guess a first character in order to
+    // discover what is there. The list is the answer to "what can I filter by" — showing it is the
+    // whole reason a picker beats a text box.
     renderAutocomplete();
-    const input = screen.getByLabelText('Filter by tag');
-    fireEvent.focus(input);
-    expect(screen.queryByRole('listbox')).toBeNull();
-    expect(input.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.focus(screen.getByLabelText('Filter by tag'));
+
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([
+      expect.stringContaining('slow'),
+      expect.stringContaining('slow-query'),
+      expect.stringContaining('schedule'),
+    ]);
+  });
+
+  it('asks the server to search and page, rather than slicing what it holds', async () => {
+    // The list is bounded because tag cardinality grows with the data, so the values worth
+    // searching for are routinely the ones the bound cut — a client-side filter cannot reach them.
+    const { client, tagsFn } = mockClient();
+    renderAutocomplete(vi.fn(), client);
+
+    fireEvent.change(screen.getByLabelText('Filter by tag'), { target: { value: 'slow' } });
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+
+    expect(tagsFn).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ search: 'slow', limit: expect.any(Number), offset: 0 }),
+    );
+  });
+
+  it('asks for the next page when the list is scrolled to its end', async () => {
+    const many: TagCount[] = Array.from({ length: 60 }, (_, i) => ({
+      tag: `tag-${i}`,
+      count: 60 - i,
+    }));
+    const { client, tagsFn } = mockClient(many);
+    renderAutocomplete(vi.fn(), client);
+
+    fireEvent.focus(screen.getByLabelText('Filter by tag'));
+    await waitFor(() => expect(screen.getAllByRole('option').length).toBeGreaterThan(0));
+    tagsFn.mockClear();
+    fireEvent.scroll(screen.getByRole('listbox'));
+
+    // The offset is what has already been loaded, not a page number — a short page cannot desync it.
+    await waitFor(() =>
+      expect(tagsFn).toHaveBeenCalledWith(undefined, expect.objectContaining({ offset: 50 })),
+    );
   });
 
   it('applies a clicked suggestion as the selected tag and closes the list', async () => {

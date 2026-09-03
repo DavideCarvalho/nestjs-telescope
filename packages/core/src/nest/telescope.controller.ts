@@ -182,6 +182,17 @@ function parseWindowMs(window: string | undefined): number {
   return windowMs;
 }
 
+/** Tags per request when a caller names no bound — a picker's list, not a listing. */
+const DEFAULT_TAG_PAGE = 50;
+
+/** A non-negative integer from the query string, or `undefined` for anything else. A junk bound is
+ *  treated as absent rather than coerced to 0, which would return an empty page and read as "there
+ *  are no tags". */
+function boundedCount(raw?: string): number | undefined {
+  const n = Number(raw);
+  return raw !== undefined && raw !== '' && Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
 @UseGuards(TelescopeGuard)
 @Controller('telescope/api')
 export class TelescopeController {
@@ -249,9 +260,31 @@ export class TelescopeController {
     return this.storage.batch(id);
   }
 
+  /**
+   * Tag counts for a picker: most-used first, ties alphabetical, narrowed by `search` and cut to one
+   * page.
+   *
+   * The page is re-applied HERE even though the provider was asked for it, because a provider is
+   * allowed to ignore the query — the contract says as much, so an older or third-party one simply
+   * returns everything. Without this line such a provider hands a picker more rows than it asked
+   * for, the picker reads that as "there is another page", and the next request returns the same
+   * rows again.
+   */
   @Get('tags')
-  tags(@Query('prefix') prefix?: string): Promise<TagCount[]> {
-    return this.storage.tags(prefix);
+  async tags(
+    @Query('prefix') prefix?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<TagCount[]> {
+    const size = boundedCount(limit) ?? DEFAULT_TAG_PAGE;
+    const from = boundedCount(offset) ?? 0;
+    const rows = await this.storage.tags(prefix, {
+      ...(search?.trim() ? { search: search.trim() } : {}),
+      limit: size,
+      offset: from,
+    });
+    return rows.length > size ? rows.slice(from, from + size) : rows;
   }
 
   @Get('queues')
