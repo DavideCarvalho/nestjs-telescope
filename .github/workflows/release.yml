@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: write # push the "Version Packages" commit + git tags
       pull-requests: write # open/update the "Version Packages" PR
-      id-token: write # npm provenance (OIDC), harmless if unused
+      id-token: write # mints the OIDC credential npm exchanges for a publish token
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +30,16 @@ jobs:
           # Writes ~/.npmrc pointing at npm and reading NODE_AUTH_TOKEN, so
           # `changeset publish` authenticates without a committed token.
           registry-url: "https://registry.npmjs.org"
+
+      # npm only learned OIDC trusted publishing in 11.5.1, and Node 20 ships 10.9.x. Without this
+      # the publish fails as `E404 - PUT https://registry.npmjs.org/<pkg>`: npm answers 404 rather
+      # than 403 for a request it could not authenticate, so it reads as "no such package" rather
+      # than "not signed in" — and the package plainly exists. Upgraded here rather than by moving
+      # `.nvmrc`, so the toolchain the packages are built and tested against does not change.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
