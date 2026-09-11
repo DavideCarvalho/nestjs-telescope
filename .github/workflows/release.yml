@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -43,6 +45,26 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # A Renovate patch/minor bump automerges on its own and brings no changeset with it, so
+      # the step below would find nothing to publish and the new dependency would reach npm
+      # only whenever someone next released by hand. This writes the changeset for it and
+      # versions it in place, leaving the release a plain "nothing pending, publish" run.
+      # Majors are merged by a person, so github.actor is not renovate[bot] and none of it runs.
+      - name: Release a Renovate dependency bump
+        if: github.event_name == 'push' && github.actor == 'renovate[bot]'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          node .github/scripts/renovate-patch-release.mjs
+          if [ -z "$(git status --porcelain .changeset)" ]; then exit 0; fi
+          pnpm version-packages
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m "chore: version packages"
+          git push origin HEAD:${{ github.ref_name }}
 
       # When changesets are pending -> opens/updates the "Version Packages" PR.
       # When that PR is merged (versions bumped, no changesets left) -> runs
