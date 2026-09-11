@@ -80,7 +80,7 @@ describe('./react/console subpath', () => {
     // extra packages installed to render one button is that promise quietly failing.
     const deps = externalDeps(resolve(HERE, 'console.ts'));
     for (const pkg of [
-      '@base-ui-components/react',
+      '@base-ui/react',
       'class-variance-authority',
       'clsx',
       'tailwind-merge',

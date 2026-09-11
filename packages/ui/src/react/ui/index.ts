@@ -7,7 +7,7 @@
  *
  * INTERNAL. This barrel is deliberately NOT re-exported from `src/react/index.ts`:
  * every module a public barrel re-exports is *resolved* by a host's bundler even
- * when nothing imports it, so exporting these would put `@base-ui-components/react`
+ * when nothing imports it, so exporting these would put `@base-ui/react`
  * into the dependency graph of every host that touches the barrel. The guard for
  * that lives in `../console-subpath.spec.ts`.
  */
