@@ -125,12 +125,12 @@ jobs:
       # When that PR is merged (versions bumped, no changesets left) -> runs
       # `pnpm release` (build all packages + `changeset publish`).
       - name: Create Release PR or Publish to npm
-        uses: changesets/action@v2.1.2
+        uses: changesets/action@v1.9.0
         with:
-          version-script: pnpm version-packages
-          publish-script: pnpm release
-          commit-message: "chore: version packages"
-          pr-title: "chore: version packages"
+          version: pnpm version-packages
+          publish: pnpm release
+          commit: "chore: version packages"
+          title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
