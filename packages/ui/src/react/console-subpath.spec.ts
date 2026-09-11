@@ -79,12 +79,7 @@ describe('./react/console subpath', () => {
     // above did — but the launcher's whole promise is "a button, and nothing else", and four
     // extra packages installed to render one button is that promise quietly failing.
     const deps = externalDeps(resolve(HERE, 'console.ts'));
-    for (const pkg of [
-      '@base-ui/react',
-      'class-variance-authority',
-      'clsx',
-      'tailwind-merge',
-    ]) {
+    for (const pkg of ['@base-ui/react', 'class-variance-authority', 'clsx', 'tailwind-merge']) {
       expect(deps.has(pkg)).toBe(false);
     }
   });
