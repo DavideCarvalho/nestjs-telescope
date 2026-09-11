@@ -32,7 +32,7 @@
     "ai": ">=5.0.0"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "2.0.3",
+    "@ai-sdk/provider": "2.0.4",
     "@dudousxd/nestjs-telescope": "workspace:*",
     "@types/node": "^20.0.0",
     "ai": "5.0.196",
