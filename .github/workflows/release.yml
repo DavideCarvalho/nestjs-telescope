@@ -27,7 +27,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20
+          node-version: 20.20.2
           cache: pnpm
           # Writes ~/.npmrc pointing at npm and reading NODE_AUTH_TOKEN, so
           # `changeset publish` authenticates without a committed token.

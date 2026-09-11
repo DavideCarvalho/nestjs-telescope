@@ -36,15 +36,15 @@
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
-    "@nestjs/common": "^12.0.0",
-    "@nestjs/core": "^12.0.0",
-    "@nestjs/schedule": "^12.0.0",
-    "@nestjs/testing": "^12.0.0",
-    "@types/node": "^20.0.0",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1",
-    "typescript": "^5.4.0",
-    "vitest": "^3.0.0"
+    "@nestjs/common": "12.0.1",
+    "@nestjs/core": "12.0.1",
+    "@nestjs/schedule": "12.0.1",
+    "@nestjs/testing": "12.0.1",
+    "@types/node": "20.19.41",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "typescript": "5.9.3",
+    "vitest": "3.2.6"
   },
   "engines": {
     "node": ">=20"
