@@ -38,11 +38,11 @@
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
-    "@types/node": "^20.0.0",
-    "ioredis": "^5.4.0",
-    "reflect-metadata": "^0.2.2",
-    "typescript": "^5.4.0",
-    "vitest": "^3.0.0"
+    "@types/node": "20.19.41",
+    "ioredis": "5.10.1",
+    "reflect-metadata": "0.2.2",
+    "typescript": "5.9.3",
+    "vitest": "3.2.6"
   },
   "engines": {
     "node": ">=20"
