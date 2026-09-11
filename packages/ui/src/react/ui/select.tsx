@@ -1,4 +1,4 @@
-import { Select as SelectPrimitive } from '@base-ui-components/react/select';
+import { Select as SelectPrimitive } from '@base-ui/react/select';
 import { forwardRef } from 'react';
 import { cn } from './cn.js';
 

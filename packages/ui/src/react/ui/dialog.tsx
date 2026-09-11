@@ -1,4 +1,4 @@
-import { Dialog as DialogPrimitive } from '@base-ui-components/react/dialog';
+import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { forwardRef } from 'react';
 import { cn } from './cn.js';
 

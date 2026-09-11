@@ -144,7 +144,7 @@ in the browser's top layer, which no `z-index` can sit above — so it would sil
 fired while a modal is open. Base UI keeps overlays in normal flow and that ordering keeps working;
 do not reintroduce a top-layer element beneath something that has to outrank it.
 
-Peer packages per console: `@base-ui-components/react`, `class-variance-authority`, `clsx`,
+Peer packages per console: `@base-ui/react`, `class-variance-authority`, `clsx`,
 `tailwind-merge`. **Declare every one explicitly**, and put them in the right section:
 
 The deciding question is **not** "does it ship an SPA" — it is **"is the package reachable from a
