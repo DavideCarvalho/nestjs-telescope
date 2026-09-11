@@ -36,7 +36,7 @@
     "@dudousxd/nestjs-telescope": "workspace:*",
     "typeorm": "0.3.30",
     "reflect-metadata": "0.2.2",
-    "@types/node": "20.19.41",
+    "@types/node": "20.19.43",
     "typescript": "5.9.3",
     "vitest": "3.2.6"
   },

@@ -34,7 +34,7 @@
   "devDependencies": {
     "@ai-sdk/provider": "2.0.4",
     "@dudousxd/nestjs-telescope": "workspace:*",
-    "@types/node": "20.19.41",
+    "@types/node": "20.19.43",
     "ai": "5.0.196",
     "typescript": "5.9.3",
     "vitest": "3.2.6"
