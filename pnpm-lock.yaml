@@ -500,8 +500,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/ioredis-mock':
-        specifier: 8.2.7
-        version: 8.2.7(ioredis@5.10.1)
+        specifier: 8.2.8
+        version: 8.2.8(ioredis@5.10.1)
       '@types/node':
         specifier: 20.19.41
         version: 20.19.41
@@ -510,7 +510,7 @@ importers:
         version: 5.10.1
       ioredis-mock:
         specifier: 8.13.1
-        version: 8.13.1(@types/ioredis-mock@8.2.7(ioredis@5.10.1))(ioredis@5.10.1)
+        version: 8.13.1(@types/ioredis-mock@8.2.8(ioredis@5.10.1))(ioredis@5.10.1)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -3127,10 +3127,10 @@ packages:
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
 
-  '@types/ioredis-mock@8.2.7':
-    resolution: {integrity: sha512-YsGiaOIYBKeVvu/7GYziAD8qX3LJem5LK00d5PKykzsQJMLysAqXA61AkNuYWCekYl64tbMTqVOMF4SYoCPbQg==}
+  '@types/ioredis-mock@8.2.8':
+    resolution: {integrity: sha512-Nxr1CXk8NtGVzWQ8WoGCOyo+HARd4CFc/Nt2+ITt3WWLNlj1InW38SzZwOJNqzA38iplrpBFp6Ny4KjPfeI+bA==}
     peerDependencies:
-      ioredis: '>=5'
+      ioredis: ^5
 
   '@types/luxon@3.7.5':
     resolution: {integrity: sha512-jJ41Q4z6ZVO260MNDdHfW7+7a5iMiX8Mr6ZJHcmgrvhZha6dz5704o/lF2kKl6URjH6ivEL97w9xS/MgpJEphg==}
@@ -8835,7 +8835,7 @@ snapshots:
 
   '@types/http-errors@2.0.5': {}
 
-  '@types/ioredis-mock@8.2.7(ioredis@5.10.1)':
+  '@types/ioredis-mock@8.2.8(ioredis@5.10.1)':
     dependencies:
       ioredis: 5.10.1
 
@@ -10417,11 +10417,11 @@ snapshots:
 
   internmap@2.0.3: {}
 
-  ioredis-mock@8.13.1(@types/ioredis-mock@8.2.7(ioredis@5.10.1))(ioredis@5.10.1):
+  ioredis-mock@8.13.1(@types/ioredis-mock@8.2.8(ioredis@5.10.1))(ioredis@5.10.1):
     dependencies:
       '@ioredis/as-callback': 3.0.0
       '@ioredis/commands': 1.5.1
-      '@types/ioredis-mock': 8.2.7(ioredis@5.10.1)
+      '@types/ioredis-mock': 8.2.8(ioredis@5.10.1)
       fengari: 0.1.5
       fengari-interop: 0.1.4(fengari@0.1.5)
       ioredis: 5.10.1
