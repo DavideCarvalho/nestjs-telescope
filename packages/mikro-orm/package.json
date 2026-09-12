@@ -12,13 +12,7 @@
   "bugs": {
     "url": "https://github.com/DavideCarvalho/nestjs-telescope/issues"
   },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "mikro-orm",
-    "observability",
-    "query"
-  ],
+  "keywords": ["nestjs", "telescope", "mikro-orm", "observability", "query"],
   "author": "Davi Carvalho <davi@goflip.ai>",
   "type": "module",
   "sideEffects": false,
@@ -31,11 +25,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

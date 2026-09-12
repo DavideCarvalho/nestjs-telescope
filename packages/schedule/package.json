@@ -12,19 +12,10 @@
   "bugs": {
     "url": "https://github.com/DavideCarvalho/nestjs-telescope/issues"
   },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "schedule",
-    "cron",
-    "interval",
-    "observability"
-  ],
+  "keywords": ["nestjs", "telescope", "schedule", "cron", "interval", "observability"],
   "author": "Davi Carvalho <davi@goflip.ai>",
   "type": "module",
-  "sideEffects": [
-    "./dist/schedule.watcher.js"
-  ],
+  "sideEffects": ["./dist/schedule.watcher.js"],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -34,11 +25,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
