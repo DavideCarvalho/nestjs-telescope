@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.29.1
+
+### Patch Changes
+
+- [`1686777`](https://github.com/DavideCarvalho/nestjs-telescope/commit/168677792537841c712907e980dd8c7763a592ea) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Correct the file-path header comments in `query-family-hash.ts` and its spec, which still pointed at `packages/mikro-orm/src/` after the files moved to `packages/core/src/query/`.
+
 ## 1.29.0
 
 ### Minor Changes
