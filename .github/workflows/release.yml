@@ -29,8 +29,8 @@ jobs:
         with:
           node-version: 20.20.2
           cache: pnpm
-          # Writes ~/.npmrc pointing at npm and reading NODE_AUTH_TOKEN, so
-          # `changeset publish` authenticates without a committed token.
+          # Writes ~/.npmrc pointing at npm; the credential itself comes from the OIDC
+          # exchange at publish time, not from a committed token.
           registry-url: "https://registry.npmjs.org"
 
       # npm only learned OIDC trusted publishing in 11.5.1, and Node 20 ships 10.9.x. Without this
@@ -133,4 +133,8 @@ jobs:
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Deliberately no NODE_AUTH_TOKEN, and no NPM_TOKEN either: publish auth is npm
+          # trusted publishing over OIDC. setup-node writes
+          # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into ~/.npmrc regardless, so
+          # wiring an unset secret here would leave an EMPTY credential that npm sends instead
+          # of falling through to the OIDC exchange. Absent is not the same as empty.
