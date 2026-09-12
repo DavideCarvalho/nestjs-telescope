@@ -1,4 +1,4 @@
-// packages/mikro-orm/src/query-family-hash.spec.ts
+// packages/core/src/query/query-family-hash.spec.ts
 import { describe, expect, it } from 'vitest';
 import { queryFamilyHash } from './query-family-hash.js';
 

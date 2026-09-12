@@ -1,4 +1,4 @@
-// packages/mikro-orm/src/query-family-hash.ts
+// packages/core/src/query/query-family-hash.ts
 
 /** Normalize an SQL string into a template: lowercase, collapse whitespace,
  *  replace string/number literals and bound-param placeholders with '?'. */
