@@ -8,9 +8,25 @@
     "url": "git+https://github.com/DavideCarvalho/nestjs-telescope.git",
     "directory": "packages/ui"
   },
+  "homepage": "https://davidecarvalho.github.io/aviary/docs/telescope",
+  "bugs": {
+    "url": "https://github.com/DavideCarvalho/nestjs-telescope/issues"
+  },
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "dashboard",
+    "ui",
+    "observability",
+    "react",
+    "tanstack-intent"
+  ],
   "author": "Davi Carvalho <davi@goflip.ai>",
   "type": "module",
-  "sideEffects": ["./dist/server/*.js", "**/*.css"],
+  "sideEffects": [
+    "./dist/server/*.js",
+    "**/*.css"
+  ],
   "main": "./dist/server/index.js",
   "types": "./dist/server/index.d.ts",
   "exports": {
@@ -35,7 +51,12 @@
       "default": "./dist/client/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md", "skills"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "skills"
+  ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.lib.json && tsc -p tsconfig.server.json",
     "test": "vitest run --passWithNoTests",
@@ -115,14 +136,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "dashboard",
-    "ui",
-    "observability",
-    "react",
-    "tanstack-intent"
-  ]
+  }
 }

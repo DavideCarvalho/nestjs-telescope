@@ -8,6 +8,19 @@
     "url": "git+https://github.com/DavideCarvalho/nestjs-telescope.git",
     "directory": "packages/ai"
   },
+  "homepage": "https://davidecarvalho.github.io/aviary/docs/telescope",
+  "bugs": {
+    "url": "https://github.com/DavideCarvalho/nestjs-telescope/issues"
+  },
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "ai",
+    "diagnosis",
+    "vercel-ai-sdk",
+    "exception",
+    "observability"
+  ],
   "author": "Davi Carvalho <davi@goflip.ai>",
   "type": "module",
   "sideEffects": false,
@@ -20,7 +33,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -41,14 +58,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "ai",
-    "diagnosis",
-    "vercel-ai-sdk",
-    "exception",
-    "observability"
-  ]
+  }
 }

@@ -8,6 +8,19 @@
     "url": "git+https://github.com/DavideCarvalho/nestjs-telescope.git",
     "directory": "packages/core"
   },
+  "homepage": "https://davidecarvalho.github.io/aviary/docs/telescope",
+  "bugs": {
+    "url": "https://github.com/DavideCarvalho/nestjs-telescope/issues"
+  },
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "observability",
+    "debugging",
+    "apm",
+    "tracing",
+    "tanstack-intent"
+  ],
   "author": "Davi Carvalho <davi@goflip.ai>",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,7 +32,12 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md", "skills"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "skills"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -64,14 +82,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "keywords": [
-    "nestjs",
-    "telescope",
-    "observability",
-    "debugging",
-    "apm",
-    "tracing",
-    "tanstack-intent"
-  ]
+  }
 }
