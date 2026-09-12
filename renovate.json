@@ -54,6 +54,12 @@
       "matchDepTypes": ["peerDependencies"],
       "rangeStrategy": "widen",
       "automerge": false
+    },
+    {
+      "description": "`changesets/action` v1 learns what it published by scraping `New tag: <pkg>@<version>` out of the CLI's stdout, and `@changesets/cli` v3 no longer prints that line. Tag pushing and GitHub Release creation both sit inside the loop that reads it, so under v3 a publish reaches npm while the tag and the Release are skipped and the step still exits 0. Take this bump only together with `changesets/action@v2`, which reads the CLI's structured $CHANGESETS_OUTPUT instead.",
+      "matchPackageNames": ["@changesets/cli"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ],
   "lockFileMaintenance": {
