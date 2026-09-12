@@ -34,7 +34,7 @@
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
     "@types/ioredis-mock": "8.2.8",
-    "@types/node": "20.19.41",
+    "@types/node": "20.19.43",
     "ioredis": "5.10.1",
     "ioredis-mock": "8.13.1",
     "typescript": "5.9.3",

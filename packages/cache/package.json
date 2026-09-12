@@ -39,7 +39,7 @@
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
     "@nestjs/cache-manager": "12.0.0",
-    "@types/node": "20.19.41",
+    "@types/node": "20.19.43",
     "reflect-metadata": "0.2.2",
     "typescript": "5.9.3",
     "vitest": "3.2.6"
