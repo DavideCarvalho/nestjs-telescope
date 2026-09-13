@@ -43,7 +43,7 @@
     "ioredis": "5.10.1",
     "ioredis-mock": "8.13.1",
     "typescript": "5.9.3",
-    "vitest": "3.2.6"
+    "vitest": "3.2.7"
   },
   "engines": {
     "node": ">=20"

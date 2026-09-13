@@ -32,6 +32,6 @@
     "@swc/core": "1.15.40",
     "turbo": "2.9.16",
     "typescript": "5.9.3",
-    "vitest": "3.2.6"
+    "vitest": "3.2.7"
   }
 }
