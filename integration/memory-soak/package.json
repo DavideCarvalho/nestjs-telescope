@@ -23,9 +23,9 @@
     "rxjs": "7.8.2"
   },
   "devDependencies": {
-    "@opentelemetry/exporter-trace-otlp-http": "0.57.2",
-    "@opentelemetry/instrumentation-http": "0.57.2",
-    "@opentelemetry/sdk-node": "0.57.2",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/instrumentation-http": "0.222.0",
+    "@opentelemetry/sdk-node": "0.222.0",
     "@types/node": "20.19.43",
     "typescript": "5.9.3",
     "vitest": "3.2.7"
