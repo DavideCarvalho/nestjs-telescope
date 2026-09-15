@@ -9,7 +9,7 @@
     "url": "git+https://github.com/DavideCarvalho/nestjs-telescope.git"
   },
   "author": "Davi Carvalho <davi@goflip.ai>",
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=20"
   },
