@@ -575,8 +575,8 @@ importers:
   packages/sqs:
     devDependencies:
       '@aws-sdk/client-sqs':
-        specifier: 3.1130.0
-        version: 3.1130.0
+        specifier: 3.1131.0
+        version: 3.1131.0
       '@dudousxd/nestjs-telescope':
         specifier: workspace:*
         version: link:../core
@@ -818,8 +818,8 @@ packages:
   '@asamuzakjp/css-color@3.2.0':
     resolution: {integrity: sha512-K1A6z8tS3XsmCMM86xoWdn7Fkdn9m6RSVtocUrJYIwZnFVkng/PvkEoWtOWmP+Scc6saYWHWZYbndEEXxl24jw==}
 
-  '@aws-sdk/client-sqs@3.1130.0':
-    resolution: {integrity: sha512-l7WYZ/XzBuIoDwptQXnkS0BzADu7jaPAfdePsGMB7DrDvrG5UKREfU/C8kBuCsztuUmjLEh9Hl6wafRPZ7RD8w==}
+  '@aws-sdk/client-sqs@3.1131.0':
+    resolution: {integrity: sha512-vXKH0iLF+VR0mWg65LjGyA4C7h9vhodEL/Oxd/gZr5BH5eRZb1le2uVQVT7P8aFjA8FnoFW3LVV37ewSrFZAwg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.978.0':
@@ -6507,7 +6507,7 @@ snapshots:
       '@csstools/css-tokenizer': 3.0.4
       lru-cache: 10.4.3
 
-  '@aws-sdk/client-sqs@3.1130.0':
+  '@aws-sdk/client-sqs@3.1131.0':
     dependencies:
       '@aws-sdk/core': 3.978.0
       '@aws-sdk/credential-provider-node': 3.972.83
