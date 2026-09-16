@@ -346,20 +346,20 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@mikro-orm/core':
-        specifier: 7.1.3
-        version: 7.1.3(dataloader@1.4.0)
+        specifier: 7.2.0
+        version: 7.2.0(dataloader@1.4.0)
       '@mikro-orm/decorators':
-        specifier: 7.1.3
-        version: 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))(reflect-metadata@0.2.2)
+        specifier: 7.2.0
+        version: 7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))(reflect-metadata@0.2.2)
       '@mikro-orm/nestjs':
         specifier: 7.1.0
-        version: 7.1.0(@mikro-orm/core@7.1.3(dataloader@1.4.0))(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)
+        version: 7.1.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)
       '@mikro-orm/sql':
-        specifier: 7.1.3
-        version: 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))
+        specifier: 7.2.0
+        version: 7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))
       '@mikro-orm/sqlite':
-        specifier: 7.1.3
-        version: 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))
+        specifier: 7.2.0
+        version: 7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))
       '@nestjs/common':
         specifier: 12.0.1
         version: 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -397,11 +397,11 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@mikro-orm/core':
-        specifier: 7.1.3
-        version: 7.1.3(dataloader@1.4.0)
+        specifier: 7.2.0
+        version: 7.2.0(dataloader@1.4.0)
       '@mikro-orm/sqlite':
-        specifier: 7.1.3
-        version: 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))
+        specifier: 7.2.0
+        version: 7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))
       '@nestjs/common':
         specifier: 12.0.1
         version: 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -1709,8 +1709,8 @@ packages:
   '@mdx-js/mdx@3.1.1':
     resolution: {integrity: sha512-f6ZO2ifpwAQIpzGWaBQT2TXxPv6z3RBzQKpVftEWN78Vl/YweF1uwussDx8ECAXVtr3Rs89fKyG9YlzUs9DyGQ==}
 
-  '@mikro-orm/core@7.1.3':
-    resolution: {integrity: sha512-fTZhCgqJqA1+hWmdE7oPbMYIm/6GsN3bxQAJqJFSG9NteUDILg/p86L/D/P+cmK2+iCv/3QE1k3YuBFEYAMzow==}
+  '@mikro-orm/core@7.2.0':
+    resolution: {integrity: sha512-a4RoZXfzVJqiaOwsw2k7EH1Vv+BOdOokB+F4TofUz0mLz4XPewwaKUQIUeqRNmf0fKpOFJxlgTxsZYXhZoFxCQ==}
     engines: {node: '>= 22.17.0'}
     peerDependencies:
       dataloader: 2.2.3
@@ -1718,11 +1718,11 @@ packages:
       dataloader:
         optional: true
 
-  '@mikro-orm/decorators@7.1.3':
-    resolution: {integrity: sha512-N1UBZBjClL2J+w/mUYZlaR++Z/r6VfmmAWKsFwS+3PBuyr5+18TKU7Y+cG4DjLw4omFCkrPH31QmIbo6suqDAg==}
+  '@mikro-orm/decorators@7.2.0':
+    resolution: {integrity: sha512-iFhSIoQmt4jFA1+4hLkSEC+cvWOuUdvUv6ljN3h7qgzeSxO3pLc0vHxkUw2QZOSezo0DjOSSzjP+j9ic+l/YFg==}
     engines: {node: '>= 22.17.0'}
     peerDependencies:
-      '@mikro-orm/core': 7.1.3
+      '@mikro-orm/core': 7.2.0
       reflect-metadata: ^0.1.0 || ^0.2.0
     peerDependenciesMeta:
       reflect-metadata:
@@ -1737,17 +1737,17 @@ packages:
       '@nestjs/core': ^11.0.5 || ^12.0.0
       reflect-metadata: ^0.1.0 || ^0.2.0
 
-  '@mikro-orm/sql@7.1.3':
-    resolution: {integrity: sha512-ZEdl4+pUXwRfiTONEswsyEtntP+PKp0A5QL7P3UsAefd8g62XC0WsSLA4tYQzbjfSY0u8BDkBF/bhQej6IPjTw==}
+  '@mikro-orm/sql@7.2.0':
+    resolution: {integrity: sha512-ZpuCfBL6XAYrJsUglvXrah+erB9gVgkoSuIKR/x+o1o/OVOE8ljgRxYIIIMGE+LetR9s1wrDQjrwfm0gghqsiA==}
     engines: {node: '>= 22.17.0'}
     peerDependencies:
-      '@mikro-orm/core': 7.1.3
+      '@mikro-orm/core': 7.2.0
 
-  '@mikro-orm/sqlite@7.1.3':
-    resolution: {integrity: sha512-NBymxiqzeSgPvzxx4JBtw6CdLTxZcCoBGVGf3HFVu/c/2v4bnWj+YHs8kd1ipdxZfvURacwnq1K1/mL8vvXZiQ==}
+  '@mikro-orm/sqlite@7.2.0':
+    resolution: {integrity: sha512-Z617OmwJv0uctAI3p/VHmclvsR7hxqWU8+bebw5NQsA1YVoI3Gucbhj/Q/14INulxNw+UDBvk0bQ1GIf2UVWAA==}
     engines: {node: '>= 22.17.0'}
     peerDependencies:
-      '@mikro-orm/core': 7.1.3
+      '@mikro-orm/core': 7.2.0
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
     resolution: {integrity: sha512-LCkGo6JDfaBhgST7UpPWgNgLINpcpabaHfyz5OBx75nUYxBsaEPxjnyNjWpeb/xBup/682QnBfRBy2/LvPutZQ==}
@@ -3401,9 +3401,9 @@ packages:
   better-sqlite3@11.10.0:
     resolution: {integrity: sha512-EwhOpyXiOEL/lKzHz9AW1msWFNzGc/z+LzeB3/jnFJpxu+th2yqvzsSWas1v9jgs9+xiXJcD5A8CJxAG2TaghQ==}
 
-  better-sqlite3@12.10.0:
-    resolution: {integrity: sha512-CyzaZRQKyHkB2ZInfTTl2nvT33EbDpjkLEbE8/Zck3Ll6O0qqvuGdrJ45HgtH+HykRg88ITY3AdreBGN70aBSQ==}
-    engines: {node: 20.x || 22.x || 23.x || 24.x || 25.x || 26.x}
+  better-sqlite3@13.0.3:
+    resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
+    engines: {node: '>=22'}
 
   binary-extensions@2.3.0:
     resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
@@ -4647,8 +4647,8 @@ packages:
   keyv@5.6.0:
     resolution: {integrity: sha512-CYDD3SOtsHtyXeEORYRx2qBtpDJFjRTGXUtmNEMGyzYOKj1TE3tycdlho7kA1Ufx9OYWZzg52QFBGALTirzDSw==}
 
-  kysely@0.29.2:
-    resolution: {integrity: sha512-s6WVJyEZrbm6jhBpiKHsGHyePMrVQKJ85wZCFCr9W4QHv6WTjWIrdvTmO9hDEA3bNK0xkrE2DqrHsXMLWuZpQg==}
+  kysely@0.29.5:
+    resolution: {integrity: sha512-ooa+eSbBNPTo3MycPEuW5jdrxQdQwdtB3LC3h43FiXQbIry5tR0C5lDG7eealK0E4D7XjrnOP5DIUg/LyjRMYQ==}
     engines: {node: '>=22.0.0'}
 
   light-my-request@6.6.0:
@@ -5147,6 +5147,10 @@ packages:
 
   node-abort-controller@3.1.1:
     resolution: {integrity: sha512-AGK2yQKIjRuqnc6VkX2Xj5d+QW8xZ87pa1UK6yA6ouUyuxfHuMP6umE5QK7UmTeOAymo+Zx1Fxiuw9rVx8taHQ==}
+
+  node-addon-api@8.9.2:
+    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
+    engines: {node: ^18 || ^20 || >= 21}
 
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
@@ -7452,34 +7456,34 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@mikro-orm/core@7.1.3(dataloader@1.4.0)':
+  '@mikro-orm/core@7.2.0(dataloader@1.4.0)':
     optionalDependencies:
       dataloader: 1.4.0
 
-  '@mikro-orm/decorators@7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))(reflect-metadata@0.2.2)':
+  '@mikro-orm/decorators@7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))(reflect-metadata@0.2.2)':
     dependencies:
-      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
+      '@mikro-orm/core': 7.2.0(dataloader@1.4.0)
     optionalDependencies:
       reflect-metadata: 0.2.2
 
-  '@mikro-orm/nestjs@7.1.0(@mikro-orm/core@7.1.3(dataloader@1.4.0))(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)':
+  '@mikro-orm/nestjs@7.1.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)':
     dependencies:
-      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
+      '@mikro-orm/core': 7.2.0(dataloader@1.4.0)
       '@nestjs/common': 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/core': 12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
 
-  '@mikro-orm/sql@7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))':
+  '@mikro-orm/sql@7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))':
     dependencies:
-      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
-      kysely: 0.29.2
+      '@mikro-orm/core': 7.2.0(dataloader@1.4.0)
+      kysely: 0.29.5
 
-  '@mikro-orm/sqlite@7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))':
+  '@mikro-orm/sqlite@7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))':
     dependencies:
-      '@mikro-orm/core': 7.1.3(dataloader@1.4.0)
-      '@mikro-orm/sql': 7.1.3(@mikro-orm/core@7.1.3(dataloader@1.4.0))
-      better-sqlite3: 12.10.0
-      kysely: 0.29.2
+      '@mikro-orm/core': 7.2.0(dataloader@1.4.0)
+      '@mikro-orm/sql': 7.2.0(@mikro-orm/core@7.2.0(dataloader@1.4.0))
+      better-sqlite3: 13.0.3
+      kysely: 0.29.5
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
     optional: true
@@ -9057,10 +9061,9 @@ snapshots:
       bindings: 1.5.0
       prebuild-install: 7.1.3
 
-  better-sqlite3@12.10.0:
+  better-sqlite3@13.0.3:
     dependencies:
-      bindings: 1.5.0
-      prebuild-install: 7.1.3
+      node-addon-api: 8.9.2
 
   binary-extensions@2.3.0: {}
 
@@ -10490,7 +10493,7 @@ snapshots:
     dependencies:
       '@keyv/serialize': 1.1.1
 
-  kysely@0.29.2: {}
+  kysely@0.29.5: {}
 
   light-my-request@6.6.0:
     dependencies:
@@ -11185,6 +11188,8 @@ snapshots:
       semver: 7.8.5
 
   node-abort-controller@3.1.1: {}
+
+  node-addon-api@8.9.2: {}
 
   node-fetch@2.7.0:
     dependencies:
