@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 1.24.1
+
+### Patch Changes
+
+- fix(deps): update dependency @base-ui/react to v1.8.0 ([#138](https://github.com/DavideCarvalho/nestjs-telescope/issues/138))
+
 ## 1.24.0
 
 ### Minor Changes
