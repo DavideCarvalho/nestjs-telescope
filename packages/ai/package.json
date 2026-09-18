@@ -45,10 +45,10 @@
     "ai": ">=5.0.0"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "2.0.4",
+    "@ai-sdk/provider": "4.0.15",
     "@dudousxd/nestjs-telescope": "workspace:*",
     "@types/node": "20.19.43",
-    "ai": "5.0.258",
+    "ai": "7.0.102",
     "typescript": "5.9.3",
     "vitest": "3.2.7"
   },
