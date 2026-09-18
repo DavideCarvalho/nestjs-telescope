@@ -48,7 +48,7 @@
     "@ai-sdk/provider": "2.0.4",
     "@dudousxd/nestjs-telescope": "workspace:*",
     "@types/node": "20.19.43",
-    "ai": "5.0.257",
+    "ai": "5.0.258",
     "typescript": "5.9.3",
     "vitest": "3.2.7"
   },
