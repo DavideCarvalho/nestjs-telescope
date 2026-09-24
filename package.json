@@ -26,7 +26,7 @@
     "release": "pnpm --filter './packages/*' build && changeset publish"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4",
+    "@biomejs/biome": "2.5.14",
     "@changesets/changelog-github": "0.7.0",
     "@changesets/cli": "2.31.1",
     "@swc/core": "1.16.2",
