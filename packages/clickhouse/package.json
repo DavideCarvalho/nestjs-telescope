@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-clickhouse",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "ClickHouse storage provider for @dudousxd/nestjs-telescope — columnar entries with TTL retention and pre-aggregated rollups.",
   "license": "MIT",
   "repository": {

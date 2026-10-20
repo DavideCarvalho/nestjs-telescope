@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-mikro-orm
 
+## 1.15.2
+
+### Patch Changes
+
+- [#165](https://github.com/DavideCarvalho/nestjs-telescope/pull/165) [`6a1ecea`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6a1ecea013ea550167c362b69fcc74f27ec1c749) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `MikroOrmStorageProvider.tags()` honours the `TagQuery`: counts come back most used first with ties by tag, `search` matches anywhere in the tag, and `limit`/`offset` page over that order. It returned counts in first-seen order and ignored `search`, which the dashboard's tag picker does not re-apply. Found by the new storage conformance suite.
+
 ## 1.15.1
 
 ### Patch Changes

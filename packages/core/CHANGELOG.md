@@ -1,5 +1,18 @@
 # @dudousxd/nestjs-telescope
 
+## 1.30.0
+
+### Minor Changes
+
+- [#165](https://github.com/DavideCarvalho/nestjs-telescope/pull/165) [`6a1ecea`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6a1ecea013ea550167c362b69fcc74f27ec1c749) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - The archiver keeps up with a backlog, and says when it cannot
+
+  - **A capped export resumes where it stopped.** When a type's archive hit `archive.maxBatchesPerCycle`, the next cycle started again from the newest doomed entries — so a backlog larger than one cycle handed the sink the same entries every cycle, never reached the oldest, and never deleted anything. The pruner now remembers the cutoff and cursor it stopped at, continues from there, and deletes under that cutoff once the export drains. Per process: a replica that takes over the prune lease starts its own export, which can repeat entries but never skips one.
+  - **Archive-backlog warning.** When the entries still waiting are older than twice their type's retention window, the pruner logs `archive backlog for type "<type>"` once per streak, naming the knobs to raise. It is the signal the [tiered storage](https://davidecarvalho.github.io/aviary/docs/telescope) docs point at.
+
+- [#165](https://github.com/DavideCarvalho/nestjs-telescope/pull/165) [`6a1ecea`](https://github.com/DavideCarvalho/nestjs-telescope/commit/6a1ecea013ea550167c362b69fcc74f27ec1c749) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `Page` gains an optional `partial` flag, and the dashboard says when a listing is incomplete
+
+  A store sets `partial: true` on a `get()` page when it answered from a subset of its data — a tiered store whose cold tier could not be read returns its hot entries this way instead of failing. The flag is additive (absent means complete), passes through `GET /entries`, `GET /profiles` and the MCP `list_entries` tool, and the entries list shows a non-blocking notice that older entries are unavailable while the rows it did get stay usable.
+
 ## 1.29.1
 
 ### Patch Changes
