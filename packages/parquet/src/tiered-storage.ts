@@ -24,7 +24,12 @@ export interface TieredStorageOptions {
 }
 
 const DEFAULT_LIMIT = 50;
-/** Hot pages fetched per call while skipping same-millisecond ties already returned. */
+/**
+ * Hot pages fetched per call while skipping same-millisecond ties already returned. A single
+ * millisecond holding more than `MAX_HOT_PAGES × (limit + 1)` entries would exhaust it and leave
+ * the rest of that millisecond unreachable by paging — tens of thousands of entries in one
+ * millisecond, far beyond what a Recorder flushes.
+ */
 const MAX_HOT_PAGES = 20;
 
 /**

@@ -327,9 +327,23 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
       query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
         ? query.limit
         : DEFAULT_LIMIT;
-    const page = entries.slice(0, limit);
+    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+    const remaining =
+      cursor === null
+        ? entries
+        : entries.filter(
+            (entry) =>
+              entry.createdAt.getTime() < cursor.createdAt ||
+              (entry.createdAt.getTime() === cursor.createdAt && entry.id < cursor.id),
+          );
+    const page = remaining.slice(0, limit);
+    const last = page.at(-1);
     const data = query.omitContent ? page.map((entry) => ({ ...entry, content: null })) : page;
-    return { data, nextCursor: null };
+    return {
+      data,
+      nextCursor:
+        remaining.length > limit && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
+    };
   }
 
   /** AND the non-id predicates for the ids fast path (no index to lean on here). */

@@ -324,6 +324,13 @@ export function describeStorageProvider(
         });
       }
 
+      it('pages an ids query by cursor without losing or repeating any', async () => {
+        await seed(fixture());
+        expect(ids(await all({ ids: ['e-0001', 'e-0002', 'e-0003', 'e-0004'], limit: 1 }))).toEqual(
+          ['e-0004', 'e-0003', 'e-0002', 'e-0001'],
+        );
+      });
+
       it('composes filters with the cursor', async () => {
         await seed([
           ...fixture(),
