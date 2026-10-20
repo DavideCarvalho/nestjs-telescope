@@ -14,6 +14,9 @@ jobs:
   build-test-lint:
     name: Build · Test · Lint · Typecheck
     runs-on: ubuntu-latest
+    # The container-backed suites (ClickHouse, MinIO, Redis) can wedge on a runner; fail with a log
+    # instead of holding the check for the platform's 6h default.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1

@@ -227,7 +227,11 @@ export class TelescopeMcpController {
           limit: clampLimit(args.limit),
         };
         const page = await this.storage.get(query);
-        return JSON.stringify({ entries: page.data.map(slim) }, null, 2);
+        return JSON.stringify(
+          { entries: page.data.map(slim), ...(page.partial ? { partial: true } : {}) },
+          null,
+          2,
+        );
       }
       case 'get_entry': {
         if (typeof args.id !== 'string') throw new Error('`id` is required.');

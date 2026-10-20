@@ -23,7 +23,7 @@ interface StorageProvider {
   find(id: string): Promise<EntryWithBatch | null>;
   get(query: EntryQuery): Promise<Page<Entry>>;
   batch(batchId: string): Promise<Entry[]>;
-  tags(prefix?: string): Promise<TagCount[]>;
+  tags(prefix?: string, query?: TagQuery): Promise<TagCount[]>;
   prune(olderThan: Date, keepLast?: number): Promise<number>;
   clear(): Promise<void>;
   init?(): void | Promise<void>;   // optional — acquire resources / ensure schema
@@ -45,6 +45,7 @@ import {
   type Page,
   type StorageProvider,
   type TagCount,
+  type TagQuery,
   encodeCursor,
   decodeCursor,
 } from '@dudousxd/nestjs-telescope';
@@ -147,29 +148,34 @@ export class MongoStorageProvider implements StorageProvider {
       .toArray();
   }
 
-  async tags(prefix?: string): Promise<TagCount[]> {
-    const match = prefix === undefined ? {} : { tags: { $regex: `^${prefix}` } };
-    const rows = await this.entries
+  async tags(prefix?: string, query?: TagQuery): Promise<TagCount[]> {
+    const conditions: Record<string, unknown>[] = [];
+    if (prefix !== undefined) conditions.push({ tags: { $regex: `^${escapeRegex(prefix)}` } });
+    if (query?.search) {
+      conditions.push({ tags: { $regex: escapeRegex(query.search), $options: 'i' } });
+    }
+    return this.entries
       .aggregate<TagCount>([
-        { $match: match },
         { $unwind: '$tags' },
-        ...(prefix === undefined
-          ? []
-          : [{ $match: { tags: { $regex: `^${prefix}` } } }]),
+        ...(conditions.length > 0 ? [{ $match: { $and: conditions } }] : []),
         { $group: { _id: '$tags', count: { $sum: 1 } } },
+        // Most used first, ties by tag: `offset` pages over this order.
+        { $sort: { count: -1, _id: 1 } },
+        ...(query?.limit !== undefined
+          ? [{ $skip: query.offset ?? 0 }, { $limit: query.limit }]
+          : []),
         { $project: { _id: 0, tag: '$_id', count: 1 } },
       ])
       .toArray();
-    return rows;
   }
 
   // --- retention ----------------------------------------------------------
 
   async prune(olderThan: Date, keepLast?: number): Promise<number> {
-    // keepLast: never drop the newest N entries even if older than the cutoff.
+    // keepLast: spare the newest N of the entries older than the cutoff.
     if (keepLast !== undefined && keepLast > 0) {
       const survivors = await this.entries
-        .find({}, { projection: { id: 1, _id: 0 } })
+        .find({ createdAt: { $lt: olderThan } }, { projection: { id: 1, _id: 0 } })
         .sort({ createdAt: -1, id: -1 })
         .limit(keepLast)
         .toArray();
@@ -203,16 +209,20 @@ export class MongoStorageProvider implements StorageProvider {
     if (query.before !== undefined || query.after !== undefined) {
       filter.createdAt = {
         ...(query.before !== undefined ? { $lt: query.before } : {}),
-        ...(query.after !== undefined ? { $gte: query.after } : {}),
+        ...(query.after !== undefined ? { $gt: query.after } : {}),
       };
     }
     if (query.search !== undefined) {
       // Case-insensitive substring over serialized content (a request matches
       // by uri, a query by sql, an exception by message, ...).
-      filter['content'] = { $regex: query.search, $options: 'i' };
+      filter['content'] = { $regex: escapeRegex(query.search), $options: 'i' };
     }
     return filter;
   }
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 ```
 
@@ -240,6 +250,33 @@ TelescopeModule.forRoot({
 <Callout type="warn" title="The keyset-pagination contract">
   `get()` returns entries **strictly older** than the cursor position, sorted newest-first — never an offset/`skip`. The contract is explicit: if the cursor's original entry was pruned out from under the cursor, pagination must **resume from that position**, not return an empty page. Comparing the `(createdAt, id)` pair (as the `$or` above does) satisfies this for free; a row-offset `skip` does not, and would silently drop or repeat entries as the pruner runs. An undecodable cursor is silently ignored and paging starts from the first page — `decodeCursor` returns `null`, which the example treats as "no cursor".
 </Callout>
+
+---
+
+## Prove it: run the conformance suite
+
+Compiling against `StorageProvider` does not prove the contract — ordering ties, exclusive bounds, cursors that outlive their entry, `keepLast`, tag paging. Every adapter in this repo runs one shared suite from `@dudousxd/nestjs-telescope-testing`; run it against yours:
+
+```ts
+// mongo-storage-provider.conformance.spec.ts (Vitest)
+import { describeStorageProvider } from '@dudousxd/nestjs-telescope-testing/conformance';
+import { MongoStorageProvider } from './mongo-storage-provider';
+
+describeStorageProvider(
+  'MongoStorageProvider',
+  () => new MongoStorageProvider(process.env.MONGO_URL!, 'telescope_conformance'),
+  process.env.MONGO_URL ? {} : { skip: 'MONGO_URL not set' },
+);
+```
+
+Each test gets a fresh provider from the factory and calls `init()` then `clear()` first, so the factory may return a provider over a shared test database. Optional capabilities (`pruneScoped`, `pruneScopedBatch`, the lease pair, `markFamilySeen`, `RollupStore`) are exercised only when your provider has them. Options:
+
+- `retention: 'ttl'` — for a store whose retention is the database's own TTL: the `prune*` methods must then be no-ops returning 0.
+- `afterSeed(provider, seeded)` — runs after each read test seeds data; a composite store can move part of it elsewhere (the tiered store archives the older half) so reads are tested across that boundary.
+- `teardown(provider)` — replaces the default `provider.close()` after each test, e.g. to keep a shared client open.
+- `timeoutMs` — per-test timeout for stores behind a real server.
+
+The suite needs Vitest (an optional peer of the testing package).
 
 ---
 

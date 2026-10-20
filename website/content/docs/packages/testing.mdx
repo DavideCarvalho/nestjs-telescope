@@ -1,6 +1,6 @@
 ---
 title: "@dudousxd/nestjs-telescope-testing"
-description: Test utilities — a deterministic FakeClock, a no-NestJS watcher harness, and the in-memory storage provider re-exported for tests.
+description: Test utilities — a deterministic FakeClock, a no-NestJS watcher harness, the in-memory storage provider re-exported for tests, and the StorageProvider conformance suite.
 icon: FlaskConical
 ---
 
@@ -58,3 +58,22 @@ import { InMemoryStorageProvider } from '@dudousxd/nestjs-telescope-testing';
 
 const storage = new InMemoryStorageProvider();
 ```
+
+## `describeStorageProvider`
+
+The `StorageProvider` contract as a Vitest suite — the one every adapter in this repo runs, and the one a [custom adapter](/docs/recipes/custom-storage#prove-it-run-the-conformance-suite) should run too. It lives on a subpath so the rest of the package does not require Vitest:
+
+```ts
+import { describeStorageProvider } from '@dudousxd/nestjs-telescope-testing/conformance';
+
+describeStorageProvider('MyStorageProvider', () => new MyStorageProvider(), {
+  // retention: 'ttl',         // prune* are no-ops (the database expires rows itself)
+  // afterSeed: async (p, seeded) => {},  // move part of the seeded data elsewhere
+  // teardown: (p) => {},      // instead of p.close()
+  // skip: 'no database',      // register the suite as skipped, with a reason
+  // timeoutMs: 30_000,
+});
+```
+
+It covers `store`/`find`/`get` with every `EntryQuery` filter, newest-first keyset paging `(createdAt DESC, id DESC)` including ties, concurrent inserts and cursors whose entry is gone, `batch`, `tags` (order, prefix, search, paging), `update`, `prune` with `keepLast`, and — only when the provider has them — `pruneScoped`, `pruneScopedBatch`, the lease pair, `markFamilySeen` and `RollupStore`. `makeEntry(over?)` from the same subpath builds a complete `Entry` for your own tests.
+

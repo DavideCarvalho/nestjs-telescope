@@ -1,5 +1,13 @@
 {
   "title": "Concepts",
   "icon": "Lightbulb",
-  "pages": ["capture", "storage", "performance", "profiling", "mcp", "extensions"]
+  "pages": [
+    "capture",
+    "storage",
+    "scaling-storage",
+    "performance",
+    "profiling",
+    "mcp",
+    "extensions"
+  ]
 }

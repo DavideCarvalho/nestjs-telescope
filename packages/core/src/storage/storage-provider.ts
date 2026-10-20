@@ -51,6 +51,13 @@ export interface EntryQuery {
 export interface Page<T> {
   data: T[];
   nextCursor: string | null;
+  /**
+   * Set when the store answered from a subset of its data — e.g. a tiered store whose cold tier
+   * could not be read returned only its hot entries. `data` and `nextCursor` are still valid for
+   * what was read; the dashboard tells the operator older entries may be missing. Absent means
+   * the answer is complete.
+   */
+  partial?: boolean;
 }
 
 /**

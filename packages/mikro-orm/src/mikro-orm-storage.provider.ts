@@ -64,6 +64,7 @@ import type {
   RollupDelta,
   RollupStore,
   TagCount,
+  TagQuery,
 } from '@dudousxd/nestjs-telescope';
 import {
   decodeCursor,
@@ -681,7 +682,7 @@ export class MikroOrmStorageProvider
     return rows.map((row) => rowToEntry(row));
   }
 
-  async tags(prefix?: string): Promise<TagCount[]> {
+  async tags(prefix?: string, query?: TagQuery): Promise<TagCount[]> {
     const em = this.forkEm();
     const rows = await em.find(
       TelescopeEntry,
@@ -689,14 +690,22 @@ export class MikroOrmStorageProvider
       { orderBy: { createdAt: 'desc', id: 'desc' }, limit: 10000, fields: ['tags'] },
     );
 
+    const search = query?.search?.trim().toLowerCase();
     const counts = new Map<string, number>();
     for (const row of rows) {
       for (const tag of row.tags) {
         if (prefix && !tag.startsWith(prefix)) continue;
+        if (search && !tag.toLowerCase().includes(search)) continue;
         counts.set(tag, (counts.get(tag) ?? 0) + 1);
       }
     }
-    return [...counts.entries()].map(([tag, count]) => ({ tag, count }));
+    // Count descending, ties by tag: the total order `offset` pages over.
+    const ordered = [...counts.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
+    if (query?.limit === undefined) return ordered;
+    const offset = query.offset ?? 0;
+    return ordered.slice(offset, offset + query.limit);
   }
 
   async prune(olderThan: Date, keepLast?: number): Promise<number> {

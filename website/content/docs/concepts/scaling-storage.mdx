@@ -1,0 +1,133 @@
+---
+title: Scaling storage
+description: Grow Telescope's storage with your volume — from the embedded default to your own database, a dedicated one, tiered hot/cold Parquet, and ClickHouse. Each step is a config change, and you can skip straight to the one you need.
+icon: TrendingUp
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Every store implements the same [`StorageProvider`](/docs/concepts/storage) contract, so the dashboard, API and pruner behave identically on all of them. What changes as you climb is **how much Telescope can hold, for how long, and what it costs the rest of your system**. Pick the lowest rung that fits; move up when a signal below tells you to.
+
+| Rung | Store | Fits | Move up when |
+|---|---|---|---|
+| **0 — Embedded** | SQLite file (the default) | Local dev, one process | You run more than one replica |
+| **1 — Your database** | [MikroORM, TypeORM, Prisma](/docs/packages/storages) on the app's DB, or Redis | Multi-replica apps at modest volume | Telescope competes with your app for its database |
+| **2 — A dedicated database** | The same adapters on their own connection | Isolation, no new infrastructure | The pruner can't keep up, or you want longer retention than a row store holds cheaply |
+| **3 — Tiered** | Hot: a rung 1/2 store, minutes deep. Cold: Parquet on S3 or disk, read in pure JS (or DuckDB) | High volume, long retention, no new database to run | Cold queries are too slow for how often you run them |
+| **4 — ClickHouse** | One columnar store with TTL retention | High volume, long retention, fast analytics over all of it | — |
+
+<Callout type="info">
+  Rungs are not a sequence you have to walk. If you already know you write tens of thousands of entries a minute, start at 4.
+</Callout>
+
+## Signals that say "move up"
+
+Telescope reports all of these; you don't need to measure anything new.
+
+- **The pruner logs `hit its per-cycle batch ceiling`** on consecutive cycles. Its capacity is `batchSize × maxBatchesPerCycle` rows per `intervalMs`; when entries arrive faster than that, the table grows no matter how the pruner is tuned. Raising the knobs buys headroom on rungs 1–2; past that, go to 3 or 4, where expiring old data is not a row-level delete.
+- **Recorder drops climb** (`droppedCount` in `/telescope/api/meta`). The store can't absorb flushes as fast as they arrive.
+- **Your app's own queries slow down while Telescope writes.** That is rung 1 sharing a database it shouldn't — go to 2.
+- **You want days of `request`/`query` history**, not minutes. A row store can hold it, but every prune cycle pays to delete it again.
+
+<Callout type="warn">
+  Before climbing, check what you capture. Query capture usually dominates volume — every SQL statement your app runs becomes an entry. Tail-sampling (`sampling: { query: { rate: 0.05, keepErrors: true, keepSlowMs: 100 } }`) keeps every slow and failed query and drops most of the rest, and often keeps you on the rung you're on. Sampling is also the only lever for capture's CPU cost: storage choice does not change it.
+</Callout>
+
+## Rung 1 → 2: a dedicated database
+
+Same adapter, own connection. Nothing else changes.
+
+```ts
+import { MikroOrmStorageProvider } from '@dudousxd/nestjs-telescope-mikro-orm';
+import { MySqlDriver } from '@mikro-orm/mysql';
+
+TelescopeModule.forRoot({
+  storage: new MikroOrmStorageProvider({
+    driver: MySqlDriver,
+    clientUrl: process.env.TELESCOPE_DATABASE_URL,
+  }),
+  prune: { after: '15m', intervalMs: 15_000 },
+});
+```
+
+## Rung 3: tiered — hot database, cold Parquet
+
+The hot tier is the store you already have, kept minutes deep. Entries leaving it are written as Parquet to S3 (or a directory) instead of being thrown away, and read back when the dashboard asks for anything older.
+
+```ts
+import { MikroOrmStorageProvider } from '@dudousxd/nestjs-telescope-mikro-orm';
+import { parquetColdStore, tieredStorage } from '@dudousxd/nestjs-telescope-parquet';
+
+const cold = parquetColdStore({
+  location: { s3: { bucket: 'observability', prefix: 'telescope/v1', client: s3 } },
+  compaction: { every: '15m', targetFileMb: 128 },
+});
+
+TelescopeModule.forRoot({
+  storage: tieredStorage({ hot: new MikroOrmStorageProvider(orm), cold }),
+  // How long entries stay HOT.
+  prune: { after: '5m', intervalMs: 15_000, perType: { exception: '1h' } },
+  // Which types move to COLD instead of being deleted.
+  archive: cold.archive({ types: ['request', 'query', 'exception', 'job'] }),
+});
+```
+
+It is the [`prune` + `archive`](/docs/recipes/archiving-exceptions-to-s3) pipeline you may already use, with a sink that writes queryable files:
+
+- **`prune`** now only decides how long entries stay hot, so the hot table stays small and its deletes stay cheap.
+- **`archive`** keeps its guarantee: entries are deleted from the hot tier only after the Parquet file is written. If S3 is down, they wait in the hot tier and are retried next cycle.
+- **Cold retention** is a lifecycle rule on the bucket. Files live under `type=<type>/dt=<day>/hour=<hh>/`, so one rule per type prefix gives each type its own retention — `query` for a day, `exception` for 90 days — with nothing deleting rows anywhere. For a directory, or a bucket without lifecycle rules, set `retention: { default: '1d', perType: { exception: '90d' } }` on `parquetColdStore` and Telescope deletes whole expired hours itself.
+- **Compaction** merges each closed hour's small files (one per pod per archive batch) into files of about `targetFileMb`. It runs from the prune cycle, under the prune lease, so one replica does it.
+
+The hot tier can stay on your app's database, through the same ORM — that is the usual setup, and the one above. Tiering caps that table's size, not the writes it takes: every entry is still inserted there, read once to archive it, then deleted. Keep [sampling](#signals-that-say-move-up) on for high-volume types, and keep the archiver ahead of your write rate: it moves at most `batchSize × maxBatchesPerCycle` entries per type per prune cycle. `cold.archive()` defaults to 5,000 × 20 for that reason. A cycle that hits the cap picks up where it stopped on the next one, and if the entries still waiting are older than twice the type's hot window Telescope logs `archive backlog for type "<type>"` — raise the two knobs or shorten `prune.intervalMs`.
+
+Reads are routed for you: writes, `update()`, rollups and the prune lock use the hot tier; `find`, batches, traces, search and paging also read the cold tier, merged on the same newest-first cursor. An entry that is briefly in both tiers (archived, not yet deleted from hot) is returned once, and paging across the boundary has no gaps. Tag counts include the cold tier's newest 24 hours (`tagScanHours`). If the cold tier can't be read, every read still answers from the hot tier and Telescope logs a warning once per outage. Entry listings (`get`) also return `partial: true`, and the dashboard shows a notice that older entries are unavailable; `find`, batches and tag counts return what the hot tier holds without that flag.
+
+### Cold engine: pure JS by default
+
+The cold tier is read with [hyparquet](https://github.com/hyparam/hyparquet) — plain JavaScript, no native code, nothing downloaded at runtime — through your own S3 client, so it works in air-gapped and hardened images and every byte of it is visible to Trivy and Grype. Dashboard reads stay well under 300 ms on hundreds of thousands of entries.
+
+If your images may ship native code and you run wide ad-hoc scans over the cold tier, opt into DuckDB (an optional peer, `@duckdb/node-api`):
+
+```ts
+parquetColdStore({ location, engine: { duckdb: { memoryLimit: '512MB', threads: 2 } } });
+```
+
+If DuckDB is configured but `@duckdb/node-api` is not installed, boot fails with an error naming it — Telescope never silently falls back to the other engine.
+
+<Callout type="warn">
+  Scanners report `@duckdb/node-api` clean because they only read its `package.json` files: the 70 MB native library it loads is not cataloged by Trivy, Grype or syft. Treat that as unverified, not as clean. Telescope never loads DuckDB's `httpfs` extension (which DuckDB would download at runtime) and disables extension autoloading: both engines read through your S3 client. hyparquet issues ranged reads; DuckDB is handed local copies of the objects it needs (bounded by `localCacheMb`), or reads a directory location in place.
+</Callout>
+
+## Rung 4: ClickHouse
+
+One store, columnar, with retention as a table TTL. There is no pruner to tune because nothing deletes rows: ClickHouse drops expired data as it merges.
+
+```ts
+import { ClickHouseStorageProvider } from '@dudousxd/nestjs-telescope-clickhouse';
+
+TelescopeModule.forRoot({
+  storage: new ClickHouseStorageProvider({
+    url: process.env.CLICKHOUSE_URL,
+    retention: { default: '24h', perType: { exception: '90d' } },
+  }),
+  // no `prune` — retention is the table's TTL
+});
+```
+
+- Entries live in a `ReplacingMergeTree` partitioned by day and ordered by `(type, created_at, id)`, with bloom-filter indexes on batch, trace, family and tags. `update()` writes a new version of the row; reads use `FINAL`, so only the latest is ever seen.
+- `retention` becomes the table's TTL (24 hours for every type if omitted). Change it and the next boot re-applies it with `ALTER TABLE … MODIFY TTL`; an unchanged retention is left alone.
+- Inserts use `async_insert` with `wait_for_async_insert`, so many pods' small flushes are batched server-side and a resolved write is durable.
+- Dashboard timeseries read pre-aggregated rollups from a `SummingMergeTree` table next to the entries.
+- Pass `client` instead of `url` to share a `@clickhouse/client` instance your app already owns; Telescope then leaves it open at shutdown.
+
+## Moving between rungs
+
+A new store starts empty, and the old one's entries age out on their own retention — Telescope is observability, not a system of record, so there is nothing to migrate. If you do want the history, going from rung 3 to rung 4 is one statement, because the cold tier is already Parquet:
+
+```sql
+INSERT INTO telescope_entries
+  (id, batch_id, type, family_hash, tags, content, sequence, duration_ms, origin, instance_id, trace_id, span_id, created_at)
+SELECT id, batch_id, type, family_hash, tags, content, sequence, duration_ms, origin, instance_id, trace_id, span_id, created_at
+FROM s3('https://<bucket>.s3.amazonaws.com/telescope/v1/type=*/dt=*/hour=*/*.parquet', 'Parquet');
+```

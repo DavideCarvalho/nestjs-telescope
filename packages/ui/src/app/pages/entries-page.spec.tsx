@@ -30,10 +30,11 @@ const TAGS: TagCount[] = [
   { tag: 'slow-query', count: 19 },
 ];
 
-function mockClient(rows: Entry[]) {
+function mockClient(rows: Entry[], extra: Partial<Page<Entry>> = {}) {
   const entries = vi.fn<(query?: EntriesQuery) => Promise<Page<Entry>>>(async () => ({
     data: rows,
     nextCursor: null,
+    ...extra,
   }));
   const client: TelescopeClient = mockTelescopeClient({
     entries,
@@ -228,5 +229,23 @@ describe('EntriesPage', () => {
     renderAt('/entries/cache', client);
 
     expect(await screen.findByText('No Cache entries')).toBeTruthy();
+  });
+
+  it('shows a non-blocking notice, alongside the rows, when the page is partial', async () => {
+    const { client } = mockClient([entry({ type: 'cache', content: { message: 'hit user:1' } })], {
+      partial: true,
+    });
+    renderAt('/entries', client);
+    expect((await screen.findByRole('status')).textContent).toMatch(
+      /Older entries are unavailable/,
+    );
+    expect(await screen.findByText('hit user:1')).toBeTruthy();
+  });
+
+  it('shows no notice for a complete page', async () => {
+    const { client } = mockClient([entry({ type: 'cache', content: { message: 'hit user:1' } })]);
+    renderAt('/entries', client);
+    await screen.findByText('hit user:1');
+    expect(screen.queryByText(/Older entries are unavailable/)).toBeNull();
   });
 });
