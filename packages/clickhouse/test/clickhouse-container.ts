@@ -24,7 +24,8 @@ export function startClickHouse(
       ...(keeper
         ? { volumes: [`${KEEPER_CONFIG}:/etc/clickhouse-server/config.d/keeper.xml:ro`] }
         : {}),
-      ready: async (baseUrl) => (await fetch(`${baseUrl}/ping`)).ok,
+      ready: async (baseUrl) =>
+        (await fetch(`${baseUrl}/ping`, { signal: AbortSignal.timeout(5_000) })).ok,
       readyTimeoutMs: 120_000,
     },
     keeper ? process.env.CLICKHOUSE_URL : undefined,

@@ -84,7 +84,14 @@ export async function startContainer(
   try {
     const baseUrl = `http://127.0.0.1:${mappedPort(containerId, spec.port)}`;
     const deadline = Date.now() + (spec.readyTimeoutMs ?? 60_000);
-    while (!(await spec.ready(baseUrl).catch(() => false))) {
+    // Each probe gets its own bound: a port that accepts the connection but never answers would
+    // otherwise hold one `ready()` call open forever, and the deadline is only checked between calls.
+    const probe = () =>
+      Promise.race([
+        spec.ready(baseUrl),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000).unref()),
+      ]).catch(() => false);
+    while (!(await probe())) {
       if (Date.now() > deadline) throw new Error(`${spec.image} did not become ready`);
       await new Promise((resolve) => setTimeout(resolve, 250));
     }

@@ -27,7 +27,8 @@ export async function startMinio(): Promise<MinioHandle | null> {
       port: 9000,
       env: { MINIO_ROOT_USER: USER, MINIO_ROOT_PASSWORD: PASSWORD },
       command: ['server', '/data'],
-      ready: async (baseUrl) => (await fetch(`${baseUrl}/minio/health/live`)).ok,
+      ready: async (baseUrl) =>
+        (await fetch(`${baseUrl}/minio/health/live`, { signal: AbortSignal.timeout(5_000) })).ok,
     },
     external,
   );
