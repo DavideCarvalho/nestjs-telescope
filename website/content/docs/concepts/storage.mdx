@@ -31,6 +31,8 @@ interface StorageProvider {
 
 Reads are **keyset-paginated newest-first** (`createdAt DESC, id DESC`), so paging resumes correctly even after older entries are pruned out from under the cursor.
 
+A `Page` returned by `get()` is `{ data, nextCursor, partial? }`. `partial: true` means the store answered from a subset of its data — a tiered store whose cold tier could not be read, for instance. What it did return is still valid and pageable; the API passes the flag through, and the dashboard's entries list shows a notice that older entries may be missing. Leave it unset for a complete answer.
+
 Want to write your own? The [custom storage recipe](/docs/recipes/custom-storage) implements every method end to end.
 
 ## The zero-config SQLite default
@@ -47,6 +49,8 @@ It is **per-process**, though: each replica keeps its own SQLite file, so in a m
 | **MikroORM** | MySQL / SQLite | You already run MikroORM and want Telescope in your own DB — no Redis to stand up. | [`-mikro-orm`](/docs/packages/storages) |
 | **Redis** | shared Redis | Multi-instance / multi-pod: every replica reads and writes one store, so the dashboard aggregates the whole cluster. | [`-redis`](/docs/packages/storages) |
 | **In-memory** | process heap | Tests — `InMemoryStorageProvider`. | [`-testing`](/docs/packages/testing) |
+
+Outgrowing these? [Scaling storage](/docs/concepts/scaling-storage) is the path from here to tiered Parquet and ClickHouse, with the signals that tell you when to move.
 
 <Callout type="info">
   The ORM adapter packages also ship the matching **query watcher** — they already sit on the ORM's event stream, so capture and persistence travel together.

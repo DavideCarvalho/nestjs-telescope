@@ -56,3 +56,15 @@ import { InMemoryStorageProvider } from '@dudousxd/nestjs-telescope-testing';
 
 const storage = new InMemoryStorageProvider();
 ```
+
+## `describeStorageProvider` (conformance suite)
+
+The `StorageProvider` contract as a Vitest suite, on the `/conformance` subpath (Vitest is an optional peer, needed only there). Every adapter in this repo runs it; run it against yours:
+
+```ts
+import { describeStorageProvider } from '@dudousxd/nestjs-telescope-testing/conformance';
+
+describeStorageProvider('MyStorageProvider', () => new MyStorageProvider());
+```
+
+Optional SPI members (`pruneScoped`, `pruneScopedBatch`, leases, `markFamilySeen`, `RollupStore`) are tested only when present. Options: `retention: 'ttl'` (prune is a no-op), `afterSeed` (move seeded data, e.g. across a tier boundary), `teardown`, `skip`, `timeoutMs`.

@@ -36,6 +36,8 @@ export interface Entry {
 export interface Page<T> {
   data: T[];
   nextCursor: string | null;
+  /** The store answered from a subset of its data, so older entries may be missing. */
+  partial?: boolean;
 }
 export interface EntryWithBatch extends Entry {
   batch: Entry[];

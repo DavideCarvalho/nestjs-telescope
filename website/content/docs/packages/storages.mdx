@@ -1,12 +1,12 @@
 ---
 title: Storage adapters
-description: Persist Telescope entries in your own database (MikroORM — MySQL/SQLite) or share one store across replicas (Redis). Same StorageProvider contract everywhere.
+description: Persist Telescope entries in your own database (MikroORM — MySQL/SQLite), share one store across replicas (Redis), tier hot entries into Parquet on S3, or run on ClickHouse. Same StorageProvider contract everywhere.
 icon: Database
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-The default store is per-process SQLite. Swap it by passing a `storage` provider to `forRoot`. See [Storage](/docs/concepts/storage) for the SPI; this page is the wiring for each adapter.
+The default store is per-process SQLite. Swap it by passing a `storage` provider to `forRoot`. See [Storage](/docs/concepts/storage) for the SPI and [Scaling storage](/docs/concepts/scaling-storage) for which adapter fits which volume; this page is the wiring for each adapter. Every adapter here passes the same [conformance suite](/docs/packages/testing#describestorageprovider).
 
 ---
 
@@ -86,3 +86,84 @@ Notes:
   ```ts
   new RedisStorageProvider(redis, { keyPrefix: 'myapp:telescope:' });
   ```
+
+---
+
+## Tiered: hot store + Parquet cold tier — `@dudousxd/nestjs-telescope-parquet`
+
+Keeps the store you already have as a minutes-deep **hot** tier and moves older entries into Parquet files on S3 or a directory instead of deleting them. Reads merge both tiers on the same newest-first cursor. Pure JavaScript by default ([hyparquet](https://github.com/hyparam/hyparquet)): nothing native, nothing downloaded at runtime.
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-parquet
+# S3 location: you already have @aws-sdk/client-s3; Telescope uses your client
+```
+
+```ts
+import { S3Client } from '@aws-sdk/client-s3';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { MikroOrmStorageProvider } from '@dudousxd/nestjs-telescope-mikro-orm';
+import { MikroORM } from '@mikro-orm/core';
+import { parquetColdStore, tieredStorage } from '@dudousxd/nestjs-telescope-parquet';
+
+const cold = parquetColdStore({
+  location: { s3: { bucket: 'observability', prefix: 'telescope/v1', client: new S3Client({}) } },
+  // or: location: { dir: '/var/lib/telescope' },
+  compaction: { every: '15m', targetFileMb: 128 },
+});
+
+TelescopeModule.forRootAsync({
+  inject: [MikroORM],
+  useFactory: (orm: MikroORM) => ({
+    storage: tieredStorage({ hot: new MikroOrmStorageProvider(orm), cold }),
+    prune: { after: '5m', intervalMs: 15_000 },               // how long entries stay hot
+    archive: cold.archive({ types: ['request', 'query', 'exception', 'job'] }), // what moves cold
+  }),
+});
+```
+
+Notes:
+
+- **Any hot store.** `hot` is any `StorageProvider` — MikroORM, Redis, SQLite. The tiered store has exactly the hot store's optional capabilities (prune lease, bounded deletes, rollups, shared new-exception dedup).
+- **Layout.** `<prefix>/type=<type>/dt=<yyyy-mm-dd>/hour=<hh>/<instanceId>-<uuid>.parquet`, each file sorted by `(created_at, id)` in 10,000-row groups, with statistics and bloom filters on `id`, `batch_id` and `trace_id`. Every pod writes its own files.
+- **`cold.archive({ types, batchSize?, maxBatchesPerCycle? })`** returns the `archive` config with the cold store as sink, defaulting to 5,000 × 20 per type per cycle. Types not listed are pruned without archiving.
+- **Retention.** A bucket lifecycle rule per `type=<type>/` prefix, or `retention: { default?, perType? }` on `parquetColdStore` (hour granularity), which the prune cycle applies.
+- **Compaction** merges closed hours (older than `closedAfter`, default `2h`) into files of about `targetFileMb`, at most `maxHoursPerRun` (24) per run, under the prune lease. `compaction: false` turns it off.
+- **`clear()`** clears both tiers, including every cold file.
+- **DuckDB engine (optional).** `engine: { duckdb: { memoryLimit, threads, localCacheMb } }` with `@duckdb/node-api` installed. It never loads `httpfs`: S3 objects are fetched through your client into a bounded local cache. Boot fails if it is configured but not installed. See [Scaling storage](/docs/concepts/scaling-storage#cold-engine-pure-js-by-default) before enabling it in a hardened image.
+
+---
+
+## ClickHouse — `@dudousxd/nestjs-telescope-clickhouse`
+
+One columnar store for high volume and long retention. Retention is the table's TTL, so there is no pruner to run.
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-clickhouse @clickhouse/client
+```
+
+```ts
+import { ClickHouseStorageProvider } from '@dudousxd/nestjs-telescope-clickhouse';
+
+TelescopeModule.forRoot({
+  storage: new ClickHouseStorageProvider({
+    url: process.env.CLICKHOUSE_URL,          // HTTP interface, self-hosted or ClickHouse Cloud
+    username: process.env.CLICKHOUSE_USER,
+    password: process.env.CLICKHOUSE_PASSWORD,
+    database: 'observability',
+    retention: { default: '24h', perType: { exception: '90d', durable: '30d' } },
+  }),
+  // no `prune`: retention is the table's TTL
+});
+```
+
+Notes:
+
+- **Schema at boot.** `init()` creates `telescope_entries` (`ReplacingMergeTree`, partitioned by day, ordered by `(type, created_at, id)`) and `telescope_rollups` (`SummingMergeTree`) if missing. Rename them with `table` / `rollupTable`.
+- **Retention changes apply at boot.** The TTL's fingerprint is kept in the table comment; when `retention` changes, `init()` runs `ALTER TABLE … MODIFY TTL`, otherwise it leaves the table alone.
+- **`prune*` are no-ops** that report 0, and there is no prune lease. If you do configure `prune`, it does nothing.
+- **Writes** use `async_insert=1, wait_for_async_insert=1` (`asyncInsert: false` to opt out).
+- **Bring your own client.** Pass `client` (a `@clickhouse/client` instance) instead of `url`; the provider then never closes it. `clientOptions` passes TLS, compression and other settings through when the provider creates the client.
+- **New-exception dedup across pods** (`markFamilySeen`) uses a `KeeperMap` table (`telescope_seen_families`, rename with `seenFamiliesTable`), written in `keeper_map_strict_mode` so exactly one replica pages for a new exception family per window. It works in two modes:
+  - **With ClickHouse Keeper or ZooKeeper** configured on the server, plus `<keeper_map_path_prefix>` in its config (ClickHouse Cloud has both), `init()` creates the table and the alert pages once per deployment.
+  - **Without them**, creating the table fails; the provider logs one warning saying how to enable it and leaves `markFamilySeen` out, so the alert falls back to deduplicating per pod — exactly as on any store without it.
+

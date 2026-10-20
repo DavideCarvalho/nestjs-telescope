@@ -112,6 +112,17 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
   private warnedBatchCeiling = false;
   /** Batch ceilings hit during the CURRENT cycle; re-arms the warning at zero. */
   private ceilingHitsThisCycle = 0;
+  /**
+   * Where each archived type's export stopped when it hit `archive.maxBatchesPerCycle`: the
+   * cutoff it was exporting under and the cursor after the last batch the sink accepted. The
+   * next cycle continues from there and deletes under that same cutoff once drained. Starting
+   * over instead would hand the sink the same newest entries every cycle and never reach the
+   * oldest, so a backlog larger than one cycle would never shrink. Per process: a replica that
+   * takes over the lease starts its own export, which can repeat entries but never skips one.
+   */
+  private readonly archiveResume = new Map<string, { before: Date; cursor: string }>();
+  /** Archived types currently warned about for a growing backlog; cleared once a type drains. */
+  private readonly warnedArchiveBacklog = new Set<string>();
   /** Latches while the prune lock's BACKEND is broken (not merely held). */
   private warnedLockUnavailable = false;
   /** Recent prune cycles, newest-first, capped at {@link MAX_PRUNE_RUNS}. */
@@ -365,6 +376,7 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
           ...(prune.keepLast !== undefined ? { keepLast: prune.keepLast } : {}),
         },
         type,
+        afterMs,
       );
       if (step.deleted > 0) deletedByType[type] = (deletedByType[type] ?? 0) + step.deleted;
       deletedTotal += step.deleted;
@@ -414,13 +426,21 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
     fallbackKeepLast: number | undefined,
     scope: PruneScope,
     archivableType?: string,
+    windowMs?: number,
   ): Promise<PruneStepResult> {
     try {
       // Archive must complete before the matching delete. If it throws for a
       // single-type scope, bail WITHOUT deleting so the data survives.
-      const { proceed, archived } = await this.archiveScope(scope, archivableType);
+      const { proceed, archived, before } = await this.archiveScope(
+        scope,
+        archivableType,
+        windowMs,
+      );
       if (!proceed) return { deleted: 0, archived };
-      const deleted = await this.deleteScope(prune, scope, fallbackOlderThan, fallbackKeepLast);
+      // A resumed export finished under an earlier cutoff; deleting under today's would take
+      // entries it never handed to the sink.
+      const effective = before !== undefined ? { ...scope, before } : scope;
+      const deleted = await this.deleteScope(prune, effective, fallbackOlderThan, fallbackKeepLast);
       return { deleted, archived };
     } catch (error: unknown) {
       const message = asError(error).message;
@@ -433,13 +453,16 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
    * Exports the doomed entries for an archived single-type scope to the sink in
    * bounded batches. `proceed` is `true` when it is safe to delete (nothing to
    * archive, archiving succeeded, or this type/scope is not archived) and
-   * `false` when the sink failed (skip the delete this cycle); `archived` is the
-   * number of entries actually handed to the sink.
+   * `false` when the sink failed or the per-cycle cap was hit (skip the delete
+   * this cycle); `archived` is the number of entries actually handed to the
+   * sink; `before`, when set, is the cutoff the delete must use instead of the
+   * scope's own, because the export resumed from an earlier cycle.
    */
   private async archiveScope(
     scope: PruneScope,
     archivableType?: string,
-  ): Promise<{ proceed: boolean; archived: number }> {
+    windowMs?: number,
+  ): Promise<{ proceed: boolean; archived: number; before?: Date }> {
     const archive = this.config.archive;
     // Only single-type scopes that are in the archive set are exported. The
     // global bulk scope (excludeTypes) is never archived: archived types always
@@ -452,14 +475,16 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
       return { proceed: true, archived: 0 };
     }
 
+    const resume = this.archiveResume.get(archivableType);
+    const before = resume?.before ?? scope.before;
+    let cursor: string | undefined = resume?.cursor;
     let archived = 0;
     try {
       let batchesDone = 0;
-      let cursor: string | undefined;
       while (batchesDone < archive.maxBatchesPerCycle) {
         const page = await this.storage.get({
           type: archivableType,
-          before: scope.before,
+          before,
           limit: archive.batchSize,
           ...(cursor !== undefined ? { cursor } : {}),
         });
@@ -469,20 +494,26 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
         batchesDone += 1;
         if (page.nextCursor === null) break;
         cursor = page.nextCursor;
-        if (batchesDone === archive.maxBatchesPerCycle && page.nextCursor !== null) {
-          // Backlog exceeds this cycle's cap. Stop here; the remainder is
-          // archived next tick. We deliberately do NOT delete this type now,
+        if (batchesDone === archive.maxBatchesPerCycle) {
+          // Backlog exceeds this cycle's cap. Stop here and continue from this
+          // cursor next tick. We deliberately do NOT delete this type now,
           // because the unarchived remainder is exactly what we must keep — the
           // delete cutoff would otherwise wipe entries the sink never saw.
+          this.archiveResume.set(archivableType, { before, cursor });
           this.logger.warn(
             `Telescope archive for type "${archivableType}" hit the per-cycle batch cap ` +
               `(${archive.maxBatchesPerCycle}); remaining entries deferred to next cycle.`,
           );
+          this.warnIfArchiveBacklog(archivableType, page.data.at(-1)?.createdAt, windowMs);
           return { proceed: false, archived };
         }
       }
-      return { proceed: true, archived };
+      this.archiveResume.delete(archivableType);
+      this.warnedArchiveBacklog.delete(archivableType);
+      return { proceed: true, archived, ...(resume !== undefined ? { before } : {}) };
     } catch (error: unknown) {
+      // Keep the position of the batch that failed, so the retry starts there.
+      if (cursor !== undefined) this.archiveResume.set(archivableType, { before, cursor });
       // Rate-limited to once per cycle (this method runs once per archived type
       // per cycle). Skip the delete so the doomed entries survive for a retry.
       this.logger.warn(
@@ -491,6 +522,21 @@ export class TelescopePruner implements OnApplicationBootstrap, OnApplicationShu
       );
       return { proceed: false, archived };
     }
+  }
+
+  /**
+   * The export pages newest-first, so everything still waiting is older than the last entry
+   * this cycle handed to the sink. Once that entry is older than twice the type's hot window,
+   * the archiver is not keeping up with the write rate and the hot store is growing.
+   */
+  private warnIfArchiveBacklog(type: string, lastArchived?: Date, windowMs?: number): void {
+    if (lastArchived === undefined || windowMs === undefined) return;
+    if (Date.now() - lastArchived.getTime() <= 2 * windowMs) return;
+    if (this.warnedArchiveBacklog.has(type)) return;
+    this.warnedArchiveBacklog.add(type);
+    this.logger.warn(
+      `Telescope archive backlog for type "${type}": entries older than twice its retention window (${2 * windowMs}ms) are still waiting to be archived, so the live store keeps growing. Raise archive.batchSize or archive.maxBatchesPerCycle, or shorten prune.intervalMs.`,
+    );
   }
 
   /**

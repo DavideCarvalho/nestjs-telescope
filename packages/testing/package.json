@@ -1,7 +1,7 @@
 {
   "name": "@dudousxd/nestjs-telescope-testing",
   "version": "1.12.0",
-  "description": "Test utilities for @dudousxd/nestjs-telescope — FakeClock, watcher harness, InMemoryStorageProvider re-export.",
+  "description": "Test utilities for @dudousxd/nestjs-telescope — FakeClock, watcher harness, InMemoryStorageProvider re-export, and the StorageProvider conformance suite.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -23,6 +23,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./conformance": {
+      "types": "./dist/storage-conformance.d.ts",
+      "import": "./dist/storage-conformance.js",
+      "default": "./dist/storage-conformance.js"
     }
   },
   "files": ["dist/", "README.md"],
@@ -33,7 +38,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.spec.json --noEmit"
   },
   "peerDependencies": {
-    "@dudousxd/nestjs-telescope": "workspace:^"
+    "@dudousxd/nestjs-telescope": "workspace:^",
+    "vitest": ">=2.0.0"
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
@@ -43,5 +49,10 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   }
 }

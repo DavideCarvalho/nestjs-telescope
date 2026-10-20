@@ -13,7 +13,10 @@ import {
   type RollupDelta,
   type RollupStore,
   type TagCount,
+  type TagQuery,
+  decodeCursor,
   emptyHistogram,
+  encodeCursor,
   isBatchOrigin,
   mergeHistograms,
   normalizeHistogram,
@@ -180,16 +183,22 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     return entries;
   }
 
-  async tags(prefix?: string): Promise<TagCount[]> {
+  async tags(prefix?: string, query?: TagQuery): Promise<TagCount[]> {
     const hash = await this.redis.hgetall(this.tagsKey());
+    const search = query?.search?.trim().toLowerCase();
     const result: TagCount[] = [];
     for (const [tag, rawCount] of Object.entries(hash)) {
       const count = Number(rawCount);
       if (count <= 0) continue;
       if (prefix !== undefined && !tag.startsWith(prefix)) continue;
+      if (search && !tag.toLowerCase().includes(search)) continue;
       result.push({ tag, count });
     }
-    return result;
+    // Count descending, ties by tag: the total order `offset` pages over.
+    result.sort((a, b) => b.count - a.count || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
+    if (query?.limit === undefined) return result;
+    const offset = query.offset ?? 0;
+    return result.slice(offset, offset + query.limit);
   }
 
   async clear(): Promise<void> {
@@ -205,9 +214,11 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
   /**
    * Newest-first keyset pagination via `ZRANGEBYLEX` over a single primary index.
    *
-   * Members are `lexMember(createdAt, id)` = `<inv(createdAt)>:<id>` with newest
-   * sorting lexicographically smallest, so an ascending lex range is newest-first.
-   * The opaque cursor IS the last returned member string.
+   * Members are `lexMember(createdAt, id)` = `<inv(createdAt)>:<id>`, so an ascending lex range
+   * is newest-first by timestamp but ascending by id inside one millisecond, while the contract
+   * orders ties by id DESCENDING. Pages are therefore read in whole-millisecond groups and each
+   * group is re-sorted, which keeps the cursor a plain `(createdAt, id)` position shared with
+   * every other provider.
    *
    * NOTE: the dashboard issues single-filter queries (type OR tag OR family OR
    * batch). When MULTIPLE filters are set we page the primary index and AND the
@@ -230,18 +241,18 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     const indexKey = this.primaryIndexKey(query);
     const max = this.maxBound(query);
     const needsPostFilter = this.needsPostFilter(query, indexKey);
+    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
 
-    // Cursor is the opaque member string; an empty/undecodable cursor starts at `-`.
-    let min =
-      typeof query.cursor === 'string' && query.cursor.length > 0
-        ? `(${query.cursor}`
-        : this.minBound(query);
+    // The cursor's whole millisecond is re-read; its already-returned ids are skipped below.
+    let min = this.minBound(query);
+    if (cursor !== null) {
+      const fromCursor = `[${invBound(cursor.createdAt)}`;
+      if (min === '-' || fromCursor > min) min = fromCursor;
+    }
 
-    // We want `limit` matches plus one extra to know whether more remain. Each
-    // kept match carries its member so the page's last member becomes the cursor.
-    const kept: { entry: Entry; member: string }[] = [];
-
-    while (kept.length <= limit) {
+    const kept: Entry[] = [];
+    let groupInv: string | null = null;
+    scan: while (true) {
       const members = await this.redis.zrangebylex(indexKey, min, max, 'LIMIT', 0, limit + 1);
       if (members.length === 0) break;
 
@@ -251,21 +262,29 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
       for (let i = 0; i < members.length; i++) {
         const member = members[i];
         if (member === undefined) continue;
-        // Advance the resume point past every member we examine.
+        const inv = member.slice(0, member.indexOf(':'));
+        // Stop only on a millisecond boundary, so the last group is complete before sorting.
+        if (kept.length > limit && inv !== groupInv) break scan;
+        groupInv = inv;
         min = `(${member}`;
         const raw = raws[i];
         const entry = raw === null || raw === undefined ? null : this.parseEntry(raw);
         if (entry === null) continue;
+        if (
+          cursor !== null &&
+          entry.createdAt.getTime() === cursor.createdAt &&
+          entry.id >= cursor.id
+        ) {
+          continue;
+        }
         if (needsPostFilter && !this.matchesSecondary(entry, query, indexKey)) continue;
-        kept.push({ entry, member });
-        if (kept.length > limit) break;
+        kept.push(entry);
       }
 
-      // Without post-filtering, a short page means the index is exhausted.
-      if (!needsPostFilter && members.length <= limit) break;
-      if (kept.length > limit) break;
+      if (members.length <= limit) break;
     }
 
+    kept.sort(newestFirst);
     const hasMore = kept.length > limit;
     const page = kept.slice(0, limit);
     const last = page.at(-1);
@@ -273,12 +292,10 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     // projection benefit here — the entry must be read and parsed anyway. We
     // still null `content` afterwards so callers can never depend on it during a
     // content-less scan, keeping behavior identical to the projecting providers.
-    const data = query.omitContent
-      ? page.map((item) => ({ ...item.entry, content: null }))
-      : page.map((item) => item.entry);
+    const data = query.omitContent ? page.map((entry) => ({ ...entry, content: null })) : page;
     return {
       data,
-      nextCursor: hasMore && last ? last.member : null,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
     };
   }
 
@@ -304,10 +321,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
       }
     }
 
-    entries.sort((a, b) => {
-      const delta = b.createdAt.getTime() - a.createdAt.getTime();
-      return delta !== 0 ? delta : b.id.localeCompare(a.id);
-    });
+    entries.sort(newestFirst);
 
     const limit =
       query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
@@ -391,11 +405,13 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     keepLast: number | undefined,
     excludeTypes: Set<string> | null,
   ): Promise<number> {
-    const boundary = invBound(olderThan.getTime());
+    // `createdAt < cutoff` ⟺ `createdAt <= cutoff - 1`: an inclusive bound on that
+    // millisecond's prefix keeps entries stamped exactly at the cutoff.
+    const boundary = `[${invBound(olderThan.getTime() - 1)}`;
     // Candidates are returned oldest-first (largest member first is `+`, but
     // ZRANGEBYLEX is ascending, so smaller inv→ first; within this range the
     // smallest member is the newest of the OLD entries).
-    const candidates = await this.redis.zrangebylex(sourceIndex, `(${boundary}`, '+');
+    const candidates = await this.redis.zrangebylex(sourceIndex, boundary, '+');
     if (candidates.length === 0) return 0;
 
     // candidates ascending = newest-first among the old set. Keep the newest `keepLast`.
@@ -474,7 +490,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
    * entries cannot turn one batch into a full index walk.
    */
   async pruneScopedBatch(input: BoundedPruneScope): Promise<BoundedPruneResult> {
-    const boundary = invBound(input.before.getTime());
+    const boundary = `[${invBound(input.before.getTime() - 1)}`;
     // A single-type scope reads that type's own index, so nothing is excluded.
     const sourceIndex = input.type !== undefined ? this.typeIndexKey(input.type) : this.indexKey();
     const excluded =
@@ -491,7 +507,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
       const page = await this.redis.zrevrangebylex(
         sourceIndex,
         '+',
-        `(${boundary}`,
+        boundary,
         'LIMIT',
         skipped,
         want,
@@ -789,4 +805,11 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     if (!Array.isArray(parsed)) return null;
     return parsed.map((value) => (typeof value === 'number' ? value : 0));
   }
+}
+
+/** The contract's page order: `createdAt` descending, then `id` descending (code-unit order). */
+function newestFirst(a: Entry, b: Entry): number {
+  const delta = b.createdAt.getTime() - a.createdAt.getTime();
+  if (delta !== 0) return delta;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }

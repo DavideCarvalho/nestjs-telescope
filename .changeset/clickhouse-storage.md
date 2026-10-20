@@ -1,0 +1,7 @@
+---
+'@dudousxd/nestjs-telescope-clickhouse': minor
+---
+
+Add `@dudousxd/nestjs-telescope-clickhouse`: Telescope storage on ClickHouse, for high volume and long retention
+
+Entries live in a `ReplacingMergeTree(version, is_deleted)` partitioned by day and ordered by `(type, created_at, id)`, with bloom-filter skip indexes on `id`, `batch_id`, `trace_id`, `family_hash` and `tags`. Retention is the table's TTL, generated per type from a `retention` option and re-applied with `ALTER TABLE … MODIFY TTL` at boot only when it changed, so there is no pruner: the `prune*` methods are no-ops that report 0 and no lease is needed. Inserts use `async_insert` with `wait_for_async_insert`, `update()` writes a new row version read back through `FINAL`, and dashboard timeseries come from a `SummingMergeTree` rollup table. Talks to the HTTP interface via `@clickhouse/client`, self-hosted or ClickHouse Cloud, with its own client or one the host owns. Shared new-exception dedup (`markFamilySeen`) runs on a `KeeperMap` table in strict mode: a new family is claimed by an insert only one replica can win, and an expired one by a version-checked update whose claim token is read back, so exactly one caller per window gets `true`. On a server without Keeper the provider warns once at boot and leaves the method out, and the alert dedups per pod as on any store without it. Passes the shared storage conformance suite against a real server with embedded Keeper.

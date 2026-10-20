@@ -293,6 +293,145 @@ describe('TelescopePruner', () => {
       warnSpy.mockRestore();
     });
 
+    it('resumes a capped export where it stopped, exporting each entry once, then deletes', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+      const intervalMs = 100;
+      const storage = new InMemoryStorageProvider();
+      const old = new Date('2026-05-31T22:00:00Z');
+      await storage.store(
+        ['e1', 'e2', 'e3', 'e4', 'e5'].map((id) =>
+          entry({ id, type: 'exception', createdAt: old }),
+        ),
+      );
+      const exported: string[] = [];
+      const sink = vi.fn(async (entries: Entry[]) => {
+        exported.push(...entries.map((e) => e.id));
+      });
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({
+        enabled: true,
+        prune: { after: '1h', intervalMs },
+        archive: { types: ['exception'], sink, batchSize: 1, maxBatchesPerCycle: 2 },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+
+      await tick(intervalMs);
+      await tick(intervalMs);
+      expect((await storage.get({ type: 'exception' })).data).toHaveLength(5);
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      expect(exported).toEqual(['e5', 'e4', 'e3', 'e2', 'e1']);
+      expect((await storage.get({ type: 'exception' })).data).toHaveLength(0);
+      warnSpy.mockRestore();
+    });
+
+    it('deletes a resumed export under the cutoff it was exported with', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+      const intervalMs = 100;
+      const storage = new InMemoryStorageProvider();
+      const old = new Date('2026-05-31T22:00:00Z');
+      await storage.store(
+        ['e1', 'e2', 'e3'].map((id) => entry({ id, type: 'exception', createdAt: old })),
+      );
+      const exported: string[] = [];
+      const sink = vi.fn(async (entries: Entry[]) => {
+        exported.push(...entries.map((e) => e.id));
+      });
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({
+        enabled: true,
+        prune: { after: '1h', intervalMs },
+        archive: { types: ['exception'], sink, batchSize: 1, maxBatchesPerCycle: 2 },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+
+      // Doomed under the next cycle's cutoff but not under the first one: the resumed export
+      // must not delete it, because it was never handed to the sink.
+      const late = entry({
+        id: 'late',
+        type: 'exception',
+        createdAt: new Date(Date.now() - 60 * 60 * 1000 + 1),
+      });
+      vi.setSystemTime(Date.now() + 1000);
+      await storage.store([late]);
+      await tick(intervalMs);
+      expect(await storage.find('late')).not.toBeNull();
+      expect(exported).toEqual(['e3', 'e2', 'e1']);
+
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+      expect(exported).toEqual(['e3', 'e2', 'e1', 'late']);
+      expect((await storage.get({ type: 'exception' })).data).toHaveLength(0);
+      warnSpy.mockRestore();
+    });
+
+    it('warns once when the archive backlog is older than twice the type window', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+      const intervalMs = 100;
+      const storage = new InMemoryStorageProvider();
+      // Window 1h; everything is 3h old, so the backlog is past twice the window.
+      const old = new Date('2026-05-31T21:00:00Z');
+      await storage.store(
+        ['e1', 'e2', 'e3', 'e4', 'e5', 'e6'].map((id) =>
+          entry({ id, type: 'exception', createdAt: old }),
+        ),
+      );
+      const sink = vi.fn(async () => undefined);
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({
+        enabled: true,
+        prune: { after: '1h', intervalMs },
+        archive: { types: ['exception'], sink, batchSize: 1, maxBatchesPerCycle: 2 },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      const backlog = warnSpy.mock.calls.filter(([message]) =>
+        String(message).includes('archive backlog for type "exception"'),
+      );
+      expect(backlog).toHaveLength(1);
+      warnSpy.mockRestore();
+    });
+
+    it('does not warn about a backlog that is inside twice the type window', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+      const intervalMs = 100;
+      const storage = new InMemoryStorageProvider();
+      const old = new Date('2026-05-31T22:30:00Z');
+      await storage.store(
+        ['e1', 'e2', 'e3'].map((id) => entry({ id, type: 'exception', createdAt: old })),
+      );
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const config = resolveConfig({
+        enabled: true,
+        prune: { after: '1h', intervalMs },
+        archive: {
+          types: ['exception'],
+          sink: async () => undefined,
+          batchSize: 1,
+          maxBatchesPerCycle: 2,
+        },
+      });
+      const pruner = new TelescopePruner(config, storage);
+      pruner.onApplicationBootstrap();
+      await tick(intervalMs);
+      pruner.onApplicationShutdown();
+
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('archive backlog'));
+      warnSpy.mockRestore();
+    });
+
     it('a sink failure does not affect non-archived types', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));

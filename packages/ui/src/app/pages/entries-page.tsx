@@ -187,6 +187,12 @@ export function EntriesPage(): JSX.Element {
           </Button>
         ) : null}
       </div>
+      {data?.partial ? (
+        <output className="tint-warn mb-4 block rounded-lg border px-4 py-3 text-sm">
+          Older entries are unavailable right now — the store could only read part of its data, so
+          this list may be missing them.
+        </output>
+      ) : null}
       {isLoading ? (
         <p className="text-muted-foreground">Loading…</p>
       ) : entries.length === 0 ? (
