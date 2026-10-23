@@ -125,14 +125,18 @@ jobs:
       # that landed meanwhile does not reject the push.
       - name: Version packages
         run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Start from the branch tip, not the triggering commit: a run that queued behind another
+          # release would otherwise re-version the changesets that run already versioned, bump to
+          # the same numbers again, and conflict on the rebase below.
+          git pull --rebase origin ${{ github.ref_name }}
           pending=$(find .changeset -maxdepth 1 -name '*.md' ! -iname 'readme.md' | wc -l)
           if [ "$pending" -eq 0 ]; then
             echo "No pending changesets: publishing whatever is not on npm yet."
             exit 0
           fi
           pnpm version-packages
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m "chore: version packages"
           git pull --rebase origin ${{ github.ref_name }}
@@ -210,6 +214,5 @@ jobs:
       # `@latest` is untouched: these land under the `beta` dist-tag with no git tag.
       - name: Publish beta snapshot
         run: pnpm changeset publish --tag beta --no-git-tag
-        env:
-          # No NODE_AUTH_TOKEN here either: publish auth is OIDC trusted publishing.
-          NPM_CONFIG_PROVENANCE: true
+        # No NODE_AUTH_TOKEN here either: publish auth is OIDC trusted publishing. Same env as the
+        # release job's publish.
