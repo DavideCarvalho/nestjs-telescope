@@ -1,19 +1,25 @@
 name: Release
 
+#   push to main -> version the pending changesets in place (a "chore: version packages"
+#                   commit pushed to main) and publish them, in the same run
+#   run manually -> throwaway beta snapshot, changesets and git untouched
+#
+# No "Version Packages" PR to merge: merging a PR that carries a changeset IS the release.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 # Never run two releases concurrently (avoids a double-publish race).
 concurrency: release-${{ github.ref }}
 
 jobs:
   release:
-    name: Version PR or Publish
+    if: github.event_name == 'push'
+    name: Version and Publish
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push the "Version Packages" commit + git tags
-      pull-requests: write # open/update the "Version Packages" PR
+      contents: write # push the "chore: version packages" commit + git tags
       id-token: write # mints the OIDC credential npm exchanges for a publish token
     steps:
       - name: Checkout
@@ -47,9 +53,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # A Renovate patch/minor bump automerges on its own and brings no changeset with it, so
-      # the step below would find nothing to publish and the new dependency would reach npm
-      # only whenever someone next released by hand. This writes the changeset for it and
-      # versions it in place, leaving the release a plain "nothing pending, publish" run.
+      # the new dependency would reach npm only with the next hand-written changeset. This writes
+      # a patch changeset for it, which the version step below then releases like any other.
       # Majors are merged by a person, so github.actor is not renovate[bot] and none of it runs.
       - name: Release a Renovate dependency bump
         if: github.event_name == 'push' && github.actor == 'renovate[bot]'
@@ -113,24 +118,46 @@ jobs:
           console.log("Patch release queued for " + bumped.join(", "));
           NODE
           node "$RUNNER_TEMP/renovate-release.mjs"
-          if [ -z "$(git status --porcelain .changeset)" ]; then exit 0; fi
-          pnpm version-packages
+
+      # Pending changesets -> bump the versions and changelogs, and push that as a
+      # "chore: version packages" commit straight to main. A push made with GITHUB_TOKEN does not
+      # start another workflow run, so this cannot loop. Rebased onto main first, so a commit
+      # that landed meanwhile does not reject the push.
+      - name: Version packages
+        run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Start from the branch tip, not the triggering commit: a run that queued behind another
+          # release would otherwise re-version the changesets that run already versioned, bump to
+          # the same numbers again, and conflict on the rebase below.
+          git pull --rebase origin ${{ github.ref_name }}
+          pending=$(find .changeset -maxdepth 1 -name '*.md' ! -iname 'readme.md' | wc -l)
+          if [ "$pending" -eq 0 ]; then
+            echo "No pending changesets: publishing whatever is not on npm yet."
+            exit 0
+          fi
+          pnpm version-packages
           git add -A
+          # Changesets that only name ignored/private packages can version to nothing.
+          if git diff --staged --quiet; then
+            echo "The pending changesets bumped nothing: publishing whatever is not on npm yet."
+            exit 0
+          fi
           git commit -m "chore: version packages"
+          git pull --rebase origin ${{ github.ref_name }}
           git push origin HEAD:${{ github.ref_name }}
+        env:
+          # `@changesets/changelog-github` looks up each changeset's PR and author while writing the
+          # changelogs, and throws without a token.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # When changesets are pending -> opens/updates the "Version Packages" PR.
-      # When that PR is merged (versions bumped, no changesets left) -> runs
-      # `pnpm release` (build all packages + `changeset publish`).
-      - name: Create Release PR or Publish to npm
+      # No changesets are left by now, so the action takes its publish path: `pnpm release` (build
+      # + `changeset publish`) publishes every package whose version is not on npm yet, then tags
+      # git and creates the GitHub releases.
+      - name: Publish to npm
         uses: changesets/action@v1.9.0
         with:
-          version: pnpm version-packages
           publish: pnpm release
-          commit: "chore: version packages"
-          title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Deliberately no NODE_AUTH_TOKEN, and no NPM_TOKEN either: publish auth is npm
@@ -138,3 +165,59 @@ jobs:
           # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into ~/.npmrc regardless, so
           # wiring an unset secret here would leave an EMPTY credential that npm sends instead
           # of falling through to the OIDC exchange. Absent is not the same as empty.
+
+  snapshot:
+    name: Publish beta snapshot to npm
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mints the OIDC credential npm exchanges for a publish token
+    steps:
+      # Cuts a THROWAWAY prerelease of every package with a pending changeset, published under the
+      # `beta` dist-tag as `0.0.0-beta-<timestamp>`. It does NOT consume the changesets, bump source
+      # versions, or tag git, so the eventual real release (the next push to main) is untouched
+      # and still produces clean semver.
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 20.20.2
+          cache: pnpm
+          # Writes ~/.npmrc pointing at npm; the credential itself comes from the OIDC
+          # exchange at publish time, not from a committed token.
+          registry-url: "https://registry.npmjs.org"
+
+      # npm only learned OIDC trusted publishing in 11.5.1, and Node 20 ships 10.9.x. Without this
+      # the publish fails as `E404 - PUT https://registry.npmjs.org/<pkg>`: npm answers 404 rather
+      # than 403 for a request it could not authenticate, so it reads as "no such package" rather
+      # than "not signed in" — and the package plainly exists. Upgraded here rather than by moving
+      # `.nvmrc`, so the toolchain the packages are built and tested against does not change.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Stamp every pending-changeset package (and any out-of-range dependent) to
+      # `0.0.0-beta-<datetime>` in the runner only, never committed.
+      - name: Version as beta snapshot
+        run: pnpm changeset version --snapshot beta
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build all packages
+        run: pnpm --filter './packages/*' build
+
+      # `@latest` is untouched: these land under the `beta` dist-tag with no git tag.
+      - name: Publish beta snapshot
+        run: pnpm changeset publish --tag beta --no-git-tag
+        # No NODE_AUTH_TOKEN here either: publish auth is OIDC trusted publishing. Same env as the
+        # release job's publish.
