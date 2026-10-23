@@ -138,6 +138,11 @@ jobs:
           fi
           pnpm version-packages
           git add -A
+          # Changesets that only name ignored/private packages can version to nothing.
+          if git diff --staged --quiet; then
+            echo "The pending changesets bumped nothing: publishing whatever is not on npm yet."
+            exit 0
+          fi
           git commit -m "chore: version packages"
           git pull --rebase origin ${{ github.ref_name }}
           git push origin HEAD:${{ github.ref_name }}
