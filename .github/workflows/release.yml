@@ -14,13 +14,52 @@ on:
 concurrency: release-${{ github.ref }}
 
 jobs:
+  # Gate: the same jobs as ci.yml, run on the exact commit being released -- a published
+  # version is effectively unrecallable, so the PR's CI on an older base is not enough. The
+  # version/publish job below needs all of them.
+  build-test-lint:
+    name: Build · Test · Lint · Typecheck
+    runs-on: ubuntu-latest
+    # The container-backed suites (ClickHouse, MinIO, Redis) can wedge on a runner; fail with a log
+    # instead of holding the check for the platform's 6h default.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 20.20.2
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (biome)
+        run: pnpm lint
+
+      - name: Typecheck (turbo)
+        run: pnpm typecheck
+
+      - name: Build (turbo)
+        run: pnpm build
+
+      - name: Test (turbo)
+        run: pnpm test
+
   release:
     if: github.event_name == 'push'
     name: Version and Publish
+    needs: [build-test-lint]
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the "chore: version packages" commit + git tags
       id-token: write # mints the OIDC credential npm exchanges for a publish token
+      pull-requests: read # @changesets/changelog-github resolves each changeset's PR
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -119,18 +158,35 @@ jobs:
           NODE
           node "$RUNNER_TEMP/renovate-release.mjs"
 
-      # Pending changesets -> bump the versions and changelogs, and push that as a
-      # "chore: version packages" commit straight to main. A push made with GITHUB_TOKEN does not
-      # start another workflow run, so this cannot loop. Rebased onto main first, so a commit
-      # that landed meanwhile does not reject the push.
+      # Pending changesets -> bump versions and changelogs and push them as a "chore: version
+      # packages" commit to the branch (a GITHUB_TOKEN push starts no new run, so this cannot loop).
+      #
+      # Only what the gate tested is released. If the branch moved during this run, the only commits
+      # tolerated on top of the tested one are this bot's own version commits (same code, only
+      # versions and changelogs moved): fast-forward onto them so their changesets are not versioned
+      # twice. Any other commit is untested here, so stop cleanly -- no version, no publish -- and let
+      # the run queued for it (concurrency group) gate and release the combined tree.
       - name: Version packages
+        id: version
+        env:
+          TESTED: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          # @changesets/changelog-github looks up each changeset's PR and author; throws without it.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          superseded() {
+            echo "::notice::branch moved past the tested commit; the newer run will release"
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          # Start from the branch tip, not the triggering commit: a run that queued behind another
-          # release would otherwise re-version the changesets that run already versioned, bump to
-          # the same numbers again, and conflict on the rebase below.
-          git pull --rebase origin ${{ github.ref_name }}
+          git fetch origin "$BRANCH"
+          moved=$(git rev-list "$TESTED..origin/$BRANCH")
+          for c in $moved; do
+            [ "$(git log -1 --format='%an|%s' "$c")" = 'github-actions[bot]|chore: version packages' ] || superseded
+          done
+          git merge --ff-only "origin/$BRANCH"
           pending=$(find .changeset -maxdepth 1 -name '*.md' ! -iname 'readme.md' | wc -l)
           if [ "$pending" -eq 0 ]; then
             echo "No pending changesets: publishing whatever is not on npm yet."
@@ -138,23 +194,23 @@ jobs:
           fi
           pnpm version-packages
           git add -A
-          # Changesets that only name ignored/private packages can version to nothing.
-          if git diff --staged --quiet; then
-            echo "The pending changesets bumped nothing: publishing whatever is not on npm yet."
+          if git diff --cached --quiet; then
+            echo "version-packages changed nothing (e.g. only private packages): nothing to commit."
             exit 0
           fi
           git commit -m "chore: version packages"
-          git pull --rebase origin ${{ github.ref_name }}
-          git push origin HEAD:${{ github.ref_name }}
-        env:
-          # `@changesets/changelog-github` looks up each changeset's PR and author while writing the
-          # changelogs, and throws without a token.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git push origin "HEAD:$BRANCH" && exit 0
+          # Rejected: the branch moved after the check above. Fail loudly only if it did not move.
+          git fetch origin "$BRANCH"
+          [ "$(git rev-parse "origin/$BRANCH")" != "$(git rev-parse HEAD~1)" ] && superseded
+          echo "::error::Pushing the version commit failed and the branch has not moved."
+          exit 1
 
       # No changesets are left by now, so the action takes its publish path: `pnpm release` (build
       # + `changeset publish`) publishes every package whose version is not on npm yet, then tags
       # git and creates the GitHub releases.
       - name: Publish to npm
+        if: steps.version.outputs.superseded != 'true'
         uses: changesets/action@v1.9.0
         with:
           publish: pnpm release
@@ -169,10 +225,12 @@ jobs:
   snapshot:
     name: Publish beta snapshot to npm
     if: github.event_name == 'workflow_dispatch'
+    needs: [build-test-lint]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write # mints the OIDC credential npm exchanges for a publish token
+      pull-requests: read # @changesets/changelog-github, as in the release job
     steps:
       # Cuts a THROWAWAY prerelease of every package with a pending changeset, published under the
       # `beta` dist-tag as `0.0.0-beta-<timestamp>`. It does NOT consume the changesets, bump source
