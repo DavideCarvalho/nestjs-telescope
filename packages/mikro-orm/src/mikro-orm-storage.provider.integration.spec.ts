@@ -456,6 +456,31 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect((await provider.get({})).data.map((e) => e.id).sort()).toEqual(['exc-old', 'req-new']);
   });
 
+  it('pruneScopedBatch over all-types-but-some shares one limit across the types, oldest first', async () => {
+    await provider.init();
+    const cutoff = new Date(Date.UTC(2025, 0, 1));
+    const day = (d: number) => new Date(Date.UTC(2024, 0, d));
+    await provider.store([
+      makeEntry({ id: 'a1', type: 'cache', createdAt: day(1) }),
+      makeEntry({ id: 'a2', type: 'cache', createdAt: day(2) }),
+      makeEntry({ id: 'b1', type: 'query', createdAt: day(1) }),
+      makeEntry({ id: 'b2', type: 'query', createdAt: day(2) }),
+      makeEntry({ id: 'b3', type: 'query', createdAt: day(3) }),
+      makeEntry({ id: 'k1', type: 'durable', createdAt: day(1) }),
+      makeEntry({ id: 'young', type: 'query', createdAt: new Date(Date.UTC(2026, 0, 1)) }),
+    ]);
+    const scope = { before: cutoff, excludeTypes: ['durable'], limit: 3 };
+
+    expect(await provider.pruneScopedBatch(scope)).toEqual({ deleted: 3, hasMore: true });
+    const left = (await provider.get({})).data.map((e) => e.id).sort();
+    // Both cache rows, then the oldest query row: the limit holds across the types.
+    expect(left).toEqual(['b2', 'b3', 'k1', 'young']);
+
+    expect(await provider.pruneScopedBatch(scope)).toEqual({ deleted: 2, hasMore: false });
+    expect((await provider.get({})).data.map((e) => e.id).sort()).toEqual(['k1', 'young']);
+    expect(await provider.pruneScopedBatch(scope)).toEqual({ deleted: 0, hasMore: false });
+  });
+
   it('lease SPI: one owner at a time, expiry reclaims, release is owner-checked', async () => {
     await provider.init();
     const now = Date.UTC(2026, 0, 1);
