@@ -481,6 +481,60 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(await provider.pruneScopedBatch(scope)).toEqual({ deleted: 0, hasMore: false });
   });
 
+  it('pruneScopedBatch reads each type as a range of the (type, created_at, id) index', async () => {
+    await provider.close();
+    const statements: string[] = [];
+    provider = new MikroOrmStorageProvider({
+      driver: SqliteDriver,
+      dbName: ':memory:',
+      debug: ['query'],
+      colors: false,
+      logger: (message) => statements.push(message),
+    });
+    await provider.init();
+    const conn = (provider as unknown as { orm: MikroORM }).orm.em.getConnection();
+
+    const indexes = (await conn.execute(
+      "select name from pragma_index_list('telescope_entries')",
+    )) as { name: string }[];
+    const composite = await Promise.all(
+      indexes.map(async ({ name }) => ({
+        name,
+        columns: (
+          (await conn.execute(`select name from pragma_index_info('${name}')`)) as {
+            name: string;
+          }[]
+        ).map((c) => c.name),
+      })),
+    );
+    const index = composite.find((i) => i.columns.join() === 'type,created_at,id');
+    expect(index).toBeDefined();
+
+    await provider.store([
+      makeEntry({ id: 'q1', type: 'query', createdAt: new Date(Date.UTC(2024, 0, 1)) }),
+      makeEntry({ id: 'k1', type: 'durable', createdAt: new Date(Date.UTC(2024, 0, 1)) }),
+    ]);
+    statements.length = 0;
+    await provider.pruneScopedBatch({
+      before: new Date(Date.UTC(2025, 0, 1)),
+      excludeTypes: ['durable'],
+      limit: 10,
+    });
+
+    const select = statements
+      .map((s) => s.replace(/^\[query\]\s*/, '').replace(/\s*\[took[^\]]*\]\s*$/, ''))
+      .find((s) => /^select .*`type` = \? order by/.test(s));
+    expect(select).toBeDefined();
+    const plan = (
+      (await conn.execute(`explain query plan ${select}`, [0, 'query', 10])) as { detail: string }[]
+    )
+      .map((row) => row.detail)
+      .join('\n');
+    // A seek on both columns, already in ORDER BY order: no sort step.
+    expect(plan).toContain(`INDEX ${index?.name} (type=? AND created_at<?)`);
+    expect(plan).not.toMatch(/TEMP B-TREE/);
+  });
+
   it('lease SPI: one owner at a time, expiry reclaims, release is owner-checked', async () => {
     await provider.init();
     const now = Date.UTC(2026, 0, 1);

@@ -54,4 +54,6 @@ export const TelescopeEntry = new EntitySchema<TelescopeEntryRow>({
     spanId: { type: 'string', nullable: true, length: 16 },
     createdAt: { type: 'datetime', index: true },
   },
+  // The pruner's per-type read: `type = ? AND created_at < ? ORDER BY created_at, id LIMIT n`.
+  indexes: [{ properties: ['type', 'createdAt', 'id'] }],
 });

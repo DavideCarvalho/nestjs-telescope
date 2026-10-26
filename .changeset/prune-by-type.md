@@ -9,6 +9,6 @@ The global cutoff (every type but the ones with their own retention) ran as one
 index from the oldest row and stepped over every row of the excluded types, which are excluded
 because they are kept longer: next to 2.8M `durable` entries kept for 24 h, a batch of 1,000 rows
 took 10 s, so a cycle's batches ran back to back on the database. The batch now prunes one type at a
-time (the types found by index seeks), ordered by id, which is time-ordered (UUIDv7) and lets a
-`type = ?` read walk the `type` index: 0.2–0.3 s a batch on the same table. Same rows deleted,
-oldest first, one shared `limit` per batch.
+time (the types found by index seeks), each as a range of a new `(type, created_at, id)` index, which
+the additive schema update adds on the next boot on every dialect. A type with nothing expired costs
+one index seek. Same rows deleted, oldest first within each type, one shared `limit` per batch.

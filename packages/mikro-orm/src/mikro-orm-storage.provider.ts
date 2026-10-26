@@ -212,10 +212,10 @@ function scopedWhere(scope: {
  * Expressed at the ORM level as find-then-delete it renders correctly on every driver MikroORM
  * supports, takes no row locks to read, and the DELETE touches exactly those primary keys.
  *
- * "Oldest" is id order: ids are UUIDv7, stamped when the entry is recorded, so they sort by time.
- * Ordering by id rather than `created_at` lets a `type = ?` read walk the `type` index, whose
- * entries are already in primary-key order, and stop after `limit` matches; ordered by `created_at`
- * the planner walks the `created_at` index instead, past every younger row of every other type.
+ * With a `type = ?` filter the read is a range of the `(type, created_at, id)` index, already in
+ * the ORDER BY's order: it starts at that type's oldest row, stops after `limit` matches, and costs
+ * one index seek when nothing of that type has expired. Without it the planner sorts or walks
+ * another index past the rows of every other type, on PostgreSQL every row of the table.
  *
  * `hasMore` comes from what was SELECTED, not from what was deleted: another pruner racing us can
  * delete some of these rows first, which lowers `deleted` while saying nothing about whether work
@@ -227,7 +227,7 @@ async function pruneOldestBatch(
   limit: number,
 ): Promise<BoundedPruneResult> {
   const doomed = await em.find(TelescopeEntry, where, {
-    orderBy: { id: 'asc' },
+    orderBy: { createdAt: 'asc', id: 'asc' },
     limit,
     fields: ['id'],
   });
@@ -788,7 +788,7 @@ export class MikroOrmStorageProvider
     // `created_at` index from the oldest row and steps over every row of the excluded types, which
     // are excluded because they are kept longer: on a table where they hold most of the rows, each
     // batch read the whole retained backlog to find a few hundred rows (10 s for 1,000 rows next to
-    // 2.8M kept `durable` entries). Per type it reads that type's rows only.
+    // 2.8M kept `durable` entries). Per type it reads only that type's expired rows.
     const excluded = new Set(input.excludeTypes);
     let deleted = 0;
     for (const type of await distinctTypes(em)) {
