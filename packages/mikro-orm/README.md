@@ -161,8 +161,9 @@ How it works:
   encodes a `(createdAt, id)` position via `$or`, so paging resumes correctly
   even after older entries are pruned.
 - **Writes** are plain multi-row `INSERT`s (`em.insertMany`), outside the unit
-  of work and without a transaction, at most the ORM's `batchSize` rows (default
-  300) per statement.
+  of work, at most the ORM's `batchSize` rows (default 300) per statement. A
+  flush that needs several statements runs them in one transaction, so it is
+  stored whole or not at all.
 - **Tag filtering** runs against a space-padded `tagsText` column with
   `LIKE '% <tag> %'` (JSON-array predicates are not portable across MySQL and
   SQLite). The `tags` JSON column remains the source of truth for retrieval.
