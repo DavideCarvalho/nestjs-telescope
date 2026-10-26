@@ -121,12 +121,14 @@ The same rows are deleted; the difference is that locks are released between bat
 
 Deletes are **oldest-first**, which is what makes a partial cycle still lower the age of the oldest surviving entry — the number retention is actually judged on.
 
+On the MikroORM adapter, a global-cutoff batch (every type but the overridden ones) is drained **one type at a time**, oldest first within each type, with the batch's `limit` shared across the types. The types present are found with one index seek each, and each type's batch is a `type = ?` read ordered by `id`. Entry ids are UUIDv7, stamped when the entry is recorded, so id order is time order. On MySQL/InnoDB this lets the read walk the `type` index, whose entries are already in primary-key order, and stop after `limit` rows, however many rows of the longer-kept types sit before them on the `created_at` index. A single `type NOT IN (...)` read ordered by `created_at` has to step over every one of those rows instead.
+
 <Callout type="info">
   Batching rides a new optional `pruneScopedBatch()` on the storage contract, implemented by every in-repo adapter (SQLite, MikroORM, Redis, in-memory). A third-party provider without it keeps working with one unbounded delete and logs a one-time warning. `keepLast` scopes always take the unbounded path: "keep the newest N of the doomed rows" is a whole-set property that a per-batch bound cannot express, so `keepLast` is deliberately absent from the bounded scope type.
 </Callout>
 
 <Callout type="info">
-  **Portability.** `DELETE ... ORDER BY created_at LIMIT n` is MySQL/MariaDB-only. PostgreSQL has no `ORDER BY`/`LIMIT` on `DELETE` at all, SQLite only has it when compiled with `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`, and SQL Server spells it `DELETE TOP (n)` with no ordering. Since one MikroORM adapter serves all of them, the bound is expressed as **select the oldest `limit` ids, then delete by primary key** — plain SQL everywhere, and the better plan anyway: the `created_at` index walk stops after `limit` matches and takes no row locks, and the delete then touches exactly those primary keys.
+  **Portability.** `DELETE ... ORDER BY created_at LIMIT n` is MySQL/MariaDB-only. PostgreSQL has no `ORDER BY`/`LIMIT` on `DELETE` at all, SQLite only has it when compiled with `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`, and SQL Server spells it `DELETE TOP (n)` with no ordering. Since one MikroORM adapter serves all of them, the bound is expressed as **select the oldest `limit` ids, then delete by primary key** — plain SQL everywhere, and the better plan anyway: the index walk stops after `limit` matches and takes no row locks, and the delete then touches exactly those primary keys.
 </Callout>
 
 ### Pruning once per fleet, not once per pod
