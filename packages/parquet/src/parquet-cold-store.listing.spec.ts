@@ -31,8 +31,27 @@ function crowdedHour(): ColdLocation & { removed: number } {
   };
 }
 
+/**
+ * Counts the elements walked by array iteration (spread, `for…of`, `Array.from`) while
+ * installed, by wrapping `Array.prototype[Symbol.iterator]`.
+ */
+function countArrayIteration(): { elements: () => number; restore: () => void } {
+  const original = Array.prototype[Symbol.iterator];
+  let elements = 0;
+  Array.prototype[Symbol.iterator] = function counted(this: unknown[]) {
+    elements += this.length;
+    return original.call(this);
+  } as typeof original;
+  return {
+    elements: () => elements,
+    restore: () => {
+      Array.prototype[Symbol.iterator] = original;
+    },
+  };
+}
+
 describe('ParquetColdStore listing', () => {
-  it('groups a crowded hour in time linear in its file count', async () => {
+  it('groups a crowded hour with work linear in its file count', async () => {
     const cold = parquetColdStore({
       location: { dir: '/nonexistent' },
       compaction: false,
@@ -41,13 +60,17 @@ describe('ParquetColdStore listing', () => {
     const location = crowdedHour();
     Object.defineProperty(cold, 'location', { value: location });
 
-    const started = performance.now();
-    const removed = await cold.expire(Date.UTC(2026, 0, 1));
-    const elapsedMs = performance.now() - started;
+    const iterated = countArrayIteration();
+    let removed: number;
+    try {
+      removed = await cold.expire(Date.UTC(2026, 0, 1));
+    } finally {
+      iterated.restore();
+    }
 
     expect(removed).toBe(FILES_IN_ONE_HOUR);
     expect(location.removed).toBe(FILES_IN_ONE_HOUR);
-    // Re-copying the hour's list per file is ~2 s at this size; one pass is ~ms.
-    expect(elapsedMs).toBeLessThan(200);
+    // Re-copying the hour's list per file iterates ~n²/2 elements (2e8 here); one pass is a few n.
+    expect(iterated.elements()).toBeLessThan(10 * FILES_IN_ONE_HOUR);
   });
 });
