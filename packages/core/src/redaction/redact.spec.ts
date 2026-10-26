@@ -25,6 +25,29 @@ describe('redact', () => {
     expect(out.body.ssn).toBe('[REDACTED]');
   });
 
+  it('masks a dot-path through array indexes, and only that path', () => {
+    const input = {
+      rows: [
+        { ssn: '1', name: 'a' },
+        { ssn: '2', name: 'b' },
+      ],
+    };
+    const out = redact(input, { paths: ['rows.1.ssn'] }) as { rows: Record<string, string>[] };
+    expect(out.rows[0]).toEqual({ ssn: '1', name: 'a' });
+    expect(out.rows[1]).toEqual({ ssn: '[REDACTED]', name: 'b' });
+  });
+
+  it('matches masked keys case-insensitively on every entry, not just the first', () => {
+    const options = { keys: ['X-Token'] };
+    for (let i = 0; i < 3; i += 1) {
+      const out = redact({ 'x-token': 'k', 'X-TOKEN': 'k', keep: i }, options) as Record<
+        string,
+        unknown
+      >;
+      expect(out).toEqual({ 'x-token': '[REDACTED]', 'X-TOKEN': '[REDACTED]', keep: i });
+    }
+  });
+
   it('handles arrays and leaves primitives/null alone', () => {
     expect(redact(null, {})).toBeNull();
     expect(redact(5, {})).toBe(5);
