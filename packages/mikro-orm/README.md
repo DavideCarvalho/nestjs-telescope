@@ -160,9 +160,9 @@ How it works:
 - **Keyset pagination** is newest-first (`createdAt DESC, id DESC`); the cursor
   encodes a `(createdAt, id)` position via `$or`, so paging resumes correctly
   even after older entries are pruned.
-- **Writes** are plain multi-row `INSERT`s (`em.insertMany`), outside the unit
-  of work, at most the ORM's `batchSize` rows (default 300) per statement. A
-  flush that needs several statements runs them in one transaction, so it is
+- **Flushes are plain multi-row `INSERT`s** (`em.insertMany`), outside the
+  unit of work, at most the ORM's `batchSize` rows (default 300) per statement.
+  A flush that needs several statements runs them in one transaction, so it is
   stored whole or not at all.
 - **Tag filtering** runs against a space-padded `tagsText` column with
   `LIKE '% <tag> %'` (JSON-array predicates are not portable across MySQL and
