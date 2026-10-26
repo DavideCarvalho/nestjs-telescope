@@ -125,6 +125,33 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
     expect(batch.map((e) => e.id)).toEqual(['b', 'c', 'a']);
   });
 
+  it('stores a flush as plain multi-row INSERTs, chunked by the ORM batch size', async () => {
+    await provider.close();
+    const statements: string[] = [];
+    provider = new MikroOrmStorageProvider({
+      driver: SqliteDriver,
+      dbName: ':memory:',
+      batchSize: 200,
+      debug: ['query'],
+      colors: false,
+      logger: (message) => statements.push(message),
+    });
+    await provider.init();
+    statements.length = 0;
+
+    const entries = Array.from({ length: 450 }, (_, i) =>
+      makeEntry({ batchId: 'flush', sequence: i, content: { i }, tags: ['t', `n:${i}`] }),
+    );
+    await provider.store(entries);
+
+    // No unit of work: no transaction around the write, one statement per 200 rows.
+    expect(statements.filter((s) => /\bbegin\b|savepoint/i.test(s))).toEqual([]);
+    expect(statements.filter((s) => /insert into/i.test(s))).toHaveLength(3);
+    const stored = await provider.batch('flush');
+    expect(stored).toHaveLength(450);
+    expect(stored[449]).toMatchObject({ content: { i: 449 }, tags: ['t', 'n:449'] });
+  });
+
   it('omitContent projects every column except content, returning content null', async () => {
     await provider.init();
     await provider.store([
