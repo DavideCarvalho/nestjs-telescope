@@ -180,7 +180,7 @@ When a `new-exception` or `every-exception` rule fires, the payload adds an `exc
 The legacy raw-webhook JSON is **backward compatible**: every v1 field (`rule`, `value`, `threshold`, `firedAt`, `instanceId`) is unchanged; `exception`/`dashboardUrl` and the enrichment fields (`clientIp`, `geo`, `referer`, `userAgent`, `componentStack`, `extra`) are purely additive.
 
 <Callout type="warn">
-  **Multi-replica caveat.** `new-exception` dedup is an in-memory, per-pod map (capped at ~10k families, oldest evicted). In a multi-replica deployment the **same** new error family may alert **once per pod** the first time each pod sees it. This is acceptable for v1; a cross-pod store would defeat the goal of a cheap map lookup on the hot flush path.
+  **Multi-replica dedup.** When the storage provider implements `markFamilySeen`, the `new-exception` check is an atomic check-and-set in that store, so a new error family pages **once** across every replica writing to it. The SQLite provider (processes sharing its file), ClickHouse (with Keeper or ZooKeeper, see [Storages](/docs/packages/storages)) and the tiered store (when its hot store has it) implement it. On a provider without it (MikroORM, Redis, Prisma, TypeORM, most third-party stores), and whenever a `markFamilySeen` call fails, dedup falls back to an in-memory per-pod map (capped at ~10k families, oldest evicted), so the **same** new family may alert **once per pod** the first time each pod sees it. The per-family cooldown clocks are always per pod.
 </Callout>
 
 ### Legacy `webhookUrl`
