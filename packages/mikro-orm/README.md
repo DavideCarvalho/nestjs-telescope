@@ -164,6 +164,12 @@ How it works:
   unit of work, at most the ORM's `batchSize` rows (default 300) per statement.
   A flush that needs several statements runs them in one transaction, so it is
   stored whole or not at all.
+- **Rollups merge in the database.** `telescope_rollups` is written with one
+  native upsert per 100 buckets (`ON DUPLICATE KEY UPDATE` on MySQL/MariaDB,
+  `ON CONFLICT … DO UPDATE` on PostgreSQL and SQLite/libSQL) that adds count,
+  sum and histogram cells and keeps the larger max against the stored row, so
+  concurrent pods never lose or reject each other's increments. Other drivers
+  use a transactional read-modify-write, safe only with a single writer.
 - **Tag filtering** runs against a space-padded `tagsText` column with
   `LIKE '% <tag> %'` (JSON-array predicates are not portable across MySQL and
   SQLite). The `tags` JSON column remains the source of truth for retrieval.

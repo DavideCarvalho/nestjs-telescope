@@ -138,6 +138,8 @@ TelescopeModule.forRoot({
 - `slow-request-rate` — `>= count` requests slower than `thresholdMs` in `window`.
 - `dropped-entries` — Recorder `droppedCount` grew by `>= threshold` since the last evaluation.
 
+The two per-flush rules run **behind** the flush, not inside it. Each flush's exception entries join the alerter's own queue, which evaluates one flush at a time in flush order, so a slow channel, `geoLookup` or AI diagnosis delays the alert, never the next flush. With a non-zero `window`, each family is checked against the `new-exception` dedup once per flush, however many times it occurred in it. At most 10,000 exception entries wait for evaluation. Past that, a flush's exceptions are skipped and Telescope logs one warning until the queue drains. Shutdown waits for the queue. The per-family cooldown clocks are capped at 10,000 families, like the dedup map, and the family that fired longest ago is evicted first.
+
 ### Channels
 
 - **`slackChannel(url, options?)`** — POSTs Slack [Block Kit](https://api.slack.com/block-kit) JSON: a header with a severity emoji + rule name, fielded context (route, method, status, user-agent, referer, **client IP**, **location** when a `geoLookup` is configured, count/rate, window), a truncated stack snippet in a code block, a **component stack** and **extra** block for browser-reported errors that carry them, and — when `dashboardUrl` is set — an **Open in Telescope** button deep-linking to the entry (`${dashboardUrl}#/entries/view/${id}`). `options` accepts `{ username, iconEmoji }`.

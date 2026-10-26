@@ -39,6 +39,11 @@ TelescopeModule.forRoot({ storage });
 - **Pruning is explicit.** There is no per-key TTL — old entries are removed by
   the core pruner via the `prune` config (e.g. `prune: { after: '24h' }`), which
   calls the provider's `prune`.
+- **Two copies per entry.** Each entry is stored in full under `e:<id>` and
+  without its content under `m:<id>`, in the same `MULTI`. Content-less reads
+  (stats and pulse scans, batched id reads, prune bookkeeping) fetch only the
+  `m:` copies; entries without one are read from `e:<id>`. A `search` filter
+  still reads full entries, because it matches on content.
 - **`keyPrefix` option.** Every Telescope key is namespaced; the default prefix
   is `telescope:`. Override it to share one Redis across apps:
 

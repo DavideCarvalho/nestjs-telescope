@@ -243,8 +243,8 @@ TelescopeModule.forRoot({
 - **`get()` is the whole adapter.** Every list screen, type tab, and free-text search funnels through it. Sort `createdAt DESC, id DESC` and honor the cursor exactly as shown.
 - **`encodeCursor` / `decodeCursor`** are exported from core — reuse them so your cursor is the same opaque `(createdAtMs, id)` token every other adapter produces. Don't invent your own format.
 - **Fetch `limit + 1`.** That extra row is how you decide whether to emit a `nextCursor`. Emit `null` when there's no next page so the UI stops paging.
-- **`omitContent`** lets aggregate scans (pulse, timeseries) skip the large `content` column. Project it out where your driver can; whatever happens, set `content: null` on the returned rows so callers can never accidentally depend on it.
-- **`ids`** is for batched hydration — one query for N ids instead of N `find()` round-trips. An empty array must return no entries (`$in: []` does this for free).
+- **`omitContent`** lets aggregate scans (pulse, timeseries, per-type stats) skip the large `content` column. Project it out where your driver can; whatever happens, set `content: null` on the returned rows so callers can never accidentally depend on it.
+- **`ids`** is for batched hydration — one query for N ids instead of N `find()` round-trips. Per-type stats rely on it: they scan without content, then read the content of the few rows they display by id. An empty array must return no entries (`$in: []` does this for free).
 - **`update()` must treat `id` as immutable** — strip it from the patch (the request entry is patched in place when it completes).
 
 <Callout type="warn" title="The keyset-pagination contract">
@@ -335,4 +335,4 @@ export class MongoStorageProvider implements StorageProvider, RollupStore {
 }
 ```
 
-Rollup buckets are 1-minute granularity (`ROLLUP_BUCKET_MS`) and each carries a fixed-length latency histogram (`HISTOGRAM_BUCKET_COUNT` cells). `recordRollups` must be **additive and idempotent** — the recorder may replay the same `(metric, bucketStart)` delta, so use `$inc`/`$max` upserts, never a blind overwrite.
+Rollup buckets are 1-minute granularity (`ROLLUP_BUCKET_MS`) and each carries a fixed-length latency histogram (`HISTOGRAM_BUCKET_COUNT` cells). `recordRollups` must be **additive and idempotent** — the recorder may replay the same `(metric, bucketStart)` delta, so use `$inc`/`$max` upserts, never a blind overwrite. Several pods write the same minute's bucket at once, so do the merge **in the store, atomically** (`$inc`/`$max`, SQL `INSERT … ON CONFLICT DO UPDATE SET count = count + excluded.count`). Reading the bucket and writing back the merged value loses increments when two writers interleave, and two writers inserting the same new bucket make one of them fail.

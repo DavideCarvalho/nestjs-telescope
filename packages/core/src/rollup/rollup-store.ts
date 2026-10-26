@@ -109,6 +109,8 @@ export interface RollupStore {
   /**
    * Additively merge deltas into the rollup table (accumulate count/sum, keep a
    * running max). Idempotent per (metric, bucketStart) via upsert + increment.
+   * Several processes write the same bucket concurrently, so the merge must be
+   * atomic in the store, not a read followed by a write.
    */
   recordRollups(deltas: RollupDelta[]): Promise<void>;
   /**
