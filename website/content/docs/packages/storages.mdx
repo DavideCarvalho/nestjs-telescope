@@ -52,6 +52,7 @@ How it works:
 - **Self-healing schema at boot.** `init()` runs `ensureDatabase()` + `schema.update({ safe: true })` — additive only: creates the table if missing, adds missing columns, **never drops** anything. `ensureSchema: false` disables it.
 - **Lifecycle.** `init()` is awaited by `TelescopeModule` at startup; `close()` closes the owned connection at shutdown. You call neither.
 - **Keyset pagination** is newest-first; the cursor encodes a `(createdAt, id)` position, so paging resumes even after older entries are pruned.
+- **Writes.** A flush is written with plain multi-row `INSERT`s (`em.insertMany`), not through the unit of work: no managed entities, no change sets, no transaction. Each statement holds at most the ORM's `batchSize` rows (MikroORM's default is 300), which keeps a large `recorder.flushBatchSize` under PostgreSQL's 65,535 bound-parameter limit and SQLite's variable limit.
 
 <Callout type="info">
   This same package ships the MikroORM query watcher and N+1 detector — see [Watchers](/docs/packages/watchers).

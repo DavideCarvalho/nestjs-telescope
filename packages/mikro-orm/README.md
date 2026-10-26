@@ -160,6 +160,9 @@ How it works:
 - **Keyset pagination** is newest-first (`createdAt DESC, id DESC`); the cursor
   encodes a `(createdAt, id)` position via `$or`, so paging resumes correctly
   even after older entries are pruned.
+- **Writes** are plain multi-row `INSERT`s (`em.insertMany`), outside the unit
+  of work and without a transaction, at most the ORM's `batchSize` rows (default
+  300) per statement.
 - **Tag filtering** runs against a space-padded `tagsText` column with
   `LIKE '% <tag> %'` (JSON-array predicates are not portable across MySQL and
   SQLite). The `tags` JSON column remains the source of truth for retrieval.
