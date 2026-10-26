@@ -23,6 +23,7 @@ export class TelescopeTypeOrmLogger implements Logger {
 
   logQuery(query: string, parameters?: unknown[], _queryRunner?: QueryRunner): void {
     // TypeORM's logQuery gives no duration -> took/durationMs are null.
+    let familyHash: string | undefined;
     this.record({
       type: EntryType.Query,
       content: {
@@ -30,7 +31,12 @@ export class TelescopeTypeOrmLogger implements Logger {
         bindings: Array.isArray(parameters) ? [...parameters] : [],
         took: null,
       },
-      familyHash: queryFamilyHash(query),
+      // Read by the recorder only once it keeps the entry, so a sampled-out
+      // or paused query never pays for normalizing its SQL.
+      get familyHash() {
+        familyHash ??= queryFamilyHash(query);
+        return familyHash;
+      },
       durationMs: null,
     });
   }
@@ -42,6 +48,7 @@ export class TelescopeTypeOrmLogger implements Logger {
     _queryRunner?: QueryRunner,
   ): void {
     // TypeORM passes the elapsed time here, so we can record a real duration.
+    let familyHash: string | undefined;
     this.record({
       type: EntryType.Query,
       content: {
@@ -49,7 +56,12 @@ export class TelescopeTypeOrmLogger implements Logger {
         bindings: Array.isArray(parameters) ? [...parameters] : [],
         took: time,
       },
-      familyHash: queryFamilyHash(query),
+      // Read by the recorder only once it keeps the entry, so a sampled-out
+      // or paused query never pays for normalizing its SQL.
+      get familyHash() {
+        familyHash ??= queryFamilyHash(query);
+        return familyHash;
+      },
       durationMs: time,
       tags: ['slow'],
     });

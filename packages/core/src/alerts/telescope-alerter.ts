@@ -15,7 +15,7 @@ import type {
   ExceptionAlertContext,
   ResolvedAlerts,
 } from './alert-rule.js';
-import { NewExceptionTracker } from './new-exception-tracker.js';
+import { DEFAULT_MAX_FAMILIES, NewExceptionTracker } from './new-exception-tracker.js';
 
 /**
  * Cap on entries scanned per windowed rule read. Alerting is a coarse "did we
@@ -31,6 +31,13 @@ const ALERT_STACK_FRAME_LIMIT = 12;
 /** Window used only to count occurrences on an `every-exception` alert when the
  *  rule omits its own `window`. Firing is per-flush, so this is display-only. */
 const DEFAULT_EVERY_WINDOW = '1h';
+
+/**
+ * Cap on exception entries waiting for flush-driven evaluation. Evaluation runs
+ * behind the flush, so a channel that stalls on every fire would otherwise let
+ * the backlog grow without bound; past the cap a flush's exceptions are skipped.
+ */
+const MAX_PENDING_FLUSH_ENTRIES = 10_000;
 
 export interface TelescopeAlerterDeps {
   alerts: ResolvedAlerts;
@@ -87,12 +94,20 @@ export class TelescopeAlerter {
   private readonly newExceptionRule: { type: 'new-exception'; window: string } | null;
   /** Pre-computed `every-exception` rule (if any) so the flush path is cheap. */
   private readonly everyExceptionRule: { type: 'every-exception'; window?: string } | null;
+  /** Cap on {@link lastFiredFamily}; the least recently fired key is evicted first. */
+  private readonly maxFiredFamilies: number;
+  /** Tail of the serialized flush-evaluation queue. */
+  private flushQueue: Promise<void> = Promise.resolve();
+  /** Exception entries enqueued on {@link flushQueue} and not yet evaluated. */
+  private pendingFlushEntries = 0;
+  private warnedFlushBacklog = false;
 
   constructor(private readonly deps: TelescopeAlerterDeps) {
     this.logger = deps.logger ?? new Logger(TelescopeAlerter.name);
     this.now = deps.now ?? Date.now;
     this.lastDroppedCount = deps.droppedCount();
     this.newExceptionTracker = new NewExceptionTracker(deps.maxFamilies);
+    this.maxFiredFamilies = deps.maxFamilies ?? DEFAULT_MAX_FAMILIES;
     this.newExceptionRule =
       deps.alerts.rules.find(
         (rule): rule is { type: 'new-exception'; window: string } => rule.type === 'new-exception',
@@ -146,33 +161,69 @@ export class TelescopeAlerter {
 
   /**
    * Per-flush evaluation for the exception rules (`new-exception` /
-   * `every-exception`). Called with the entries a flush just stored. MUST be
-   * cheap: it filters to exception-type entries and does a single bounded-map
-   * lookup per family; the expensive batch-context fetch happens ONLY for a
-   * family that actually fires (and is past cooldown). No-op (zero cost beyond the
-   * early return) when neither rule is configured. Never throws into the host —
-   * failures are swallowed/logged.
+   * `every-exception`), called with the entries a flush just stored. The
+   * exception entries are queued and evaluated one flush at a time, in order,
+   * behind the flush rather than inside it: a firing alert awaits store reads,
+   * the geo and AI hooks and every channel, and none of that may hold up the
+   * next flush. The returned promise settles when THIS flush's evaluation has
+   * run; it never rejects. No-op when neither rule is configured.
    */
-  async evaluateFlush(storedEntries: Entry[]): Promise<void> {
-    const newRule = this.newExceptionRule;
-    const everyRule = this.everyExceptionRule;
-    if (newRule === null && everyRule === null) return;
-    const nowMs = this.now();
-    try {
-      for (const entry of storedEntries) {
+  evaluateFlush(storedEntries: Entry[]): Promise<void> {
+    if (this.newExceptionRule === null && this.everyExceptionRule === null) {
+      return Promise.resolve();
+    }
+    const exceptions = storedEntries.filter(
+      (entry) =>
         // Server exceptions AND browser-reported client_exceptions both feed the
         // exception rules — a front-end error should page just like a server one.
-        if (entry.type !== EntryType.Exception && entry.type !== EntryType.ClientException) {
-          continue;
-        }
+        (entry.type === EntryType.Exception || entry.type === EntryType.ClientException) &&
+        entry.familyHash !== null,
+    );
+    if (exceptions.length === 0) return Promise.resolve();
+    if (this.pendingFlushEntries + exceptions.length > MAX_PENDING_FLUSH_ENTRIES) {
+      if (!this.warnedFlushBacklog) {
+        this.warnedFlushBacklog = true;
+        this.logger.warn(
+          'Telescope exception alerts are falling behind the flushes; skipping evaluation for some exceptions until they catch up.',
+        );
+      }
+      return Promise.resolve();
+    }
+    this.pendingFlushEntries += exceptions.length;
+    const nowMs = this.now();
+    const run = this.flushQueue
+      .then(() => this.evaluateExceptions(exceptions, nowMs))
+      .finally(() => {
+        this.pendingFlushEntries -= exceptions.length;
+        if (this.pendingFlushEntries === 0) this.warnedFlushBacklog = false;
+      });
+    this.flushQueue = run;
+    return run;
+  }
+
+  /** Settles once every flush evaluation queued so far has run. */
+  idle(): Promise<void> {
+    return this.flushQueue;
+  }
+
+  private async evaluateExceptions(exceptions: Entry[], nowMs: number): Promise<void> {
+    const newRule = this.newExceptionRule;
+    const everyRule = this.everyExceptionRule;
+    const newWindowMs = newRule !== null ? durationToMs(newRule.window) : 0;
+    // With a non-empty window, a family repeated within one flush was already
+    // seen at `nowMs` by its first occurrence, so it is observed once per flush.
+    const observed = newWindowMs > 0 ? new Set<string>() : null;
+    try {
+      for (const entry of exceptions) {
         if (entry.familyHash === null) continue;
 
         // `new-exception`: fire only the FIRST time a family is seen in the window.
-        if (newRule !== null) {
-          const windowMs = durationToMs(newRule.window);
+        if (newRule !== null && !observed?.has(entry.familyHash)) {
+          observed?.add(entry.familyHash);
+          const windowMs = newWindowMs;
           const isNew = await this.observeFamily(entry.familyHash, nowMs, windowMs);
           if (isNew && !this.familyInCooldown('new-exception', entry.familyHash, nowMs)) {
-            this.lastFiredFamily.set(this.cooldownKey('new-exception', entry.familyHash), nowMs);
+            this.markFamilyFired('new-exception', entry.familyHash, nowMs);
             await this.dispatch(await this.buildExceptionPayload(newRule, entry, windowMs, nowMs));
           }
         }
@@ -184,7 +235,7 @@ export class TelescopeAlerter {
           !this.familyInCooldown('every-exception', entry.familyHash, nowMs)
         ) {
           const windowMs = durationToMs(everyRule.window ?? DEFAULT_EVERY_WINDOW);
-          this.lastFiredFamily.set(this.cooldownKey('every-exception', entry.familyHash), nowMs);
+          this.markFamilyFired('every-exception', entry.familyHash, nowMs);
           await this.dispatch(await this.buildExceptionPayload(everyRule, entry, windowMs, nowMs));
         }
       }
@@ -347,6 +398,22 @@ export class TelescopeAlerter {
   /** Composite cooldown key so each flush rule keeps an independent per-family clock. */
   private cooldownKey(ruleType: 'new-exception' | 'every-exception', familyHash: string): string {
     return `${ruleType}|${familyHash}`;
+  }
+
+  /** Stamp a family's cooldown clock, evicting the least recently fired key past the cap. */
+  private markFamilyFired(
+    ruleType: 'new-exception' | 'every-exception',
+    familyHash: string,
+    nowMs: number,
+  ): void {
+    const key = this.cooldownKey(ruleType, familyHash);
+    this.lastFiredFamily.delete(key);
+    this.lastFiredFamily.set(key, nowMs);
+    while (this.lastFiredFamily.size > this.maxFiredFamilies) {
+      const oldest = this.lastFiredFamily.keys().next().value;
+      if (oldest === undefined) break;
+      this.lastFiredFamily.delete(oldest);
+    }
   }
 
   private familyInCooldown(

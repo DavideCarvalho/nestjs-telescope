@@ -67,6 +67,7 @@ import type {
   TagQuery,
 } from '@dudousxd/nestjs-telescope';
 import {
+  HISTOGRAM_BUCKET_COUNT,
   decodeCursor,
   encodeCursor,
   isBatchOrigin,
@@ -887,24 +888,51 @@ export class MikroOrmStorageProvider
   // ── RollupStore SPI ────────────────────────────────────────────────────────
 
   /**
-   * Additively merge deltas into `telescope_rollups`, matching the sqlite
-   * provider's `on conflict do update set count = count + excluded.count, ...`
-   * semantics: accumulate count/sum and keep a running max per
+   * Additively merge deltas into `telescope_rollups`: count/sum accumulate, `max`
+   * keeps the running maximum and the histogram adds element-wise, per
    * (metric, bucketStart).
    *
-   * Implemented as a read-modify-write inside ONE transaction rather than a
-   * native upsert. MikroORM's `em.upsert` / `qb.onConflict().merge()` REPLACE
-   * conflicting columns; neither expresses a portable `count = count +
-   * excluded.count` self-referential increment across MySQL and SQLite without
-   * driver-specific raw SQL. The transactional read-modify-write is portable,
-   * cast-free, and — because the whole batch commits atomically with row locks
-   * on the touched PKs — safe to call repeatedly and concurrently: concurrent
-   * writers serialize on the same (metric, bucketStart) rows, so no increment is
-   * lost. New buckets are inserted; existing ones accumulate.
+   * On MySQL/MariaDB, PostgreSQL and SQLite this is one native upsert per chunk
+   * of buckets, with every merge done by the database against the row as it is
+   * at write time, so concurrent writers (other pods) never lose each other's
+   * increments. Buckets are written in key order, so two writers touching the
+   * same buckets lock them in the same order. Other drivers fall back to a
+   * transactional read-modify-write.
    */
   async recordRollups(deltas: RollupDelta[]): Promise<void> {
     if (deltas.length === 0) return;
     const em = this.forkEm();
+    const platform = em.getPlatform();
+    const dialect = rollupUpsertDialect(platform.constructor.name);
+    if (dialect === null) {
+      await this.recordRollupsReadModifyWrite(em, deltas);
+      return;
+    }
+    const tableName = em.getMetadata().get(TelescopeRollup).tableName;
+    const quote = (identifier: string): string => platform.quoteIdentifier(identifier);
+    const buckets = mergeDeltasByBucket(deltas);
+    const connection = em.getConnection();
+    for (let offset = 0; offset < buckets.length; offset += ROLLUP_UPSERT_CHUNK) {
+      const chunk = buckets.slice(offset, offset + ROLLUP_UPSERT_CHUNK);
+      await connection.execute(
+        rollupUpsertSql(dialect, quote, tableName, chunk.length),
+        chunk.flatMap((delta) => [
+          delta.metric,
+          delta.bucketStart,
+          delta.count,
+          delta.sum,
+          delta.max,
+          JSON.stringify(normalizeHistogram(delta.histogram)),
+        ]),
+        'run',
+      );
+    }
+  }
+
+  private async recordRollupsReadModifyWrite(
+    em: EntityManager,
+    deltas: RollupDelta[],
+  ): Promise<void> {
     await em.transactional(async (tx) => {
       for (const delta of deltas) {
         const existing = await tx.findOne(TelescopeRollup, {
@@ -954,4 +982,93 @@ export class MikroOrmStorageProvider
       histogram: normalizeHistogram(row.histogram),
     }));
   }
+}
+
+/** Buckets per rollup upsert statement (6 bound values each). */
+const ROLLUP_UPSERT_CHUNK = 100;
+
+type RollupUpsertDialect = 'mysql' | 'postgresql' | 'sqlite';
+
+/** The upsert flavour for a MikroORM platform class name, or null when it has none here. */
+function rollupUpsertDialect(platformName: string): RollupUpsertDialect | null {
+  const name = platformName.toLowerCase();
+  if (name.includes('mysql') || name.includes('maria')) return 'mysql';
+  if (name.includes('postgre')) return 'postgresql';
+  if (name.includes('sqlite') || name.includes('libsql')) return 'sqlite';
+  return null;
+}
+
+/** One delta per (metric, bucketStart), sorted by that key: an upsert may touch a row once. */
+function mergeDeltasByBucket(deltas: RollupDelta[]): RollupDelta[] {
+  const byKey = new Map<string, RollupDelta>();
+  for (const delta of deltas) {
+    const key = `${delta.metric}\u0000${delta.bucketStart}`;
+    const existing = byKey.get(key);
+    if (existing === undefined) {
+      byKey.set(key, { ...delta, histogram: normalizeHistogram(delta.histogram) });
+    } else {
+      existing.count += delta.count;
+      existing.sum += delta.sum;
+      existing.max = Math.max(existing.max, delta.max);
+      existing.histogram = mergeHistograms(existing.histogram, delta.histogram);
+    }
+  }
+  return [...byKey.values()].sort(
+    (a, b) =>
+      (a.metric < b.metric ? -1 : a.metric > b.metric ? 1 : 0) || a.bucketStart - b.bucketStart,
+  );
+}
+
+/**
+ * `INSERT ... ON CONFLICT/ON DUPLICATE KEY UPDATE` for `rows` rollup buckets.
+ * The histogram is a fixed-length JSON array, rebuilt cell by cell as the sum
+ * of the stored cell (0 when the column is null or short) and the new one.
+ */
+function rollupUpsertSql(
+  dialect: RollupUpsertDialect,
+  quote: (identifier: string) => string,
+  tableName: string,
+  rows: number,
+): string {
+  const table = quote(tableName);
+  const columns = ['metric', 'bucket_start', 'count', 'sum', 'max', 'histogram'];
+  const values = Array.from({ length: rows }, () => `(${columns.map(() => '?').join(', ')})`);
+  const insert = `insert into ${table} (${columns.map(quote).join(', ')}) values ${values.join(', ')}`;
+  const [count, sum, max, histogram] = ['count', 'sum', 'max', 'histogram'].map(quote) as [
+    string,
+    string,
+    string,
+    string,
+  ];
+  const cells = Array.from({ length: HISTOGRAM_BUCKET_COUNT }, (_, index) => index);
+
+  if (dialect === 'mysql') {
+    const cell = (source: string, index: number): string =>
+      `cast(coalesce(json_extract(${source}, '$[${index}]'), 0) as signed)`;
+    const merged = cells
+      .map((index) => `${cell(histogram, index)} + ${cell(`values(${histogram})`, index)}`)
+      .join(', ');
+    return `${insert} on duplicate key update ${count} = ${count} + values(${count}), ${sum} = ${sum} + values(${sum}), ${max} = greatest(${max}, values(${max})), ${histogram} = json_array(${merged})`;
+  }
+
+  const current = (column: string): string => `${table}.${column}`;
+  const incoming = (column: string): string => `excluded.${column}`;
+  const conflict = `on conflict (${quote('metric')}, ${quote('bucket_start')}) do update set`;
+  const totals = `${count} = ${current(count)} + ${incoming(count)}, ${sum} = ${current(sum)} + ${incoming(sum)}`;
+
+  if (dialect === 'postgresql') {
+    const cell = (source: string, index: number): string =>
+      `coalesce((${source} ->> ${index})::bigint, 0)`;
+    const merged = cells
+      .map((index) => `${cell(current(histogram), index)} + ${cell(incoming(histogram), index)}`)
+      .join(', ');
+    return `${insert} ${conflict} ${totals}, ${max} = greatest(${current(max)}, ${incoming(max)}), ${histogram} = jsonb_build_array(${merged})`;
+  }
+
+  const cell = (source: string, index: number): string =>
+    `coalesce(json_extract(${source}, '$[${index}]'), 0)`;
+  const merged = cells
+    .map((index) => `${cell(current(histogram), index)} + ${cell(incoming(histogram), index)}`)
+    .join(', ');
+  return `${insert} ${conflict} ${totals}, ${max} = max(${current(max)}, ${incoming(max)}), ${histogram} = json_array(${merged})`;
 }

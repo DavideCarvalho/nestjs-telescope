@@ -37,6 +37,7 @@ interface HeldLease {
 export class InMemoryStorageProvider
   implements BoundedPruneCapable, LeaseCapableStorage, RollupStore
 {
+  /** Every entry, kept sorted oldest-first so a page is read off the newest end. */
   private entries: Entry[] = [];
   /** Materialized rollups keyed `${metric}|${bucketStart}`. */
   private rollups = new Map<string, RollupBucket>();
@@ -49,7 +50,7 @@ export class InMemoryStorageProvider
   private readonly leases = new Map<string, HeldLease>();
 
   async store(entries: Entry[]): Promise<void> {
-    this.entries.push(...entries);
+    for (const entry of entries) this.insertSorted(entry);
   }
 
   async update(id: string, patch: Partial<Entry>): Promise<void> {
@@ -57,7 +58,13 @@ export class InMemoryStorageProvider
     if (index === -1) return;
     const existing = this.entries[index];
     if (existing === undefined) return;
-    this.entries[index] = { ...existing, ...patch, id: existing.id };
+    const updated = { ...existing, ...patch, id: existing.id };
+    if (updated.createdAt.getTime() === existing.createdAt.getTime()) {
+      this.entries[index] = updated;
+      return;
+    }
+    this.entries.splice(index, 1);
+    this.insertSorted(updated);
   }
 
   async find(id: string): Promise<EntryWithBatch | null> {
@@ -71,26 +78,32 @@ export class InMemoryStorageProvider
   async get(query: EntryQuery): Promise<Page<Entry>> {
     // Build the ids membership set once (not per entry) when an ids filter is set.
     const idSet = query.ids !== undefined ? new Set(query.ids) : null;
-    const filtered = [...this.entries]
-      .filter((entry) => this.matches(entry, query, idSet))
-      .sort(this.newestFirst);
-
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
-
-    const afterCursor = cursor
-      ? filtered.filter(
-          (e) =>
-            e.createdAt.getTime() < cursor.createdAt ||
-            (e.createdAt.getTime() === cursor.createdAt && e.id < cursor.id),
-        )
-      : filtered;
-
     const limit =
       query.limit !== undefined && Number.isInteger(query.limit) && query.limit > 0
         ? query.limit
         : DEFAULT_LIMIT;
-    const slice = afterCursor.slice(0, limit);
-    const hasMore = afterCursor.length > limit;
+
+    // Walk newest-first from the newest entry the cursor/`before` bound allows,
+    // stopping at the `after` bound or once one entry past the page is found.
+    let newestMs = Number.POSITIVE_INFINITY;
+    if (cursor !== null) newestMs = cursor.createdAt;
+    if (query.before !== undefined) newestMs = Math.min(newestMs, query.before.getTime() - 1);
+    const afterMs = query.after?.getTime();
+    const page: Entry[] = [];
+    for (let index = this.lastIndexAtOrBefore(newestMs); index >= 0; index -= 1) {
+      const entry = this.entries[index];
+      if (entry === undefined) continue;
+      const createdAtMs = entry.createdAt.getTime();
+      if (afterMs !== undefined && createdAtMs <= afterMs) break;
+      if (cursor !== null && createdAtMs === cursor.createdAt && !(entry.id < cursor.id)) continue;
+      if (!this.matches(entry, query, idSet)) continue;
+      page.push(entry);
+      if (page.length > limit) break;
+    }
+
+    const slice = page.slice(0, limit);
+    const hasMore = page.length > limit;
     const last = slice.at(-1);
     // omitContent: hand back shallow copies with content nulled so callers can
     // never accidentally depend on content during a content-less aggregate scan.
@@ -99,6 +112,37 @@ export class InMemoryStorageProvider
       data,
       nextCursor: hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
     };
+  }
+
+  /** Index of the newest entry created at or before `ms`, or -1. */
+  private lastIndexAtOrBefore(ms: number): number {
+    let low = 0;
+    let high = this.entries.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      const entry = this.entries[middle];
+      if (entry !== undefined && entry.createdAt.getTime() <= ms) low = middle + 1;
+      else high = middle;
+    }
+    return low - 1;
+  }
+
+  /** Inserts `entry` at its sorted position; appending is the common case. */
+  private insertSorted(entry: Entry): void {
+    const last = this.entries.at(-1);
+    if (last === undefined || this.oldestFirst(last, entry) <= 0) {
+      this.entries.push(entry);
+      return;
+    }
+    let low = 0;
+    let high = this.entries.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      const candidate = this.entries[middle];
+      if (candidate !== undefined && this.oldestFirst(candidate, entry) <= 0) low = middle + 1;
+      else high = middle;
+    }
+    this.entries.splice(low, 0, entry);
   }
 
   async batch(batchId: string): Promise<Entry[]> {
@@ -130,15 +174,20 @@ export class InMemoryStorageProvider
 
   async prune(olderThan: Date, keepLast?: number): Promise<number> {
     const before = this.entries.length;
-    let survivors = this.entries.filter((entry) => entry.createdAt >= olderThan);
+    const survivors = this.entries.filter((entry) => entry.createdAt >= olderThan);
     if (keepLast !== undefined && survivors.length < this.entries.length) {
-      const pruned = [...this.entries]
-        .filter((entry) => entry.createdAt < olderThan)
-        .sort(this.newestFirst)
-        .slice(0, keepLast);
-      survivors = [...survivors, ...pruned];
+      const reprieved = new Set(
+        this.entries
+          .filter((entry) => entry.createdAt < olderThan)
+          .sort(this.newestFirst)
+          .slice(0, keepLast),
+      );
+      this.entries = this.entries.filter(
+        (entry) => entry.createdAt >= olderThan || reprieved.has(entry),
+      );
+    } else {
+      this.entries = survivors;
     }
-    this.entries = survivors;
     return before - this.entries.length;
   }
 
@@ -157,8 +206,10 @@ export class InMemoryStorageProvider
     const survivors = this.entries.filter((entry) => !inScope(entry));
     if (keepLast !== undefined && survivors.length < this.entries.length) {
       // Resurrect the newest `keepLast` of the doomed rows, mirroring prune().
-      const reprieved = this.entries.filter(inScope).sort(this.newestFirst).slice(0, keepLast);
-      this.entries = [...survivors, ...reprieved];
+      const reprieved = new Set(
+        this.entries.filter(inScope).sort(this.newestFirst).slice(0, keepLast),
+      );
+      this.entries = this.entries.filter((entry) => !inScope(entry) || reprieved.has(entry));
     } else {
       this.entries = survivors;
     }

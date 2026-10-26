@@ -115,6 +115,8 @@ export interface TelescopeHealth extends RecorderSelfMetrics {
 
 /** Iterations used by the on-demand capture-cost micro-benchmark. */
 const CAPTURE_COST_BENCHMARK_ITERATIONS = 1000;
+/** How long one capture-cost measurement is reported before /health re-measures. */
+const CAPTURE_COST_TTL_MS = 60_000;
 
 @Injectable()
 export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
@@ -128,6 +130,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   private alerter: TelescopeAlerter | null = null;
   /** AI exception-diagnosis coordinator, or `null` when `ai` is unconfigured. */
   private readonly diagnosis: DiagnosisCoordinator | null;
+  private captureCost: { nanos: number; measuredAtMs: number } | null = null;
 
   constructor(
     @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
@@ -188,11 +191,12 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       onFlushStored: (entries) => {
         this.diagnosis?.observeFlush(entries);
         this.entryEvents.emitTypes(entries.map((e) => e.type));
+        // Exception alerts queue behind the flush (the alerter serializes them
+        // and never rejects), so a slow channel cannot stall the next flush.
+        void this.alerter?.evaluateFlush(entries);
         // Span/trace export and any other extension flush consumers. Awaited so
         // the flush chain settles them; the registry isolates each (never throws).
-        const observers = this.extensions.notifyFlush(entries);
-        const alert = this.alerter?.evaluateFlush(entries);
-        return Promise.all([observers, alert]).then(() => undefined);
+        return this.extensions.notifyFlush(entries);
       },
     });
     // Construct the alerter AFTER the Recorder so its `droppedCount` baseline can
@@ -295,6 +299,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     }
     if (this.alerter) {
       this.alerter.stop();
+      await this.alerter.idle();
       this.alerter = null;
     }
     await this.recorder.flush();
@@ -445,7 +450,19 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     return {
       ...this.recorder.getSelfMetrics(),
       enabled: this.config.enabled,
-      captureCostNanos: this.recorder.benchmarkRecordCost(CAPTURE_COST_BENCHMARK_ITERATIONS),
+      captureCostNanos: this.captureCostNanos(),
     };
+  }
+
+  /** The capture-cost benchmark, re-run at most once per {@link CAPTURE_COST_TTL_MS}. */
+  private captureCostNanos(): number {
+    const nowMs = Date.now();
+    if (this.captureCost === null || nowMs - this.captureCost.measuredAtMs >= CAPTURE_COST_TTL_MS) {
+      this.captureCost = {
+        nanos: this.recorder.benchmarkRecordCost(CAPTURE_COST_BENCHMARK_ITERATIONS),
+        measuredAtMs: nowMs,
+      };
+    }
+    return this.captureCost.nanos;
   }
 }

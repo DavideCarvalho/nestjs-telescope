@@ -1,4 +1,5 @@
 // packages/logs/src/log-extract.ts
+import type { LogSinkInput } from './log-sink.js';
 
 /**
  * Logger contexts that originate inside Telescope itself. Recording from these
@@ -48,4 +49,24 @@ export function messageToString(message: unknown): string {
     // Circular / non-serializable value — String() never throws here.
     return String(message);
   }
+}
+
+/**
+ * A {@link LogSinkInput} whose `message` is stringified on first read, so a log
+ * line the recorder drops (sampled out, paused, disabled) is never serialized.
+ */
+export function lazyLogInput(
+  level: string,
+  message: unknown,
+  context: string | null,
+): LogSinkInput {
+  let text: string | undefined;
+  return {
+    level,
+    get message() {
+      text ??= messageToString(message);
+      return text;
+    },
+    context,
+  };
 }
