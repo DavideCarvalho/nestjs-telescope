@@ -202,6 +202,60 @@ function scopedWhere(scope: {
   return where;
 }
 
+/**
+ * The oldest `limit` rows of `where`, deleted: SELECT their ids, then DELETE BY PRIMARY KEY.
+ *
+ * This shape is chosen for PORTABILITY, and the obvious alternative is not portable: `DELETE ...
+ * ORDER BY created_at LIMIT n` is MySQL/MariaDB-only. PostgreSQL has no ORDER BY/LIMIT on DELETE at
+ * all (it needs exactly this subquery on the primary key), SQLite only has it when compiled with
+ * SQLITE_ENABLE_UPDATE_DELETE_LIMIT, and SQL Server spells it `DELETE TOP (n)` with no ordering.
+ * Expressed at the ORM level as find-then-delete it renders correctly on every driver MikroORM
+ * supports, takes no row locks to read, and the DELETE touches exactly those primary keys.
+ *
+ * With a `type = ?` filter the read is a range of the `(type, created_at, id)` index, already in
+ * the ORDER BY's order: it starts at that type's oldest row, stops after `limit` matches, and costs
+ * one index seek when nothing of that type has expired. Without it the planner sorts or walks
+ * another index past the rows of every other type, on PostgreSQL every row of the table.
+ *
+ * `hasMore` comes from what was SELECTED, not from what was deleted: another pruner racing us can
+ * delete some of these rows first, which lowers `deleted` while saying nothing about whether work
+ * remains.
+ */
+async function pruneOldestBatch(
+  em: EntityManager,
+  where: FilterQuery<TelescopeEntryRow>,
+  limit: number,
+): Promise<BoundedPruneResult> {
+  const doomed = await em.find(TelescopeEntry, where, {
+    orderBy: { createdAt: 'asc', id: 'asc' },
+    limit,
+    fields: ['id'],
+  });
+  if (doomed.length === 0) return { deleted: 0, hasMore: false };
+  const deleted = await em.nativeDelete(TelescopeEntry, {
+    id: { $in: doomed.map((row) => row.id) },
+  });
+  return { deleted, hasMore: doomed.length === limit };
+}
+
+/**
+ * Every `type` present, one index seek each (`type > ?`, first in order): a skip scan by hand, since
+ * a plain `DISTINCT` reads the whole index on engines without one (PostgreSQL before 18).
+ */
+async function distinctTypes(em: EntityManager): Promise<string[]> {
+  const types: string[] = [];
+  for (;;) {
+    const previous = types[types.length - 1];
+    const [next] = await em.find(
+      TelescopeEntry,
+      previous === undefined ? {} : { type: { $gt: previous } },
+      { orderBy: { type: 'asc' }, fields: ['type'], limit: 1 },
+    );
+    if (!next) return types;
+    types.push(next.type);
+  }
+}
+
 function resolveLimit(limit: number | undefined): number {
   return typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT;
 }
@@ -726,35 +780,28 @@ export class MikroOrmStorageProvider
 
   async pruneScopedBatch(input: BoundedPruneScope): Promise<BoundedPruneResult> {
     const em = this.forkEm();
-    const where = scopedWhere(input);
-    // SELECT the oldest `limit` ids, then DELETE BY PRIMARY KEY. This shape is
-    // chosen for PORTABILITY, and the obvious alternative is not portable:
-    // `DELETE ... ORDER BY created_at LIMIT n` is MySQL/MariaDB-only. PostgreSQL
-    // has no ORDER BY/LIMIT on DELETE at all (it needs exactly this subquery on
-    // the primary key), SQLite only has it when compiled with
-    // SQLITE_ENABLE_UPDATE_DELETE_LIMIT, and SQL Server spells it `DELETE TOP (n)`
-    // with no ordering. Since this provider is driver-agnostic — it is the same
-    // class on MySQL, PostgreSQL, MariaDB and SQLite — it cannot emit a dialect's
-    // private syntax. Expressing the bound at the ORM level as find-then-delete
-    // renders correctly on every driver MikroORM supports.
-    //
-    // It is also the better plan on the table that motivated this. The SELECT
-    // walks the `created_at` index from the oldest row and stops after `limit`
-    // matches instead of scanning the table, and it takes no row locks; the
-    // DELETE then touches exactly those primary keys and commits in milliseconds.
-    const doomed = await em.find(TelescopeEntry, where, {
-      orderBy: { createdAt: 'asc', id: 'asc' },
-      limit: input.limit,
-      fields: ['id'],
-    });
-    if (doomed.length === 0) return { deleted: 0, hasMore: false };
-    const deleted = await em.nativeDelete(TelescopeEntry, {
-      id: { $in: doomed.map((row) => row.id) },
-    });
-    // `hasMore` comes from what was SELECTED, not from what was deleted: another
-    // pruner racing us can delete some of these rows first, which lowers
-    // `deleted` while saying nothing about whether work remains.
-    return { deleted, hasMore: doomed.length === input.limit };
+    const limit = input.limit;
+    if (input.type !== undefined || !input.excludeTypes?.length) {
+      return pruneOldestBatch(em, scopedWhere(input), limit);
+    }
+    // All types but some, one type at a time. As one `type NOT IN (…)` query the planner walks the
+    // `created_at` index from the oldest row and steps over every row of the excluded types, which
+    // are excluded because they are kept longer: on a table where they hold most of the rows, each
+    // batch read the whole retained backlog to find a few hundred rows (10 s for 1,000 rows next to
+    // 2.8M kept `durable` entries). Per type it reads only that type's expired rows.
+    const excluded = new Set(input.excludeTypes);
+    let deleted = 0;
+    for (const type of await distinctTypes(em)) {
+      if (excluded.has(type)) continue;
+      const batch = await pruneOldestBatch(
+        em,
+        scopedWhere({ before: input.before, type }),
+        limit - deleted,
+      );
+      deleted += batch.deleted;
+      if (batch.hasMore) return { deleted, hasMore: true };
+    }
+    return { deleted, hasMore: false };
   }
 
   async tryAcquireLease(
