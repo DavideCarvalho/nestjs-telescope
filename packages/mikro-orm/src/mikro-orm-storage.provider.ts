@@ -633,13 +633,29 @@ export class MikroOrmStorageProvider
     return this.orm.em.fork();
   }
 
+  /**
+   * Plain multi-row INSERTs, not `em.create()` + `flush()`: entries are write-once, so managed
+   * entities and change sets bought nothing and cost several times the INSERT itself on a busy
+   * host. Chunked by the ORM's `batchSize` so a large flush stays under every driver's
+   * bound-parameter limit; a flush spanning several chunks runs in one transaction so it lands
+   * whole or not at all, and the recorder's retry never re-inserts rows a failed attempt wrote.
+   */
   async store(entries: Entry[]): Promise<void> {
     if (entries.length === 0) return;
     const em = this.forkEm();
-    for (const entry of entries) {
-      em.create(TelescopeEntry, entryToRowData(entry));
+    const chunk = em.config.get('batchSize');
+    if (entries.length <= chunk) {
+      await em.insertMany(TelescopeEntry, entries.map(entryToRowData));
+      return;
     }
-    await em.flush();
+    await em.transactional(async (tx) => {
+      for (let offset = 0; offset < entries.length; offset += chunk) {
+        await tx.insertMany(
+          TelescopeEntry,
+          entries.slice(offset, offset + chunk).map(entryToRowData),
+        );
+      }
+    });
   }
 
   async update(id: string, patch: Partial<Entry>): Promise<void> {

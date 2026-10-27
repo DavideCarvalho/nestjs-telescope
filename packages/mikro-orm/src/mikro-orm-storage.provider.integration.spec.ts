@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import type { Entry } from '@dudousxd/nestjs-telescope';
 import { EntitySchema, MikroORM, RequestContext } from '@mikro-orm/core';
 import { SqliteDriver } from '@mikro-orm/sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MikroOrmStorageProvider } from './mikro-orm-storage.provider.js';
 import { TelescopeEntry } from './telescope-entry.entity.js';
 
@@ -123,6 +123,82 @@ describe('MikroOrmStorageProvider integration (sqlite)', () => {
 
     const batch = await provider.batch('bx');
     expect(batch.map((e) => e.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  async function initLoggedProvider(statements: string[]): Promise<void> {
+    await provider.close();
+    provider = new MikroOrmStorageProvider({
+      driver: SqliteDriver,
+      dbName: ':memory:',
+      batchSize: 200,
+      debug: ['query'],
+      colors: false,
+      logger: (message) => statements.push(message),
+    });
+    await provider.init();
+    statements.length = 0;
+  }
+
+  function flushEntries(count: number): Entry[] {
+    return Array.from({ length: count }, (_, i) =>
+      makeEntry({ batchId: 'flush', sequence: i, content: { i }, tags: ['t', `n:${i}`] }),
+    );
+  }
+
+  it('stores a flush as plain multi-row INSERTs, chunked by the ORM batch size, in one transaction', async () => {
+    const statements: string[] = [];
+    await initLoggedProvider(statements);
+
+    await provider.store(flushEntries(450));
+
+    // One statement per 200 rows, all inside a single transaction.
+    expect(statements.filter((s) => /\bbegin\b/i.test(s))).toHaveLength(1);
+    expect(statements.filter((s) => /\bcommit\b/i.test(s))).toHaveLength(1);
+    expect(statements.filter((s) => /savepoint/i.test(s))).toEqual([]);
+    expect(statements.filter((s) => /insert into/i.test(s))).toHaveLength(3);
+    const stored = await provider.batch('flush');
+    expect(stored).toHaveLength(450);
+    expect(stored[449]).toMatchObject({ content: { i: 449 }, tags: ['t', 'n:449'] });
+  });
+
+  it('stores a flush that fits one statement without opening a transaction', async () => {
+    const statements: string[] = [];
+    await initLoggedProvider(statements);
+
+    await provider.store(flushEntries(150));
+
+    expect(statements.filter((s) => /\bbegin\b|savepoint/i.test(s))).toEqual([]);
+    expect(statements.filter((s) => /insert into/i.test(s))).toHaveLength(1);
+    expect(await provider.batch('flush')).toHaveLength(150);
+  });
+
+  it('a flush whose later chunk fails persists nothing, so the retry stores every entry once', async () => {
+    const statements: string[] = [];
+    await initLoggedProvider(statements);
+    const original = SqliteDriver.prototype.nativeInsertMany;
+    let calls = 0;
+    const spy = vi.spyOn(SqliteDriver.prototype, 'nativeInsertMany').mockImplementation(function (
+      this: SqliteDriver,
+      ...args
+    ) {
+      calls++;
+      if (calls === 2) return Promise.reject(new Error('connection lost'));
+      return original.apply(this, args);
+    });
+    const entries = flushEntries(450);
+
+    try {
+      await expect(provider.store(entries)).rejects.toThrow('connection lost');
+      expect(await provider.batch('flush')).toEqual([]);
+
+      await provider.store(entries);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const stored = await provider.batch('flush');
+    expect(stored).toHaveLength(450);
+    expect(new Set(stored.map((e) => e.id)).size).toBe(450);
   });
 
   it('omitContent projects every column except content, returning content null', async () => {
