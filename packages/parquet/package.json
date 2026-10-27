@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-parquet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tiered storage for @dudousxd/nestjs-telescope — a hot StorageProvider plus a cold Parquet tier on S3 or disk, read in pure JS (hyparquet) or optionally DuckDB.",
   "license": "MIT",
   "repository": {
