@@ -495,7 +495,9 @@ export class ParquetColdStore {
     for (const object of listing.objects) {
       const partition = parseFileKey(object.key);
       if (partition === null) continue;
-      byHour.set(partition.hourStart, [...(byHour.get(partition.hourStart) ?? []), object]);
+      const files = byHour.get(partition.hourStart);
+      if (files === undefined) byHour.set(partition.hourStart, [object]);
+      else files.push(object);
     }
     return new Map([...byHour.entries()].sort((a, b) => b[0] - a[0]));
   }

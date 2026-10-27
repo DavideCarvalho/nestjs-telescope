@@ -53,6 +53,7 @@ How it works:
 - **Lifecycle.** `init()` is awaited by `TelescopeModule` at startup; `close()` closes the owned connection at shutdown. You call neither.
 - **Keyset pagination** is newest-first; the cursor encodes a `(createdAt, id)` position, so paging resumes even after older entries are pruned.
 - **Flushes are plain multi-row `INSERT`s.** A flush is written with `em.insertMany`, not through the unit of work: no managed entities, no change sets. Each statement holds at most the ORM's `batchSize` rows (MikroORM's default is 300), which keeps a large `recorder.flushBatchSize` under PostgreSQL's 65,535 bound-parameter limit and SQLite's variable limit. A flush that needs several statements runs them in one transaction, so it is stored whole or not at all and the recorder's retry never meets rows from the failed attempt.
+- **Rollups merge in the database.** `telescope_rollups` is written with one native upsert per 100 buckets (`ON DUPLICATE KEY UPDATE` on MySQL/MariaDB, `ON CONFLICT … DO UPDATE` on PostgreSQL and SQLite/libSQL). Count and sum add, max keeps the larger value, and the histogram adds cell by cell against the row as stored at write time, so pods writing the same minute never lose or reject each other's increments. Buckets are written in key order, so concurrent writers lock rows in the same order. Other drivers use a transactional read-modify-write, which is only safe with a single writer.
 
 <Callout type="info">
   This same package ships the MikroORM query watcher and N+1 detector — see [Watchers](/docs/packages/watchers).
@@ -82,6 +83,8 @@ Notes:
 
 - **The host owns the connection.** The provider never closes the `ioredis` client it was given (`close()` is a no-op). Manage the connection's lifecycle and `quit()` yourself.
 - **Pruning is explicit.** There's no per-key TTL — old entries are removed by the core pruner via the `prune` config (e.g. `prune: { after: '24h' }`).
+- **Two copies per entry.** Each entry is stored in full under `e:<id>` and without its content under `m:<id>`, written in the same `MULTI`. Reads that skip content (stats and pulse scans, batched id reads, prune bookkeeping) fetch only the `m:` copies, at the cost of storing each entry's metadata twice. Entries without an `m:` copy are read from `e:<id>`. A `search` still reads full entries, because it matches on content.
+- **Index choice.** A query with a `familyHash` pages the family index, the narrowest one. Rollup reads take two pipelined round trips (bucket indexes, then bucket hashes) whatever the window.
 - **`keyPrefix`.** Every key is namespaced; the default prefix is `telescope:`. Override it to share one Redis across apps:
 
   ```ts

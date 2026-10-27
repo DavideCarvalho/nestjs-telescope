@@ -448,3 +448,48 @@ describe('LogsWatcher', () => {
     });
   });
 });
+
+describe('LogsWatcher message serialization', () => {
+  /** An object message that counts how often it is serialized. */
+  function countingMessage(): { message: { toJSON(): unknown }; serialized: () => number } {
+    let count = 0;
+    return {
+      message: {
+        toJSON() {
+          count += 1;
+          return { order: 42 };
+        },
+      },
+      serialized: () => count,
+    };
+  }
+
+  it('serializes an object message only when the recorder reads it (console-logger sink)', () => {
+    const { ctx, recorded } = makeHarness();
+    new LogsWatcher({ autoPatch: false }).register(ctx);
+    const { message, serialized } = countingMessage();
+
+    quietLogger().log(message, 'Orders');
+
+    expect(serialized()).toBe(0);
+    expect((recorded[0]!.content as { message: string }).message).toBe('{"order":42}');
+    expect((recorded[0]!.content as { message: string }).message).toBe('{"order":42}');
+    expect(serialized()).toBe(1);
+  });
+
+  it('serializes an object message only when the recorder reads it (patched Logger)', () => {
+    const { ctx, recorded } = makeHarness();
+    new LogsWatcher().register(ctx);
+    const { message, serialized } = countingMessage();
+
+    new Logger('Orders').log(message);
+
+    expect(serialized()).toBe(0);
+    expect(recorded[0]!.content).toEqual({
+      level: 'log',
+      message: '{"order":42}',
+      context: 'Orders',
+    });
+    expect(serialized()).toBe(1);
+  });
+});

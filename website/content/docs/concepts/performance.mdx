@@ -16,6 +16,8 @@ The request watcher records inside `response.once('finish', …)` — it fires *
 
 Query watchers call `record()` synchronously, in the query's async context (that's what enables correlation). `record()` runs `enrich()` — the redaction object-walk plus a trace lookup, taggers, and the sampling filter — then a ring-buffer push. **No I/O**; the flush is an async timer. So the per-query host cost is just `enrich()`, dominated by the redaction walk over the small `{ sql, bindings }` payload.
 
+Work that only a kept entry needs is deferred until the recorder keeps it. The MikroORM, TypeORM and Prisma query watchers hand `record()` the SQL family hash, and the logs watcher the serialized message, as lazy fields: the recorder computes them after its enabled, pause and sampling checks, still synchronously inside `record()`. A query dropped by sampling never pays for the hash. Bindings are copied up front, because the ORM may reuse its parameter array after the call.
+
 Measured live against a production app: query capture is **~8.7µs**, against millisecond-scale query I/O. Request capture is **0ms** (it's a finish-callback). Memory stays flat under sustained load.
 
 <Callout type="warn" title="Why redaction stays synchronous">
@@ -28,8 +30,13 @@ The read path uses a Pulse-style rollup model. A `telescope_rollups` table holds
 
 - **`timeseries`** reads rollups → flat cost regardless of raw row count.
 - **`pulse` / `stats`** estimate p50 / p95 / p99 from the histogram buckets — `O(buckets)`, with a raw-row fallback — instead of scanning every entry. The histograms are fixed-size integer arrays with no retention, so the read path stays memory-safe even at production volume.
+- **Per-type stats** (the header of each type page, polled every few seconds) scan the window with `omitContent` and then read content by id only for what they display: the first entry of each query or exception family (its SQL or class/message labels the family), plus exceptions without a family hash. Request status codes come from each entry's `status:<code>` tag; a request without exactly one such tag has its content read. Other types read no content. Cache stats are the exception: hit/miss lives only in the content, so they scan with it.
 
 Any residual floor on a remote database is network round-trip time (one RTT per query), not payload size — the levers are round-trip *count* and avoiding raw scans, both of which the rollup model already addresses.
+
+## Alerting runs behind the flush
+
+The `new-exception` and `every-exception` rules are evaluated on each flush's stored exceptions, but not inside the flush. A firing alert waits on store reads, the `geoLookup` hook, AI diagnosis and every channel. Instead, each flush's exceptions go on the alerter's own queue, which evaluates one flush at a time, in flush order, so a slow webhook cannot hold the ring buffer up. At most 10,000 exception entries wait on that queue. Past that, a flush's exceptions are not evaluated, and Telescope logs one warning until the queue drains. See [Alerts](/docs/dashboard#alerts).
 
 ## Bounded memory under backpressure
 
@@ -92,6 +99,6 @@ Telescope instruments itself with counters only (zero added host cost) and expos
 GET /telescope/api/health
 ```
 
-It reports the buffered entry count, the ring-buffer high-water mark, flush durations and frequency, the dropped count, and an on-demand `captureCostNanos`. The dashboard's **Overview** renders this as a *Telescope health* card: host-path µs per capture, buffer pressure, flush p95, and drops.
+It reports the buffered entry count, the ring-buffer high-water mark, flush durations and frequency, the dropped count, and `captureCostNanos`. That last one comes from a 1,000-iteration micro-benchmark of `enrich()`, which blocks the event loop for a few milliseconds, so it runs at most once a minute and polls in between report the last measurement. The dashboard's **Overview** renders this as a *Telescope health* card: host-path µs per capture, buffer pressure, flush p95, and drops.
 
 So you can *see*, on your own data, that Telescope costs ~X µs per query and ~0ms per request — and that it's keeping up.

@@ -1,6 +1,6 @@
 // packages/logs/src/telescope-console.logger.ts
 import { ConsoleLogger } from '@nestjs/common';
-import { contextFromParams, isInternalContext, messageToString } from './log-extract.js';
+import { contextFromParams, isInternalContext, lazyLogInput } from './log-extract.js';
 import { emitTelescopeLog, isTelescopeRecordingLog } from './log-sink.js';
 
 /**
@@ -60,7 +60,7 @@ export class TelescopeConsoleLogger extends ConsoleLogger {
       if (isTelescopeRecordingLog()) return;
       const context = contextFromParams(optionalParams) ?? this.context ?? null;
       if (isInternalContext(context)) return;
-      emitTelescopeLog({ level, message: messageToString(message), context });
+      emitTelescopeLog(lazyLogInput(level, message, context));
     } catch {
       // best-effort capture; logging must never fail because of Telescope
     }

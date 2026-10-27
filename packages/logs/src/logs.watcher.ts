@@ -6,7 +6,7 @@ import {
   type WatcherContext,
 } from '@dudousxd/nestjs-telescope';
 import { Logger } from '@nestjs/common';
-import { contextFromParams, isInternalContext, messageToString } from './log-extract.js';
+import { contextFromParams, isInternalContext, lazyLogInput } from './log-extract.js';
 import {
   type LogSinkInput,
   isTelescopeRecordingLog,
@@ -258,7 +258,7 @@ export class LogsWatcher implements Watcher {
   ): void {
     const context = contextFromParams(optionalParams) ?? instanceContext;
     if (isInternalContext(context)) return;
-    this.safeRecord(ctx, { level, message: messageToString(message), context });
+    this.safeRecord(ctx, lazyLogInput(level, message, context));
   }
 
   /** Build + record a log entry, swallowing any failure so a telescope error can
@@ -272,7 +272,10 @@ export class LogsWatcher implements Watcher {
         tags: ['log', `log:${input.level}`, ...this.extraTags],
         content: {
           level: input.level,
-          message: input.message,
+          // Read by the recorder only once it keeps the entry.
+          get message() {
+            return input.message;
+          },
           context: input.context,
         },
       };

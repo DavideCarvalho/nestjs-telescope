@@ -108,11 +108,30 @@ return 1
 `;
 
 /**
+ * Subtract removed entries' tag counts from the tag-count hash, dropping a tag's
+ * field once its count reaches zero so the hash only holds live tags.
+ *
+ * KEYS: [tagsKey]  ARGV: [tag1, count1, tag2, count2, ...]
+ */
+const DECREMENT_TAGS_LUA = `
+for i = 1, #ARGV, 2 do
+  local left = redis.call('HINCRBY', KEYS[1], ARGV[i], -tonumber(ARGV[i + 1]))
+  if left <= 0 then
+    redis.call('HDEL', KEYS[1], ARGV[i])
+  end
+end
+return 1
+`;
+
+/**
  * Redis-backed shared storage provider (ioredis). Suitable for multi-replica
  * deployments where every instance reads/writes the same store.
  *
  * Key scheme (all prefixed with `keyPrefix`):
  * - `e:<id>`               string  — JSON-serialized {@link Entry}
+ * - `m:<id>`               string  — the same entry without `content`, read by
+ *                                    content-less scans; entries stored before it
+ *                                    existed are read from `e:<id>` instead
  * - `idx`                  ZSET    — score 0, member `lexMember(createdAt,id)` (newest-first)
  * - `idx:type:<type>`      ZSET    — same encoding, one per type
  * - `idx:tag:<tag>`        ZSET    — same encoding, one per tag
@@ -148,6 +167,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     for (const entry of entries) {
       const member = lexMember(entry.createdAt.getTime(), entry.id);
       pipeline.set(this.entryKey(entry.id), JSON.stringify(entry));
+      pipeline.set(this.metaKey(entry.id), JSON.stringify(withoutContent(entry)));
       pipeline.zadd(this.indexKey(), 0, member);
       pipeline.zadd(this.typeIndexKey(entry.type), 0, member);
       if (entry.familyHash !== null) {
@@ -242,6 +262,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     const max = this.maxBound(query);
     const needsPostFilter = this.needsPostFilter(query, indexKey);
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+    const contentless = this.readsWithoutContent(query);
 
     // The cursor's whole millisecond is re-read; its already-returned ids are skipped below.
     let min = this.minBound(query);
@@ -256,8 +277,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
       const members = await this.redis.zrangebylex(indexKey, min, max, 'LIMIT', 0, limit + 1);
       if (members.length === 0) break;
 
-      const ids = members.map(idFromMember);
-      const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
+      const entries = await this.readEntries(members.map(idFromMember), contentless);
 
       for (let i = 0; i < members.length; i++) {
         const member = members[i];
@@ -267,8 +287,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
         if (kept.length > limit && inv !== groupInv) break scan;
         groupInv = inv;
         min = `(${member}`;
-        const raw = raws[i];
-        const entry = raw === null || raw === undefined ? null : this.parseEntry(raw);
+        const entry = entries[i] ?? null;
         if (entry === null) continue;
         if (
           cursor !== null &&
@@ -288,10 +307,8 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     const hasMore = kept.length > limit;
     const page = kept.slice(0, limit);
     const last = page.at(-1);
-    // omitContent: Redis stores the whole entry as one JSON blob, so there is no
-    // projection benefit here — the entry must be read and parsed anyway. We
-    // still null `content` afterwards so callers can never depend on it during a
-    // content-less scan, keeping behavior identical to the projecting providers.
+    // omitContent reads the content-less `m:<id>` copies; a `search` still needs
+    // content to match against, so it reads the full entries and nulls content.
     const data = query.omitContent ? page.map((entry) => ({ ...entry, content: null })) : page;
     return {
       data,
@@ -311,11 +328,8 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
       return { data: [], nextCursor: null };
     }
 
-    const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
     const entries: Entry[] = [];
-    for (const raw of raws) {
-      if (raw === null) continue;
-      const entry = this.parseEntry(raw);
+    for (const entry of await this.readEntries(ids, this.readsWithoutContent(query))) {
       if (entry !== null && this.matchesIdPathFilters(entry, query)) {
         entries.push(entry);
       }
@@ -376,7 +390,11 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     const existing = this.parseEntry(raw);
     if (existing === null) return;
     const merged: Entry = { ...existing, ...patch, id: existing.id };
-    await this.redis.set(this.entryKey(id), JSON.stringify(merged));
+    await this.redis
+      .multi()
+      .set(this.entryKey(id), JSON.stringify(merged))
+      .set(this.metaKey(id), JSON.stringify(withoutContent(merged)))
+      .exec();
   }
 
   /**
@@ -451,17 +469,17 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
   ): Promise<{ removed: number; skipped: number }> {
     const toRemoveMembers = members;
     const ids = toRemoveMembers.map(idFromMember);
-    const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
+    const entries = await this.readEntries(ids, true);
 
     const pipeline = this.redis.multi();
+    const tagDecrements = new Map<string, number>();
     let removed = 0;
     let skipped = 0;
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       const member = toRemoveMembers[i];
       if (id === undefined || member === undefined) continue;
-      const raw = raws[i];
-      const entry = raw === null || raw === undefined ? null : this.parseEntry(raw);
+      const entry = entries[i] ?? null;
       // excludeTypes carve-out: spare any entry whose type is excluded. A row
       // with no readable entry can't be type-checked, so it is removed (it is
       // already orphaned/old and would otherwise leak its index members).
@@ -470,7 +488,7 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
         continue;
       }
       removed++;
-      pipeline.del(this.entryKey(id));
+      pipeline.del(this.entryKey(id), this.metaKey(id));
       pipeline.zrem(this.indexKey(), member);
       if (entry !== null) {
         pipeline.zrem(this.typeIndexKey(entry.type), member);
@@ -480,11 +498,19 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
         pipeline.zrem(this.batchKey(entry.batchId), id);
         for (const tag of entry.tags) {
           pipeline.zrem(this.tagIndexKey(tag), member);
-          pipeline.hincrby(this.tagsKey(), tag, -1);
+          tagDecrements.set(tag, (tagDecrements.get(tag) ?? 0) + 1);
         }
       }
     }
     await pipeline.exec();
+    if (tagDecrements.size > 0) {
+      await this.redis.eval(
+        DECREMENT_TAGS_LUA,
+        1,
+        this.tagsKey(),
+        ...[...tagDecrements].flatMap(([tag, count]) => [tag, String(count)]),
+      );
+    }
     return { removed, skipped };
   }
 
@@ -602,9 +628,9 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
   }
 
   /**
-   * Buckets for the given metrics whose bucketStart is in [fromBucket, toBucket].
-   * Per metric: ZRANGEBYSCORE the index for in-range bucketStarts, then HGETALL
-   * each rollup hash. Empty metrics ⇒ [].
+   * Buckets for the given metrics whose bucketStart is in [fromBucket, toBucket]:
+   * one pipeline of ZRANGEBYSCOREs over the per-metric indexes, then one pipeline
+   * of HGETALLs over every bucket found. Empty metrics ⇒ [].
    */
   async queryRollups(
     metrics: string[],
@@ -613,28 +639,74 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
   ): Promise<RollupBucket[]> {
     if (metrics.length === 0) return [];
 
-    const result: RollupBucket[] = [];
+    const indexReads = this.redis.pipeline();
     for (const metric of metrics) {
-      const buckets = await this.redis.zrangebyscore(
-        this.rollupIndexKey(metric),
-        fromBucket,
-        toBucket,
-      );
-      for (const bucketStartRaw of buckets) {
-        const bucketStart = Number(bucketStartRaw);
-        const hash = await this.redis.hgetall(this.rollupKey(metric, bucketStart));
-        if (Object.keys(hash).length === 0) continue;
-        result.push({
-          metric,
-          bucketStart,
-          count: Number(hash.count ?? 0),
-          sum: Number(hash.sum ?? 0),
-          max: Number(hash.max ?? 0),
-          histogram: this.readHistogram(hash),
-        });
-      }
+      indexReads.zrangebyscore(this.rollupIndexKey(metric), fromBucket, toBucket);
     }
+    const bucketsByMetric = pipelineResults<string[]>(await indexReads.exec());
+
+    const keys: { metric: string; bucketStart: number }[] = [];
+    metrics.forEach((metric, index) => {
+      for (const bucketStartRaw of bucketsByMetric[index] ?? []) {
+        keys.push({ metric, bucketStart: Number(bucketStartRaw) });
+      }
+    });
+    if (keys.length === 0) return [];
+
+    const hashReads = this.redis.pipeline();
+    for (const { metric, bucketStart } of keys) {
+      hashReads.hgetall(this.rollupKey(metric, bucketStart));
+    }
+    const hashes = pipelineResults<Record<string, string>>(await hashReads.exec());
+
+    const result: RollupBucket[] = [];
+    keys.forEach(({ metric, bucketStart }, index) => {
+      const hash = hashes[index];
+      if (hash === undefined || Object.keys(hash).length === 0) return;
+      result.push({
+        metric,
+        bucketStart,
+        count: Number(hash.count ?? 0),
+        sum: Number(hash.sum ?? 0),
+        max: Number(hash.max ?? 0),
+        histogram: this.readHistogram(hash),
+      });
+    });
     return result;
+  }
+
+  /**
+   * Entries for `ids`, in order, `null` where missing or unreadable. Without
+   * content they come from the `m:<id>` copies, falling back to the full entry
+   * for ids that have none.
+   */
+  private async readEntries(ids: string[], withoutContentOnly: boolean): Promise<(Entry | null)[]> {
+    if (ids.length === 0) return [];
+    if (!withoutContentOnly) {
+      const raws = await this.redis.mget(...ids.map((id) => this.entryKey(id)));
+      return raws.map((raw) => (raw === null ? null : this.parseEntry(raw)));
+    }
+    const metas = await this.redis.mget(...ids.map((id) => this.metaKey(id)));
+    const entries = metas.map((raw) => (raw === null ? null : this.parseEntry(raw)));
+    const missing: number[] = [];
+    metas.forEach((raw, index) => {
+      if (raw === null) missing.push(index);
+    });
+    if (missing.length > 0) {
+      const raws = await this.redis.mget(
+        ...missing.map((index) => this.entryKey(ids[index] ?? '')),
+      );
+      raws.forEach((raw, position) => {
+        const index = missing[position];
+        if (index !== undefined) entries[index] = raw === null ? null : this.parseEntry(raw);
+      });
+    }
+    return entries.map((entry) => (entry === null ? null : { ...entry, content: null }));
+  }
+
+  /** Whether a read can skip content: asked to omit it, and no `search` matches on it. */
+  private readsWithoutContent(query: EntryQuery): boolean {
+    return query.omitContent === true && query.search === undefined;
   }
 
   /**
@@ -669,11 +741,11 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     };
   }
 
-  /** Single primary index for a query: type, else tag, else family, else global. */
+  /** Single primary index for a query: family (the narrowest), else type, else tag, else global. */
   private primaryIndexKey(query: EntryQuery): string {
+    if (query.familyHash !== undefined) return this.familyIndexKey(query.familyHash);
     if (query.type !== undefined) return this.typeIndexKey(query.type);
     if (query.tag !== undefined) return this.tagIndexKey(query.tag);
-    if (query.familyHash !== undefined) return this.familyIndexKey(query.familyHash);
     return this.indexKey();
   }
 
@@ -759,6 +831,10 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     return `${this.prefix}e:${id}`;
   }
 
+  private metaKey(id: string): string {
+    return `${this.prefix}m:${id}`;
+  }
+
   private indexKey(): string {
     return `${this.prefix}idx`;
   }
@@ -819,6 +895,20 @@ export class RedisStorageProvider implements BoundedPruneCapable, LeaseCapableSt
     if (!Array.isArray(parsed)) return null;
     return parsed.map((value) => (typeof value === 'number' ? value : 0));
   }
+}
+
+/** The entry as stored under `m:<id>`: every field but `content`. */
+function withoutContent(entry: Entry): Omit<Entry, 'content'> {
+  const { content: _content, ...rest } = entry;
+  return rest;
+}
+
+/** Results of a pipeline, in command order; the first failed command rejects. */
+function pipelineResults<T>(results: [Error | null, unknown][] | null): (T | undefined)[] {
+  return (results ?? []).map(([error, value]) => {
+    if (error !== null) throw error;
+    return value as T;
+  });
 }
 
 /** The contract's page order: `createdAt` descending, then `id` descending (code-unit order). */

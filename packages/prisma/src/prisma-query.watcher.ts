@@ -82,6 +82,7 @@ export class PrismaQueryWatcher implements Watcher {
   private safeRecord(ctx: WatcherContext, event: PrismaQueryEvent): void {
     try {
       const bindings = parseParams(event.params);
+      let familyHash: string | undefined;
       const input: RecordInput = {
         type: EntryType.Query,
         content: {
@@ -89,7 +90,12 @@ export class PrismaQueryWatcher implements Watcher {
           bindings,
           took: event.duration,
         },
-        familyHash: queryFamilyHash(event.query),
+        // Read by the recorder only once it keeps the entry, so a sampled-out
+        // or paused query never pays for normalizing its SQL.
+        get familyHash() {
+          familyHash ??= queryFamilyHash(event.query);
+          return familyHash;
+        },
         durationMs: event.duration,
         ...(event.duration >= this.slowMs ? { tags: ['slow'] } : {}),
       };

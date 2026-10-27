@@ -42,6 +42,7 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
       // can construct this logger (via `MikroORM.init()`) before Nest DI has
       // wired `TelescopeService`, and `telescopeRecord` is a no-op until then.
       const record = this._record ?? telescopeRecord;
+      let familyHash: string | undefined;
       record({
         type: EntryType.Query,
         content: {
@@ -49,7 +50,12 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
           bindings: Array.isArray(context.params) ? [...context.params] : [],
           took,
         },
-        familyHash: queryFamilyHash(sql),
+        // Read by the recorder only once it keeps the entry, so a sampled-out
+        // or paused query never pays for normalizing its SQL.
+        get familyHash() {
+          familyHash ??= queryFamilyHash(sql);
+          return familyHash;
+        },
         durationMs: took,
         ...(tags.length > 0 ? { tags } : {}),
       });
