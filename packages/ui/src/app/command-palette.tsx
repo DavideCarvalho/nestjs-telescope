@@ -23,6 +23,7 @@ const PAGE_ACTIONS: PaletteAction[] = [
   { id: 'page-overview', label: 'Overview', to: '/' },
   { id: 'page-entries', label: 'Entries', to: '/entries' },
   { id: 'page-pulse', label: 'Pulse', to: '/pulse' },
+  { id: 'page-ai', label: 'AI', to: '/ai' },
   { id: 'page-queues', label: 'Queues', to: '/queues' },
   { id: 'page-metrics', label: 'Queue Metrics', to: '/queues/metrics' },
   { id: 'page-schedules', label: 'Schedules', to: '/schedules' },

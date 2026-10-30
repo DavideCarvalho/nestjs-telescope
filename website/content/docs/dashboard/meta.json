@@ -1,5 +1,9 @@
 {
   "title": "Dashboard",
   "icon": "LayoutDashboard",
-  "pages": ["index", "auth"]
+  "pages": [
+    "index",
+    "ai",
+    "auth"
+  ]
 }

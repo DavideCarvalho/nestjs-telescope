@@ -7,6 +7,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Header,
   HttpCode,
   Inject,
   MethodNotAllowedException,
@@ -20,6 +21,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { type AiUsageResult, AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { durationToMs } from '../config/parse-duration.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
@@ -212,6 +214,7 @@ export class TelescopeController {
     @Inject(TELESCOPE_EXTENSIONS) private readonly extensions: ExtensionRegistry,
     @Inject(TELESCOPE_CONFIG) private readonly extConfig: ResolvedCoreConfig,
     @Inject(TelescopePruner) private readonly pruner: TelescopePruner,
+    @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     private readonly moduleRef: ModuleRef,
   ) {}
 
@@ -337,6 +340,42 @@ export class TelescopeController {
       throw new NotFoundException(`No entries for trace ${traceId}.`);
     }
     return waterfall;
+  }
+
+  /**
+   * The AI screen: spend (by feature / model / actor, over time), agent runs with their timing
+   * breakdown, and unpriced calls — summarized from the window's recorded agent entries.
+   */
+  @Get('ai')
+  async ai(
+    @Query('window') window?: string,
+    @Query('buckets') buckets?: string,
+    @Query('top') top?: string,
+    @Query('limit') limit?: string,
+  ): Promise<AiUsageResult> {
+    const windowMs = parseWindowMs(window);
+    const bucketCount = boundedCount(buckets);
+    const topCount = boundedCount(top);
+    const runsLimit = boundedCount(limit);
+    return this.aiUsage.getUsage({
+      windowMs,
+      ...(bucketCount !== undefined && bucketCount > 0 ? { buckets: bucketCount } : {}),
+      ...(topCount !== undefined && topCount > 0 ? { top: Math.min(topCount, 100) } : {}),
+      ...(runsLimit !== undefined && runsLimit > 0 ? { runsLimit: Math.min(runsLimit, 500) } : {}),
+    });
+  }
+
+  /**
+   * Prometheus scrape of the AI-usage and agent-run metrics (`aviary_ai_*`, `aviary_agent_*`).
+   * 404 unless `aiMetrics.prometheus` is on. Guarded like every other API route.
+   */
+  @Get('metrics')
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  metrics(): string {
+    if (!this.aiUsage.prometheusEnabled) {
+      throw new NotFoundException('The metrics endpoint is off (set aiMetrics.prometheus: true).');
+    }
+    return this.aiUsage.prometheus();
   }
 
   @Get('stats')

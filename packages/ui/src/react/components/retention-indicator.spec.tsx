@@ -25,6 +25,7 @@ function mockClient(meta: TelescopeMeta): TelescopeClient {
       throw new Error('not used');
     },
     traces: unused,
+    ai: unused,
     waterfall: unused,
     stats: async () => {
       throw new Error('not used');

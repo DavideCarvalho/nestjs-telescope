@@ -32,3 +32,38 @@ export class AppModule {}
 ```
 
 Every entry recorded inside an active span then carries `traceId` and `spanId` (lower-case hex). The dashboard uses these to group entries by trace at `#/traces/:traceId` (see the [dashboard tour](/docs/dashboard)) and to render the "view in trace" deep-link. The **Traces** nav item only appears once a `traceContext` provider is configured — without one every `trace_id` is null and the page stays empty, so the dashboard hides the link.
+
+## AI usage and agent-run metrics
+
+`TelescopeAiMetricsExporter` pushes the `aviary_ai_*` / `aviary_agent_*` metrics (cost, tokens,
+audio, calls, run duration / queue / model / tools time, tool duration — the full table is on
+[AI usage and agent runs](/docs/dashboard/ai#metrics-for-grafana)) over OTLP/HTTP from a **private**
+`MeterProvider`. It never registers a global provider, so it cannot clash with your own OTel SDK,
+and its endpoint is its own: metrics can go to one Collector while your traces go elsewhere.
+
+```bash
+pnpm add @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http @opentelemetry/resources
+```
+
+The three are optional peers, imported lazily when the exporter starts; without them it logs once
+and stays off.
+
+```ts
+import { TelescopeAiMetricsExporter } from '@dudousxd/nestjs-telescope-otel';
+
+const aiMetrics = new TelescopeAiMetricsExporter({
+  endpoint: 'http://localhost:4318', // default: OTEL_EXPORTER_OTLP_ENDPOINT, else localhost:4318
+  path: '/v1/metrics', // default
+  headers: {}, // e.g. { Authorization: 'Bearer …' }
+  exportIntervalMs: 60_000, // default
+  serviceName: 'my-app', // default: OTEL_SERVICE_NAME, else 'nestjs-app'
+});
+
+TelescopeModule.forRoot({ extensions: [aiMetrics] });
+// on shutdown: await aiMetrics.shutdown();
+```
+
+It starts with Telescope's watcher registration and reads the agent's diagnostics channels
+directly, so every `usage.recorded` and terminal run event counts exactly once regardless of
+sampling. An importable Grafana dashboard ships at
+`@dudousxd/nestjs-telescope-otel/grafana/aviary-ai-dashboard.json`.

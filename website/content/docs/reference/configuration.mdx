@@ -54,6 +54,7 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 | `pulse` | _none_ | Health-snapshot tuning; `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot. |
 | `alerts` | _none_ | Pluggable-channel alerting (Slack / webhook / custom) + rules. See [Alerts](/docs/dashboard#alerts). |
 | `ai` | _none_ | AI exception diagnosis. See [AI diagnosis](/docs/packages/ai). |
+| `aiMetrics` | `{ prometheus: false }` | `prometheus: true` serves the AI-usage and agent-run metrics at `GET <path>/api/metrics` (Prometheus text), behind the API gate. See [AI usage and agent runs](/docs/dashboard/ai). |
 | `profiling` | `{ enabled: false }` | On-demand V8 CPU flamegraphs — strictly opt-in. `enabled`, `sampleRate`, `maxConcurrent`, `minDurationMs`, `samplingIntervalMicros`. See below and [CPU profiling](/docs/concepts/profiling). |
 | `traceContext` / `traceLink` | _none_ | OpenTelemetry trace stamping + deep-link template. See [`-otel`](/docs/packages/otel). |
 | `explainQuery` | _none_ | Host hook that runs an engine `EXPLAIN` for a captured query. See [Explain slow queries](/docs/dashboard#explain-slow-queries). |

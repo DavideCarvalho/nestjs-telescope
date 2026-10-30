@@ -640,3 +640,117 @@ export interface StatsResult {
   exceptions?: StatsExceptionGroup[];
   truncated: boolean;
 }
+
+/** One row of an AI spend breakdown (`GET ai`). Mirrors core's `AiSpendRow`. */
+export interface AiSpendRow {
+  key: string;
+  costUsd: number;
+  calls: number;
+  unpricedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** One time bucket of AI spend. Mirrors core's `AiSpendBucket`. */
+export interface AiSpendBucket {
+  start: string;
+  costUsd: number;
+  platformUsd: number;
+  estimatedUsd: number;
+  calls: number;
+}
+
+/** Mirrors core's `AiSpend`. */
+export interface AiSpend {
+  totalUsd: number;
+  platformUsd: number;
+  estimatedUsd: number;
+  calls: number;
+  unpricedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  audioSeconds: number;
+  byFeature: AiSpendRow[];
+  byModel: AiSpendRow[];
+  byActor: AiSpendRow[];
+  buckets: AiSpendBucket[];
+}
+
+/** One tool call's share of a run step. */
+export interface AiToolTiming {
+  toolName: string;
+  ms: number;
+}
+
+/** One step of a run: its model call and the tools it ran. */
+export interface AiStepTiming {
+  step: number;
+  modelMs?: number;
+  toolsMs: number;
+  tools: AiToolTiming[];
+}
+
+export type AiRunStatus = 'completed' | 'failed' | 'cancelled';
+
+/** One agent run. Mirrors core's `AiRunRow`. */
+export interface AiRunRow {
+  entryId: string;
+  traceId: string | null;
+  at: string;
+  status: AiRunStatus;
+  agent: string;
+  runId: string | null;
+  threadId: string | null;
+  modelId: string | null;
+  durationMs: number | null;
+  ttftMs: number | null;
+  queueMs: number | null;
+  modelMs: number | null;
+  toolsMs: number | null;
+  steps: number | null;
+  modelCalls: number | null;
+  toolCalls: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  costUsd: number | null;
+  code: string | null;
+  stepTimings: AiStepTiming[];
+}
+
+/** Unpriced calls, grouped. Mirrors core's `AiUnpricedRow`. */
+export interface AiUnpricedRow {
+  feature: string;
+  model: string;
+  provider: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  audioSeconds: number;
+  characters: number;
+  lastAt: string;
+}
+
+/** Mirrors core's `AiCoverage`. */
+export interface AiCoverage {
+  usageEvents: number;
+  runEvents: number;
+  agentEvents: number;
+  legacyAgentLib: boolean;
+  runsWithoutTimings: number;
+}
+
+/** `GET ai` — the AI screen. Mirrors core's `AiUsageResult`. */
+export interface AiUsageReport {
+  windowStart: string;
+  windowEnd: string;
+  spend: AiSpend;
+  runs: AiRunRow[];
+  slowest: AiRunRow[];
+  mostExpensive: AiRunRow[];
+  unpriced: AiUnpricedRow[];
+  coverage: AiCoverage;
+  scanned: number;
+  truncated: boolean;
+}

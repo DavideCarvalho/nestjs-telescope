@@ -36,6 +36,7 @@ export function StackedAreaChartCard({
   height = 240,
   brush,
   onSelect,
+  colors,
 }: {
   title: string;
   data: StackedAreaRow[];
@@ -47,9 +48,14 @@ export function StackedAreaChartCard({
   brush?: boolean;
   /** Drill-down: called with the bucket under a click. Omit and the chart is inert. */
   onSelect?: (selection: ChartSelection) => void;
+  /** Explicit series colours; series not listed fall back to the entry-type palette. */
+  colors?: Record<string, string>;
 }): JSX.Element {
   const bodyHeight = height - 64;
-  const config = useMemo(() => chartConfig(series, hexForType), [series]);
+  const config = useMemo(
+    () => chartConfig(series, (key, index) => colors?.[key] ?? hexForType(key, index)),
+    [series, colors],
+  );
   const { hidden, toggle, isHidden } = useSeriesToggle();
   const showBrush = brush ?? data.length >= BRUSH_MIN_POINTS;
 

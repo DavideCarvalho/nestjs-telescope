@@ -20,6 +20,7 @@ function mockClient(): TelescopeClient {
     traces: unused,
     waterfall: unused,
     stats: unused,
+    ai: unused,
     tags: unused,
     meta: unused,
     extData: unused,
