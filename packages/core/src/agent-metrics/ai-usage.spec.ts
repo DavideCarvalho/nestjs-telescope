@@ -67,20 +67,16 @@ describe('summarizeAiUsage', () => {
       audioSeconds: 30,
       requests: 2,
     }),
-    // The generic diagnostics bridge's shape.
     entry(
-      'diagnostic',
+      'agent',
       {
-        lib: 'agent',
         event: 'usage.recorded',
-        payload: {
-          actorRef: 'user:2',
-          feature: 'agent:tutor',
-          modelId: 'gpt-5',
-          inputTokens: 10,
-          outputTokens: 5,
-          costUsd: 0.1,
-        },
+        actorRef: 'user:2',
+        feature: 'agent:tutor',
+        modelId: 'gpt-5',
+        inputTokens: 10,
+        outputTokens: 5,
+        costUsd: 0.1,
       },
       30,
     ),
@@ -192,6 +188,34 @@ describe('summarizeAiUsage', () => {
     });
   });
 
+  it('reads the diagnostics bridge shape, and counts an event once when both watchers stored it', () => {
+    const payload = {
+      actorRef: 'u',
+      feature: 'f',
+      modelId: 'm',
+      inputTokens: 1,
+      outputTokens: 1,
+      costUsd: 0.2,
+    };
+    const bridgeOnly = summarizeAiUsage(
+      [entry('diagnostic', { lib: 'agent', event: 'usage.recorded', payload }, 1)],
+      {
+        windowStart: start,
+        windowEnd: end,
+      },
+    );
+    expect(bridgeOnly.spend.totalUsd).toBe(0.2);
+    const both = summarizeAiUsage(
+      [
+        entry('agent', { event: 'usage.recorded', ...payload }, 1),
+        entry('diagnostic', { lib: 'agent', event: 'usage.recorded', payload }, 1),
+      ],
+      { windowStart: start, windowEnd: end },
+    );
+    expect(both.spend.totalUsd).toBe(0.2);
+    expect(both.coverage.usageEvents).toBe(1);
+  });
+
   it('flags an agent lib that predates usage.recorded', () => {
     const legacy = summarizeAiUsage(
       [
@@ -208,11 +232,10 @@ describe('summarizeAiUsage', () => {
 });
 
 describe('AiUsageService', () => {
-  it('reads both stored shapes from storage', async () => {
+  it('reads agent entries from storage', async () => {
     const storage = new InMemoryStorageProvider();
     const now = Date.now();
     await storage.store([
-      { ...agentUsage(0, { costUsd: 1 }), createdAt: new Date(now - 1000) },
       {
         ...entry(
           'diagnostic',
@@ -235,7 +258,7 @@ describe('AiUsageService', () => {
     ]);
     const service = new AiUsageService(storage);
     const result = await service.getUsage({ windowMs: 60_000 });
-    expect(result.spend.totalUsd).toBe(3);
+    expect(result.spend.totalUsd).toBe(2);
     expect(result.truncated).toBe(false);
     expect(service.prometheusEnabled).toBe(false);
   });

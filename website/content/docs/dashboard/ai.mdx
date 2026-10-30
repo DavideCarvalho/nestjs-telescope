@@ -27,7 +27,8 @@ The dashboard's **AI** screen (`#/ai`) answers three questions from the events
 | A watcher that records the agent events | `@dudousxd/nestjs-agent-telescope` (entries of type `agent`) **or** `@dudousxd/nestjs-diagnostics-telescope` (type `diagnostic`, lib `agent`) — both are read |
 
 The screen reads recorded entries (`GET <path>/api/ai?window=24h`), so it follows your retention
-and sampling. It needs no extra option.
+and sampling. It needs no extra option. If both watchers store the same event (the bridge with
+`recordClaimed: true`), the agent watcher's `agent` entries win and each event is counted once.
 
 <Callout title="Older agent lib">
   When the window has agent events but no `usage.recorded`, the screen says so instead of showing

@@ -192,9 +192,10 @@ export class TelescopeAiMetricsExporter implements TelescopeExtension {
 
   /** Unsubscribe, flush and shut the meter provider down (call from your app's shutdown). */
   async shutdown(): Promise<void> {
+    // Let an in-flight start() finish first, so its subscription is the one removed here.
+    await this.starting;
     this.unsubscribe?.();
     this.unsubscribe = null;
-    await this.starting;
     await this.provider?.shutdown().catch(() => undefined);
     this.provider = null;
     this.starting = null;

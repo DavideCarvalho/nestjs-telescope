@@ -187,7 +187,8 @@ function toRunRow(entry: Entry, r: RunObservation): AiRunRow {
  * Summarize the agent entries of a window into the AI screen: spend (total, platform and estimated
  * shares, by feature / model / actor, over time), runs (recent, slowest, most expensive, each with
  * its step breakdown) and the unpriced calls. Reads both shapes an agent event is stored in (see
- * {@link agentEventOfEntry}). Entries outside the window are ignored. Pure.
+ * {@link agentEventOfEntry}), preferring the agent watcher's when both are present. Entries outside
+ * the window are ignored. Pure.
  */
 export function summarizeAiUsage(
   entries: readonly Entry[],
@@ -236,9 +237,16 @@ export function summarizeAiUsage(
     runsWithoutTimings: 0,
   };
 
+  // The same agent event can be stored twice when both watchers record it (the generic bridge with
+  // `recordClaimed: true`). The agent's own watcher wins: once the window holds any `agent` entry,
+  // `diagnostic`-shaped agent entries are ignored, so the screen counts each event once, as the
+  // channel-fed metrics do.
+  const hasTyped = entries.some((e) => e.type === 'agent' && agentEventOfEntry(e) !== null);
+
   for (const entry of entries) {
     const at = new Date(entry.createdAt).getTime();
     if (at < start || at > end) continue;
+    if (hasTyped && entry.type !== 'agent') continue;
     const event = agentEventOfEntry(entry);
     if (event === null) continue;
     coverage.agentEvents += 1;

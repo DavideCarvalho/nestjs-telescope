@@ -158,7 +158,8 @@ interface HistogramSeries {
 export interface AgentMetricsRegistryOptions {
   /**
    * Max distinct label sets kept per metric. New combinations past it are dropped (existing ones
-   * keep counting) and tallied in `aviary_ai_metrics_dropped_series_total`. Default 2000.
+   * keep counting); every observation dropped that way is tallied in
+   * `aviary_ai_metrics_dropped_series_total`. Default 2000.
    */
   maxSeriesPerMetric?: number;
 }
@@ -261,7 +262,7 @@ export class AgentMetricsRegistry {
     if (this.dropped.size > 0) {
       const name = 'aviary_ai_metrics_dropped_series_total';
       lines.push(
-        `# HELP ${name} New label sets dropped because a metric reached its series cap.`,
+        `# HELP ${name} Observations dropped because their label set was new and the metric was at its series cap.`,
         `# TYPE ${name} counter`,
       );
       for (const [metric, count] of this.dropped) {
