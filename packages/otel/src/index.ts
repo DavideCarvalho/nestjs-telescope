@@ -8,3 +8,8 @@ export { TelescopeOtelMetricsModule } from './telescope-otel-metrics.module.js';
 export { TELESCOPE_OTEL_EXPORTER, TelescopeOtelMetricsController } from './metrics.controller.js';
 export { mapInput, MetricStore, type MetricSample } from './instrument-map.js';
 export { entryToSpan, type SpanShape } from './entry-to-span.js';
+export {
+  TelescopeAiMetricsExporter,
+  type TelescopeAiMetricsExporterOptions,
+  type OtelMetricsSdk,
+} from './ai-metrics-exporter.js';

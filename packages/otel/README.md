@@ -98,3 +98,36 @@ export class AppModule {}
 ## License
 
 MIT © Davi Carvalho
+
+## AI usage and agent-run metrics (OTLP)
+
+`TelescopeAiMetricsExporter` pushes the `aviary_ai_*` / `aviary_agent_*` metrics — AI cost,
+tokens, audio seconds and calls by feature / model / provider / cost source / platform, and agent
+run duration, queue, model and tools time by agent and status, plus tool duration by tool — over
+OTLP/HTTP from a private `MeterProvider` (no global registration). It reads the
+`aviary:agent:*` diagnostics channels of `@dudousxd/nestjs-agent` 1.38.0+ directly, so counts are
+exact regardless of sampling. Its endpoint is independent of your traces and logs.
+
+```sh
+pnpm add @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http @opentelemetry/resources
+```
+
+```ts
+import { TelescopeAiMetricsExporter } from '@dudousxd/nestjs-telescope-otel';
+
+const aiMetrics = new TelescopeAiMetricsExporter({
+  endpoint: 'http://localhost:4318',
+  exportIntervalMs: 15_000,
+  serviceName: 'my-app',
+});
+
+TelescopeModule.forRoot({
+  extensions: [aiMetrics],
+  aiMetrics: { prometheus: true }, // optional: also serve GET /telescope/api/metrics
+});
+```
+
+An importable Grafana dashboard ships in this package at `grafana/aviary-ai-dashboard.json`.
+Locally: `docker run --rm -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm`, then import
+the dashboard in Grafana (admin / admin). Metric names, attributes and units:
+[AI usage and agent runs](https://davidecarvalho.github.io/aviary/docs/telescope/dashboard/ai).

@@ -1,4 +1,5 @@
 import type {
+  AiUsageReport,
   AuthMeResult,
   AuthMode,
   AuthUser,
@@ -86,6 +87,11 @@ export interface TelescopeClient {
   /** Nested span waterfall for one trace (`GET traces/:traceId/waterfall`). */
   waterfall(traceId: string): Promise<Waterfall>;
   stats(type: string, window: string): Promise<StatsResult>;
+  /** The AI screen: spend, agent runs and unpriced calls over a window (`GET ai`). */
+  ai(
+    window?: string,
+    opts?: { buckets?: number; top?: number; limit?: number },
+  ): Promise<AiUsageReport>;
   /**
    * Tag counts, most-used first. `prefix` is the control's fixed scope (`user:`); `search` is what
    * was typed into it and matches anywhere in the tag. Both the search and the page happen on the
@@ -388,6 +394,13 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     traces: (window, limit) => get<TracesResult>('/traces', { window, limit }),
     waterfall: (traceId) => get<Waterfall>(`/traces/${encodeURIComponent(traceId)}/waterfall`),
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
+    ai: (window, opts) =>
+      get<AiUsageReport>('/ai', {
+        window,
+        buckets: opts?.buckets,
+        top: opts?.top,
+        limit: opts?.limit,
+      }),
     tags: (prefix, opts) =>
       get<TagCount[]>('/tags', {
         prefix,

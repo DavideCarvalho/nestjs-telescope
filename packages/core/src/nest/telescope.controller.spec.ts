@@ -1,6 +1,7 @@
-// packages/core/src/nest/telescope.controller.spec.ts
 import type { ModuleRef } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
+// packages/core/src/nest/telescope.controller.spec.ts
+import { AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { resolveConfig } from '../config/resolve-config.js';
 import type { Entry } from '../entry/entry.js';
@@ -63,6 +64,7 @@ function setup() {
     extensions,
     {} as ResolvedCoreConfig,
     {} as TelescopePruner,
+    new AiUsageService(storage),
     {} as ModuleRef,
   );
   return { storage, controller };
@@ -125,5 +127,19 @@ describe('TelescopeController', () => {
     const { controller } = setup();
     const meta = await controller.meta();
     expect(meta.enabled).toBe(true);
+  });
+});
+
+describe('TelescopeController AI endpoints', () => {
+  it('404s the metrics scrape while aiMetrics.prometheus is off', () => {
+    const { controller } = setup();
+    expect(() => controller.metrics()).toThrow(/metrics endpoint is off/);
+  });
+
+  it('summarizes the AI screen over a window', async () => {
+    const { controller } = setup();
+    const result = await controller.ai('1h');
+    expect(result.spend.totalUsd).toBe(0);
+    expect(result.coverage.legacyAgentLib).toBe(false);
   });
 });

@@ -1,0 +1,108 @@
+---
+title: AI usage and agent runs
+description: The AI screen — spend by feature, model and payer, agent runs with their queue / model / tools split, and the calls nobody priced — plus the same numbers as Prometheus / OTLP metrics for Grafana.
+icon: Sparkles
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The dashboard's **AI** screen (`#/ai`) answers three questions from the events
+`@dudousxd/nestjs-agent` publishes on `aviary:agent:*`:
+
+- **Spend** — total cost over the window, how much the platform paid (`actorRef === '@platform'`)
+  and how much was priced by an estimate, broken down by feature, model and the top payers, with a
+  timeseries split into users vs platform.
+- **Runs** — every agent run with its duration and a stacked **queue · model · tools** bar, steps,
+  tool calls, cost, model and status; the slowest and the most expensive. Clicking a run opens its
+  per-step breakdown (each step's model time and each tool's name and ms) with links to the run's
+  trace waterfall and its entry.
+- **Unpriced** — calls the usage ledger recorded with no cost, grouped by feature, model and
+  provider, so you know what still needs a price.
+
+## Requirements
+
+| Piece | Version |
+|---|---|
+| `@dudousxd/nestjs-agent` / `-agent-core` | **1.38.0 / 0.60.0** or later (first to publish `usage.recorded` and the run timings) |
+| A watcher that records the agent events | `@dudousxd/nestjs-agent-telescope` (entries of type `agent`) **or** `@dudousxd/nestjs-diagnostics-telescope` (type `diagnostic`, lib `agent`) — both are read |
+
+The screen reads recorded entries (`GET <path>/api/ai?window=24h`), so it follows your retention
+and sampling. It needs no extra option.
+
+<Callout title="Older agent lib">
+  When the window has agent events but no `usage.recorded`, the screen says so instead of showing
+  $0: the app is running an agent lib older than 1.38.0 / core 0.60.0. Runs without a timing
+  breakdown are counted and shown as "no breakdown".
+</Callout>
+
+## Metrics for Grafana
+
+The same events are exposed as metrics, read **directly from the diagnostics channels** (not from
+stored entries), so sampling and retention never change a count. Two ways out, use either or both:
+
+- **Prometheus scrape** — `TelescopeModule.forRoot({ aiMetrics: { prometheus: true } })` serves
+  `GET <path>/api/metrics` (default `/telescope/api/metrics`) in text exposition format, behind the
+  same `authorizer` / `guards` / `dashboardAuth` as the rest of the API. Off by default (404).
+- **OTLP push** — `TelescopeAiMetricsExporter` from
+  [`@dudousxd/nestjs-telescope-otel`](/docs/packages/otel#ai-usage-and-agent-run-metrics), with its
+  own endpoint, independent of where your traces and logs go.
+
+| Metric (Prometheus name) | Type | Attributes | Unit |
+|---|---|---|---|
+| `aviary_ai_cost_usd_total` | counter | `feature`, `model`, `provider`, `cost_source` (`provider` \| `estimate`), `platform` (`true` \| `false`) | US dollars |
+| `aviary_ai_tokens_total` | counter | `direction` (`in` \| `out` \| `cache_read` \| `cache_write`), `feature`, `model` | tokens |
+| `aviary_ai_audio_seconds_total` | counter | as cost | seconds |
+| `aviary_ai_requests_total` | counter | as cost; `cost_source="none"` are the **unpriced** calls | calls |
+| `aviary_agent_run_duration_ms` | histogram | `agent` (`default` when unnamed), `status` (`completed` \| `failed` \| `cancelled`) | ms |
+| `aviary_agent_run_queue_ms` | histogram | `agent`, `status` | ms |
+| `aviary_agent_run_model_ms` | histogram | `agent`, `status` | ms |
+| `aviary_agent_run_tools_ms` | histogram | `agent`, `status` | ms |
+| `aviary_agent_tool_duration_ms` | histogram | `tool` (from each run's `stepTimings`) | ms |
+
+Histogram buckets (ms): `10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000, 30000, 60000,
+120000, 300000, 600000`. The unit is part of the name; the OTLP instruments carry an empty unit so
+Prometheus' OTLP translation does not append `_milliseconds` — both paths produce exactly the names
+above. `actorRef`, `runId` and `threadId` are **never** attributes (they grow with users and runs);
+per-payer spend lives on the AI screen. New label sets past 2000 per metric are dropped and counted
+in `aviary_ai_metrics_dropped_series_total`.
+
+## Grafana dashboard
+
+Import [`aviary-ai-dashboard.json`](https://github.com/DavideCarvalho/nestjs-telescope/blob/main/packages/otel/grafana/aviary-ai-dashboard.json)
+(also shipped in the npm package at `@dudousxd/nestjs-telescope-otel/grafana/aviary-ai-dashboard.json`):
+Dashboards → New → Import, then pick your Prometheus data source. Panels: total / platform /
+estimated spend, calls, unpriced calls, runs; cost per day by feature; cost by model; spend rate by
+feature; tokens by direction; p50 / p90 of run duration, queue, model and tools time by agent; tool
+duration by tool; unpriced calls by feature / model. A `Service` variable filters by `job`
+(the OTLP `service.name`).
+
+"Cost per day" uses a negative offset to put each day's spend on that day's bar — Prometheus 3
+supports it out of the box (2.x needs `--enable-feature=promql-negative-offset`).
+
+## Try it locally
+
+`grafana/otel-lgtm` bundles an OTel Collector, Prometheus, Tempo, Loki and Grafana in one container:
+
+```bash
+docker run --rm -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
+```
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { TelescopeAiMetricsExporter } from '@dudousxd/nestjs-telescope-otel';
+
+TelescopeModule.forRoot({
+  extensions: [
+    new TelescopeAiMetricsExporter({
+      endpoint: 'http://localhost:4318', // the container's OTLP/HTTP port
+      exportIntervalMs: 15_000,
+      serviceName: 'my-app',
+    }),
+  ],
+  aiMetrics: { prometheus: true }, // optional: also serve /telescope/api/metrics
+});
+```
+
+Open Grafana at `http://localhost:3000` (admin / admin), import the dashboard and pick the
+`prometheus` data source. To scrape instead of push, point a Prometheus `scrape_config` at
+`/telescope/api/metrics` with whatever credentials your Telescope gate expects.

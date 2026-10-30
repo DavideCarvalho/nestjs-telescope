@@ -30,6 +30,7 @@ const NAV: TopNavItem[] = [
   { to: '/entries', label: 'Entries', end: true },
   { to: '/traces', label: 'Traces', end: true },
   { to: '/pulse', label: 'Pulse', end: false },
+  { to: '/ai', label: 'AI', end: false },
   { to: '/queues', label: 'Queues', end: false },
   { to: '/schedules', label: 'Schedules', end: false },
   { to: '/prunes', label: 'Prunes', end: false },

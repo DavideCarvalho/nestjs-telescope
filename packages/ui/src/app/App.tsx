@@ -6,6 +6,7 @@ import { AuthScreen } from './auth-screen.js';
 import { DashboardLayout } from './dashboard-layout.js';
 import { OverviewPage } from './pages/OverviewPage.js';
 import { QueueManagerPage } from './pages/QueueManagerPage.js';
+import { AiPage } from './pages/ai-page.js';
 import { EntriesPage } from './pages/entries-page.js';
 import { EntryPage } from './pages/entry-page.js';
 import { ExportsPage } from './pages/exports-page.js';
@@ -34,6 +35,7 @@ function Dashboard(): JSX.Element {
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/traces/:traceId" element={<TracePage />} />
           <Route path="/pulse" element={<PulsePage />} />
+          <Route path="/ai" element={<AiPage />} />
           <Route path="/queues" element={<QueuesShell />}>
             <Route index element={<QueueManagerPage />} />
             <Route path="metrics" element={<QueuesPage />} />

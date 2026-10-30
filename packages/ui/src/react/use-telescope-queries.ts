@@ -145,6 +145,14 @@ export function statsQuery(client: TelescopeClient, type: string, window: string
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
+/** The AI screen's data. Polls slower than the live tail: it is a window aggregate. */
+export function aiQuery(client: TelescopeClient, window: string, paused = false) {
+  return queryOptions({
+    queryKey: ['telescope', 'ai', window],
+    queryFn: () => client.ai(window, { buckets: 24, top: 8, limit: 100 }),
+    refetchInterval: intervalWhenLive(REFETCH_MS * 3, paused),
+  });
+}
 export function queuesQuery(client: TelescopeClient, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'queues', window],
@@ -426,6 +434,9 @@ export function useStats(type: string, window: string) {
 }
 export function usePulse(window: string) {
   return useQuery(pulseQuery(useTelescopeClient(), window, usePaused()));
+}
+export function useAi(window: string) {
+  return useQuery(aiQuery(useTelescopeClient(), window, usePaused()));
 }
 export function useQueues(window: string) {
   return useQuery(queuesQuery(useTelescopeClient(), window, usePaused()));

@@ -248,6 +248,12 @@ export interface RequestCaptureOptions {
   skipBody?: (request: TelescopeHttpRequest) => boolean;
 }
 
+/** See {@link TelescopeModuleOptions.aiMetrics}. */
+export interface TelescopeAiMetricsOptions {
+  /** Serve `GET <path>/api/metrics` (Prometheus text format). Default `false`. */
+  prometheus?: boolean;
+}
+
 export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   /** Storage provider. Defaults to a SqliteStorageProvider(':memory:'). */
   storage?: StorageProvider;
@@ -373,6 +379,18 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * defined in core so core carries no AI dependency. See {@link TelescopeAiOptions}.
    */
   ai?: TelescopeAiOptions;
+  /**
+   * AI-usage and agent-run metrics (`aviary_ai_*`, `aviary_agent_*`), read straight from the
+   * `aviary:agent:*` diagnostics channels `@dudousxd/nestjs-agent` publishes (core >= 0.60.0).
+   *
+   * `prometheus: true` serves them as a Prometheus text scrape at `GET <path>/api/metrics`,
+   * behind the same guard (`authorizer`, `guards`, `dashboardAuth`) as the rest of the API. Off by
+   * default: the endpoint answers 404 and nothing subscribes. For OTLP push instead (or as well),
+   * register `TelescopeAiMetricsExporter` from `@dudousxd/nestjs-telescope-otel`.
+   *
+   * The dashboard's AI screen does not need this — it reads recorded agent entries.
+   */
+  aiMetrics?: TelescopeAiMetricsOptions;
   /**
    * How thrown server-side exceptions become `exception` entries. The notable
    * knob is `captureHttp4xx`: by default 4xx `HttpException`s (Forbidden /

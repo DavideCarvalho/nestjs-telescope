@@ -80,6 +80,8 @@ export * from './metrics/stats.js';
 export * from './metrics/stats.service.js';
 export * from './metrics/server-stats.service.js';
 
+export * from './agent-metrics/index.js';
+
 export * from './pulse/pulse-summary.js';
 export * from './pulse/pulse.service.js';
 

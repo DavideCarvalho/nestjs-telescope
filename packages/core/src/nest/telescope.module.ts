@@ -14,6 +14,7 @@ import {
   type Type,
 } from '@nestjs/common';
 import { APP_INTERCEPTOR, DiscoveryModule, ModuleRef } from '@nestjs/core';
+import { AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import { resolveDashboardAuth } from '../auth/dashboard-auth-config.js';
 import { normalizeTelescopePath } from '../config/normalize-path.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
@@ -139,6 +140,7 @@ const SHARED_PROVIDERS: Provider[] = [
   TimeseriesService,
   TracesService,
   StatsService,
+  AiUsageService,
   {
     // Factory (not a bare class) so the host's `pulse` config — notably the
     // `slowRouteMs` slow-route hotspot threshold — reaches PulseService's
