@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 1.31.1
+
+### Patch Changes
+
+- [#177](https://github.com/DavideCarvalho/nestjs-telescope/pull/177) [`f8fbfbc`](https://github.com/DavideCarvalho/nestjs-telescope/commit/f8fbfbc4c8dc763bb837e70aab6279971b2c8ef2) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Move to zod 4 for GHSA-mrhx-c7xc-m3w5, which has no patched 3.x. An app that overrode zod to 4 no longer loses the recorder defaults, which left a one-slot buffer and no flush interval.
+
 ## 1.31.0
 
 ### Minor Changes
