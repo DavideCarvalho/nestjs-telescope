@@ -137,6 +137,7 @@ class S3Location implements ColdLocation {
   private readonly prefix: string;
   private readonly client: S3ClientLike;
   private commands: Promise<typeof import('@aws-sdk/client-s3')> | null = null;
+  private batchDeleteUnsupported = false;
 
   constructor(options: S3LocationOptions) {
     this.bucket = options.bucket;
@@ -229,15 +230,35 @@ class S3Location implements ColdLocation {
 
   async remove(keys: string[]): Promise<void> {
     if (keys.length === 0) return;
-    const { DeleteObjectsCommand } = await this.sdk();
+    const { DeleteObjectCommand, DeleteObjectsCommand } = await this.sdk();
+    const removeOneByOne = async (chunk: string[]) => {
+      for (const key of chunk) {
+        await this.client.send(
+          new DeleteObjectCommand({ Bucket: this.bucket, Key: this.full(key) }),
+        );
+      }
+    };
     for (let index = 0; index < keys.length; index += DELETE_BATCH) {
       const chunk = keys.slice(index, index + DELETE_BATCH);
-      await this.client.send(
-        new DeleteObjectsCommand({
-          Bucket: this.bucket,
-          Delete: { Objects: chunk.map((key) => ({ Key: this.full(key) })), Quiet: true },
-        }),
-      );
+      if (this.batchDeleteUnsupported) {
+        await removeOneByOne(chunk);
+        continue;
+      }
+      try {
+        await this.client.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucket,
+            Delete: { Objects: chunk.map((key) => ({ Key: this.full(key) })), Quiet: true },
+          }),
+        );
+      } catch (error) {
+        const { name, Code } = (error ?? {}) as { name?: string; Code?: string };
+        if (name !== 'MissingContentMD5' && Code !== 'MissingContentMD5') throw error;
+        // MinIO without flexible-checksum support insists on Content-MD5, which current SDKs no
+        // longer send on DeleteObjects (they send CRC32). Remember it: the batch call never works.
+        this.batchDeleteUnsupported = true;
+        await removeOneByOne(chunk);
+      }
     }
   }
 }
