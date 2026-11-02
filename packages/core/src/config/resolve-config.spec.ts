@@ -115,4 +115,24 @@ describe('resolveConfig', () => {
     expect(config.traceLink).toBeUndefined();
     expect(config.traceContext).toBeUndefined();
   });
+
+  it('fills the recorder defaults when no recorder is given', () => {
+    expect(resolveConfig({}).recorder).toEqual({
+      bufferSize: 10_000,
+      flushIntervalMs: 1_000,
+      flushBatchSize: 500,
+      retryDelayMs: 1_000,
+    });
+  });
+
+  it('accepts per-type sampling, per-type prune and an archive sink', () => {
+    const sink = async () => {};
+    const config = resolveConfig({
+      sampling: { query: 0.5 },
+      prune: { after: '1d', perType: { query: '1h' } },
+      archive: { types: ['query'], sink },
+    } as never);
+    expect(config.archive?.sink).toBe(sink);
+    expect(() => resolveConfig({ archive: { types: ['query'], sink: 'nope' } } as never)).toThrow();
+  });
 });
