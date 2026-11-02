@@ -24,7 +24,7 @@ const PER_TYPE_SAMPLING = z.union([RATE, SAMPLING_RULE]);
 
 const optionsSchema = z.object({
   enabled: z.boolean().default(true),
-  sampling: z.union([RATE, z.record(PER_TYPE_SAMPLING)]).optional(),
+  sampling: z.union([RATE, z.record(z.string(), PER_TYPE_SAMPLING)]).optional(),
   recorder: z
     .object({
       bufferSize: z.number().int().positive().default(10_000),
@@ -32,13 +32,13 @@ const optionsSchema = z.object({
       flushBatchSize: z.number().int().positive().default(500),
       retryDelayMs: z.number().int().nonnegative().default(1_000),
     })
-    .default({}),
+    .prefault({}),
   prune: z
     .object({
       after: z.union([z.number().positive(), z.string()]),
       keepLast: z.number().int().nonnegative().optional(),
       intervalMs: z.number().int().positive().default(60_000),
-      perType: z.record(z.union([z.number().positive(), z.string()])).optional(),
+      perType: z.record(z.string(), z.union([z.number().positive(), z.string()])).optional(),
       batchSize: z.number().int().positive().default(1_000),
       maxBatchesPerCycle: z.number().int().positive().default(50),
       batchPauseMs: z.number().int().nonnegative().default(50),
@@ -57,7 +57,7 @@ const optionsSchema = z.object({
       // precise `(entries: Entry[]) => Promise<void>` shape is enforced by the
       // TelescopeCoreOptions type at the call site, so we copy it through from
       // the original options object below rather than from the parsed value.
-      sink: z.function(),
+      sink: z.custom((value) => typeof value === 'function'),
       batchSize: z.number().int().positive().default(500),
       maxBatchesPerCycle: z.number().int().positive().default(10),
     })
