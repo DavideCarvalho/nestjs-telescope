@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-parquet
 
+## 0.1.2
+
+### Patch Changes
+
+- [#176](https://github.com/DavideCarvalho/nestjs-telescope/pull/176) [`abcf7e7`](https://github.com/DavideCarvalho/nestjs-telescope/commit/abcf7e73acbf7483b0db620f1e52686dd05648d0) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Removing cold files now works on MinIO versions that reject `DeleteObjects` with `MissingContentMD5`: it falls back to single deletes and remembers.
+
 ## 0.1.1
 
 ### Patch Changes
