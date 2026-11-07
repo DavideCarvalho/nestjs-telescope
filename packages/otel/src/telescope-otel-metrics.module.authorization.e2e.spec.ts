@@ -136,3 +136,41 @@ describe('TelescopeOtelMetricsModule under @nestjs/authorization', () => {
     }
   });
 });
+
+describe('TelescopeOtelMetricsModule production rule', () => {
+  const previous = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = previous;
+  });
+
+  it('fails the boot when /metrics mounts with no decorators (an empty array counts as none)', () => {
+    process.env.NODE_ENV = 'production';
+    const exporter = new TelescopeOtelExporter();
+    for (const decorators of [undefined, []]) {
+      expect(() =>
+        TelescopeOtelMetricsModule.forExporter(exporter, decorators ? { decorators } : {}),
+      ).toThrow(
+        /TelescopeOtelMetricsModule: refusing to mount unprotected routes with NODE_ENV=production/,
+      );
+    }
+  });
+
+  it('boots with decorators, and with routes: false', async () => {
+    process.env.NODE_ENV = 'production';
+    const exporter = new TelescopeOtelExporter();
+    const decorated = await boot([
+      AuthorizationModule.forRoot(),
+      TelescopeOtelMetricsModule.forExporter(exporter, {
+        decorators: [Can(MetricsPolicy, 'scrape')],
+      }),
+    ]);
+    await request(decorated.getHttpServer()).get('/metrics').expect(401);
+    await decorated.close();
+    app = undefined;
+
+    const selfMounted = await boot([
+      TelescopeOtelMetricsModule.forExporter(exporter, { routes: false }),
+    ]);
+    await request(selfMounted.getHttpServer()).get('/metrics').expect(404);
+  });
+});

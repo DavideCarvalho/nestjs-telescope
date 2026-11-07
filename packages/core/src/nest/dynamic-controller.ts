@@ -21,9 +21,10 @@ export const AUTHORIZATION_CAN_ANYONE_METADATA = 'authorization:can-anyone';
  * class-level route path is overridden here.
  *
  * Every subclass is also marked open to `@nestjs/authorization`'s deny-by-default
- * global `AuthorizationGuard` (the `@Can.Anyone()` mark): Telescope's own gates
- * keep deciding who reaches it. That mark only opens routes that declare no
- * requirement, so a `Can(...)` passed in `decorators` is still enforced.
+ * global `AuthorizationGuard` (the `@Can.Anyone()` mark), so an undecorated dev
+ * console still answers once an app adopts that package. That mark only opens
+ * routes that declare no requirement, so a `Can(...)` passed in `decorators` is
+ * still enforced.
  *
  * `decorators` (the host's `decorators` option) are applied, in order, to the
  * fresh subclass only — never to `base` — so one registration's decorators
@@ -61,4 +62,42 @@ export function applyControllerDecorators(
     if (typeof replacement === 'function') decorated = replacement as unknown as Type<object>;
   }
   return decorated;
+}
+
+/** The `decorators` value the production-rule error shows as its example. */
+export const CONSOLE_DECORATORS_EXAMPLE =
+  "decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]";
+
+/** What {@link assertConsoleProtected} names in its error, per module. */
+export interface ConsoleProtectionHint {
+  /** The module being registered, e.g. `TelescopeModule`. */
+  module: string;
+  /** One-line registration with `decorators`. */
+  decoratorsExample: string;
+  /** One-line `routes: false` registration plus the controller the host writes. */
+  selfMountExample: string;
+}
+
+/**
+ * The production rule: with `NODE_ENV === 'production'`, a module that mounts
+ * its routes (no `routes: false`) with no `decorators` (an empty array counts
+ * as none) refuses to boot. Outside production it is a no-op, so an
+ * undecorated console mounts open (marked can-anyone) for local work.
+ *
+ * Throws at module-build time (`forRoot` / `forRootAsync`), so the app fails
+ * before it listens rather than shipping an open console.
+ */
+export function assertConsoleProtected(
+  decorators: readonly ClassDecorator[] | undefined,
+  hint: ConsoleProtectionHint,
+): void {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (decorators !== undefined && decorators.length > 0) return;
+  throw new Error(
+    [
+      `${hint.module}: refusing to mount unprotected routes with NODE_ENV=production. Protect them with the official NestJS tools (@nestjs/authentication, @nestjs/authorization), one of two ways:`,
+      `  1. decorators on the mounted controllers: ${hint.decoratorsExample}`,
+      `  2. mount the routes yourself: ${hint.selfMountExample}`,
+    ].join('\n'),
+  );
 }

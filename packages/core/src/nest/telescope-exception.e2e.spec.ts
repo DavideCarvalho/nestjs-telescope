@@ -35,7 +35,7 @@ class BoomController {
 
 async function bootApp(options: TelescopeModuleOptions = {}): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
-    imports: [TelescopeModule.forRoot({ authorizer: () => true, ...options })],
+    imports: [TelescopeModule.forRoot({ ...options })],
     controllers: [BoomController],
   }).compile();
   const app = moduleRef.createNestApplication();

@@ -47,7 +47,6 @@ function mockClient(prunes: PrunesInfo, pruneEnabled: boolean): TelescopeClient 
       retention: { afterMs: 3_600_000, keepLast: 100 },
       pruneEnabled,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     prunes: async () => prunes,

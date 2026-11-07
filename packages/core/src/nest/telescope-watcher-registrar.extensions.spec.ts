@@ -101,7 +101,6 @@ describe('extension watchers reach registration + /meta watchers', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           ...extra,
         }),
       ],

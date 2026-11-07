@@ -33,7 +33,7 @@ describe('GET /telescope/api/queues', () => {
   beforeAll(async () => {
     await storage.store([jobEntry('mail'), jobEntry('mail'), jobEntry('reports')]);
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => true, storage })],
+      imports: [TelescopeModule.forRoot({ enabled: true, storage })],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();

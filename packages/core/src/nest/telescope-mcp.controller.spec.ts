@@ -1,6 +1,6 @@
 // packages/core/src/nest/telescope-mcp.controller.spec.ts
-import { MethodNotAllowedException } from '@nestjs/common';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { MethodNotAllowedException, NotFoundException } from '@nestjs/common';
+import { describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
 import { EntryType } from '../entry/entry.js';
 import { PulseService } from '../pulse/pulse.service.js';
@@ -17,16 +17,7 @@ function build(options: TelescopeModuleOptions = {}) {
   return { storage, service, controller };
 }
 
-const reqWith = (token?: string) => ({
-  headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
-});
-
 describe('TelescopeMcpController', () => {
-  const original = process.env.NODE_ENV;
-  beforeEach(() => {
-    process.env.NODE_ENV = original;
-  });
-
   it('GET returns 405 (stateless transport)', () => {
     const { controller } = build({ mcp: true });
     expect(() => controller.getStream()).toThrow(MethodNotAllowedException);
@@ -39,7 +30,7 @@ describe('TelescopeMcpController', () => {
 
   it('lists tools via tools/list', async () => {
     const { controller } = build({ mcp: true });
-    const res = (await controller.rpc(reqWith(), {
+    const res = (await controller.rpc({
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/list',
@@ -64,7 +55,7 @@ describe('TelescopeMcpController', () => {
     await service.flush();
     const stored = (await storage.get({})).data[0];
 
-    const res = (await controller.rpc(reqWith(), {
+    const res = (await controller.rpc({
       jsonrpc: '2.0',
       id: 2,
       method: 'tools/call',
@@ -75,45 +66,16 @@ describe('TelescopeMcpController', () => {
     expect(payload.entries[0].summary).toBe('GET /x → 200');
   });
 
-  it('rejects a request with a wrong/absent token when one is configured', async () => {
-    const { controller } = build({ mcp: { token: 'secret' } });
-    const denied = (await controller.rpc(reqWith('nope'), {
-      jsonrpc: '2.0',
-      id: 3,
-      method: 'tools/list',
-    })) as { error: { code: number } };
-    expect(denied.error.code).toBe(-32001);
-
-    const ok = (await controller.rpc(reqWith('secret'), {
-      jsonrpc: '2.0',
-      id: 4,
-      method: 'tools/list',
-    })) as { result: unknown };
-    expect(ok.result).toBeDefined();
-  });
-
-  it('without a token, allows in dev but denies in production', async () => {
-    const { controller } = build({ mcp: true });
-    process.env.NODE_ENV = 'development';
-    const dev = (await controller.rpc(reqWith(), {
-      jsonrpc: '2.0',
-      id: 5,
-      method: 'ping',
-    })) as { result?: unknown; error?: unknown };
-    expect(dev.result).toBeDefined();
-
-    process.env.NODE_ENV = 'production';
-    const prod = (await controller.rpc(reqWith(), {
-      jsonrpc: '2.0',
-      id: 6,
-      method: 'ping',
-    })) as { error: { code: number } };
-    expect(prod.error.code).toBe(-32001);
+  it('404s while `mcp` is not enabled', async () => {
+    const { controller } = build({});
+    await expect(controller.rpc({ jsonrpc: '2.0', id: 5, method: 'ping' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('returns a -32601 for an unknown method', async () => {
     const { controller } = build({ mcp: true });
-    const res = (await controller.rpc(reqWith(), {
+    const res = (await controller.rpc({
       jsonrpc: '2.0',
       id: 7,
       method: 'bogus',
@@ -127,7 +89,7 @@ describe('TelescopeMcpController', () => {
     service.record({ type: EntryType.Exception, content: { name: 'Err', message: 'boom' } });
     await service.flush();
     const id = (await storage.get({})).data[0]?.id;
-    const res = (await controller.rpc(reqWith(), {
+    const res = (await controller.rpc({
       jsonrpc: '2.0',
       id: 8,
       method: 'tools/call',

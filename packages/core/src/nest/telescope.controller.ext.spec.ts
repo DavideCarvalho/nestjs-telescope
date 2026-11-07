@@ -19,12 +19,11 @@ const ext = defineTelescopeExtension({
   ],
 });
 
-async function makeApp(authorizer: () => boolean): Promise<INestApplication> {
+async function makeApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [
       TelescopeModule.forRoot({
         enabled: true,
-        authorizer,
         extensions: [ext],
       }),
     ],
@@ -42,7 +41,7 @@ describe('GET /telescope/api/ext/:ext/data/:provider', () => {
   });
 
   it('routes to the named provider and passes the query', async () => {
-    app = await makeApp(() => true);
+    app = await makeApp();
     const res = await request(app.getHttpServer())
       .get('/telescope/api/ext/demo/data/demo.ok?n=7')
       .expect(200);
@@ -50,25 +49,20 @@ describe('GET /telescope/api/ext/:ext/data/:provider', () => {
   });
 
   it('returns 404 for an unknown provider', async () => {
-    app = await makeApp(() => true);
+    app = await makeApp();
     await request(app.getHttpServer()).get('/telescope/api/ext/demo/data/nope').expect(404);
   });
 
   it('returns 404 when :ext does not own the provider', async () => {
-    app = await makeApp(() => true);
+    app = await makeApp();
     await request(app.getHttpServer()).get('/telescope/api/ext/wrong/data/demo.ok').expect(404);
   });
 
   it('returns a 502 error payload when the provider throws', async () => {
-    app = await makeApp(() => true);
+    app = await makeApp();
     const res = await request(app.getHttpServer())
       .get('/telescope/api/ext/demo/data/demo.boom')
       .expect(502);
     expect(res.body.message).toMatch(/kaboom/);
-  });
-
-  it('is gated by the read guard (403 when unauthorized)', async () => {
-    app = await makeApp(() => false);
-    await request(app.getHttpServer()).get('/telescope/api/ext/demo/data/demo.ok').expect(403);
   });
 });

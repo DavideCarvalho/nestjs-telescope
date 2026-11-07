@@ -22,7 +22,7 @@ describe('Watchers (e2e, Fastify)', () => {
 
   it('records and correlates request + exception on Fastify', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true })],
+      imports: [TelescopeModule.forRoot({})],
       controllers: [BoomController],
     }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());

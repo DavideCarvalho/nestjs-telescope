@@ -18,7 +18,7 @@ describe('TelescopeModule configurable path (e2e, Express)', () => {
 
   it('mounts the API under a custom path and 404s the default /telescope/api', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true, path: 'observability' })],
+      imports: [TelescopeModule.forRoot({ path: 'observability' })],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -40,7 +40,7 @@ describe('TelescopeModule configurable path (e2e, Express)', () => {
 
   it('normalizes a slash-wrapped path option', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true, path: '/obs/' })],
+      imports: [TelescopeModule.forRoot({ path: '/obs/' })],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -49,7 +49,7 @@ describe('TelescopeModule configurable path (e2e, Express)', () => {
 
   it('keeps the default /telescope/api when path is unset', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true })],
+      imports: [TelescopeModule.forRoot({})],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();

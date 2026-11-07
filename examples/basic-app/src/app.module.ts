@@ -26,16 +26,10 @@ const cacheHolder = new CacheEmitHolder();
       // Just add the one custom watcher this demo drives by hand.
       watchers: [new CacheWatcher(cacheHolder.source())],
 
-      // ──────────────────────────────────────────────────────────────────────
-      // Want a login wall on the dashboard? Uncomment these 5 lines (the demo
-      // ships auth OFF so the 30-second path stays frictionless):
-      //
-      // dashboardAuth: {
-      //   secret: process.env.TELESCOPE_SECRET ?? 'change-me-in-production',
-      //   login: (username, password) =>
-      //     username === 'admin' && password === 'telescope' ? { id: 'admin' } : null,
-      // },
-      // ──────────────────────────────────────────────────────────────────────
+      // The console mounts open here because this demo runs outside production.
+      // With NODE_ENV=production the boot fails until you protect it, e.g.
+      // decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]
+      // (on TelescopeUiModule.forRoot too), or routes: false + your own controllers.
     }),
     TelescopeUiModule.forRoot(),
   ],

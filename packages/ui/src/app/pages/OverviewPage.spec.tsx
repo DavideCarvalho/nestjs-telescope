@@ -120,7 +120,6 @@ function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
       retention: { afterMs: 3_600_000, keepLast: null },
       pruneEnabled: true,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     serverStats: async () => serverStats,

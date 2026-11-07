@@ -48,7 +48,6 @@ describe('GET /telescope/api/retention', () => {
   it('returns the resolved retention window when prune is configured', async () => {
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage: new InMemoryStorageProvider(),
       prune: { after: '1h', keepLast: 100 },
     });
@@ -64,7 +63,6 @@ describe('GET /telescope/api/retention', () => {
   it('returns null retention when no prune is configured', async () => {
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage: new InMemoryStorageProvider(),
     });
     const res = await request(app.getHttpServer()).get('/telescope/api/retention').expect(200);
@@ -74,15 +72,6 @@ describe('GET /telescope/api/retention', () => {
       oldestCreatedAt: null,
       pruneSupported: true,
     });
-  });
-
-  it('is gated by the read guard (403 when unauthorized)', async () => {
-    app = await makeApp({
-      enabled: true,
-      authorizer: () => false,
-      storage: new InMemoryStorageProvider(),
-    });
-    await request(app.getHttpServer()).get('/telescope/api/retention').expect(403);
   });
 });
 
@@ -94,10 +83,9 @@ describe('POST /telescope/api/retention/prune', () => {
     app = undefined;
   });
 
-  it('is 403 by default when no authorizeAction is configured', async () => {
+  it('is 403 by default when `mutations` is not enabled', async () => {
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage: new InMemoryStorageProvider(),
       prune: { after: '1h' },
     });
@@ -107,8 +95,7 @@ describe('POST /telescope/api/retention/prune', () => {
   it('is 400 when no prune window is configured', async () => {
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       storage: new InMemoryStorageProvider(),
     });
     await request(app.getHttpServer()).post('/telescope/api/retention/prune').expect(400);
@@ -123,8 +110,7 @@ describe('POST /telescope/api/retention/prune', () => {
     ]);
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       storage,
       prune: { after: '1h' },
     });

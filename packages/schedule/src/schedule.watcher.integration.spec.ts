@@ -88,7 +88,6 @@ class TimerTasks {
   imports: [
     TelescopeModule.forRoot({
       enabled: true,
-      authorizer: () => true,
       storage,
       traceContext,
       watchers: [watcher],

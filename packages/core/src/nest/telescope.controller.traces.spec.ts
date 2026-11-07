@@ -40,7 +40,7 @@ describe('GET /telescope/api/traces', () => {
       entry('request', null, new Date(now - 30_000)),
     ]);
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => true, storage })],
+      imports: [TelescopeModule.forRoot({ enabled: true, storage })],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();

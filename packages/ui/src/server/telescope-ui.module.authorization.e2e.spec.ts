@@ -136,3 +136,41 @@ describe('TelescopeUiModule under @nestjs/authorization', () => {
     await get(target, '/ops/telescope/assets/app.js', { id: 'a', admin: true }).expect(200);
   });
 });
+
+describe('TelescopeUiModule production rule', () => {
+  const previous = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = previous;
+  });
+
+  it('fails the boot when the page mounts with no decorators (an empty array counts as none)', () => {
+    process.env.NODE_ENV = 'production';
+    for (const register of [
+      () => TelescopeUiModule.forRoot({ assetsDir: dir }),
+      () => TelescopeUiModule.forRoot({ assetsDir: dir, decorators: [] }),
+      () => TelescopeUiModule.forRootAsync({ useFactory: () => ({ assetsDir: dir }) }),
+    ]) {
+      expect(register).toThrow(
+        /TelescopeUiModule: refusing to mount unprotected routes with NODE_ENV=production/,
+      );
+    }
+    expect(() => TelescopeUiModule.forRoot({ assetsDir: dir })).toThrow(
+      /TelescopeUiModule\.forRoot\(\{ routes: false \}\).*extends TelescopeUiController/,
+    );
+  });
+
+  it('boots with decorators, and with routes: false', async () => {
+    process.env.NODE_ENV = 'production';
+    const decorated = await boot([
+      AuthorizationModule.forRoot(),
+      TelescopeUiModule.forRoot({ assetsDir: dir, decorators: [Can(ConsolePolicy, 'view')] }),
+    ]);
+    await get(decorated, '/telescope').expect(401);
+    await get(decorated, '/telescope', { id: 'a', admin: true }).expect(200);
+    await decorated.close();
+    app = undefined;
+
+    const selfMounted = await boot([TelescopeUiModule.forRoot({ assetsDir: dir, routes: false })]);
+    await get(selfMounted, '/telescope').expect(404);
+  });
+});

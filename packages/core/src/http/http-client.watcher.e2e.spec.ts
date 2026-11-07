@@ -38,7 +38,6 @@ describe('HttpClientWatcher e2e correlation', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           watchers: [new HttpClientWatcher()],
           storage,
         }),

@@ -37,7 +37,7 @@ describe('GET /telescope/api/stats', () => {
       queryEntry(new Date(now - 40_000), 30),
     ]);
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => true, storage })],
+      imports: [TelescopeModule.forRoot({ enabled: true, storage })],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();

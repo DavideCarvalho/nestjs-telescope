@@ -40,7 +40,6 @@ function mockClient(tags: TagCount[] = ALL_TAGS) {
       retention: null,
       pruneEnabled: false,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     queueJobAction: async () => ({ ok: true }),

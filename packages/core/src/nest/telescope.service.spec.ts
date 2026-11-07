@@ -257,8 +257,8 @@ describe('TelescopeService', () => {
     expect(meta.sampling).toEqual({});
   });
 
-  it('getMeta pruneEnabled requires BOTH a prune window and authorizeAction', async () => {
-    // prune window but no authorizeAction → not enabled (mutation gated)
+  it('getMeta pruneEnabled requires BOTH a prune window and `mutations`', async () => {
+    // prune window but no `mutations` → not enabled (mutation gated)
     const gatedService = new TelescopeService(
       resolveConfig({ recorder: { flushIntervalMs: 5 }, prune: { after: '1h' } }),
       new InMemoryStorageProvider(),
@@ -268,11 +268,11 @@ describe('TelescopeService', () => {
     expect((await gatedService.getMeta()).pruneEnabled).toBe(false);
     await gatedService.onApplicationShutdown();
 
-    // authorizeAction but no prune window → not enabled (nothing to prune to)
+    // `mutations` but no prune window → not enabled (nothing to prune to)
     const noWindowService = new TelescopeService(
       resolveConfig({ recorder: { flushIntervalMs: 5 } }),
       new InMemoryStorageProvider(),
-      { authorizeAction: () => true },
+      { mutations: true },
     );
     active = noWindowService;
     expect((await noWindowService.getMeta()).pruneEnabled).toBe(false);
@@ -282,7 +282,7 @@ describe('TelescopeService', () => {
     const enabledService = new TelescopeService(
       resolveConfig({ recorder: { flushIntervalMs: 5 }, prune: { after: '1h' } }),
       new InMemoryStorageProvider(),
-      { authorizeAction: () => true },
+      { mutations: true },
     );
     active = enabledService;
     expect((await enabledService.getMeta()).pruneEnabled).toBe(true);
@@ -554,8 +554,8 @@ describe('TelescopeService', () => {
     const registry = new ExtensionRegistry([ext], {} as ExtensionContext);
     const config = resolveConfig({ recorder: { flushIntervalMs: 5 } });
     const storage = new InMemoryStorageProvider();
-    // Pass null for dashboardAuth (4th param) and registry as extensions (5th param).
-    const service = new TelescopeService(config, storage, {}, null, registry);
+    // Pass registry as extensions (4th param).
+    const service = new TelescopeService(config, storage, {}, registry);
     active = service;
     service.record({ type: 'request', content: { method: 'GET', statusCode: 200 } });
     await service.flush();

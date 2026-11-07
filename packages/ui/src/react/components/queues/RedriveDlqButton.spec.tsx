@@ -17,7 +17,6 @@ function mockClient(queueAction: TelescopeClient['queueAction']): TelescopeClien
       retention: null,
       pruneEnabled: false,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     liveQueues: async () => ({

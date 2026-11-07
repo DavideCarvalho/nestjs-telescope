@@ -11,7 +11,6 @@ import { v7 } from 'uuid';
 import { DiagnosisCoordinator } from '../ai/diagnosis-coordinator.js';
 import { resolveAlerts } from '../alerts/resolve-alerts.js';
 import { TelescopeAlerter } from '../alerts/telescope-alerter.js';
-import type { AuthMode, ResolvedDashboardAuth } from '../auth/dashboard-auth-config.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { samplingRates } from '../config/sampling.js';
 import { createBatch } from '../context/batch.js';
@@ -29,7 +28,6 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import { type ExceptionCaptureDetails, captureException } from './exception-capture.js';
 import {
   TELESCOPE_CONFIG,
-  TELESCOPE_DASHBOARD_AUTH,
   TELESCOPE_EXTENSIONS,
   TELESCOPE_OPTIONS,
   TELESCOPE_STORAGE,
@@ -52,8 +50,8 @@ export interface TelescopeMeta {
   retention: { afterMs: number; keepLast: number | null } | null;
   /**
    * Whether on-demand pruning is available from the dashboard: requires both a
-   * configured retention window (`prune`) AND mutations enabled (`authorizeAction`
-   * present, the same default-deny gate the queue mutations use). When `false`,
+   * configured retention window (`prune`) AND mutations enabled (`mutations: true`,
+   * the same switch the queue mutations use). When `false`,
    * the dashboard hides/disables the "Prune now" control.
    */
   pruneEnabled: boolean;
@@ -64,12 +62,6 @@ export interface TelescopeMeta {
   explainEnabled: boolean;
   /** Resolved per-type sample rates (0..1). Empty when no sampling configured. */
   sampling: Record<string, number>;
-  /**
-   * Dashboard cookie-auth state for the AUTHENTICATED UI (e.g. showing a logout
-   * button + the active modes). The UNauthenticated SPA learns the modes from
-   * the 401 body of `GET /api/auth/me` instead — meta stays behind the gate.
-   */
-  auth: { enabled: boolean; modes: AuthMode[] };
   /**
    * Webhook alerting state: whether `alerts` is configured and how many rules
    * are armed. The dashboard surfaces this as a read-only "Alerts: N rules" badge.
@@ -136,8 +128,6 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Inject(TELESCOPE_CONFIG) private readonly config: ResolvedCoreConfig,
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
-    @Inject(TELESCOPE_DASHBOARD_AUTH)
-    private readonly dashboardAuth: ResolvedDashboardAuth | null = null,
     @Inject(TELESCOPE_EXTENSIONS)
     private readonly extensions: ExtensionRegistry = new ExtensionRegistry(
       [],
@@ -153,8 +143,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     @Inject(EntryEvents)
     private readonly entryEvents: EntryEvents = new EntryEvents(),
   ) {
-    // Boot-validate alerts FIRST (fail-closed at provider instantiation, like
-    // dashboardAuth): no destination / empty rules / bad duration throws.
+    // Boot-validate alerts FIRST (fail-closed at provider instantiation): no destination / empty rules / bad duration throws.
     this.alerts = resolveAlerts(this.options.alerts);
     // Build the AI coordinator (if configured) BEFORE the Recorder so its
     // auto-mode flush hook can be wired into `onFlushStored` below. The
@@ -396,13 +385,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
             keepLast: this.config.prune.keepLast ?? null,
           }
         : null,
-      pruneEnabled: this.config.prune !== undefined && Boolean(this.options.authorizeAction),
+      pruneEnabled: this.config.prune !== undefined && this.options.mutations === true,
       explainEnabled: Boolean(this.options.explainQuery),
       sampling: samplingRates(this.config.sampling),
-      auth: {
-        enabled: this.dashboardAuth !== null,
-        modes: this.dashboardAuth ? [...this.dashboardAuth.modes] : [],
-      },
       alerts: {
         enabled: this.alerts !== null,
         ruleCount: this.alerts?.rules.length ?? 0,

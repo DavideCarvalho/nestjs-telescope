@@ -25,7 +25,6 @@ function mockClient(watchers: string[] = []): TelescopeClient {
       retention: null,
       pruneEnabled: false,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
   });

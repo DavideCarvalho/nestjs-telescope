@@ -16,7 +16,6 @@ describe('GET /telescope/api/server-stats', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           storage,
           instanceId: 'instance-xyz',
         }),
@@ -47,15 +46,5 @@ describe('GET /telescope/api/server-stats', () => {
     expect(Number.isFinite(body.cpu.userMs)).toBe(true);
     expect(Number.isFinite(body.cpu.systemMs)).toBe(true);
     expect(body.eventLoopDelayMs === null || Number.isFinite(body.eventLoopDelayMs)).toBe(true);
-  });
-
-  it('is gated by the read guard (403 when unauthorized)', async () => {
-    const denied = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => false, storage })],
-    }).compile();
-    const deniedApp = denied.createNestApplication();
-    await deniedApp.init();
-    await request(deniedApp.getHttpServer()).get('/telescope/api/server-stats').expect(403);
-    await deniedApp.close();
   });
 });

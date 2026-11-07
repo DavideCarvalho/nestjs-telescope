@@ -90,7 +90,6 @@ describe('MikroOrmQueryWatcher integration (host-wired loggerFactory)', () => {
     @Module({
       imports: [
         TelescopeModule.forRoot({
-          authorizer: () => true,
           watchers: [new MikroOrmQueryWatcher()],
         }),
         MikroOrmModule.forRoot({

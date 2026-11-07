@@ -7,8 +7,8 @@ import {
   HttpCode,
   Inject,
   MethodNotAllowedException,
+  NotFoundException,
   Post,
-  Req,
 } from '@nestjs/common';
 import { durationToMs } from '../config/parse-duration.js';
 import { EntryType } from '../entry/entry.js';
@@ -110,11 +110,10 @@ interface ToolArgs {
  * every query. Hand-rolled JSON-RPC (no SDK dependency), backed by the same
  * storage / pulse / diagnosis APIs as the dashboard.
  *
- * Auth is a Bearer token (`mcp: { token }`); without one the endpoint is allowed
- * only when `NODE_ENV !== 'production'`. Carries NO `@UseGuards(TelescopeGuard)`:
- * the cookie-session dashboard gate doesn't apply to a header-only agent client,
- * so this controller enforces its own Bearer check. NestJS has no CSRF guard by
- * default, so there is nothing CSRF-like to bypass.
+ * 404 unless `mcp` is enabled. It carries no guard of its own: protect it like
+ * every other console route, with the module's `decorators` (agent clients send
+ * a header, so use a Bearer-capable `@nestjs/authentication` strategy) or by
+ * extending this class with `routes: false`.
  */
 @Controller()
 export class TelescopeMcpController {
@@ -141,37 +140,10 @@ export class TelescopeMcpController {
 
   @Post()
   @HttpCode(200)
-  async rpc(@Req() request: unknown, @Body() body: JsonRpcRequest): Promise<unknown> {
-    if (!this.isAuthorized(request)) {
-      // JSON-RPC has no transport-level 401; surface the denial as an RPC error
-      // with the conventional id echo so a compliant client can read it.
-      return this.fail(body?.id, -32001, 'Unauthorized: a valid Bearer token is required.');
-    }
+  async rpc(@Body() body: JsonRpcRequest): Promise<unknown> {
+    // A feature switch, not access control: disabled means the route doesn't exist.
+    if (!this.options.mcp) throw new NotFoundException();
     return this.handle(body);
-  }
-
-  /**
-   * Bearer-token gate. With a configured token, the request MUST carry a matching
-   * `Authorization: Bearer <token>` header. Without a token, allow only when
-   * `NODE_ENV !== 'production'` (mirroring the default-open-in-dev dashboard
-   * authorizer); a tokenless config in production is refused.
-   */
-  private isAuthorized(request: unknown): boolean {
-    const token = this.configuredToken();
-    if (token === null) {
-      return process.env.NODE_ENV !== 'production';
-    }
-    const header = readAuthorizationHeader(request);
-    if (header === null) return false;
-    const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-    return match !== null && match[1] === token;
-  }
-
-  /** The configured Bearer token, or `null` when `mcp` is `true`/disabled. */
-  private configuredToken(): string | null {
-    const mcp = this.options.mcp;
-    if (mcp === undefined || mcp === false || mcp === true) return null;
-    return mcp.token ?? null;
   }
 
   private async handle(body: JsonRpcRequest): Promise<unknown> {
@@ -316,15 +288,4 @@ function safeSummary(content: Record<string, unknown>, type: string): string {
   } catch {
     return type;
   }
-}
-
-/** Read the `Authorization` header off an Express/Fastify request, or `null`. */
-function readAuthorizationHeader(request: unknown): string | null {
-  if (typeof request !== 'object' || request === null) return null;
-  const headers = (request as { headers?: unknown }).headers;
-  if (typeof headers !== 'object' || headers === null) return null;
-  const value = (headers as Record<string, unknown>).authorization;
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
-  return null;
 }

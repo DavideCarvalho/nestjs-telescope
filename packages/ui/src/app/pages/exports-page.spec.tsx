@@ -45,11 +45,6 @@ function mockClient(): TelescopeClient {
     queueJobAction: unused,
     queueAction: unused,
     queueEnqueue: unused,
-    auth: {
-      me: unused,
-      login: unused,
-      logout: unused,
-    },
   };
 }
 

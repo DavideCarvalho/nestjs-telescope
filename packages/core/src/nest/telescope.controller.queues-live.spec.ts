@@ -82,7 +82,6 @@ describe('GET /telescope/api/queues/live/*', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           queueManagers: [fakeManager],
         }),
       ],
@@ -153,7 +152,6 @@ describe('GET /telescope/api/queues/live capabilities', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           queueManagers: [bullmqManager],
         }),
       ],
@@ -170,12 +168,11 @@ describe('GET /telescope/api/queues/live capabilities', () => {
     }
   });
 
-  it('reports mutationsEnabled=false when authorizeAction is omitted', async () => {
+  it('reports mutationsEnabled=false when `mutations` is omitted', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           queueManagers: [bullmqManager],
         }),
       ],
@@ -190,13 +187,12 @@ describe('GET /telescope/api/queues/live capabilities', () => {
     }
   });
 
-  it('reports mutationsEnabled=true when authorizeAction is configured', async () => {
+  it('reports mutationsEnabled=true when `mutations: true`', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
-          authorizeAction: () => true,
+          mutations: true,
           queueManagers: [bullmqManager],
         }),
       ],
@@ -238,8 +234,7 @@ describe('POST /telescope/api/queues/live/:driver/:queue/jobs/:id/:action', () =
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
-          authorizeAction: () => true,
+          mutations: true,
           queueManagers: [actionManager],
         }),
       ],

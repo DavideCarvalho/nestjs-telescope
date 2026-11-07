@@ -44,7 +44,7 @@ function entry(over: Partial<Entry>): Entry {
 function setup() {
   const storage = new InMemoryStorageProvider();
   const extensions = new ExtensionRegistry([], {} as ExtensionContext);
-  const service = new TelescopeService(resolveConfig({}), storage, {}, null, extensions);
+  const service = new TelescopeService(resolveConfig({}), storage, {}, extensions);
   // Only list()/show()/meta() are exercised below, and they touch just
   // `storage` and `service`. The remaining constructor deps are unused by
   // those paths, so they're stubbed rather than wired up for real.

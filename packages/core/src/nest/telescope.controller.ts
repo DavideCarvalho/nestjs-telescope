@@ -18,7 +18,6 @@ import {
   Req,
   Res,
   ServiceUnavailableException,
-  UseGuards,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { type AiUsageResult, AiUsageService } from '../agent-metrics/ai-usage.service.js';
@@ -64,9 +63,7 @@ import type {
 } from '../storage/storage-provider.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { type ReplayResult, replayRequest } from './request-replay.js';
-import { TelescopeActionGuard } from './telescope-action.guard.js';
 import { type PruneRun, TelescopePruner } from './telescope-pruner.service.js';
-import { TelescopeGuard } from './telescope.guard.js';
 import {
   TELESCOPE_CONFIG,
   TELESCOPE_EXTENSIONS,
@@ -195,7 +192,6 @@ function boundedCount(raw?: string): number | undefined {
   return raw !== undefined && raw !== '' && Number.isInteger(n) && n >= 0 ? n : undefined;
 }
 
-@UseGuards(TelescopeGuard)
 @Controller('telescope/api')
 export class TelescopeController {
   constructor(
@@ -242,15 +238,10 @@ export class TelescopeController {
 
   // Request REPLAY. Re-issues a captured request entry against the local server
   // and reports the outcome. It is a MUTATION (it actually hits the app, which
-  // may write), so — like `prune` — it stays behind the default-deny
-  // authorizeAction gate rather than the read guard. The queue-shaped
-  // TelescopeActionGuard can't validate it (no driver/queue/action params), so we
-  // enforce the same default-deny here directly: no `authorizeAction` → 403.
+  // may write), so — like `prune` — it is off unless `mutations: true`.
   @Get('entries/:id/replay')
   async replay(@Param('id') id: string, @Req() request: unknown): Promise<ReplayResult> {
-    if (!this.options.authorizeAction) {
-      throw new ForbiddenException('Mutations are disabled (no authorizeAction configured).');
-    }
+    this.requireMutations();
     const entry = await this.storage.find(id);
     if (entry === null || entry.type !== EntryType.Request) {
       throw new NotFoundException('No request entry with that id.');
@@ -411,7 +402,7 @@ export class TelescopeController {
     return {
       queues: all.flat(),
       capabilities: {
-        mutationsEnabled: Boolean(this.options.authorizeAction),
+        mutationsEnabled: this.options.mutations === true,
         actionsByDriver,
       },
     };
@@ -456,13 +447,13 @@ export class TelescopeController {
 
   @Post('queues/live/:driver/:queue/jobs/:id/:action')
   @HttpCode(200)
-  @UseGuards(TelescopeActionGuard)
   async jobAction(
     @Param('driver') driver: string,
     @Param('queue') queue: string,
     @Param('id') id: string,
     @Param('action') action: string,
   ): Promise<{ ok: true }> {
+    this.requireMutations();
     const manager = this.requireManager(driver);
     if (!isJobAction(action)) throw new BadRequestException(`Invalid job action: ${action}`);
     await this.callAction(manager[ACTION_METHOD[action]], manager, queue, id, action);
@@ -471,13 +462,13 @@ export class TelescopeController {
 
   @Post('queues/live/:driver/:queue/actions/:action')
   @HttpCode(200)
-  @UseGuards(TelescopeActionGuard)
   async queueAction(
     @Param('driver') driver: string,
     @Param('queue') queue: string,
     @Param('action') action: string,
     @Query('state') state?: string,
   ): Promise<{ ok: true; count?: number }> {
+    this.requireMutations();
     const manager = this.requireManager(driver);
     if (action === 'retry-all') {
       if (!isQueueState(state)) throw new BadRequestException(`Invalid state: ${state}`);
@@ -493,15 +484,15 @@ export class TelescopeController {
   }
 
   // Enqueue carries a JSON body (name + payload), so it lives on its own route
-  // rather than under `:action`. Still gated by the same default-deny guard.
+  // rather than under `:action`. Off unless `mutations: true`, like every mutation.
   @Post('queues/live/:driver/:queue/enqueue')
   @HttpCode(200)
-  @UseGuards(TelescopeActionGuard)
   async enqueue(
     @Param('driver') driver: string,
     @Param('queue') queue: string,
     @Body() body: EnqueueBody,
   ): Promise<{ id: string | null }> {
+    this.requireMutations();
     if (body === undefined || body === null || !('payload' in body)) {
       throw new BadRequestException('Body must include a "payload".');
     }
@@ -520,6 +511,17 @@ export class TelescopeController {
   ): Promise<void> {
     if (!fn) throw new MethodNotAllowedException(`Driver ${manager.driver} cannot ${action}`);
     await fn.call(manager, queue, id);
+  }
+
+  /**
+   * Mutations (queue actions, enqueue, prune, replay, profiling arm) are a
+   * feature switched on by `mutations: true`; who may call them is decided by
+   * the host's decorators, like every other route. Off → 403.
+   */
+  private requireMutations(): void {
+    if (this.options.mutations !== true) {
+      throw new ForbiddenException('Mutations are disabled (set `mutations: true`).');
+    }
   }
 
   private requireManager(driver: string): QueueManager {
@@ -552,7 +554,7 @@ export class TelescopeController {
   // ── Extension data providers ────────────────────────────────────────────────
 
   // Read-shaped: the UI calls this per panel to fetch a named provider's data.
-  // Sits behind the class-level read guard. 404 for an unknown provider; 502
+  // 404 for an unknown provider; 502
   // when the provider throws (its message is surfaced so panel authors can see
   // why). Query params arrive as strings and are passed through verbatim.
   @Get('ext/:ext/data/:provider')
@@ -596,8 +598,8 @@ export class TelescopeController {
     };
   }
 
-  // Prune-run activity / retention status for the Prunes screen. Read-shaped —
-  // sits behind the class-level read guard like the other GETs. The runs come
+  // Prune-run activity / retention status for the Prunes screen. Read-shaped like
+  // the other GETs. The runs come
   // from the pruner's in-memory ring (PER-POD), the config from the resolved
   // config, and nextRunAt is the pruner's predicted next scheduled cycle.
   @Get('prunes')
@@ -618,18 +620,14 @@ export class TelescopeController {
     };
   }
 
-  // Prune is a MUTATION (deletes entries), so it stays behind the default-deny
-  // authorizeAction gate. The queue-shaped TelescopeActionGuard can't validate
-  // it (no driver/queue/action params), so we enforce the same default-deny
-  // here directly: no `authorizeAction` configured → 403. The cycle runs through
+  // Prune is a MUTATION (deletes entries), so it is off unless `mutations: true`
+  // (403 otherwise). The cycle runs through
   // the pruner so it is recorded as a `manual` run (and honours per-type +
   // archive retention identically to the scheduled cycle).
   @Post('retention/prune')
   @HttpCode(200)
   async prune(): Promise<{ pruned: number }> {
-    if (!this.options.authorizeAction) {
-      throw new ForbiddenException('Mutations are disabled (no authorizeAction configured).');
-    }
+    this.requireMutations();
     if (!this.options.prune) {
       throw new BadRequestException('No `prune` retention window is configured.');
     }
@@ -638,8 +636,8 @@ export class TelescopeController {
 
   // ── Query EXPLAIN ──────────────────────────────────────────────────────────
 
-  // Read-shaped (it returns a plan, mutates no Telescope state) so it sits behind
-  // the normal read guard. NOTE: the host hook runs arbitrary `EXPLAIN <sql>`
+  // Read-shaped (it returns a plan, mutates no Telescope state) so it is a read
+  // route. NOTE: the host hook runs arbitrary `EXPLAIN <sql>`
   // against its database — hosts MUST scope that connection read-only.
   @Post('queries/explain')
   @HttpCode(200)
@@ -669,8 +667,8 @@ export class TelescopeController {
 
   // Read-shaped ANALYSIS (it produces a markdown explanation, mutates no
   // Telescope state and runs no destructive action), so — like `explain` — it
-  // sits behind the normal dashboard read guard, NOT the default-deny
-  // authorizeAction mutation gate. 404 when AI isn't configured or the entry
+  // is a read route, NOT behind the
+  // `mutations` switch. 404 when AI isn't configured or the entry
   // isn't an exception; 502 when the diagnoser fails (a safe, generic message —
   // the model's raw error is never surfaced to the dashboard).
   @Post('exceptions/:id/diagnose')
@@ -704,7 +702,7 @@ export class TelescopeController {
   // for this entry's family, if one exists, WITHOUT ever computing a new one (no
   // model call, no token cost). The detail page fetches this on open so an
   // auto-mode (or previously on-demand) diagnosis shows immediately instead of a
-  // bare "Diagnose with AI" button. Same guards/404 semantics as the POST:
+  // bare "Diagnose with AI" button. Same 404 semantics as the POST:
   //   - 404 when AI isn't configured or the entry isn't an exception;
   //   - 200 `{ markdown, cached: true }` when a diagnosis is cached;
   //   - 204 (empty) when none is cached yet (the family hasn't been diagnosed).
@@ -754,8 +752,7 @@ export class TelescopeController {
 
   /**
    * Profiler status for the dashboard's Profiles tab: whether the feature is
-   * enabled, the sample rate, and current capture activity. Read-shaped — sits
-   * behind the normal read guard. When profiling is disabled the tab shows an
+   * enabled, the sample rate, and current capture activity. Read-shaped. When profiling is disabled the tab shows an
    * "enable `profiling`" empty state from this payload.
    */
   @Get('profiles/status')
@@ -793,16 +790,14 @@ export class TelescopeController {
   /**
    * Arm an on-demand capture of the next N requests (optionally only those whose
    * normalized route matches `label`, e.g. "GET /users/:id"). A MUTATION-shaped
-   * trigger — it incurs real profiling overhead — so it stays behind the same
-   * default-deny `authorizeAction` gate as prune/replay. 400 when profiling is
+   * trigger — it incurs real profiling overhead — so like prune/replay it is
+   * off unless `mutations: true`. 400 when profiling is
    * disabled (so the dashboard can explain why nothing happens).
    */
   @Post('profiles/arm')
   @HttpCode(200)
   arm(@Body() body: ArmBody): { pendingManual: number } {
-    if (!this.options.authorizeAction) {
-      throw new ForbiddenException('Mutations are disabled (no authorizeAction configured).');
-    }
+    this.requireMutations();
     if (!this.profiler.status().enabled) {
       throw new BadRequestException('CPU profiling is disabled (set `profiling.enabled`).');
     }

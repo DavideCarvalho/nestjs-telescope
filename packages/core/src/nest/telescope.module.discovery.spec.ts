@@ -8,7 +8,7 @@ import { TelescopeModule } from './telescope.module.js';
 describe('TelescopeModule discovery support', () => {
   it('exposes DiscoveryService so discovery-based watchers can resolve it', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => true })],
+      imports: [TelescopeModule.forRoot({ enabled: true })],
     }).compile();
 
     const discovery = moduleRef.get(DiscoveryService, { strict: false });

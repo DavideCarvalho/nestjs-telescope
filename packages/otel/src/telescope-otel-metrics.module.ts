@@ -1,4 +1,4 @@
-import { applyControllerDecorators } from '@dudousxd/nestjs-telescope';
+import { applyControllerDecorators, assertConsoleProtected } from '@dudousxd/nestjs-telescope';
 import { type DynamicModule, Module, type Type } from '@nestjs/common';
 import { TELESCOPE_OTEL_EXPORTER, TelescopeOtelMetricsController } from './metrics.controller.js';
 import { TelescopeOtelExporter } from './telescope-otel-exporter.js';
@@ -10,11 +10,16 @@ export interface TelescopeOtelMetricsModuleOptions {
    * `[UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')]` with
    * `@nestjs/authentication` + `@nestjs/authorization`.
    *
-   * DEFAULT: the controller is marked open to `@nestjs/authorization`'s
-   * deny-by-default global `AuthorizationGuard` (as `@Can.Anyone()` would), so
-   * the scrape keeps answering when that package is adopted. A `Can(...)`
-   * passed here is still enforced. Applied to a fresh subclass per call, so
-   * nothing leaks between registrations.
+   * PRODUCTION RULE: with `NODE_ENV === 'production'`, mounting the scrape with
+   * no `decorators` (an empty array counts as none) fails the boot, the same
+   * rule as the console's; protect it here or mount it yourself with
+   * {@link routes}`: false`. Outside production an undecorated scrape mounts open.
+   *
+   * The controller is also marked open to `@nestjs/authorization`'s
+   * deny-by-default global `AuthorizationGuard` (as `@Can.Anyone()` would), so an
+   * undecorated dev scrape keeps answering when that package is adopted. A
+   * `Can(...)` passed here is still enforced. Applied to a fresh subclass per
+   * call, so nothing leaks between registrations.
    */
   decorators?: ClassDecorator[];
   /**
@@ -49,6 +54,13 @@ export class TelescopeOtelMetricsModule {
         exports: [TELESCOPE_OTEL_EXPORTER],
       };
     }
+    assertConsoleProtected(options.decorators, {
+      module: 'TelescopeOtelMetricsModule',
+      decoratorsExample:
+        "TelescopeOtelMetricsModule.forExporter(exporter, { decorators: [UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')] })",
+      selfMountExample:
+        "TelescopeOtelMetricsModule.forExporter(exporter, { routes: false }) + @Controller() @Can(MetricsPolicy, 'scrape') class Metrics extends TelescopeOtelMetricsController {}",
+    });
     // A fresh subclass per call: inherits the route + constructor metadata, and
     // takes this call's decorators without touching the shared base class.
     class MetricsController extends TelescopeOtelMetricsController {}

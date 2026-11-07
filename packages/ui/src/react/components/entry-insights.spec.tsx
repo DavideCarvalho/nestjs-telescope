@@ -41,7 +41,6 @@ function mockClient(stats: StatsResult): TelescopeClient {
       retention: null,
       pruneEnabled: false,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     queueJob: async () => null,

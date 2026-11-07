@@ -54,11 +54,6 @@ function mockClient(meta: TelescopeMeta): TelescopeClient {
     queueJobAction: unused,
     queueAction: unused,
     queueEnqueue: unused,
-    auth: {
-      me: unused,
-      login: unused,
-      logout: unused,
-    },
   };
 }
 
@@ -71,7 +66,6 @@ function meta(over: Partial<TelescopeMeta>): TelescopeMeta {
     retention: null,
     pruneEnabled: false,
     explainEnabled: false,
-    auth: { enabled: false, modes: [] },
     sampling: {},
     ...over,
   };

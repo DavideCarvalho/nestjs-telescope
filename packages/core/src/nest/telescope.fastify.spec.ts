@@ -13,7 +13,7 @@ describe('TelescopeModule (e2e, Fastify)', () => {
 
   it('serves the same gated API on the Fastify adapter', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true })],
+      imports: [TelescopeModule.forRoot({})],
     }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     await app.init();

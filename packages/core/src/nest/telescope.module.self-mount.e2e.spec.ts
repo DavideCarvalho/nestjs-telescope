@@ -12,7 +12,6 @@ import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { StreamController } from '../sse/stream.controller.js';
 import { ClientErrorController } from './client-error.controller.js';
-import { TelescopeAuthController } from './telescope-auth.controller.js';
 import { TelescopeMcpController } from './telescope-mcp.controller.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeModule } from './telescope.module.js';
@@ -65,7 +64,6 @@ async function boot(
   telescope = TelescopeModule.forRoot({
     path: 'ops/telescope',
     routes: false,
-    authorizer: () => true,
   } satisfies TelescopeModuleOptions),
   controllers: Type[] = [ConsoleApi, ConsoleStream, ConsoleMcp, HelloController],
 ) {
@@ -101,12 +99,9 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
     });
     expect(mod.controllers).toEqual([]);
 
-    const target = await boot(TelescopeModule.forRoot({ routes: false, authorizer: () => true }), [
-      HelloController,
-    ]);
+    const target = await boot(TelescopeModule.forRoot({ routes: false }), [HelloController]);
     expect(target.get(TelescopeService)).toBeInstanceOf(TelescopeService);
     expect((await get(target, '/telescope/api/meta', ADMIN)).status).toBe(404);
-    expect((await get(target, '/telescope/api/auth/me', ADMIN)).status).toBe(404);
   });
 
   it('developer-mounted routes protected with @Can: guest 401, denied 403, allowed 200', async () => {
@@ -116,7 +111,7 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
       expect((await get(target, url, USER)).status, `user ${url}`).toBe(403);
       expect((await get(target, url, ADMIN)).status, `admin ${url}`).toBe(200);
     }
-    // The MCP subclass too (its own token/dev check runs after @Can lets it through).
+    // The MCP subclass too.
     const mcp = (user?: User) => {
       const req = request(target.getHttpServer())
         .post('/ops/telescope/api/mcp')
@@ -127,8 +122,6 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
     expect((await mcp()).status).toBe(401);
     expect((await mcp(USER)).status).toBe(403);
     expect([401, 403]).not.toContain((await mcp(ADMIN)).status);
-    // Nothing is left at the library's own mount.
-    expect((await get(target, '/ops/telescope/api/auth/me', ADMIN)).status).toBe(404);
   });
 
   it('capture keeps working and the self-mounted API serves it (own path self-skipped)', async () => {
@@ -146,23 +139,39 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
     expect(urls.some((u: string) => u.includes('/ops/telescope'))).toBe(false);
   });
 
-  it("inherited routes keep Telescope's own gate: authorizer false stays 403 even when @Can allows", async () => {
-    const target = await boot(
-      TelescopeModule.forRoot({ path: 'ops/telescope', routes: false, authorizer: () => false }),
-    );
-    expect((await get(target, '/ops/telescope/api/meta', ADMIN)).status).toBe(403);
+  it('inherited routes carry no built-in guard: the developer decorators are the whole gate, even in production', async () => {
+    // No guard metadata on any extendable base class, so a subclass inherits none.
+    for (const base of [
+      TelescopeController,
+      StreamController,
+      ClientErrorController,
+      TelescopeMcpController,
+    ]) {
+      expect(Reflect.getMetadata('__guards__', base), base.name).toBeUndefined();
+    }
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      // `routes: false` boots in production with no `decorators` …
+      const target = await boot();
+      // … and the developer's @Can alone decides: no built-in prod-closed gate.
+      expect((await get(target, '/ops/telescope/api/meta', USER)).status).toBe(403);
+      expect((await get(target, '/ops/telescope/api/meta', ADMIN)).status).toBe(200);
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
   });
 
   it('forRootAsync takes routes as a static top-level option', async () => {
     const mod = TelescopeModule.forRootAsync({
-      useFactory: () => ({ authorizer: () => true }),
+      useFactory: () => ({}),
       routes: false,
     });
     expect(mod.controllers).toEqual([]);
 
     const target = await boot(
       TelescopeModule.forRootAsync({
-        useFactory: () => ({ authorizer: () => true }),
+        useFactory: () => ({}),
         path: 'ops/telescope',
         routes: false,
       }),
@@ -177,7 +186,6 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
     for (const base of [
       TelescopeController,
       StreamController,
-      TelescopeAuthController,
       ClientErrorController,
       TelescopeMcpController,
     ]) {

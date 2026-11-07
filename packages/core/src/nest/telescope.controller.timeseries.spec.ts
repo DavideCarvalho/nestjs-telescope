@@ -38,7 +38,7 @@ describe('GET /telescope/api/timeseries', () => {
       entry('request', new Date(now - 40_000)),
     ]);
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => true, storage })],
+      imports: [TelescopeModule.forRoot({ enabled: true, storage })],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();

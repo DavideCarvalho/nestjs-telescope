@@ -14,7 +14,7 @@ describe('TelescopeModule (e2e, Express)', () => {
 
   it('boots, records via the service, and serves the gated API', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true })],
+      imports: [TelescopeModule.forRoot({})],
     }).compile();
     app = moduleRef.createNestApplication();
     app.enableShutdownHooks();
@@ -34,15 +34,6 @@ describe('TelescopeModule (e2e, Express)', () => {
     expect(meta.body.enabled).toBe(true);
   });
 
-  it('denies the API when the authorizer returns false', async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => false })],
-    }).compile();
-    app = moduleRef.createNestApplication();
-    await app.init();
-    await request(app.getHttpServer()).get('/telescope/api/meta').expect(403);
-  });
-
   it('correlates a request with an exception thrown by its handler', async () => {
     const { Controller, Get } = await import('@nestjs/common');
     @Controller('boom')
@@ -53,7 +44,7 @@ describe('TelescopeModule (e2e, Express)', () => {
       }
     }
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true })],
+      imports: [TelescopeModule.forRoot({})],
       controllers: [BoomController],
     }).compile();
     app = moduleRef.createNestApplication();

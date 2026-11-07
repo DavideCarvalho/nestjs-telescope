@@ -50,7 +50,6 @@ function mockClient(rows: Entry[], extra: Partial<Page<Entry>> = {}) {
       retention: null,
       pruneEnabled: false,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     queueJobAction: async () => ({ ok: true }),

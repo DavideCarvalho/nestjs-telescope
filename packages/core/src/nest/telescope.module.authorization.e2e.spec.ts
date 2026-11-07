@@ -13,7 +13,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { StreamController } from '../sse/stream.controller.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { AUTHORIZATION_CAN_ANYONE_METADATA } from './dynamic-controller.js';
-import { TelescopeAuthController } from './telescope-auth.controller.js';
 import { TelescopeMcpController } from './telescope-mcp.controller.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeModule } from './telescope.module.js';
@@ -27,11 +26,11 @@ class ConsolePolicy {
   }
 }
 
-/** One route per controller TelescopeModule mounts. */
-const ROUTES: Array<{ method: 'get' | 'post'; url: string; body?: object }> = [
+type Route = { method: 'get' | 'post'; url: string; body?: object };
+
+/** One route per console controller TelescopeModule mounts (they take `decorators`). */
+const CONSOLE_ROUTES: Route[] = [
   { method: 'get', url: '/telescope/api/meta' }, // TelescopeController
-  { method: 'get', url: '/telescope/api/auth/me' }, // TelescopeAuthController
-  { method: 'post', url: '/telescope/api/client-errors', body: {} }, // ClientErrorController
   {
     method: 'post',
     url: '/telescope/api/mcp',
@@ -39,7 +38,16 @@ const ROUTES: Array<{ method: 'get' | 'post'; url: string; body?: object }> = [
   }, // TelescopeMcpController
 ];
 
-const META = ROUTES[0] as (typeof ROUTES)[number];
+/** The public client-error beacon: no `decorators`, guests must reach it. */
+const BEACON: Route = {
+  method: 'post',
+  url: '/telescope/api/client-errors',
+  body: { message: 'x' },
+};
+
+const ROUTES: Route[] = [...CONSOLE_ROUTES, BEACON];
+
+const META = CONSOLE_ROUTES[0] as Route;
 
 let app: INestApplication | undefined;
 
@@ -66,7 +74,7 @@ async function boot(imports: DynamicModule[], providers = [ConsolePolicy]) {
   return app;
 }
 
-async function statusOf(target: INestApplication, route: (typeof ROUTES)[number], user?: User) {
+async function statusOf(target: INestApplication, route: Route, user?: User) {
   const req = request(target.getHttpServer())[route.method](route.url);
   if (user) req.set('x-user', JSON.stringify(user));
   if (route.body) req.send(route.body);
@@ -75,15 +83,12 @@ async function statusOf(target: INestApplication, route: (typeof ROUTES)[number]
 
 describe('TelescopeModule under @nestjs/authorization', () => {
   it('(a) every mounted controller answers exactly as before with the global guard on and no decorators', async () => {
-    const baseline = await boot([TelescopeModule.forRoot({ authorizer: () => true })]);
+    const baseline = await boot([TelescopeModule.forRoot({})]);
     const before: number[] = [];
     for (const route of ROUTES) before.push(await statusOf(baseline, route));
     await baseline.close();
 
-    const guarded = await boot([
-      AuthorizationModule.forRoot(),
-      TelescopeModule.forRoot({ authorizer: () => true }),
-    ]);
+    const guarded = await boot([AuthorizationModule.forRoot(), TelescopeModule.forRoot({})]);
     const after: number[] = [];
     for (const route of ROUTES) after.push(await statusOf(guarded, route));
 
@@ -91,20 +96,15 @@ describe('TelescopeModule under @nestjs/authorization', () => {
     expect(after[0]).toBe(200);
   });
 
-  it("(a) Telescope's own gate still decides: authorizer false stays 403 under the open mark", async () => {
+  it('(b) a Can() passed in decorators is enforced on every console controller: guest 401, denied 403, allowed through', async () => {
     const guarded = await boot([
       AuthorizationModule.forRoot(),
-      TelescopeModule.forRoot({ authorizer: () => false }),
+      TelescopeModule.forRoot({
+        decorators: [Can(ConsolePolicy, 'view')],
+        clientErrors: { enabled: true },
+      }),
     ]);
-    expect(await statusOf(guarded, META)).toBe(403);
-  });
-
-  it('(b) a Can() passed in decorators is enforced on every controller: guest 401, denied 403, allowed through', async () => {
-    const guarded = await boot([
-      AuthorizationModule.forRoot(),
-      TelescopeModule.forRoot({ authorizer: () => true, decorators: [Can(ConsolePolicy, 'view')] }),
-    ]);
-    for (const route of ROUTES) {
+    for (const route of CONSOLE_ROUTES) {
       expect(await statusOf(guarded, route), `guest ${route.url}`).toBe(401);
       expect(await statusOf(guarded, route, { id: 'u', admin: false }), `user ${route.url}`).toBe(
         403,
@@ -113,13 +113,15 @@ describe('TelescopeModule under @nestjs/authorization', () => {
       expect([401, 403], `admin ${route.url}`).not.toContain(allowed);
     }
     expect(await statusOf(guarded, META, { id: 'a', admin: true })).toBe(200);
+    // The public beacon is left out of `decorators`: a guest still reports an error.
+    expect(await statusOf(guarded, BEACON)).toBe(204);
   });
 
   it('(b) forRootAsync takes decorators as a static top-level option', async () => {
     const guarded = await boot([
       AuthorizationModule.forRoot(),
       TelescopeModule.forRootAsync({
-        useFactory: () => ({ authorizer: () => true }),
+        useFactory: () => ({}),
         decorators: [Can(ConsolePolicy, 'view')],
       }),
     ]);
@@ -130,22 +132,18 @@ describe('TelescopeModule under @nestjs/authorization', () => {
   it('(c) decorators from one registration do not leak into the next', async () => {
     const first = await boot([
       AuthorizationModule.forRoot(),
-      TelescopeModule.forRoot({ authorizer: () => true, decorators: [Can(ConsolePolicy, 'view')] }),
+      TelescopeModule.forRoot({ decorators: [Can(ConsolePolicy, 'view')] }),
     ]);
     expect(await statusOf(first, META, { id: 'u', admin: false })).toBe(403);
     await first.close();
 
-    const second = await boot([
-      AuthorizationModule.forRoot(),
-      TelescopeModule.forRoot({ authorizer: () => true }),
-    ]);
+    const second = await boot([AuthorizationModule.forRoot(), TelescopeModule.forRoot({})]);
     expect(await statusOf(second, META, { id: 'u', admin: false })).toBe(200);
 
     // The shared base classes never receive the host's metadata.
     for (const base of [
       TelescopeController,
       StreamController,
-      TelescopeAuthController,
       ClientErrorController,
       TelescopeMcpController,
     ]) {
@@ -154,7 +152,7 @@ describe('TelescopeModule under @nestjs/authorization', () => {
     }
   });
 
-  it('marks every mounted controller (including the SSE stream) open, and applies decorators to each', () => {
+  it('marks every mounted controller (including the SSE stream) open, and applies decorators to each console controller', () => {
     const marker: ClassDecorator = (target) => {
       Reflect.defineMetadata('test:marked', true, target);
     };
@@ -162,10 +160,13 @@ describe('TelescopeModule under @nestjs/authorization', () => {
       TelescopeModule.forRoot({ decorators: [marker] }),
       TelescopeModule.forRootAsync({ useFactory: () => ({}), decorators: [marker] }),
     ]) {
-      expect(mod.controllers).toHaveLength(5);
+      expect(mod.controllers).toHaveLength(4);
       for (const controller of mod.controllers ?? []) {
         expect(Reflect.getMetadata(AUTHORIZATION_CAN_ANYONE_METADATA, controller)).toBe(true);
-        expect(Reflect.getMetadata('test:marked', controller)).toBe(true);
+        const isBeacon = controller.prototype instanceof ClientErrorController;
+        expect(Reflect.getMetadata('test:marked', controller), controller.name).toBe(
+          isBeacon ? undefined : true,
+        );
       }
     }
   });

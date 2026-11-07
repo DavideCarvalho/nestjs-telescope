@@ -124,12 +124,3 @@ export const QUEUE_ACTIONS: readonly QueueActionName[] = [
 export function isQueueAction(value: unknown): value is QueueActionName {
   return typeof value === 'string' && (QUEUE_ACTIONS as readonly string[]).includes(value);
 }
-
-/** What the action authorizer is told about a requested mutation. */
-export interface QueueActionRequest {
-  driver: string;
-  queue: string;
-  action: QueueActionName;
-  jobId?: string;
-  state?: QueueState; // for retry-all
-}
