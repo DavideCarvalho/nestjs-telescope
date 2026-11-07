@@ -177,8 +177,11 @@ capture skips the console's own calls and the page rebases its assets on it.
 
 **The production rule.** With `NODE_ENV === 'production'`, a module that mounts
 its routes with no `decorators` (an empty array counts as none) fails the boot
-with an error naming both ways. This applies to `TelescopeModule`,
-`TelescopeUiModule` and `TelescopeOtelMetricsModule`. `routes: false` always
+with an error naming both ways. This applies to `TelescopeModule` and
+`TelescopeUiModule`; the otel `GET /metrics` scrape is outside it by default
+(Prometheus usually scrapes unauthenticated inside the cluster: keep it
+reachable only by the scraper) and joins it with
+`forExporter(exporter, { requireProtectionInProduction: true })`. `routes: false` always
 boots. Outside production an undecorated console mounts open, so local work
 needs no setup. Every mounted controller is also marked open to
 `@nestjs/authorization`'s deny-by-default global guard (`Can.Anyone()`), so an

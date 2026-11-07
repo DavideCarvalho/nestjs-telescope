@@ -79,14 +79,28 @@ const otel = new TelescopeOtelExporter();
 export class AppModule {}
 ```
 
-Protect `GET /metrics` with NestJS's own tools, like the console. With
-`NODE_ENV === 'production'`, mounting it with no `decorators` (an empty array
-counts as none) fails the boot; outside production it mounts open. Pass
-`decorators` (applied to the metrics controller only, fresh per call):
+`GET /metrics` exposes your metrics (route names, queue names, error counts,
+AI cost…), so keep it reachable only by the scraper. A Prometheus scrape usually
+runs unauthenticated inside the cluster, so by default the scrape is **outside**
+the console's production rule: an undecorated `/metrics` still boots with
+`NODE_ENV === 'production'`. Restrict it with a network policy (don't route it
+through your public ingress), or with NestJS's own tools through `decorators`
+(applied to the metrics controller only, fresh per call, in every environment):
 
 ```ts
 TelescopeOtelMetricsModule.forExporter(otel, {
   decorators: [UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')],
+});
+```
+
+To make protection mandatory, set `requireProtectionInProduction: true`: with
+`NODE_ENV === 'production'`, mounting `/metrics` with no `decorators` (an empty
+array counts as none) then fails the boot, the same rule as the console's.
+
+```ts
+TelescopeOtelMetricsModule.forExporter(otel, {
+  requireProtectionInProduction: true, // default false
+  decorators: [UseGuards(BearerGuard)],
 });
 ```
 

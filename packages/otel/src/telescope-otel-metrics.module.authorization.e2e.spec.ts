@@ -143,33 +143,72 @@ describe('TelescopeOtelMetricsModule production rule', () => {
     process.env.NODE_ENV = previous;
   });
 
-  it('fails the boot when /metrics mounts with no decorators (an empty array counts as none)', () => {
+  it('boots by default with no decorators: the scrape is outside the rule', async () => {
+    process.env.NODE_ENV = 'production';
+    const target = await boot([
+      AuthorizationModule.forRoot(),
+      TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter()),
+    ]);
+    await get(target).expect(200);
+    expect(() =>
+      TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
+        decorators: [],
+        requireProtectionInProduction: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it('requireProtectionInProduction: fails the boot with no decorators (an empty array counts as none)', () => {
     process.env.NODE_ENV = 'production';
     const exporter = new TelescopeOtelExporter();
     for (const decorators of [undefined, []]) {
       expect(() =>
-        TelescopeOtelMetricsModule.forExporter(exporter, decorators ? { decorators } : {}),
+        TelescopeOtelMetricsModule.forExporter(exporter, {
+          requireProtectionInProduction: true,
+          ...(decorators ? { decorators } : {}),
+        }),
       ).toThrow(
         /TelescopeOtelMetricsModule: refusing to mount unprotected routes with NODE_ENV=production/,
       );
     }
   });
 
-  it('boots with decorators, and with routes: false', async () => {
-    process.env.NODE_ENV = 'production';
-    const exporter = new TelescopeOtelExporter();
-    const decorated = await boot([
-      AuthorizationModule.forRoot(),
-      TelescopeOtelMetricsModule.forExporter(exporter, {
-        decorators: [Can(MetricsPolicy, 'scrape')],
+  it('requireProtectionInProduction: mounts open outside production', async () => {
+    process.env.NODE_ENV = 'development';
+    const target = await boot([
+      TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
+        requireProtectionInProduction: true,
       }),
     ]);
-    await request(decorated.getHttpServer()).get('/metrics').expect(401);
-    await decorated.close();
-    app = undefined;
+    await get(target).expect(200);
+  });
 
+  it('enforces decorators in production, with or without requireProtectionInProduction', async () => {
+    process.env.NODE_ENV = 'production';
+    for (const requireProtectionInProduction of [undefined, true]) {
+      const target = await boot([
+        AuthorizationModule.forRoot(),
+        TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
+          decorators: [Can(MetricsPolicy, 'scrape')],
+          ...(requireProtectionInProduction ? { requireProtectionInProduction } : {}),
+        }),
+      ]);
+      await get(target).expect(401);
+      await get(target, { id: 'u', scraper: false }).expect(403);
+      await get(target, { id: 's', scraper: true }).expect(200);
+      await target.close();
+      app = undefined;
+    }
+  });
+
+  it('routes: false boots even with requireProtectionInProduction', async () => {
+    process.env.NODE_ENV = 'production';
+    const exporter = new TelescopeOtelExporter();
     const selfMounted = await boot([
-      TelescopeOtelMetricsModule.forExporter(exporter, { routes: false }),
+      TelescopeOtelMetricsModule.forExporter(exporter, {
+        routes: false,
+        requireProtectionInProduction: true,
+      }),
     ]);
     await request(selfMounted.getHttpServer()).get('/metrics').expect(404);
   });

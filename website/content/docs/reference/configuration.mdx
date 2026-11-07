@@ -46,6 +46,16 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 | `mutations` | `false` | Turns on the console's mutations: queue actions, **Prune now**, [request replay](/docs/dashboard#replay-a-request), on-demand profiling. Off: they answer `403`. Who may call them is decided by your `decorators`. |
 | `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. Public by design: it takes no `decorators` and is outside the production rule. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
 
+### Other modules
+
+| Option | Default | Description |
+|---|---|---|
+| `TelescopeUiModule.forRoot({ decorators })` | none | Class decorators on the dashboard page controller. **Required in production** unless `routes: false`, like `TelescopeModule`'s. |
+| `TelescopeUiModule.forRoot({ routes })` | `true` | `false` mounts no controller; extend `TelescopeUiController` yourself. |
+| `TelescopeOtelMetricsModule.forExporter(exporter, { decorators })` | none | Class decorators on the `GET /metrics` controller, applied whenever given. **Not required in production** by default: Prometheus usually scrapes unauthenticated inside the cluster. `/metrics` exposes your metrics, so keep it reachable only by the scraper (network policy, or `decorators`). |
+| `TelescopeOtelMetricsModule.forExporter(exporter, { requireProtectionInProduction })` | `false` | `true` puts `/metrics` under the production rule: with `NODE_ENV=production` and no `decorators` the boot fails. Ignored with `routes: false`. |
+| `TelescopeOtelMetricsModule.forExporter(exporter, { routes })` | `true` | `false` mounts no controller and exports the exporter under `TELESCOPE_OTEL_EXPORTER`; extend `TelescopeOtelMetricsController` yourself. |
+
 ## Health, alerts & AI
 
 | Option | Default | Description |

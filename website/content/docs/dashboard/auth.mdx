@@ -114,7 +114,7 @@ Why `routes: false` and not `path: false` like `@nestjs/mcp`: Telescope's `path`
 
 ## The production rule
 
-With `NODE_ENV === 'production'`, `TelescopeModule`, `TelescopeUiModule` and `TelescopeOtelMetricsModule` refuse to mount their routes with no `decorators` (an empty array counts as none). The boot fails at module build, before the app listens, with an error naming both ways:
+With `NODE_ENV === 'production'`, `TelescopeModule` and `TelescopeUiModule` refuse to mount their routes with no `decorators` (an empty array counts as none). The boot fails at module build, before the app listens, with an error naming both ways:
 
 ```txt
 TelescopeModule: refusing to mount unprotected routes with NODE_ENV=production. Protect them with the official NestJS tools (@nestjs/authentication, @nestjs/authorization), one of two ways:
@@ -125,6 +125,19 @@ TelescopeModule: refusing to mount unprotected routes with NODE_ENV=production. 
 `routes: false` always boots: protecting the controllers you mount is your job. Outside production an undecorated console mounts open, so local work needs no setup.
 
 Every controller Telescope mounts is also marked open to `@nestjs/authorization`'s deny-by-default global `AuthorizationGuard` (as `Can.Anyone()` would), so an undecorated dev console keeps answering once your app adopts that package. The mark only opens routes that declare no requirement: a `Can(...)` passed in `decorators` is still enforced.
+
+### `GET /metrics` (otel): outside the rule by default
+
+A Prometheus scrape usually runs unauthenticated inside the cluster, so `TelescopeOtelMetricsModule` mounts an undecorated `/metrics` in production too. It exposes your metrics (route and queue names, error counts, AI cost), so keep it reachable only by the scraper: a network policy that keeps it off your public ingress, or `decorators`, which apply to it in every environment whenever you pass them. To put it under the same rule as the console, opt in:
+
+```ts
+TelescopeOtelMetricsModule.forExporter(exporter, {
+  requireProtectionInProduction: true, // default false
+  decorators: [UseGuards(BearerGuard)],
+});
+```
+
+With `requireProtectionInProduction: true` and no `decorators` (an empty array counts as none), the boot fails with the same error as the console's. `routes: false` still always boots.
 
 ## Public by design: the client-error beacon
 

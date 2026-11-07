@@ -1,5 +1,5 @@
 ---
-"@dudousxd/nestjs-telescope-ui": minor
+"@dudousxd/nestjs-telescope-ui": major
 ---
 
 **Breaking:** the page is now protected only with `@nestjs/authentication` + `@nestjs/authorization`. Add a `decorators` option to `TelescopeUiModule.forRoot` / `forRootAsync` (static top-level on the async variant): the class decorators go on the dashboard controller, which is also marked open to `@nestjs/authorization`'s deny-by-default global guard; a `Can()` passed in `decorators` is still enforced. With `NODE_ENV=production`, mounting the page with no `decorators` (an empty array counts as none) fails the boot; `routes: false` always boots.

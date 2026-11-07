@@ -10,10 +10,12 @@ export interface TelescopeOtelMetricsModuleOptions {
    * `[UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')]` with
    * `@nestjs/authentication` + `@nestjs/authorization`.
    *
-   * PRODUCTION RULE: with `NODE_ENV === 'production'`, mounting the scrape with
-   * no `decorators` (an empty array counts as none) fails the boot, the same
-   * rule as the console's; protect it here or mount it yourself with
-   * {@link routes}`: false`. Outside production an undecorated scrape mounts open.
+   * Applied whenever given, in every environment. Unlike the console, an
+   * undecorated scrape still boots in production by default: a Prometheus
+   * scrape usually runs unauthenticated inside the cluster. `/metrics` exposes
+   * your metrics, so keep it reachable only by the scraper (a network policy, or
+   * these decorators); set {@link requireProtectionInProduction} to put it under
+   * the console's production rule.
    *
    * The controller is also marked open to `@nestjs/authorization`'s
    * deny-by-default global `AuthorizationGuard` (as `@Can.Anyone()` would), so an
@@ -22,6 +24,14 @@ export interface TelescopeOtelMetricsModuleOptions {
    * call, so nothing leaks between registrations.
    */
   decorators?: ClassDecorator[];
+  /**
+   * `true` puts `GET /metrics` under the console's production rule: with
+   * `NODE_ENV === 'production'`, mounting it with no {@link decorators} (an empty
+   * array counts as none) fails the boot. Default `false`: the scrape is left
+   * out of the rule because Prometheus usually scrapes unauthenticated inside the
+   * cluster. Ignored with {@link routes}`: false`.
+   */
+  requireProtectionInProduction?: boolean;
   /**
    * `false` mounts no controller; the module only provides the exporter under
    * `TELESCOPE_OTEL_EXPORTER` (exported), so a controller of your own can serve
@@ -54,13 +64,15 @@ export class TelescopeOtelMetricsModule {
         exports: [TELESCOPE_OTEL_EXPORTER],
       };
     }
-    assertConsoleProtected(options.decorators, {
-      module: 'TelescopeOtelMetricsModule',
-      decoratorsExample:
-        "TelescopeOtelMetricsModule.forExporter(exporter, { decorators: [UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')] })",
-      selfMountExample:
-        "TelescopeOtelMetricsModule.forExporter(exporter, { routes: false }) + @Controller() @Can(MetricsPolicy, 'scrape') class Metrics extends TelescopeOtelMetricsController {}",
-    });
+    if (options.requireProtectionInProduction === true) {
+      assertConsoleProtected(options.decorators, {
+        module: 'TelescopeOtelMetricsModule',
+        decoratorsExample:
+          "TelescopeOtelMetricsModule.forExporter(exporter, { decorators: [UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')] })",
+        selfMountExample:
+          "TelescopeOtelMetricsModule.forExporter(exporter, { routes: false }) + @Controller() @Can(MetricsPolicy, 'scrape') class Metrics extends TelescopeOtelMetricsController {}",
+      });
+    }
     // A fresh subclass per call: inherits the route + constructor metadata, and
     // takes this call's decorators without touching the shared base class.
     class MetricsController extends TelescopeOtelMetricsController {}
