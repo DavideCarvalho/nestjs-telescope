@@ -5,6 +5,22 @@ watchers, the recorder, ALS-based batch correlation, the SQLite store, the
 headless API, the dashboard guard, and the pruner. See the root
 [`README.md`](../../README.md) for the quick start.
 
+## Who reaches the console (`decorators`)
+
+Telescope's own gates (`authorizer`, `dashboardAuth`, `guards`) decide who reaches the console. If your app adopts `@nestjs/authorization`, whose global `AuthorizationGuard` denies any route without a `@Can()`, Telescope still answers: every controller it mounts is marked open to that guard (as `Can.Anyone()` would).
+
+To require the official tools instead, pass `decorators`. They are applied to every controller the module mounts (API, SSE stream, auth, client errors, MCP):
+
+```ts
+TelescopeModule.forRoot({
+  authorizer: () => true,
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+});
+// forRootAsync({ useFactory, decorators: [...] }): a static top-level option.
+```
+
+A `Can()` passed here is enforced (guest 401, denied 403). Each registration gets fresh controller subclasses, so decorators never leak between registrations. Pass the same list to `TelescopeUiModule.forRoot({ decorators })` for the page.
+
 ## Memory bounds
 
 Telescope holds a bounded working set in memory, by design:

@@ -75,3 +75,13 @@ TelescopeUiModule.forRoot({
 ```
 
 Set the SAME `guards` on `TelescopeModule.forRoot` too — this option only covers the page; the API is a separate package/module. See [Securing the console](/docs/dashboard/auth#securing-the-console-with-your-own-guards) for the full rationale and a realistic guard example.
+
+Using `@nestjs/authorization`? The controller is marked open to its deny-by-default global guard, so the page keeps loading. To require a policy, pass `decorators` (the same list as on `TelescopeModule`):
+
+```ts
+TelescopeUiModule.forRoot({
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+});
+```
+
+See [With `@nestjs/authorization`](/docs/dashboard/auth#with-nestjsauthorization-decorators).

@@ -79,6 +79,16 @@ const otel = new TelescopeOtelExporter();
 export class AppModule {}
 ```
 
+`GET /metrics` is marked open to `@nestjs/authorization`'s deny-by-default guard,
+so the scrape keeps answering when your app adopts it. To require a policy, pass
+`decorators` (applied to the metrics controller only, fresh per call):
+
+```ts
+TelescopeOtelMetricsModule.forExporter(otel, {
+  decorators: [UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')],
+});
+```
+
 - **Metrics** are mirrored into the OTel Meter (OTLP push when your app has an
   OTel SDK) AND exposed as a dependency-free Prometheus scrape at `/metrics`.
 - **Spans** go through the OTel Tracer; point your SDK's OTLP exporter at Tempo/

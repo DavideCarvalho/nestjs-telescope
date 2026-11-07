@@ -460,6 +460,34 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   guards?: Array<Type<CanActivate> | CanActivate>;
   /**
+   * Class decorators applied to EVERY controller this module mounts — the API
+   * (`TelescopeController`), the live feed (`StreamController`), the
+   * dashboard-auth routes (`TelescopeAuthController`), the front-end error
+   * ingestion (`ClientErrorController`) and the MCP endpoint
+   * (`TelescopeMcpController`) — the same shape as `@nestjs/mcp`'s
+   * `decorators`. Use it to put the official NestJS tools in front of the
+   * console, e.g. with `@nestjs/authentication` + `@nestjs/authorization`:
+   *
+   * ```ts
+   * TelescopeModule.forRoot({
+   *   decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+   * })
+   * ```
+   *
+   * DEFAULT: every mounted controller is marked open to `@nestjs/authorization`'s
+   * deny-by-default global `AuthorizationGuard` (as `@Can.Anyone()` would), so
+   * adopting that package does not lock the console out; Telescope's own gates
+   * (`authorizer`, `dashboardAuth`, {@link guards}, the MCP token) keep deciding
+   * who reaches it. That mark only opens routes declaring no requirement: a
+   * `Can(...)` passed here is still enforced by `AuthorizationGuard`.
+   *
+   * Applied to a fresh subclass per registration, so decorators never leak
+   * between `forRoot` calls. With `forRootAsync`, pass it as the static
+   * top-level `decorators` (not from the factory). The UI page is a separate
+   * module: pass the same `decorators` to `TelescopeUiModule.forRoot` too.
+   */
+  decorators?: ClassDecorator[];
+  /**
    * Extra `imports` merged into `TelescopeModule`'s own dynamic module — the DI
    * resolution path for a class passed to {@link guards} (or any other provider
    * the console controllers need reachable). Typically the host's own auth

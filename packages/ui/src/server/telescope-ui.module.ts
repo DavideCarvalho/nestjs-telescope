@@ -45,7 +45,7 @@ function stampGuards(
 export class TelescopeUiModule {
   static forRoot(options: TelescopeUiModuleOptions = {}): DynamicModule {
     const path = normalizeTelescopePath(options.path);
-    const uiController = dynamicController(TelescopeUiController, path);
+    const uiController = dynamicController(TelescopeUiController, path, options.decorators);
     stampGuards(options.guards, uiController);
     return {
       module: TelescopeUiModule,
@@ -80,9 +80,16 @@ export class TelescopeUiModule {
      * resolve from `imports` above.
      */
     guards?: Array<Type<CanActivate> | CanActivate>;
+    /**
+     * Class decorators applied to the dashboard's controller. Must be passed
+     * HERE (not inside the async-resolved options) because they shape the route
+     * at module-build time, before any factory runs — the SAME constraint as
+     * `path` above. See {@link TelescopeUiModuleOptions.decorators}.
+     */
+    decorators?: ClassDecorator[];
   }): DynamicModule {
     const path = normalizeTelescopePath(config.path);
-    const uiController = dynamicController(TelescopeUiController, path);
+    const uiController = dynamicController(TelescopeUiController, path, config.decorators);
     stampGuards(config.guards, uiController);
     const { useFactory } = config;
     return {

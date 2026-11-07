@@ -264,3 +264,46 @@ export class ConsoleAuthGuard implements CanActivate {
 | Best for | Standalone hosts with no existing admin auth | Hosts that already authenticate the rest of the app and want ONE gate to reuse |
 
 They're independent — nothing stops you from setting both (a host guard AND `dashboardAuth` both run; a request must pass every configured gate, since `guards` **appends** to Telescope's own gate on the API side — see `TelescopeModuleOptions.guards`). Most hosts pick one.
+
+## With `@nestjs/authorization` (`decorators`)
+
+`@nestjs/authorization`'s `AuthorizationModule.forRoot()` registers a global `AuthorizationGuard` that **denies by default**: a route with no `@Can(...)` and no `Can.Anyone()` is refused. Telescope keeps working under it: every controller it mounts is marked open to that guard (as `Can.Anyone()` would), so the console answers exactly as before and Telescope's own gates (`authorizer`, `dashboardAuth`, `guards`, the MCP token) keep deciding who reaches it.
+
+To put the official tools in front of the console instead, pass `decorators`, class decorators applied to **every** controller the module mounts (the same shape as `@nestjs/mcp`'s `decorators` option):
+
+```ts
+import { AuthenticationGuard } from '@nestjs/authentication';
+import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
+import { UseGuards } from '@nestjs/common';
+
+@Policy()
+export class ConsolePolicy {
+  view(user: User | null) {
+    return user?.roles.includes('admin') === true;
+  }
+}
+
+const consoleDecorators = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+
+@Module({
+  imports: [
+    AuthorizationModule.forRoot(),
+    TelescopeModule.forRoot({ authorizer: () => true, decorators: consoleDecorators }),
+    TelescopeUiModule.forRoot({ decorators: consoleDecorators }),
+  ],
+  providers: [ConsolePolicy],
+})
+export class AppModule {}
+```
+
+A `Can(...)` passed in `decorators` is enforced: the open mark only applies to routes that declare no requirement. A guest gets 401 and a user the policy denies gets 403. With `forRootAsync`, pass `decorators` as a static top-level option, next to `path` and `guards`, because it shapes the routes before any factory runs. Each registration gets a fresh subclass of each controller, so decorators never leak from one registration to another.
+
+| Module | Controllers `decorators` covers |
+|---|---|
+| `TelescopeModule` | `TelescopeController` (API), `StreamController` (SSE), `TelescopeAuthController`, `ClientErrorController`, `TelescopeMcpController` |
+| `TelescopeUiModule` | `TelescopeUiController` (page + assets) |
+| `TelescopeOtelMetricsModule.forExporter(exporter, { decorators })` | `TelescopeOtelMetricsController` (`GET /metrics`) |
+
+<Callout type="warn">
+  `decorators` on `TelescopeModule` also covers the public routes: `ClientErrorController` (browser error ingestion) and the MCP endpoint. If browsers or agents that don't carry your app's session use them, mount those features separately or keep the requirement in `authorizer` instead.
+</Callout>

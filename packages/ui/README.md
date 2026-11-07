@@ -22,6 +22,16 @@ Open `/telescope`. The dashboard polls `/telescope/api/*` and shows captured
 entries (type tabs + live polling) and, on an entry, the correlated batch — the
 request and everything it caused.
 
+### Requiring a policy (`decorators`)
+
+The page controller is marked open to `@nestjs/authorization`'s deny-by-default guard, so it keeps loading when your app adopts that package. To require a policy, pass the same `decorators` you give `TelescopeModule` (on `forRootAsync`, as a static top-level option):
+
+```ts
+TelescopeUiModule.forRoot({
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+});
+```
+
 ## Build your own (composable)
 
 The same pieces are exported so you can drop them into your own admin:

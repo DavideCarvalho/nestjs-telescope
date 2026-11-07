@@ -95,6 +95,11 @@ on your app. Open any request to see its **correlated batch**: a waterfall of
 the cache reads, queries, jobs, and exceptions it caused, alongside the request
 itself.
 
+Using `@nestjs/authorization`? Telescope's controllers are marked open to its
+deny-by-default global guard, and `decorators: [Can(ConsolePolicy, 'view')]` on
+both modules puts a policy in front of them. See
+[With `@nestjs/authorization`](https://davidecarvalho.github.io/aviary/docs/telescope/dashboard/auth#with-nestjsauthorization-decorators).
+
 ![A request detail: the batch timeline waterfall, the correlated batch panel, and the request payload](./website/public/screenshots/request-detail.png)
 
 ## MCP server

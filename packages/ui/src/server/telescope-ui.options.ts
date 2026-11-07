@@ -35,6 +35,21 @@ export interface TelescopeUiModuleOptions {
    */
   guards?: Array<Type<CanActivate> | CanActivate>;
   /**
+   * Class decorators applied to the dashboard's page + asset controller
+   * (`TelescopeUiController`), the same shape as `@nestjs/mcp`'s `decorators`,
+   * e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]` with
+   * `@nestjs/authentication` + `@nestjs/authorization`. Pass the same list to
+   * `TelescopeModule.forRoot({ decorators })` (core) so the API matches.
+   *
+   * DEFAULT: the controller is marked open to `@nestjs/authorization`'s
+   * deny-by-default global `AuthorizationGuard` (as `@Can.Anyone()` would), so
+   * the page keeps loading when that package is adopted; {@link guards} keeps
+   * deciding who reaches it. A `Can(...)` passed here is still enforced.
+   * Applied to a fresh subclass per registration, so nothing leaks between
+   * `forRoot` calls. With `forRootAsync`, pass it as the static top-level option.
+   */
+  decorators?: ClassDecorator[];
+  /**
    * The SAME `dashboardAuth` passed to `TelescopeModule.forRoot` (core). Only needed to use
    * `dashboardAuth.unauthenticatedPage`: this module serves the page + SPA shell, so it is the only
    * one that can replace that page — core gates the API, not the HTML.
