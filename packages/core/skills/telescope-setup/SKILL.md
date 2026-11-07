@@ -2,11 +2,11 @@
 name: telescope-setup
 description: >-
   Mount nestjs-telescope in a NestJS app with TelescopeModule.forRoot / forRootAsync.
-  Covers the enabled flag, the default-deny production API gate and authorizer, the
+  Covers the enabled flag, the production protection rule (decorators / routes:false), the
   shared path option (must match TelescopeUiModule), prune retention, swapping the
   default in-memory SQLite StorageProvider, and the setGlobalPrefix /
   registerRequestMiddleware + telescopeRequestCapture caveat. Use for "set up
-  Telescope", "dashboard returns 403/404 in production", "forRootAsync config".
+  Telescope", "boot fails in production", "forRootAsync config".
 license: MIT
 metadata:
   type: core
@@ -37,15 +37,15 @@ import { Module } from '@nestjs/common';
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 
+const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+
 @Module({
   imports: [
     TelescopeModule.forRoot({
-      // dev: rich capture, open gate. prod: flip enabled + supply an authorizer.
-      enabled: process.env.NODE_ENV !== 'production',
-      authorizer: () => true, // gates the API; defaults to DENY in production
       prune: { after: '24h' },
+      decorators: protect, // required in production (see Pattern 2)
     }),
-    TelescopeUiModule.forRoot(),
+    TelescopeUiModule.forRoot({ decorators: protect }),
   ],
 })
 export class AppModule {}
@@ -72,9 +72,9 @@ TelescopeModule.forRootAsync({
   imports: [ConfigModule],
   inject: [ConfigService],
   path: 'observability', // static — NOT returned by the factory
+  decorators: protect, // static too
   useFactory: (config: ConfigService) => ({
     enabled: config.get('TELESCOPE_ENABLED') === 'true',
-    authorizer: () => true,
     prune: { after: '7d' },
   }),
 });
@@ -82,24 +82,22 @@ TelescopeModule.forRootAsync({
 
 Source: `packages/core/src/nest/telescope.module.ts` (`forRootAsync`).
 
-### Pattern 2 — the production gate
+### Pattern 2 — protecting it (required in production)
 
-In production the API gate is **default-deny**. To expose the dashboard in prod you
-must BOTH set `enabled: true` AND supply an `authorizer` (or `dashboardAuth`). With
-`enabled` false, capture stops; with no authorizer the API returns `403`.
+Routes are protected only with `@nestjs/authentication` + `@nestjs/authorization`:
+`decorators` on the mounted controllers, or `routes: false` plus your own
+subclasses of the exported controllers. With `NODE_ENV === 'production'`, a
+module that mounts its routes with no `decorators` (an empty array counts as
+none) fails the boot with an error naming both ways. Outside production an
+undecorated console mounts open.
 
 ```ts
-TelescopeModule.forRoot({
-  enabled: true,
-  authorizer: (ctx) => isAdmin(ctx.request), // your own check on the platform request
-});
+const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+TelescopeModule.forRoot({ decorators: protect });
 ```
 
-The default authorizer allows when `NODE_ENV !== 'production'` and denies otherwise.
-For a real login wall use the `telescope-access-mcp` skill (`dashboardAuth`).
-
-Source: `packages/core/src/nest/telescope.options.ts` (`authorizer`),
-`website/content/docs/getting-started.mdx` (production-gate callout).
+Details (self-mounting, MCP, mutations): the `telescope-access-mcp` skill.
+Source: `packages/core/src/nest/dynamic-controller.ts` (`assertConsoleProtected`).
 
 ### Pattern 3 — retention with `prune`
 
@@ -119,24 +117,21 @@ Source: `packages/core/src/config/options.ts` (`PruneOptions`).
 
 ## Common mistakes
 
-### Mistake 1 — expecting the dashboard to work in production with defaults
+### Mistake 1 — deploying to production with the defaults
 
 ```ts
-// Wrong — in production this 403s: no authorizer, and capture is off.
+// Wrong — with NODE_ENV=production the boot fails: the console is unprotected.
 TelescopeModule.forRoot({});
 ```
 
 ```ts
-// Correct — open the gate explicitly in prod.
-TelescopeModule.forRoot({
-  enabled: process.env.NODE_ENV !== 'production' ? true : true,
-  authorizer: (ctx) => isAdmin(ctx.request),
-});
+// Correct — protect it (or use routes: false and mount it yourself).
+TelescopeModule.forRoot({ decorators: protect });
 ```
 
-Mechanism: the API gate denies when `NODE_ENV === 'production'` until you supply an
-`authorizer` (or `dashboardAuth`), and capture is gated by `enabled`.
-Source: `packages/core/src/nest/telescope.options.ts`.
+Mechanism: `assertConsoleProtected` throws at module build in production when
+the module mounts its routes with no `decorators`. Capture is gated separately
+by `enabled`. Source: `packages/core/src/nest/dynamic-controller.ts`.
 
 ### Mistake 2 — passing `path` through the async factory
 
@@ -151,7 +146,7 @@ TelescopeModule.forRootAsync({
 // Correct — pass path as a static sibling of useFactory.
 TelescopeModule.forRootAsync({
   path: 'observability',
-  useFactory: () => ({ enabled: true, authorizer: () => true }),
+  useFactory: () => ({ enabled: true }),
 });
 ```
 

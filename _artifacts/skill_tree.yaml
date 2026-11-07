@@ -33,7 +33,7 @@ skills:
     type: core
     package: "@dudousxd/nestjs-telescope"
     path: packages/core/skills/telescope-access-mcp/SKILL.md
-    summary: authorizer vs authorizeAction, dashboardAuth modes, MCP token gating.
+    summary: decorators vs routes:false, the production rule, mutations:true, MCP.
 
   - name: telescope-ui-dashboard
     type: core

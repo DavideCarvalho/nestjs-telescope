@@ -79,8 +79,9 @@ const otel = new TelescopeOtelExporter();
 export class AppModule {}
 ```
 
-`GET /metrics` is marked open to `@nestjs/authorization`'s deny-by-default guard,
-so the scrape keeps answering when your app adopts it. To require a policy, pass
+Protect `GET /metrics` with NestJS's own tools, like the console. With
+`NODE_ENV === 'production'`, mounting it with no `decorators` (an empty array
+counts as none) fails the boot; outside production it mounts open. Pass
 `decorators` (applied to the metrics controller only, fresh per call):
 
 ```ts

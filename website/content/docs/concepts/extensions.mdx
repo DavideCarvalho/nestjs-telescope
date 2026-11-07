@@ -187,8 +187,8 @@ GET <path>/api/ext/:ext/data/:provider?<query>
 
 The server looks up the provider by name, builds an `ExtensionContext`, and calls `resolve(query, ctx)`. Query params arrive as strings and are passed through verbatim — including the paging, sort and filter params a table panel adds (see [Sortable and filterable columns](#sortable-and-filterable-columns), and use `readTableQuery` to read them back as numbers). An unknown provider is a `404`; a provider that throws surfaces a `502` with its message (so a panel author can see *why* a panel is empty).
 
-<Callout type="warn" title="The read gate applies">
-  The data endpoint sits behind the **same read `authorizer`** as the rest of the dashboard API — which **denies in production by default** until you configure one. Extension data is never a side door: if the dashboard is gated, the panels are gated too. See [The gate](/docs/reference/configuration#the-gate).
+<Callout type="warn" title="The console's protection applies">
+  The data endpoint is a route of `TelescopeController`, so it is protected exactly like the rest of the dashboard API (your `decorators`, or your own controllers). Extension data is never a side door: if the dashboard is protected, the panels are too. See [Protecting the routes](/docs/dashboard/auth).
 </Callout>
 
 ## Collisions

@@ -6,7 +6,7 @@ icon: Settings
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Every option below is passed to `TelescopeModule.forRoot({ … })`. All are optional — the defaults give you a zero-config SQLite store, request/exception capture, a production-deny gate, and overload protection. This page is the consolidated reference; each option links out to the concept or recipe that covers it in depth.
+Every option below is passed to `TelescopeModule.forRoot({ … })`. All are optional — the defaults give you a zero-config SQLite store, request/exception capture, and overload protection; in production you also protect the routes (see [Protecting the routes](#protecting-the-routes)). This page is the consolidated reference; each option links out to the concept or recipe that covers it in depth.
 
 ## Capture & correlation
 
@@ -36,18 +36,15 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 | `prune.lock` | storage lease | Cross-process prune lock, so a fleet prunes once per cycle rather than once per pod. `false` to opt out, or your own `TelescopePruneLock`. See [Pruning once per fleet](/docs/concepts/storage#pruning-once-per-fleet-not-once-per-pod). |
 | `prune.lockTtlMs` | `max(intervalMs * 3, 60s)` | Lease TTL — how long the fleet may go unpruned after a holder is killed mid-cycle. |
 
-## The gate
+## Protecting the routes
 
 | Option | Default | Description |
 |---|---|---|
-| `authorizer` | deny in production | Gates the read API. **Denies in production by default** until you supply one. |
-| `authorizeAction` | **deny** | Separate, default-deny gate for **mutations** — queue actions, **Prune now**, and [request replay](/docs/dashboard#replay-a-request). Throwing denies (fails closed). |
-| `dashboardAuth` | _none_ | Signed-cookie login for the dashboard. See [Dashboard auth](/docs/dashboard/auth). |
-| `guards` | _none_ | Bring-your-own `CanActivate` guard(s) fronting the console's API controllers — **appended** to (not replacing) the built-in gate above. Pass the SAME guards to `TelescopeUiModule.forRoot` to also gate the page. See [Securing the console](/docs/dashboard/auth#securing-the-console-with-your-own-guards). |
-| `imports` | `[]` | Extra Nest `imports` resolving a class passed to `guards`' own dependencies. |
-| `routes` | `true` | `false` mounts no controller; every provider keeps running and the module exports what the controllers need, so your own subclasses of `TelescopeController` / `StreamController` / … serve the routes with your decorators. Keep `path` set to the mount. Static top-level option on `forRootAsync`. See [Protecting the routes](/docs/dashboard/auth#protecting-the-routes). |
-| `decorators` | `[]` (controllers open to `@nestjs/authorization`) | Class decorators applied to every controller the module mounts, e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`. By default each controller is marked `Can.Anyone()`-open so the deny-by-default `AuthorizationGuard` doesn't lock the console out; a `Can()` passed here is still enforced. Static top-level option on `forRootAsync`. See [With `@nestjs/authorization`](/docs/dashboard/auth#with-nestjsauthorization-decorators). |
-| `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
+| `decorators` | none | Class decorators applied to the console controllers the module mounts (API, live stream, MCP), e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`. **Required in production** unless `routes: false`: with `NODE_ENV=production` and no `decorators` (an empty array counts as none) the boot fails. Each mounted controller is also marked `Can.Anyone()`-open; a `Can()` passed here is still enforced. Static top-level option on `forRootAsync`. Pass the same list to `TelescopeUiModule.forRoot`. See [Protecting the routes](/docs/dashboard/auth). |
+| `routes` | `true` | `false` mounts no controller; every provider keeps running and the module exports what the controllers need, so your own subclasses of `TelescopeController` / `StreamController` / … serve the routes with your decorators. Always boots. Keep `path` set to the mount. Static top-level option on `forRootAsync`. |
+| `imports` | `[]` | Extra Nest `imports` merged into the module, for whatever your `decorators` need. |
+| `mutations` | `false` | Turns on the console's mutations: queue actions, **Prune now**, [request replay](/docs/dashboard#replay-a-request), on-demand profiling. Off: they answer `403`. Who may call them is decided by your `decorators`. |
+| `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. Public by design: it takes no `decorators` and is outside the production rule. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
 
 ## Health, alerts & AI
 
@@ -72,7 +69,7 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 
 | Option | Default | Description |
 |---|---|---|
-| `mcp` | disabled | MCP server for coding agents. `true` (dev-only, refused in production), `{ token }` (Bearer-gated everywhere), or omitted/`false` to disable. See [MCP server](/docs/concepts/mcp). |
+| `mcp` | disabled | MCP server for coding agents. `true` enables it; omitted/`false` answers 404. Protected by your `decorators` like every console route. See [MCP server](/docs/concepts/mcp). |
 | `overloadProtection` | `true` (200ms) | Pause capture under event-loop pressure. See below. |
 
 ### `overloadProtection`
@@ -119,5 +116,5 @@ TelescopeModule.forRoot({
 ```
 
 <Callout type="info">
-  Captures are aggregated into a bounded `cpu_profile` entry (a flame tree, not the raw `.cpuprofile`) that inherits the profiled request's batch/trace context. Arming is a **mutation** — behind the default-deny `authorizeAction` gate. See [CPU profiling](/docs/concepts/profiling).
+  Captures are aggregated into a bounded `cpu_profile` entry (a flame tree, not the raw `.cpuprofile`) that inherits the profiled request's batch/trace context. Arming is a **mutation**, so it needs `mutations: true`. See [CPU profiling](/docs/concepts/profiling).
 </Callout>

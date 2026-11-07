@@ -85,13 +85,13 @@ Configure the [`@dudousxd/nestjs-telescope-ai`](/docs/packages/ai) package's `ai
 
 A **request** entry detail offers a **Replay** action that re-issues the captured request against your own running server, so you can reproduce *"what exactly did this 500 do?"* from the dashboard without hand-crafting the call. It hits `GET /telescope/api/entries/:id/replay`, which re-issues the captured method/path/body against `127.0.0.1` (the local server, resolved from the request's port) and reports the replayed status, duration, and a truncated response body.
 
-Replaying actually hits your app — which may write — so it is a **mutation** gated by `authorizeAction`, the same default-deny gate the queue console and **Prune now** use. Without an `authorizeAction` callback the endpoint returns `403` even for callers the read `authorizer` already trusts, and the Replay action is hidden.
+Replaying actually hits your app — which may write — so it is a **mutation**, like the queue console and **Prune now**: it needs `mutations: true`. Without it the endpoint returns `403` and the Replay action is hidden.
 
 The replayed request carries an `x-telescope-replay: 1` header (so your app can recognize or skip it) and **strips** the `cookie`, `authorization`, and `host` headers — a replay must never silently reuse the original caller's session or credentials. Its own captured `request` entry is tagged **`replay`**, so replays are distinguishable from real traffic in the entries table (and via the MCP `list_entries` tool).
 
 ### Retention controls
 
-The Overview page surfaces a **Retention** card with the configured window (from `prune`) and a **Prune now** button. Pruning is a mutation, so the button appears only when retention is configured *and* mutations are enabled (`authorizeAction` present — the same default-deny gate the queue console uses). It fires `POST /telescope/api/retention/prune` after a confirm and reports how many entries were removed.
+The Overview page surfaces a **Retention** card with the configured window (from `prune`) and a **Prune now** button. Pruning is a mutation, so the button appears only when retention is configured *and* mutations are enabled (`mutations: true`, the same switch the queue console uses). It fires `POST /telescope/api/retention/prune` after a confirm and reports how many entries were removed.
 
 ## Alerts
 
@@ -199,20 +199,20 @@ When you register a [queue manager](/docs/packages/queue-managers), the dashboar
 - **State tabs → job table** with redacted payload previews.
 - **Job detail drawer** — `data`, `opts`, attempts, stacktrace, return value (all passed through core redaction first).
 
-### Mutations & `authorizeAction` (default-deny)
+### Mutations (`mutations: true`)
 
-The console can also *act* on jobs — retry, remove, promote, retry-all (BullMQ), and redrive (SQS DLQ). These are **denied by default**. They run behind a second guard on top of the read `authorizer`, and that guard **fails closed**: without an `authorizeAction` callback, every mutation endpoint returns `403` — even for callers the read gate already trusts. The action buttons appear only when allowed; queues advertise an `actions` capability hint so, for example, the Redrive button shows only for SQS queues that actually have a DLQ.
+The console can also *act* on jobs — retry, remove, promote, retry-all (BullMQ), and redrive (SQS DLQ). These are **off by default**: every mutation endpoint returns `403` until you set `mutations: true`. Who may call them is decided by the console's protection (your `decorators`, or your own controllers). The action buttons appear only when enabled; queues advertise an `actions` capability hint so, for example, the Redrive button shows only for SQS queues that actually have a DLQ.
 
 ```ts
 TelescopeModule.forRoot({
-  authorizer: (ctx) => isAdmin(ctx.request),       // reads — browse queues/jobs
-  authorizeAction: (ctx, action) => canMutate(ctx.request), // mutations — separate, default-deny
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  mutations: true,
   queueManagers: [/* BullMqQueueManager / SqsQueueManager */],
 });
 ```
 
 <Callout type="warn">
-  Keep `authorizeAction` strictly narrower than your read gate: browsing a queue should not imply the right to drain it. See the [queue manager packages](/docs/packages/queue-managers) for the full endpoint and action tables.
+  Browsing a queue should not imply the right to drain it. For a stricter rule on mutations, mount the routes yourself and override those methods with an extra `@Can(...)` — see [Mutations](/docs/dashboard/auth#mutations). The [queue manager packages](/docs/packages/queue-managers) have the full endpoint and action tables.
 </Callout>
 
 ## Schedules
@@ -247,6 +247,6 @@ The same pieces are exported so you can drop them into your own admin instead of
 
 See the [`-ui` package](/docs/packages/ui) for the full exports map and peer dependencies.
 
-## Gating the dashboard
+## Protecting the dashboard
 
-By default the UI shell and hashed assets are public (they contain no data); the **API** behind them is what's gated. For a production-grade login that works even when your app uses header-Bearer auth, see [Dashboard auth](/docs/dashboard/auth). To front BOTH the shell and the API with a guard you already have — reusing your app's existing cookie-session auth instead of Telescope's own login — see [Securing the console with your own guards](/docs/dashboard/auth#securing-the-console-with-your-own-guards).
+The page and the API are protected with NestJS's own tools, `@nestjs/authentication` and `@nestjs/authorization`: pass the same `decorators` to `TelescopeModule` and `TelescopeUiModule`, or set `routes: false` and mount the routes from your own controllers. With `NODE_ENV=production` an undecorated console fails the boot. See [Protecting the routes](/docs/dashboard/auth).

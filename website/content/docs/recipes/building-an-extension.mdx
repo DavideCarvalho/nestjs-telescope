@@ -75,7 +75,7 @@ The return shape depends on the panel kind that binds to it:
 | `table` | `{ rows: Record<string, unknown>[] }` — or, for a `paged: true` table, `{ rows, total, page, limit }` (see step 4) |
 
 <Callout type="info">
-  The provider runs behind the dashboard's read `authorizer`, fetched at <code>GET &lt;path&gt;/api/ext/:ext/data/:provider</code>. Query params arrive as strings — coerce them inside `resolve` if you need numbers or dates.
+  The provider is protected like the rest of the dashboard API, fetched at <code>GET &lt;path&gt;/api/ext/:ext/data/:provider</code>. Query params arrive as strings — coerce them inside `resolve` if you need numbers or dates.
 </Callout>
 
 <Callout type="warn" title="Redact before you return">

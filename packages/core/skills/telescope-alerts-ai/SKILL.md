@@ -101,10 +101,14 @@ TelescopeModule.forRoot({
     enabled: true,
     maxBodyBytes: 32_768,
     rateLimit: { perMinute: 60 },
-    authorize: (req) => hasValidSession(req), // optional; throw/false => 403
   },
 });
 ```
+
+The endpoint is public by design: it does not receive the console's
+`decorators` and does not count toward the production protection rule. To gate
+it, use `routes: false` and extend `ClientErrorController` with your own
+decorators.
 
 Source: `packages/core/src/nest/telescope.options.ts` (`ClientErrorsOptions`).
 

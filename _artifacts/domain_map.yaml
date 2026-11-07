@@ -52,10 +52,10 @@ domains:
     surface:
       - TelescopeModule.forRoot(options)
       - TelescopeModule.forRootAsync({ useFactory, inject, imports, path })
-      - "options: enabled, authorizer, path, prune, storage, sampling, redact"
+      - "options: enabled, decorators, routes, path, prune, storage, sampling, redact"
     key_facts:
       - Request + exception capture wire themselves automatically; SQLite in-memory store is the default.
-      - API gate DENIES in production unless enabled:true AND an authorizer (or dashboardAuth) is supplied.
+      - With NODE_ENV=production, mounting the console with no decorators fails the boot; routes:false always boots.
       - path must match between TelescopeModule and TelescopeUiModule; in forRootAsync path is static, not from the factory.
       - Under setGlobalPrefix, set registerRequestMiddleware:false and app.use(telescopeRequestCapture(...)).
 
@@ -102,17 +102,18 @@ domains:
       - AI diagnoser is provider-agnostic via the Vercel AI SDK; mode 'auto' enriches new-exception alerts.
 
   - id: access
-    title: Dashboard access control & MCP
+    title: Protecting the routes & MCP
     package: "@dudousxd/nestjs-telescope"
     surface:
-      - "authorizer(ctx) — gates reads (default-deny in prod)"
-      - "authorizeAction(ctx, action) — gates queue mutations (default-deny always)"
-      - "dashboardAuth: { secret, ttl, session?, login? }"
-      - "mcp: true | { token }"
+      - "decorators: ClassDecorator[] — on every mounted console controller (@nestjs/authentication + @nestjs/authorization)"
+      - "routes: false — mount nothing; extend the exported controllers yourself"
+      - "mutations: true — turns on queue actions, prune, replay, profiling-arm"
+      - "mcp: true"
     key_facts:
-      - authorizer and authorizeAction are separate; mutations fail closed until authorizeAction is supplied.
-      - dashboardAuth requires a non-empty secret and at least one of session/login or it is a boot error.
-      - MCP without a token is allowed only when NODE_ENV !== 'production'; in prod a token is required.
+      - Telescope ships no access control of its own; routes are protected only with @nestjs/authentication + @nestjs/authorization.
+      - With NODE_ENV=production a mounted console with no decorators (empty array counts as none) is a boot error.
+      - The client-error beacon is public by design and takes no decorators.
+      - Mutations answer 403 until mutations:true; MCP answers 404 until mcp:true.
 
   - id: ui
     title: Dashboard UI & client

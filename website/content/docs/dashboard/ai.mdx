@@ -42,8 +42,8 @@ The same events are exposed as metrics, read **directly from the diagnostics cha
 stored entries), so sampling and retention never change a count. Two ways out, use either or both:
 
 - **Prometheus scrape** — `TelescopeModule.forRoot({ aiMetrics: { prometheus: true } })` serves
-  `GET <path>/api/metrics` (default `/telescope/api/metrics`) in text exposition format, behind the
-  same `authorizer` / `guards` / `dashboardAuth` as the rest of the API. Off by default (404).
+  `GET <path>/api/metrics` (default `/telescope/api/metrics`) in text exposition format, protected
+  like the rest of the API (your `decorators`, or your own controller). Off by default (404).
 - **OTLP push** — `TelescopeAiMetricsExporter` from
   [`@dudousxd/nestjs-telescope-otel`](/docs/packages/otel#ai-usage-and-agent-run-metrics), with its
   own endpoint, independent of where your traces and logs go.

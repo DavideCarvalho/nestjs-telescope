@@ -2,48 +2,81 @@
 
 Core of [`@dudousxd/nestjs-telescope`](../../README.md) — request + exception
 watchers, the recorder, ALS-based batch correlation, the SQLite store, the
-headless API, the dashboard guard, and the pruner. See the root
+headless API, and the pruner. See the root
 [`README.md`](../../README.md) for the quick start.
 
 ## Protecting the routes
 
-Recommended: mount the routes yourself and protect them with the official tools. `routes: false` mounts no controller (every provider keeps running) and the module exports what the controllers need, so a subclass of an exported controller works in your own module:
+Telescope protects its routes only with NestJS's first-party tools,
+[`@nestjs/authentication`](https://www.npmjs.com/package/@nestjs/authentication)
+and [`@nestjs/authorization`](https://www.npmjs.com/package/@nestjs/authorization).
+There are two ways.
+
+**1. Decorators on the mounted controllers.** Keep Telescope's routes and pass
+`decorators`. They go on every console controller the module mounts (API, live
+stream, MCP). Pass the same list to the UI module, which serves the page:
 
 ```ts
-@Can(ConsolePolicy, 'view')
+const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+
+TelescopeModule.forRoot({ decorators: protect });
+TelescopeUiModule.forRoot({ decorators: protect });
+// forRootAsync({ useFactory, decorators: protect }): a static top-level option.
+```
+
+**2. Mount the routes yourself.** `routes: false` mounts no controller (capture,
+storage, watchers and every service keep running) and the module exports what
+the controllers need. Extend the exported controllers and decorate them however
+you like:
+
+```ts
 @Controller('ops/telescope/api')
+@UseGuards(AuthenticationGuard)
+@Can(ConsolePolicy, 'view')
 class ConsoleApi extends TelescopeController {}
+
+@Controller('ops/telescope')
+@UseGuards(AuthenticationGuard)
+@Can(ConsolePolicy, 'view')
+class ConsolePage extends TelescopeUiController {}
 
 @Module({
   imports: [
-    AuthorizationModule.forRoot(),
-    TelescopeModule.forRoot({ path: 'ops/telescope', routes: false, authorizer: () => true }),
+    TelescopeModule.forRoot({ path: 'ops/telescope', routes: false }),
+    TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false }),
   ],
-  controllers: [ConsoleApi],
-  providers: [ConsolePolicy],
+  controllers: [ConsoleApi, ConsolePage],
 })
 export class OpsModule {}
 ```
 
-`StreamController`, `TelescopeAuthController`, `ClientErrorController` and `TelescopeMcpController` are exported the same way. Keep `path` set to where you mount them: the session cookie and the request-capture self-skip use it. The inherited routes keep `TelescopeGuard`, so `authorizer: () => true` lets your decorators decide alone. Full table: [Protecting the routes](https://davidecarvalho.github.io/aviary/docs/telescope/dashboard/auth#protecting-the-routes).
+`StreamController`, `TelescopeMcpController` and `ClientErrorController` extend
+the same way. The base classes carry no guard of their own: your decorators are
+the whole gate. Keep `path` set to where you mount them, since the request
+capture skips the console's own calls and the page rebases its assets on it.
 
-Next best, keep Telescope's routes and pass `decorators` (below). `dashboardAuth`, `guards` and `authorizer` stay supported as compatibility options.
+**The production rule.** With `NODE_ENV === 'production'`, a module that mounts
+its routes with no `decorators` (an empty array counts as none) fails the boot
+with an error naming both ways. This applies to `TelescopeModule`,
+`TelescopeUiModule` and `TelescopeOtelMetricsModule`. `routes: false` always
+boots. Outside production an undecorated console mounts open, so local work
+needs no setup. Every mounted controller is also marked open to
+`@nestjs/authorization`'s deny-by-default global guard (`Can.Anyone()`), so an
+undecorated dev console keeps answering once your app adopts it; a `Can(...)`
+in `decorators` is still enforced.
 
-### `decorators`
+**Public by design: the client-error beacon.** `POST <path>/api/client-errors`
+(off until `clientErrors.enabled`) takes reports from any visitor's browser, so
+it does not receive `decorators` and does not count toward the production rule.
+It keeps its byte cap and per-IP rate limit. To put it behind your own auth,
+use `routes: false` and extend `ClientErrorController`.
 
-Telescope's own gates (`authorizer`, `dashboardAuth`, `guards`) decide who reaches the console. If your app adopts `@nestjs/authorization`, whose global `AuthorizationGuard` denies any route without a `@Can()`, Telescope still answers: every controller it mounts is marked open to that guard (as `Can.Anyone()` would).
-
-To require the official tools instead, pass `decorators`. They are applied to every controller the module mounts (API, SSE stream, auth, client errors, MCP):
-
-```ts
-TelescopeModule.forRoot({
-  authorizer: () => true,
-  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
-});
-// forRootAsync({ useFactory, decorators: [...] }): a static top-level option.
-```
-
-A `Can()` passed here is enforced (guest 401, denied 403). Each registration gets fresh controller subclasses, so decorators never leak between registrations. Pass the same list to `TelescopeUiModule.forRoot({ decorators })` for the page.
+**Mutations** (queue retry/remove/promote/redrive/enqueue, prune, replay,
+profiling) are a feature switched on with `mutations: true` (off: 403). Who may
+call them is decided by your decorators like every other route; for a stricter
+rule on mutations, mount the routes yourself and override those methods with an
+extra `@Can(...)` (class and method requirements both apply; re-declare the
+route decorators on the override).
 
 ## Memory bounds
 
@@ -162,9 +195,8 @@ TelescopeModule.forRoot({
 
 With a `prune` retention window configured, `GET /telescope/api/retention`
 reports the resolved window and `POST /telescope/api/retention/prune` runs a
-prune on demand. Pruning is a **mutation**, so it sits behind the same
-default-deny `authorizeAction` gate as the queue console: `403` until you supply
-that callback, `400` when no `prune` window is set. The Overview **Retention**
+prune on demand. Pruning is a **mutation**, so like the queue console it needs
+`mutations: true` (`403` otherwise), and `400` when no `prune` window is set. The Overview **Retention**
 card shows a *Prune now* button only when both are in place (`meta.pruneEnabled`).
 
 ## Alerts (webhook)
@@ -223,13 +255,12 @@ TelescopeModule.forRoot({
 
 `GET /telescope/api/entries/:id/replay` re-issues a captured `request` entry
 against the local app (`127.0.0.1`) and returns the outcome. Replaying actually
-hits the app (it may write), so it's a **mutation**: it sits behind the same
-default-deny `authorizeAction` gate as prune / queue actions (`403` until you
-supply that callback), not the read `authorizer`. The replayed request carries an
+hits the app (it may write), so it's a **mutation**: like prune / queue actions
+it needs `mutations: true` (`403` otherwise). The replayed request carries an
 `x-telescope-replay: 1` header (so the host can recognize or skip it) and strips
 cookie/authorization/host headers — a replay must not silently reuse the captured
 session. Replayed requests are tagged `replay`. The dashboard's request detail
-exposes a *Replay* button when `authorizeAction` is configured.
+exposes a *Replay* button when `mutations: true` is set.
 
 ## MCP server (coding agents)
 
@@ -242,9 +273,7 @@ the transport's `GET` stream returns `405` and `DELETE` is a `200` no-op.
 
 ```ts
 TelescopeModule.forRoot({
-  mcp: true,                                       // dev-only: open when NODE_ENV !== 'production'
-  // mcp: { token: process.env.TELESCOPE_MCP_TOKEN }, // require a Bearer token (only way to expose in prod)
-  // mcp: false                                       // (or omitting it) disables the endpoint
+  mcp: true, // omit (or false) and the endpoint answers 404
 });
 ```
 
@@ -256,7 +285,6 @@ claude mcp add --transport http telescope http://localhost:3000/telescope/api/mc
 
 Tools: `list_entries` (filter by type/search/tag/time window), `get_entry` (one
 entry + its full batch), `get_batch`, `get_stats` (last-hour health snapshot), and
-`diagnose_exception` (AI diagnosis, when `ai` is configured). Auth is enforced by
-the controller (no dashboard guard): with a `token`, every request must carry
-`Authorization: Bearer <token>`; without one the endpoint is allowed only when
-`NODE_ENV !== 'production'`, and a tokenless config in production is refused.
+`diagnose_exception` (AI diagnosis, when `ai` is configured). It is protected like
+every console route, by your `decorators` (agent clients send a header, so use a
+Bearer-capable `@nestjs/authentication` strategy) or by your own controller.

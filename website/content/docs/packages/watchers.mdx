@@ -42,7 +42,6 @@ import { MikroOrmModule } from '@mikro-orm/nestjs';
 @Module({
   imports: [
     TelescopeModule.forRoot({
-      authorizer: () => true,           // restrict in production
       watchers: [new MikroOrmQueryWatcher()],
     }),
     MikroOrmModule.forRootAsync({
@@ -83,9 +82,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 @Module({
   imports: [
-    TelescopeModule.forRoot({
-      authorizer: () => true, // restrict in production
-    }),
+    TelescopeModule.forRoot({}),
     TypeOrmModule.forRootAsync({
       inject: [TelescopeService],
       useFactory: (telescope: TelescopeService) => ({

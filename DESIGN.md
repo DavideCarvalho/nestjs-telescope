@@ -213,9 +213,10 @@ interface TelescopeModuleOptions {
   // --- retention ---
   prune?: { after: Duration; keepLast?: number; intervalMs?: number };
 
-  // --- access control (API + UI) ---
-  authorizer?: (ctx: AuthorizerContext) => boolean | Promise<boolean>; // default: deny in production
-  authorizeAction?: (ctx, action) => boolean | Promise<boolean>; // mutations (prune/queue/replay); default: deny
+  // --- route protection (API + UI): @nestjs/authentication + @nestjs/authorization ---
+  decorators?: ClassDecorator[];            // on every mounted console controller; required in production
+  routes?: boolean;                         // false: mount nothing, serve the routes from your own controllers
+  mutations?: boolean;                      // turns on prune/queue/replay/profiling-arm; default: off (403)
 
   // --- distributed tracing ---
   otel?: { export?: boolean; ingest?: boolean };
@@ -231,9 +232,10 @@ interface TelescopeModuleOptions {
 }
 ```
 
-Env-awareness is just configuration: a typical app enables rich capture with a
-permissive authorizer in dev, and in prod sets `enabled` behind a flag, a strict
-`authorizer`, full `redact`, low `sampling`, and `prune.after`.
+Env-awareness is just configuration: a typical app enables rich capture in dev
+(where an undecorated console mounts open), and in prod sets `enabled` behind a
+flag, `decorators` (required there), full `redact`, low `sampling`, and
+`prune.after`.
 
 ---
 
@@ -252,9 +254,12 @@ The core registers a controller at a fixed base `/telescope/api` (a configurable
 | `DELETE /telescope/api/entries` | manual clear (gated) |
 | `GET  /telescope/api/meta` | enabled watchers, dropped counter, storage health |
 
-Every route runs through `TelescopeGuard`, which calls the configured
-`authorizer`. **Default behavior is deny when `NODE_ENV === 'production'`** until
-the host explicitly provides an authorizer — the same safe default Telescope uses.
+Telescope ships no access control of its own: routes are protected with NestJS's
+first-party `@nestjs/authentication` + `@nestjs/authorization`, through
+`decorators` on the mounted controllers or `routes: false` plus the host's own
+subclasses of the exported controllers. **With `NODE_ENV === 'production'`,
+mounting the console with no `decorators` fails the boot.** The client-error
+beacon is public by design and takes no `decorators`.
 
 The API is the only contract the UI depends on, so the dashboard is fully
 decoupled and replaceable.
@@ -263,10 +268,8 @@ decoupled and replaceable.
 
 `GET /telescope/api/entries/:id/replay` re-issues a captured `request` entry
 against the local app (`127.0.0.1`) and returns the outcome. Because it actually
-hits the app — and may write — it is a **mutation**, so it sits behind the same
-default-deny `authorizeAction` gate as prune / queue actions (no `authorizeAction`
-→ `403`), not the read `authorizer`. The queue-shaped action guard can't validate
-it (no driver/queue/action), so the controller enforces the default-deny inline.
+hits the app — and may write — it is a **mutation**, so like prune / queue actions it needs `mutations: true`
+(`403` otherwise).
 The replayed request carries an `x-telescope-replay: 1` header (so the host can
 recognize or skip it) and strips cookie/authorization/host headers — a replay must
 not silently reuse the captured session. Replayed requests are tagged `replay`.
@@ -282,12 +285,9 @@ session to track, so the transport's `GET` stream is `405` and `DELETE` is a
 Tools (`list_entries`, `get_entry`, `get_batch`, `get_stats`, `diagnose_exception`)
 are thin wrappers over the same storage / Pulse / diagnosis APIs as the dashboard.
 
-Auth is a **Bearer token** (`mcp: { token }`), checked by the controller itself —
-it carries no `TelescopeGuard`, since the cookie-session dashboard gate doesn't
-apply to a header-only agent client. Without a token the endpoint is open only
-when `NODE_ENV !== 'production'` (mirroring the default-open-in-dev authorizer); a
-tokenless config in production is refused. `mcp: false` (or omitting it) disables
-the controller.
+It is protected like every console route, by the module's `decorators` (agent
+clients send a header, so a Bearer-capable `@nestjs/authentication` strategy) or
+the host's own controller. `mcp: false` (or omitting it) makes it answer 404.
 
 ---
 
@@ -389,7 +389,7 @@ Internal deps use `workspace:*`; everything is `peerDependency` against
 NestJS runs on `@nestjs/platform-express` or `@nestjs/platform-fastify`; the library
 must be agnostic to both.
 
-- **HTTP API + guard** are plain Nest controllers/guards — they work on either
+- **HTTP API** is plain Nest controllers — it works on either
   adapter unchanged.
 - **RequestWatcher** reads request data through `ExecutionContext.switchToHttp()`,
   but the raw fields differ (`req.originalUrl` vs `req.url`, `req.ip` vs

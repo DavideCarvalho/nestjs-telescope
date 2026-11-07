@@ -56,10 +56,9 @@ import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 @Module({
   imports: [
     TelescopeModule.forRoot({
-      // dev: rich capture, open gate. prod: flip enabled + supply an authorizer.
-      enabled: process.env.NODE_ENV !== 'production',
-      authorizer: () => true, // gates the API; defaults to deny in production
       prune: { after: '24h' },
+      // In production, protect the routes or the boot fails (see the callout):
+      // decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
     }),
     TelescopeUiModule.forRoot(),
   ],
@@ -75,8 +74,8 @@ Boot the app and open [http://localhost:3000/telescope](http://localhost:3000/te
 </Step>
 </Steps>
 
-<Callout type="warn" title="Production gate">
-The API gate **denies in production by default**. In prod you must set `enabled: true` and supply an `authorizer` (or wire [dashboard auth](/docs/dashboard/auth)) — otherwise the dashboard returns `403`. This is a default, not an afterthought: capture runs with redaction always on, and the gate stays closed until you open it.
+<Callout type="warn" title="Production rule">
+The console is protected with NestJS's own tools, `@nestjs/authentication` and `@nestjs/authorization`. With `NODE_ENV=production`, mounting it with no `decorators` **fails the boot**: pass `decorators` to `TelescopeModule` and `TelescopeUiModule`, or set `routes: false` and mount the routes from your own controllers. Outside production it mounts open. See [Protecting the routes](/docs/dashboard/auth).
 </Callout>
 
 ## Beyond capture
@@ -98,7 +97,7 @@ Once entries are flowing, the rest of the console builds on the same pipeline:
   <Card title="Storage" href="/docs/concepts/storage" description="The StorageProvider SPI, the self-healing schema, and the full adapter table." />
   <Card title="Performance" href="/docs/concepts/performance" description="Off-the-response-path capture, and the /health card that proves the overhead." />
   <Card title="Dashboard" href="/docs/dashboard" description="The full UI tour: overview, entries, traces, the queues console, schedules, and alerts." />
-  <Card title="Dashboard auth" href="/docs/dashboard/auth" description="Gate the dashboard to your logged-in admins, all the way to production." />
+  <Card title="Protecting the routes" href="/docs/dashboard/auth" description="Put @nestjs/authentication and @nestjs/authorization in front of the console." />
   <Card title="Packages" href="/docs/packages" description="One page per watcher, storage, queue manager, AI diagnoser, and the testing kit." />
   <Card title="MCP server" href="/docs/concepts/mcp" description="Let coding agents query the captured data over the Model Context Protocol." />
   <Card title="Recipes" href="/docs/recipes" description="Custom storage and watchers, tags & redaction, S3 archiving, frontend errors, and AI diagnosis." />

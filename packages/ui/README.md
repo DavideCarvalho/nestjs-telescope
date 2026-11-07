@@ -24,27 +24,34 @@ request and everything it caused.
 
 ### Protecting the page
 
-Recommended: `routes: false` mounts nothing, and you serve the page from your own subclass of the exported `TelescopeUiController`:
+The page is protected with NestJS's own tools, like the API. Two ways:
 
 ```ts
-@Can(ConsolePolicy, 'view')
-@Controller('ops/telescope')
-class ConsolePage extends TelescopeUiController {}
-
-// imports: [TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false })]
-```
-
-Set `path` to the mount: the page rebases its asset URLs on it. Or keep the mounted route and pass `decorators`:
-
-#### `decorators`
-
-The page controller is marked open to `@nestjs/authorization`'s deny-by-default guard, so it keeps loading when your app adopts that package. To require a policy, pass the same `decorators` you give `TelescopeModule` (on `forRootAsync`, as a static top-level option):
-
-```ts
+// 1. decorators on the mounted controller (forRootAsync: a static top-level option)
 TelescopeUiModule.forRoot({
   decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
 });
+
+// 2. mount it yourself: routes: false + your own subclass (it carries no guard of its own)
+@Controller('ops/telescope')
+@UseGuards(AuthenticationGuard)
+@Can(ConsolePolicy, 'view')
+class ConsolePage extends TelescopeUiController {}
+// imports: [TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false })]
 ```
+
+A full-page navigation carries your cookies, not an `Authorization` header, so
+the authentication strategy here must read a cookie session. Set `path` to the
+mount: the page rebases its asset URLs on it. Give `TelescopeModule` the same
+protection for the API.
+
+With `NODE_ENV === 'production'`, mounting the page with no `decorators` (an
+empty array counts as none) fails the boot; `routes: false` always boots.
+Outside production an undecorated page mounts open. See
+[Protecting the routes](../../README.md#protecting-the-routes).
+
+To link to the console from your app, `telescopeConsoleUrl(basePath)` (from
+`@dudousxd/nestjs-telescope-ui/client`) gives its URL.
 
 ## Build your own (composable)
 

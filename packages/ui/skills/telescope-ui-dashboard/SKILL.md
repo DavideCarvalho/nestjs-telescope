@@ -36,7 +36,7 @@ import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 
 @Module({
   imports: [
-    TelescopeModule.forRoot({ enabled: true, authorizer: () => true }),
+    TelescopeModule.forRoot({ enabled: true }),
     TelescopeUiModule.forRoot(), // dashboard at /telescope
   ],
 })
@@ -54,7 +54,7 @@ Set the same `path` on BOTH modules. In `forRootAsync` the `path` is a static
 sibling of `useFactory`, not returned from it.
 
 ```ts
-TelescopeModule.forRoot({ path: 'observability', enabled: true, authorizer: () => true });
+TelescopeModule.forRoot({ path: 'observability', enabled: true });
 TelescopeUiModule.forRoot({ path: 'observability' }); // dashboard now at /observability
 ```
 
@@ -125,13 +125,13 @@ Source: `packages/ui/src/react/telescope-context.tsx` (`TelescopeProvider`,
 ```ts
 // Wrong — the SPA loads but its API calls 404: core API is at /observability/api,
 // the dashboard probes /telescope/api.
-TelescopeModule.forRoot({ path: 'observability', enabled: true, authorizer: () => true });
+TelescopeModule.forRoot({ path: 'observability', enabled: true });
 TelescopeUiModule.forRoot(); // defaults to 'telescope'
 ```
 
 ```ts
 // Correct — both modules share the same path.
-TelescopeModule.forRoot({ path: 'observability', enabled: true, authorizer: () => true });
+TelescopeModule.forRoot({ path: 'observability', enabled: true });
 TelescopeUiModule.forRoot({ path: 'observability' });
 ```
 

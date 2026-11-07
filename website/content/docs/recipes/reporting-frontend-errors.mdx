@@ -54,19 +54,11 @@ The server adds `clientIp` (from `x-forwarded-for`'s first hop, else `request.ip
 
 ## Security knobs
 
-This is a public endpoint, so it ships with three best-effort defenses:
+This is a public endpoint by design: visitors' browsers report to it, signed in or not, so it does **not** receive the console's `decorators` and is outside the [production rule](/docs/dashboard/auth#the-production-rule). It ships with two best-effort defenses:
 
 - **`maxBodyBytes`** — bodies over the cap are rejected **before** parsing/validation (413).
 - **`rateLimit.perMinute`** — a per-IP token bucket; over the limit returns **429**. The bucket map is bounded (oldest IP evicted at ~10k IPs).
-- **`authorize`** — an optional gate that runs **first**; return `false` to reject with **403**. Use it to require a session cookie or a shared header. A throw is treated as a denial (fail-closed) and never crashes the request.
-
-```ts
-clientErrors: {
-  enabled: true,
-  // Only accept reports from a logged-in user (validate your own session).
-  authorize: (request) => Boolean(getSessionFromCookie(request)),
-},
-```
+To accept reports only from signed-in users, set `routes: false` and mount your own subclass of `ClientErrorController` with your decorators (see [Mount the routes yourself](/docs/dashboard/auth#2-mount-the-routes-yourself-routes-false)).
 
 <Callout type="warn">
 The rate limit is **per-pod and in-memory**. In a multi-replica deployment the effective limit is `perMinute × pods`, and a client pinned to one pod sees exactly `perMinute`. It's abuse-dampening, not a hard global quota — a shared limiter would need a cross-pod store.
