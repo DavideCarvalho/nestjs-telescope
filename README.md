@@ -231,7 +231,7 @@ route decorators on the override).
 | `@dudousxd/nestjs-telescope-redis` | Redis-backed shared storage (multi-instance) |
 | `@dudousxd/nestjs-telescope-ai` | AI exception diagnoser (Vercel AI SDK — Bedrock, OpenAI, any model) |
 | `@dudousxd/nestjs-telescope-otel` | OpenTelemetry trace-context provider + bridge |
-| `@dudousxd/nestjs-telescope-observe` | Forward entries to NestJS Observe (hosted dashboard) |
+| `@dudousxd/nestjs-telescope-official` | NestJS first-party packages: resilience, workflows, authentication, authorization and mail channel events; `@nestjs/ai` usage; `@nestjs/observe` trace ids |
 | `@dudousxd/nestjs-telescope-testing` | In-memory store, `FakeClock`, watcher test harness |
 
 ## License

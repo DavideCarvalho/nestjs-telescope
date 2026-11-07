@@ -2,6 +2,7 @@ import type { Entry } from '../../client/index.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/index.js';
 import { CacheBadge } from './cache-badge.js';
 import { InertiaBadge } from './inertia-badge.js';
+import { isOfficialEventType, officialEventLabel } from './official-event.js';
 import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
 
 export function entryLabel(entry: Entry): string {
@@ -20,6 +21,11 @@ export function entryLabel(entry: Entry): string {
       return dumpValuePreview(record.value);
     }
     if (entry.type === 'event' && typeof record.name === 'string') return record.name;
+    if (isOfficialEventType(entry.type)) return officialEventLabel(entry.type, record);
+    if (entry.type === 'mail' && typeof record.status === 'string') {
+      const subject = typeof record.subject === 'string' ? record.subject : '(no subject)';
+      return `[${record.status}] ${subject}`;
+    }
     if (entry.type === 'model' && typeof record.action === 'string') {
       const entity = typeof record.entity === 'string' ? record.entity : '';
       const id = record.id === null || record.id === undefined ? '' : `#${String(record.id)}`;

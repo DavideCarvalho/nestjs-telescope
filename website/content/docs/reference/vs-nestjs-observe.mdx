@@ -1,18 +1,19 @@
 ---
 title: Telescope vs NestJS Observe
-description: An honest side-by-side with the official @nestjs/observe SDK and its hosted dashboard — what each one captures, where each one wins, and how to send Telescope entries to Observe.
+description: An honest side-by-side with the official @nestjs/observe SDK and its hosted dashboard — what each one captures, where each one wins, and how to use both with one trace id.
 icon: GitCompare
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 [NestJS Observe](https://observe.nestjs.com) is the official observability product from the
-creator of NestJS: an MIT-licensed SDK (`@nestjs/observe`) reporting into a closed, hosted
-backend. It answers a different question than Telescope does, and the two compose — see
-[Sending Telescope entries to Observe](#sending-telescope-entries-to-observe).
+creator of NestJS: an agent (`@nestjs/observe`) reporting into a closed, hosted backend. It
+answers a different question than Telescope does, and the two run side by side. See
+[Using both](#using-both).
 
 <Callout type="info">
-  Compared against `@nestjs/observe` 0.1.3 (August 2026). Observe is young and moving; check
+  Compared against `@nestjs/observe` 0.1.3 (August 2026); the licence row and
+  [Using both](#using-both) reflect 0.3.24 (November 2026). Observe is young and moving, so check
   their docs before relying on any row below.
 </Callout>
 
@@ -29,7 +30,7 @@ other is far less work.
 | --- | --- | --- |
 | Model | In-app console | Agent + hosted backend |
 | Where data lives | Your store (SQLite / Redis / MySQL / Postgres) | Their infrastructure |
-| Licence | MIT, end to end | SDK MIT; collector and dashboard closed |
+| Licence | MIT, end to end | Agent: MIT up to 0.3.20, then the NestJS Observe Agent License (telemetry may go only to observe.nestjs.com); collector and dashboard closed |
 | Cost | Your infrastructure | Free tier, then metered per event |
 | Retention | Your choice, via `prune` and `archive` | Fixed by plan tier |
 | Self-hosting the backend | It *is* self-hosted | Not offered |
@@ -102,36 +103,42 @@ Stated plainly, because knowing this is more useful than a flattering table.
 - **Nothing of your source code is transmitted.** Observe's `sourceContext` defaults to on,
   which sends fragments of your source files with each error.
 
-## Sending Telescope entries to Observe
+## Using both
 
-They are not exclusive. [`@dudousxd/nestjs-telescope-observe`](/docs/packages/observe) forwards
-what Telescope captures into an Observe project, so the depth Telescope has locally shows up in
-their UI as spans on the request that caused them — without adopting the provider proxy.
+They aren't exclusive: run the official agent for Observe and keep Telescope for the local
+console. To look one request up in both, give Telescope Observe's trace id with
+[`ObserveTraceContextProvider`](/docs/packages/official#nestjsobserve-trace-ids):
 
 ```ts
-import { TelescopeModule } from '@dudousxd/nestjs-telescope';
-import { ObserveExporter } from '@dudousxd/nestjs-telescope-observe';
+import { TracerService } from '@nestjs/observe';
+import { ObserveTraceContextProvider } from '@dudousxd/nestjs-telescope-official';
 
-TelescopeModule.forRoot({
-  storage,
-  extensions: [
-    new ObserveExporter({
-      appKey: process.env.OBSERVE_APP_KEY!,
-      appSecret: process.env.OBSERVE_APP_SECRET!,
-      serviceId: 'orders-api',
-    }),
-  ],
+TelescopeModule.forRootAsync({
+  inject: [TracerService],
+  useFactory: (tracer: TracerService) => ({
+    storage,
+    traceContext: new ObserveTraceContextProvider(tracer),
+  }),
 });
 ```
 
-Observe's ingest API is private and unversioned, so read that package's notes before depending
-on it in production.
+That's the whole bridge: Telescope reads `TracerService.currentTraceId()` and stamps it on its
+own entries. It never receives Observe's spans or metrics, and it sends nothing to Observe.
+`@nestjs/observe` after 0.3.20 is under the NestJS Observe Agent License, which keeps Observe's
+telemetry for observe.nestjs.com and explicitly allows passing trace context between your
+applications and the services they call.
+
+<Callout type="warn">
+  The earlier `@dudousxd/nestjs-telescope-observe` exporter, which forwarded Telescope entries
+  into an Observe project over its private, unversioned ingest wire, is **deprecated** and no
+  longer released. Use `@nestjs/observe` itself to report into NestJS Observe.
+</Callout>
 
 ## Choosing
 
 - **Data cannot leave your network** — Telescope. Observe has no self-hosted collector.
 - **You want SLOs, anomaly alerting and long retention, and would rather not run storage** —
-  Observe, and add the exporter if you want Telescope's depth alongside it.
+  Observe, with Telescope alongside it for local depth, sharing the trace id.
 - **You are debugging a slow endpoint right now** — Telescope. The batch waterfall with the
   actual SQL is what answers that question.
 - **You want per-class timing across a fleet of services** — Observe.

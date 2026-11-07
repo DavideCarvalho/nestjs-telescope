@@ -118,6 +118,13 @@ TelescopeModule.forRoot({ watchers: [new PrismaQueryWatcher(prisma, { slowMs: 50
 
 ---
 
+## NestJS first-party packages
+
+`@nestjs/resilience`, `@nestjs/workflows`, `@nestjs/authentication`, `@nestjs/authorization` and
+`@nestjs/mail` publish their events on `nestjs:*` diagnostics channels. One package records all of
+them, with `watchers: [...officialWatchers()]`: see
+[`@dudousxd/nestjs-telescope-official`](/docs/packages/official).
+
 ## Behavioral watchers
 
 ### Mail — `@dudousxd/nestjs-telescope-mail`
