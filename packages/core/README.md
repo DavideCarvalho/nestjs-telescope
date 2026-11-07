@@ -5,7 +5,31 @@ watchers, the recorder, ALS-based batch correlation, the SQLite store, the
 headless API, the dashboard guard, and the pruner. See the root
 [`README.md`](../../README.md) for the quick start.
 
-## Who reaches the console (`decorators`)
+## Protecting the routes
+
+Recommended: mount the routes yourself and protect them with the official tools. `routes: false` mounts no controller (every provider keeps running) and the module exports what the controllers need, so a subclass of an exported controller works in your own module:
+
+```ts
+@Can(ConsolePolicy, 'view')
+@Controller('ops/telescope/api')
+class ConsoleApi extends TelescopeController {}
+
+@Module({
+  imports: [
+    AuthorizationModule.forRoot(),
+    TelescopeModule.forRoot({ path: 'ops/telescope', routes: false, authorizer: () => true }),
+  ],
+  controllers: [ConsoleApi],
+  providers: [ConsolePolicy],
+})
+export class OpsModule {}
+```
+
+`StreamController`, `TelescopeAuthController`, `ClientErrorController` and `TelescopeMcpController` are exported the same way. Keep `path` set to where you mount them: the session cookie and the request-capture self-skip use it. The inherited routes keep `TelescopeGuard`, so `authorizer: () => true` lets your decorators decide alone. Full table: [Protecting the routes](https://davidecarvalho.github.io/aviary/docs/telescope/dashboard/auth#protecting-the-routes).
+
+Next best, keep Telescope's routes and pass `decorators` (below). `dashboardAuth`, `guards` and `authorizer` stay supported as compatibility options.
+
+### `decorators`
 
 Telescope's own gates (`authorizer`, `dashboardAuth`, `guards`) decide who reaches the console. If your app adopts `@nestjs/authorization`, whose global `AuthorizationGuard` denies any route without a `@Can()`, Telescope still answers: every controller it mounts is marked open to that guard (as `Can.Anyone()` would).
 

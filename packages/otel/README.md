@@ -89,6 +89,16 @@ TelescopeOtelMetricsModule.forExporter(otel, {
 });
 ```
 
+Or mount it yourself: `{ routes: false }` mounts nothing and exports the exporter
+under `TELESCOPE_OTEL_EXPORTER`, so your own controller can extend
+`TelescopeOtelMetricsController` or call `exporter.prometheus()`:
+
+```ts
+@Can(MetricsPolicy, 'scrape')
+@Controller('ops')
+class OpsMetrics extends TelescopeOtelMetricsController {} // GET /ops/metrics
+```
+
 - **Metrics** are mirrored into the OTel Meter (OTLP push when your app has an
   OTel SDK) AND exposed as a dependency-free Prometheus scrape at `/metrics`.
 - **Spans** go through the OTel Tracer; point your SDK's OTLP exporter at Tempo/

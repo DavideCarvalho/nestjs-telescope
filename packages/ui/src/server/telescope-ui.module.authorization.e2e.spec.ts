@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
-import type { DynamicModule, INestApplication } from '@nestjs/common';
+import { Controller, type DynamicModule, type INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -37,9 +37,10 @@ afterEach(async () => {
   app = undefined;
 });
 
-async function boot(imports: DynamicModule[]): Promise<INestApplication> {
+async function boot(imports: DynamicModule[], controllers: Type[] = []): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports,
+    controllers,
     providers: [ConsolePolicy],
   }).compile();
   app = moduleRef.createNestApplication();
@@ -106,5 +107,32 @@ describe('TelescopeUiModule under @nestjs/authorization', () => {
     ]);
     await get(second, '/telescope', { id: 'u', admin: false }).expect(200);
     expect(Reflect.getMetadata('authorization:can', TelescopeUiController)).toBeUndefined();
+  });
+
+  it('routes: false mounts nothing; a developer-mounted subclass protected with @Can serves the page', async () => {
+    @Can(ConsolePolicy, 'view')
+    @Controller('ops/telescope')
+    class ConsolePage extends TelescopeUiController {}
+
+    expect(TelescopeUiModule.forRoot({ routes: false }).controllers).toEqual([]);
+    expect(
+      TelescopeUiModule.forRootAsync({ useFactory: () => ({}), routes: false }).controllers,
+    ).toEqual([]);
+
+    const target = await boot(
+      [
+        AuthorizationModule.forRoot(),
+        TelescopeUiModule.forRoot({ assetsDir: dir, path: 'ops/telescope', routes: false }),
+      ],
+      [ConsolePage],
+    );
+    await get(target, '/telescope', { id: 'a', admin: true }).expect(404);
+    await get(target, '/ops/telescope').expect(401);
+    await get(target, '/ops/telescope', { id: 'u', admin: false }).expect(403);
+    await get(target, '/ops/telescope/assets/app.js', { id: 'u', admin: false }).expect(403);
+    const page = await get(target, '/ops/telescope', { id: 'a', admin: true }).expect(200);
+    // The page's asset base follows `path`, i.e. where the developer mounted it.
+    expect(page.text).toContain('window.__TELESCOPE_BASE__ = "/ops/telescope"');
+    await get(target, '/ops/telescope/assets/app.js', { id: 'a', admin: true }).expect(200);
   });
 });

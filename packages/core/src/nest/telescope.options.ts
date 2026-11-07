@@ -488,6 +488,38 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   decorators?: ClassDecorator[];
   /**
+   * `false` mounts NO controller; every provider (capture, storage, watchers,
+   * pruning, alerts, the services below) still runs. Serve the routes you want
+   * from controllers of your own, protected with ordinary Nest decorators —
+   * the same "mount it yourself" path as `@nestjs/mcp`'s `path: false`:
+   *
+   * ```ts
+   * @Controller('ops/telescope/api')
+   * @Can(ConsolePolicy, 'view')
+   * class ConsoleApi extends TelescopeController {}
+   *
+   * @Module({
+   *   imports: [TelescopeModule.forRoot({ path: 'ops/telescope', routes: false, authorizer: () => true })],
+   *   controllers: [ConsoleApi],
+   * })
+   * ```
+   *
+   * Each exported controller (`TelescopeController`, `StreamController`,
+   * `TelescopeAuthController`, `ClientErrorController`, `TelescopeMcpController`)
+   * can be extended this way; its dependencies are exported by the module.
+   * Inherited routes keep Telescope's own gates (`TelescopeGuard` on the API and
+   * the stream: the `authorizer` / `dashboardAuth` / dev-open-prod-closed
+   * default), so pass `authorizer: () => true` when your decorators decide alone.
+   *
+   * Named `routes`, not `path: false`, because `path` keeps a job without
+   * routes: it is the base the session cookie, the request-capture self-skip
+   * and the UI's asset URLs use, so set it to where you mount the controllers.
+   * `guards` and `decorators` only apply to mounted controllers and are ignored
+   * here. With `forRootAsync`, pass it as the static top-level `routes`.
+   * Default `true`.
+   */
+  routes?: boolean;
+  /**
    * Extra `imports` merged into `TelescopeModule`'s own dynamic module — the DI
    * resolution path for a class passed to {@link guards} (or any other provider
    * the console controllers need reachable). Typically the host's own auth

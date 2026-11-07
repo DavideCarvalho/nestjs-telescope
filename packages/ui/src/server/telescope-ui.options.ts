@@ -50,6 +50,25 @@ export interface TelescopeUiModuleOptions {
    */
   decorators?: ClassDecorator[];
   /**
+   * `false` mounts NO controller; serve the page from a controller of your own
+   * by extending the exported `TelescopeUiController` (its `TELESCOPE_UI_OPTIONS`
+   * dependency is exported by the module), protected with ordinary Nest
+   * decorators:
+   *
+   * ```ts
+   * @Controller('ops/telescope')
+   * @Can(ConsolePolicy, 'view')
+   * class ConsolePage extends TelescopeUiController {}
+   * ```
+   *
+   * Named `routes`, not `path: false`, because `path` keeps a job without
+   * routes: the page rewrites its asset URLs against it, so set it to where you
+   * mount the controller (and to core's `path`). `guards` and `decorators` only
+   * apply to the mounted controller and are ignored here. With `forRootAsync`,
+   * pass it as the static top-level `routes`. Default `true`.
+   */
+  routes?: boolean;
+  /**
    * The SAME `dashboardAuth` passed to `TelescopeModule.forRoot` (core). Only needed to use
    * `dashboardAuth.unauthenticatedPage`: this module serves the page + SPA shell, so it is the only
    * one that can replace that page — core gates the API, not the HTML.

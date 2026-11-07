@@ -41,20 +41,29 @@ function stampGuards(
   }
 }
 
+/** The controller mounted when `routes` is not `false` (none when it is). */
+function uiControllers(
+  options: Pick<TelescopeUiModuleOptions, 'path' | 'guards' | 'decorators' | 'routes'>,
+): Type[] {
+  if (options.routes === false) return [];
+  const path = normalizeTelescopePath(options.path);
+  const uiController = dynamicController(TelescopeUiController, path, options.decorators);
+  stampGuards(options.guards, uiController);
+  return [uiController];
+}
+
 @Module({})
 export class TelescopeUiModule {
   static forRoot(options: TelescopeUiModuleOptions = {}): DynamicModule {
-    const path = normalizeTelescopePath(options.path);
-    const uiController = dynamicController(TelescopeUiController, path, options.decorators);
-    stampGuards(options.guards, uiController);
     return {
       module: TelescopeUiModule,
       imports: options.imports ?? [],
-      controllers: [uiController],
+      controllers: uiControllers(options),
       providers: [
         { provide: TELESCOPE_UI_OPTIONS, useValue: options },
         ...(options.guards ?? []).filter(isGuardClass),
       ],
+      exports: [TELESCOPE_UI_OPTIONS],
     };
   }
 
@@ -87,15 +96,20 @@ export class TelescopeUiModule {
      * `path` above. See {@link TelescopeUiModuleOptions.decorators}.
      */
     decorators?: ClassDecorator[];
+    /**
+     * `false` mounts no controller. Must be passed HERE (not inside the
+     * async-resolved options): which controllers exist is decided at
+     * module-build time — the SAME constraint as `path` above. See
+     * {@link TelescopeUiModuleOptions.routes}.
+     */
+    routes?: boolean;
   }): DynamicModule {
     const path = normalizeTelescopePath(config.path);
-    const uiController = dynamicController(TelescopeUiController, path, config.decorators);
-    stampGuards(config.guards, uiController);
     const { useFactory } = config;
     return {
       module: TelescopeUiModule,
       imports: config.imports ?? [],
-      controllers: [uiController],
+      controllers: uiControllers(config),
       providers: [
         {
           provide: TELESCOPE_UI_OPTIONS,
@@ -111,6 +125,7 @@ export class TelescopeUiModule {
         },
         ...(config.guards ?? []).filter(isGuardClass),
       ],
+      exports: [TELESCOPE_UI_OPTIONS],
     };
   }
 }

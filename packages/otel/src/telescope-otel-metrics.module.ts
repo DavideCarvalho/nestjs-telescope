@@ -17,13 +17,23 @@ export interface TelescopeOtelMetricsModuleOptions {
    * nothing leaks between registrations.
    */
   decorators?: ClassDecorator[];
+  /**
+   * `false` mounts no controller; the module only provides the exporter under
+   * `TELESCOPE_OTEL_EXPORTER` (exported), so a controller of your own can serve
+   * the scrape, protected with ordinary Nest decorators: extend the exported
+   * `TelescopeOtelMetricsController`, or call `exporter.prometheus()` yourself.
+   * Named `routes` like core's and the UI's option (there `path` keeps a job
+   * without routes; one name across the library). `decorators` is ignored
+   * here. Default `true`.
+   */
+  routes?: boolean;
 }
 
 /**
  * Mounts `GET /metrics` (Prometheus) for the exporter. Pass the SAME exporter
  * instance you registered as a Telescope extension so the scrape reflects live
  * records. Mount path is owned by the host (e.g. via RouterModule or the module
- * import site).
+ * import site). `routes: false` mounts nothing, for a controller of your own.
  */
 @Module({})
 export class TelescopeOtelMetricsModule {
@@ -31,6 +41,14 @@ export class TelescopeOtelMetricsModule {
     exporter: TelescopeOtelExporter,
     options: TelescopeOtelMetricsModuleOptions = {},
   ): DynamicModule {
+    const providers = [{ provide: TELESCOPE_OTEL_EXPORTER, useValue: exporter }];
+    if (options.routes === false) {
+      return {
+        module: TelescopeOtelMetricsModule,
+        providers,
+        exports: [TELESCOPE_OTEL_EXPORTER],
+      };
+    }
     // A fresh subclass per call: inherits the route + constructor metadata, and
     // takes this call's decorators without touching the shared base class.
     class MetricsController extends TelescopeOtelMetricsController {}
@@ -41,7 +59,8 @@ export class TelescopeOtelMetricsModule {
     return {
       module: TelescopeOtelMetricsModule,
       controllers: [controller as Type],
-      providers: [{ provide: TELESCOPE_OTEL_EXPORTER, useValue: exporter }],
+      providers,
+      exports: [TELESCOPE_OTEL_EXPORTER],
     };
   }
 }

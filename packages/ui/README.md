@@ -22,7 +22,21 @@ Open `/telescope`. The dashboard polls `/telescope/api/*` and shows captured
 entries (type tabs + live polling) and, on an entry, the correlated batch — the
 request and everything it caused.
 
-### Requiring a policy (`decorators`)
+### Protecting the page
+
+Recommended: `routes: false` mounts nothing, and you serve the page from your own subclass of the exported `TelescopeUiController`:
+
+```ts
+@Can(ConsolePolicy, 'view')
+@Controller('ops/telescope')
+class ConsolePage extends TelescopeUiController {}
+
+// imports: [TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false })]
+```
+
+Set `path` to the mount: the page rebases its asset URLs on it. Or keep the mounted route and pass `decorators`:
+
+#### `decorators`
 
 The page controller is marked open to `@nestjs/authorization`'s deny-by-default guard, so it keeps loading when your app adopts that package. To require a policy, pass the same `decorators` you give `TelescopeModule` (on `forRootAsync`, as a static top-level option):
 

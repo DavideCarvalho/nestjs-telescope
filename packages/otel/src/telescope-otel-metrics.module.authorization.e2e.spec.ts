@@ -1,11 +1,18 @@
 // E2E against the REAL `@nestjs/authorization` (deny-by-default global guard).
 import 'reflect-metadata';
 import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
-import type { DynamicModule, INestApplication } from '@nestjs/common';
+import {
+  Controller,
+  type DynamicModule,
+  Get,
+  type INestApplication,
+  Inject,
+  type Type,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
-import { TelescopeOtelMetricsController } from './metrics.controller.js';
+import { TELESCOPE_OTEL_EXPORTER, TelescopeOtelMetricsController } from './metrics.controller.js';
 import { TelescopeOtelExporter } from './telescope-otel-exporter.js';
 import { TelescopeOtelMetricsModule } from './telescope-otel-metrics.module.js';
 
@@ -25,9 +32,10 @@ afterEach(async () => {
   app = undefined;
 });
 
-async function boot(imports: DynamicModule[]): Promise<INestApplication> {
+async function boot(imports: DynamicModule[], controllers: Type[] = []): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports,
+    controllers,
     providers: [MetricsPolicy],
   }).compile();
   app = moduleRef.createNestApplication();
@@ -42,8 +50,8 @@ async function boot(imports: DynamicModule[]): Promise<INestApplication> {
   return app;
 }
 
-function get(target: INestApplication, user?: User) {
-  const req = request(target.getHttpServer()).get('/metrics');
+function get(target: INestApplication, user?: User, url = '/metrics') {
+  const req = request(target.getHttpServer()).get(url);
   return user ? req.set('x-user', JSON.stringify(user)) : req;
 }
 
@@ -88,5 +96,43 @@ describe('TelescopeOtelMetricsModule under @nestjs/authorization', () => {
     expect(
       Reflect.getMetadata('authorization:can', TelescopeOtelMetricsController),
     ).toBeUndefined();
+  });
+
+  it('routes: false mounts nothing; developer-mounted controllers protected with @Can serve the scrape', async () => {
+    // (1) Extend the exported controller under the developer's own mount.
+    @Can(MetricsPolicy, 'scrape')
+    @Controller('ops')
+    class OpsMetrics extends TelescopeOtelMetricsController {}
+
+    // (2) Or a plain controller of their own calling the exporter.
+    @Can(MetricsPolicy, 'scrape')
+    @Controller('internal')
+    class InternalMetrics {
+      constructor(
+        @Inject(TELESCOPE_OTEL_EXPORTER) private readonly exporter: TelescopeOtelExporter,
+      ) {}
+      @Get('metrics')
+      metrics(): string {
+        return this.exporter.prometheus();
+      }
+    }
+
+    const exporter = new TelescopeOtelExporter();
+    expect(
+      TelescopeOtelMetricsModule.forExporter(exporter, { routes: false }).controllers,
+    ).toBeUndefined();
+    const target = await boot(
+      [
+        AuthorizationModule.forRoot(),
+        TelescopeOtelMetricsModule.forExporter(exporter, { routes: false }),
+      ],
+      [OpsMetrics, InternalMetrics],
+    );
+    await get(target, { id: 's', scraper: true }).expect(404);
+    for (const url of ['/ops/metrics', '/internal/metrics']) {
+      await get(target, undefined, url).expect(401);
+      await get(target, { id: 'u', scraper: false }, url).expect(403);
+      await get(target, { id: 's', scraper: true }, url).expect(200);
+    }
   });
 });

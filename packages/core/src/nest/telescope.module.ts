@@ -174,6 +174,34 @@ const SHARED_PROVIDERS: Provider[] = [
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 
+/**
+ * Everything a host controller needs to serve Telescope's routes itself
+ * (`routes: false`, or extending the exported controller classes): each
+ * controller's and guard's dependencies, plus the services hosts already used.
+ */
+const TELESCOPE_EXPORTS = [
+  TelescopeService,
+  TELESCOPE_STORAGE,
+  TELESCOPE_EXTENSIONS,
+  TELESCOPE_OPTIONS,
+  TELESCOPE_CONFIG,
+  TELESCOPE_DASHBOARD_AUTH,
+  EntryEvents,
+  TelescopeGuard,
+  TelescopeActionGuard,
+  TelescopePruner,
+  QueueMetricsService,
+  TimeseriesService,
+  TracesService,
+  StatsService,
+  AiUsageService,
+  PulseService,
+  ServerStatsService,
+  ProfilerService,
+  QueueManagerRegistry,
+  ScheduleManagerRegistry,
+];
+
 @Module({})
 export class TelescopeModule implements NestModule {
   constructor(@Inject(TELESCOPE_OPTIONS) private readonly moduleOptions: TelescopeModuleOptions) {}
@@ -198,52 +226,10 @@ export class TelescopeModule implements NestModule {
   }
 
   static forRoot(options: TelescopeModuleOptions = {}): DynamicModule {
-    const path = normalizeTelescopePath(options.path);
-    const decorators = options.decorators ?? [];
-    // Built ahead of the controllers array (rather than inline) so `stampGuards`
-    // can be applied to the EXACT dynamic subclass instances that get registered.
-    const apiController = dynamicController(TelescopeController, `${path}/api`, decorators);
-    const streamController = dynamicController(StreamController, `${path}/api`, decorators);
-    stampGuards(options.guards, apiController, streamController);
-    return {
-      module: TelescopeModule,
-      imports: [DiscoveryModule, ...(options.imports ?? [])],
-      controllers: [
-        // The auth controller mounts BEFORE the gated API controller so its
-        // /api/auth/* routes resolve ahead of the catch-all and stay ungated
-        // (it carries no @UseGuards(TelescopeGuard)).
-        dynamicController(TelescopeAuthController, `${path}/api/auth`, decorators),
-        // Public front-end error ingestion — also ungated (ordinary browsers
-        // hit it). It enforces its own opt-in/rate-limit/authorize knobs and
-        // 404s while disabled. Mounts before the catch-all gated controller.
-        dynamicController(ClientErrorController, `${path}/api/client-errors`, decorators),
-        // MCP server — ungated by TelescopeGuard (it enforces its own Bearer
-        // token / dev-only check); mounts before the catch-all gated controller.
-        dynamicController(TelescopeMcpController, `${path}/api/mcp`, decorators),
-        apiController,
-        streamController,
-      ],
-      providers: [
-        { provide: TELESCOPE_OPTIONS, useValue: options },
-        // Class guards need a DI provider so Nest can instantiate them in THIS
-        // module's context (where `imports` above resolves their dependencies).
-        // An already-instantiated guard needs none — it's used as-is.
-        ...(options.guards ?? []).filter(isGuardClass),
-        ...SHARED_PROVIDERS,
-      ],
-      exports: [
-        TelescopeService,
-        TELESCOPE_STORAGE,
-        TELESCOPE_EXTENSIONS,
-        QueueMetricsService,
-        TimeseriesService,
-        TracesService,
-        StatsService,
-        PulseService,
-        ServerStatsService,
-        ProfilerService,
-      ],
-    };
+    return TelescopeModule.build(options, {
+      provide: TELESCOPE_OPTIONS,
+      useValue: options,
+    });
   }
 
   static forRootAsync(config: {
@@ -271,45 +257,75 @@ export class TelescopeModule implements NestModule {
      * as `path` above. See {@link TelescopeModuleOptions.decorators}.
      */
     decorators?: ClassDecorator[];
+    /**
+     * `false` mounts no controller (serve the routes from your own). Must be
+     * passed HERE (not inside the async-resolved options): which controllers
+     * exist is decided at module-build time — the SAME constraint as `path`
+     * above. See {@link TelescopeModuleOptions.routes}.
+     */
+    routes?: boolean;
   }): DynamicModule {
-    const path = normalizeTelescopePath(config.path);
-    const decorators = config.decorators ?? [];
-    const apiController = dynamicController(TelescopeController, `${path}/api`, decorators);
-    const streamController = dynamicController(StreamController, `${path}/api`, decorators);
-    stampGuards(config.guards, apiController, streamController);
+    // `config` carries the build-time fields under the same names.
+    return TelescopeModule.build(config, {
+      provide: TELESCOPE_OPTIONS,
+      useFactory: config.useFactory,
+      inject: config.inject ?? [],
+    });
+  }
+
+  /**
+   * Shared by `forRoot` / `forRootAsync`. `staticOptions` carries only what is
+   * read at module-build time (`path`, `guards`, `decorators`, `routes`,
+   * `imports`); everything else reaches the providers through `optionsProvider`.
+   */
+  private static build(
+    staticOptions: Pick<
+      TelescopeModuleOptions,
+      'path' | 'guards' | 'decorators' | 'routes' | 'imports'
+    >,
+    optionsProvider: Provider,
+  ): DynamicModule {
     return {
       module: TelescopeModule,
-      imports: [DiscoveryModule, ...(config.imports ?? [])],
-      controllers: [
-        dynamicController(TelescopeAuthController, `${path}/api/auth`),
-        dynamicController(ClientErrorController, `${path}/api/client-errors`, decorators),
-        // MCP server — ungated by TelescopeGuard (it enforces its own Bearer
-        // token / dev-only check); mounts before the catch-all gated controller.
-        dynamicController(TelescopeMcpController, `${path}/api/mcp`, decorators),
-        apiController,
-        streamController,
-      ],
+      imports: [DiscoveryModule, ...(staticOptions.imports ?? [])],
+      controllers: staticOptions.routes === false ? [] : TelescopeModule.controllers(staticOptions),
       providers: [
-        {
-          provide: TELESCOPE_OPTIONS,
-          useFactory: config.useFactory,
-          inject: config.inject ?? [],
-        },
-        ...(config.guards ?? []).filter(isGuardClass),
+        optionsProvider,
+        // Class guards need a DI provider so Nest can instantiate them in THIS
+        // module's context (where `imports` above resolves their dependencies).
+        // An already-instantiated guard needs none — it's used as-is.
+        ...(staticOptions.guards ?? []).filter(isGuardClass),
         ...SHARED_PROVIDERS,
       ],
-      exports: [
-        TelescopeService,
-        TELESCOPE_STORAGE,
-        TELESCOPE_EXTENSIONS,
-        QueueMetricsService,
-        TimeseriesService,
-        TracesService,
-        StatsService,
-        PulseService,
-        ServerStatsService,
-        ProfilerService,
-      ],
+      exports: TELESCOPE_EXPORTS,
     };
+  }
+
+  /** The controllers mounted when `routes` is not `false`, in mount order. */
+  private static controllers(
+    staticOptions: Pick<TelescopeModuleOptions, 'path' | 'guards' | 'decorators'>,
+  ): Type[] {
+    const path = normalizeTelescopePath(staticOptions.path);
+    const decorators = staticOptions.decorators ?? [];
+    // Built ahead of the controllers array (rather than inline) so `stampGuards`
+    // can be applied to the EXACT dynamic subclass instances that get registered.
+    const apiController = dynamicController(TelescopeController, `${path}/api`, decorators);
+    const streamController = dynamicController(StreamController, `${path}/api`, decorators);
+    stampGuards(staticOptions.guards, apiController, streamController);
+    return [
+      // The auth controller mounts BEFORE the gated API controller so its
+      // /api/auth/* routes resolve ahead of the catch-all and stay ungated
+      // (it carries no @UseGuards(TelescopeGuard)).
+      dynamicController(TelescopeAuthController, `${path}/api/auth`, decorators),
+      // Public front-end error ingestion — also ungated (ordinary browsers
+      // hit it). It enforces its own opt-in/rate-limit/authorize knobs and
+      // 404s while disabled. Mounts before the catch-all gated controller.
+      dynamicController(ClientErrorController, `${path}/api/client-errors`, decorators),
+      // MCP server — ungated by TelescopeGuard (it enforces its own Bearer
+      // token / dev-only check); mounts before the catch-all gated controller.
+      dynamicController(TelescopeMcpController, `${path}/api/mcp`, decorators),
+      apiController,
+      streamController,
+    ];
   }
 }

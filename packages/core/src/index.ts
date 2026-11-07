@@ -52,6 +52,8 @@ export * from './nest/telescope-crash-capture.service.js';
 export * from './nest/exception-capture.js';
 export * from './nest/telescope-watcher-registrar.service.js';
 export * from './nest/telescope-mount-paths.js';
+export * from './sse/entry-events.js';
+export * from './sse/stream.controller.js';
 
 export * from './queue/queue-manager.js';
 export * from './queue/queue-manager.registry.js';
