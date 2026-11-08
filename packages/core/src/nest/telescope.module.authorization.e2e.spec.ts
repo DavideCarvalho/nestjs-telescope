@@ -5,6 +5,8 @@
 // must keep answering under it, and `decorators` must let the host put a `@Can()`
 // in front of them.
 import 'reflect-metadata';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
 import type { DynamicModule, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -49,6 +51,9 @@ const ROUTES: Route[] = [...CONSOLE_ROUTES, BEACON];
 
 const META = CONSOLE_ROUTES[0] as Route;
 
+/** The SSE stream (StreamController): it never ends once open, so it is probed apart. */
+const STREAM_URL = '/telescope/api/stream';
+
 let app: INestApplication | undefined;
 
 afterEach(async () => {
@@ -72,6 +77,31 @@ async function boot(imports: DynamicModule[], providers = [ConsolePolicy]) {
   );
   await app.init();
   return app;
+}
+
+/**
+ * The status the SSE stream answers with. An allowed request opens a stream
+ * that never ends, so read the status line and drop the connection.
+ */
+async function streamStatusOf(target: INestApplication, user?: User): Promise<number> {
+  const server = target.getHttpServer() as http.Server;
+  if (!server.listening) await new Promise<void>((resolve) => server.listen(0, resolve));
+  const { port } = server.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    const req = http.get(
+      {
+        port,
+        path: STREAM_URL,
+        headers: user ? { 'x-user': JSON.stringify(user) } : {},
+      },
+      (res) => {
+        resolve(res.statusCode ?? 0);
+        res.destroy();
+        req.destroy();
+      },
+    );
+    req.on('error', reject);
+  });
 }
 
 async function statusOf(target: INestApplication, route: Route, user?: User) {
@@ -113,6 +143,10 @@ describe('TelescopeModule under @nestjs/authorization', () => {
       expect([401, 403], `admin ${route.url}`).not.toContain(allowed);
     }
     expect(await statusOf(guarded, META, { id: 'a', admin: true })).toBe(200);
+    // The SSE stream is refused before it opens, and opens for an allowed user.
+    expect(await streamStatusOf(guarded), 'guest stream').toBe(401);
+    expect(await streamStatusOf(guarded, { id: 'u', admin: false }), 'user stream').toBe(403);
+    expect(await streamStatusOf(guarded, { id: 'a', admin: true }), 'admin stream').toBe(200);
     // The public beacon is left out of `decorators`: a guest still reports an error.
     expect(await statusOf(guarded, BEACON)).toBe(204);
   });
