@@ -35,6 +35,7 @@ import type { Watcher, WatcherContext } from '@dudousxd/nestjs-telescope';
 interface Watcher {
   readonly type: string;                                 // the entry `type` produced
   register(ctx: WatcherContext): void | Promise<void>;   // wire hooks, once at init
+  unregister?(): void | Promise<void>;                    // teardown, once on shutdown
   shouldRecord?(candidate: unknown): boolean;            // optional cheap pre-filter
 }
 
@@ -49,6 +50,9 @@ interface WatcherContext {
 
 `RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt? }`.
 Everything else (id, batchId, sequence, traceId, …) is enriched by the recorder.
+`unregister()` runs once on application shutdown for every watcher whose
+`register()` succeeded (a throw is logged and swallowed), so a watcher that
+subscribes to `diagnostics_channel` stops recording when its app closes.
 
 Source: `packages/core/src/nest/watcher.ts`, `packages/core/src/entry/entry.ts`,
 `website/content/docs/recipes/custom-watcher.mdx`.

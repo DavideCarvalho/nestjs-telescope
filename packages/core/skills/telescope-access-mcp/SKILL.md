@@ -96,10 +96,15 @@ TelescopeModule.forRoot({ decorators: protect });
 TelescopeModule.forRoot({ routes: false }); // + your own controllers
 ```
 
-`decorators: []` counts as none. The same rule applies to `TelescopeUiModule`
-and `TelescopeOtelMetricsModule`. Outside production an undecorated console
+`decorators: []` counts as none. The same rule applies to `TelescopeUiModule`.
+`TelescopeOtelMetricsModule` stays outside it by default: an undecorated
+`GET /metrics` still boots with `NODE_ENV=production` (a Prometheus scrape
+usually runs unauthenticated inside the cluster) unless
+`requireProtectionInProduction: true` puts it under the same rule.
+`routes: false` always boots. Outside production an undecorated console
 mounts open. Source: `packages/core/src/nest/dynamic-controller.ts`
-(`assertConsoleProtected`).
+(`assertConsoleProtected`), `packages/otel/src/telescope-otel-metrics.module.ts`
+(`requireProtectionInProduction`).
 
 ### Mistake 2 — expecting the client-error beacon to be protected
 

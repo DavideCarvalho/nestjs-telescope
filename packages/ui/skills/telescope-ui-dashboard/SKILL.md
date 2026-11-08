@@ -2,8 +2,11 @@
 name: telescope-ui-dashboard
 description: >-
   Serve and embed the nestjs-telescope dashboard with @dudousxd/nestjs-telescope-ui.
-  Mount the bundled React SPA via TelescopeUiModule.forRoot({ path?, assetsDir? }) /
-  forRootAsync (the path must match TelescopeModule and is static in the async form);
+  Mount the bundled React SPA via TelescopeUiModule.forRoot({ path?, assetsDir?,
+  decorators?, routes? }) / forRootAsync (the path is static in the async form,
+  as are decorators and routes; the path must match TelescopeModule); with
+  NODE_ENV=production mounting the page with no decorators fails the boot
+  (routes:false always boots).
   call the headless API from any frontend with createTelescopeClient({ baseUrl?,
   fetch? }) from the /client subpath; build a custom console with the React
   components, hooks (TelescopeProvider, useTelescopeClient, useEntries, usePulse,
@@ -30,18 +33,27 @@ Import the UI module alongside the core module. The `path` must match
 `TelescopeModule` (default `telescope`):
 
 ```ts
-import { Module } from '@nestjs/common';
+import { Module, UseGuards } from '@nestjs/common';
+import { AuthenticationGuard } from '@nestjs/authentication';
+import { Can } from '@nestjs/authorization';
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 
+const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+
 @Module({
   imports: [
-    TelescopeModule.forRoot({ enabled: true }),
-    TelescopeUiModule.forRoot(), // dashboard at /telescope
+    TelescopeModule.forRoot({ enabled: true, decorators: protect }),
+    TelescopeUiModule.forRoot({ decorators: protect }), // dashboard at /telescope
   ],
 })
 export class AppModule {}
 ```
+
+With `NODE_ENV=production`, mounting the page with no `decorators` (an empty
+array counts as none) fails the boot; `routes: false` always boots (serve the
+page from your own subclass of the exported `TelescopeUiController`). Outside
+production an undecorated page mounts open.
 
 Source: `packages/ui/src/server/telescope-ui.module.ts`,
 `packages/ui/src/server/telescope-ui.options.ts` (`TelescopeUiModuleOptions`).
@@ -65,6 +77,9 @@ TelescopeUiModule.forRootAsync({
   useFactory: () => ({}),
 });
 ```
+
+In production both modules still need `decorators` (or `routes: false`); the
+Setup section shows the protection.
 
 Source: `packages/ui/src/server/telescope-ui.module.ts`,
 `packages/ui/src/server/telescope-ui.options.ts`.
