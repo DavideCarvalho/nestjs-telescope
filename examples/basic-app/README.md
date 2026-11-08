@@ -66,8 +66,12 @@ TelescopeUiModule.forRoot(),
 store with the request and exception watchers already on. `TelescopeUiModule`
 serves the bundled React dashboard at `/telescope`.
 
-### Want a login wall?
+### Protecting it
 
-The demo ships dashboard auth **OFF** so the 30-second path stays frictionless.
-To gate the dashboard behind a login, uncomment the 5-line `dashboardAuth` recipe
-in `src/app.module.ts`.
+The demo runs outside production, so the console mounts open. With
+`NODE_ENV=production` the boot fails until you protect the routes with the
+official NestJS tools (`@nestjs/authentication`, `@nestjs/authorization`):
+pass `decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`
+to both `TelescopeModule.forRoot` and `TelescopeUiModule.forRoot`, or set
+`routes: false` and mount the routes from your own controllers. See
+"Protecting the routes" in the main README.

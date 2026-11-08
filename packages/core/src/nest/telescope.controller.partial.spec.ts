@@ -24,7 +24,7 @@ describe('Page.partial over HTTP', () => {
 
   async function boot(storage: InMemoryStorageProvider): Promise<INestApplication> {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ authorizer: () => true, storage })],
+      imports: [TelescopeModule.forRoot({ storage })],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();

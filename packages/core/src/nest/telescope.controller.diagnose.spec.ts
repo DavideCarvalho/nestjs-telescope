@@ -65,27 +65,14 @@ describe('POST /telescope/api/exceptions/:id/diagnose', () => {
   it('is 404 when no `ai` is configured', async () => {
     const storage = new InMemoryStorageProvider();
     await storage.store([exceptionEntry('e1')]);
-    app = await makeApp({ enabled: true, authorizer: () => true, storage });
+    app = await makeApp({ enabled: true, storage });
     await request(app.getHttpServer()).post('/telescope/api/exceptions/e1/diagnose').expect(404);
-  });
-
-  it('is 403 when the dashboard read guard denies (auth-gated)', async () => {
-    const storage = new InMemoryStorageProvider();
-    await storage.store([exceptionEntry('e1')]);
-    app = await makeApp({
-      enabled: true,
-      authorizer: () => false,
-      storage,
-      ai: { diagnoser: countingDiagnoser() },
-    });
-    await request(app.getHttpServer()).post('/telescope/api/exceptions/e1/diagnose').expect(403);
   });
 
   it('is 404 for an unknown / non-exception entry', async () => {
     const storage = new InMemoryStorageProvider();
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser: countingDiagnoser() },
     });
@@ -98,7 +85,6 @@ describe('POST /telescope/api/exceptions/:id/diagnose', () => {
     const diagnoser = countingDiagnoser('## root cause\nx');
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser },
     });
@@ -120,7 +106,6 @@ describe('POST /telescope/api/exceptions/:id/diagnose', () => {
     const diagnoser = countingDiagnoser();
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser },
     });
@@ -140,7 +125,6 @@ describe('POST /telescope/api/exceptions/:id/diagnose', () => {
     };
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser },
     });
@@ -162,7 +146,6 @@ describe('POST /telescope/api/exceptions/:id/diagnose', () => {
     const diagnoser = countingDiagnoser('## client cause');
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser },
     });
@@ -185,27 +168,14 @@ describe('GET /telescope/api/exceptions/:id/diagnosis (cached, read-only)', () =
   it('is 404 when no `ai` is configured', async () => {
     const storage = new InMemoryStorageProvider();
     await storage.store([exceptionEntry('e1')]);
-    app = await makeApp({ enabled: true, authorizer: () => true, storage });
+    app = await makeApp({ enabled: true, storage });
     await request(app.getHttpServer()).get('/telescope/api/exceptions/e1/diagnosis').expect(404);
-  });
-
-  it('is 403 when the dashboard read guard denies (auth-gated, mirrors the POST)', async () => {
-    const storage = new InMemoryStorageProvider();
-    await storage.store([exceptionEntry('e1')]);
-    app = await makeApp({
-      enabled: true,
-      authorizer: () => false,
-      storage,
-      ai: { diagnoser: countingDiagnoser() },
-    });
-    await request(app.getHttpServer()).get('/telescope/api/exceptions/e1/diagnosis').expect(403);
   });
 
   it('is 404 for an unknown / non-exception entry', async () => {
     const storage = new InMemoryStorageProvider();
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser: countingDiagnoser() },
     });
@@ -218,7 +188,6 @@ describe('GET /telescope/api/exceptions/:id/diagnosis (cached, read-only)', () =
     const diagnoser = countingDiagnoser();
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser },
     });
@@ -236,7 +205,6 @@ describe('GET /telescope/api/exceptions/:id/diagnosis (cached, read-only)', () =
     const diagnoser = countingDiagnoser('## root cause\nx');
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser },
     });
@@ -264,7 +232,6 @@ describe('GET /telescope/api/exceptions/:id/diagnosis (cached, read-only)', () =
     const diagnoser = countingDiagnoser('## client cause');
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       ai: { diagnoser },
     });
@@ -285,7 +252,7 @@ describe('GET /telescope/api/meta — aiEnabled', () => {
   });
 
   it('reports ai.enabled=false when unconfigured', async () => {
-    app = await makeApp({ enabled: true, authorizer: () => true });
+    app = await makeApp({ enabled: true });
     const res = await request(app.getHttpServer()).get('/telescope/api/meta').expect(200);
     expect(res.body.ai).toEqual({ enabled: false, mode: null });
   });
@@ -293,7 +260,6 @@ describe('GET /telescope/api/meta — aiEnabled', () => {
   it('reports ai.enabled=true and the mode when configured', async () => {
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       ai: { diagnoser: countingDiagnoser(), mode: 'auto' },
     });
     const res = await request(app.getHttpServer()).get('/telescope/api/meta').expect(200);

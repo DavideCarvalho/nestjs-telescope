@@ -63,15 +63,20 @@ const page = await telescope.entries({ type: 'job' });
 
 The module (`.`) needs `@nestjs/common` / `@nestjs/core` (>= 11, including 12). `/react` needs `react`, `react-dom`, and `@tanstack/react-query` — but only if you import it; they're optional peers. The turnkey dashboard bundles its own copies, so a plain `TelescopeUiModule.forRoot()` adds no React to your app.
 
-## Gating the page
+## Protecting the page
 
-By default `TelescopeUiController` (the HTML shell + hashed assets) is public — no data lives there. Pass `guards` (+ `imports` for its dependencies) to front it with your own `CanActivate`, e.g. reusing the app's existing cookie-session guard:
+The page is protected with NestJS's own tools, like the API: pass `decorators` (the same list as on `TelescopeModule`), or set `routes: false` and extend the exported `TelescopeUiController`:
 
 ```ts
 TelescopeUiModule.forRoot({
-  guards: [ConsoleAuthGuard],
-  imports: [AuthModule],
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
 });
+
+// or: routes: false + path: 'ops/telescope', and
+@Controller('ops/telescope')
+@UseGuards(AuthenticationGuard)
+@Can(ConsolePolicy, 'view')
+class ConsolePage extends TelescopeUiController {}
 ```
 
-Set the SAME `guards` on `TelescopeModule.forRoot` too — this option only covers the page; the API is a separate package/module. See [Securing the console](/docs/dashboard/auth#securing-the-console-with-your-own-guards) for the full rationale and a realistic guard example.
+A full-page navigation carries your app's cookies, not an `Authorization` header, so the authentication strategy here must read a cookie session. With `NODE_ENV=production`, mounting the page with no `decorators` fails the boot. See [Protecting the routes](/docs/dashboard/auth).

@@ -9,7 +9,7 @@
     "storages",
     "queue-managers",
     "otel",
-    "observe",
+    "official",
     "ai",
     "testing"
   ]

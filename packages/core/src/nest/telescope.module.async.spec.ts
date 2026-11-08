@@ -23,7 +23,7 @@ describe('TelescopeModule.forRootAsync (async options applied)', () => {
   })
   class ConfigModule {}
 
-  it('resolves storage + authorizer via imports/inject/useFactory and applies them', async () => {
+  it('resolves storage via imports/inject/useFactory and applies them', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         TelescopeModule.forRootAsync({
@@ -31,7 +31,6 @@ describe('TelescopeModule.forRootAsync (async options applied)', () => {
           inject: [STORAGE_SOURCE],
           useFactory: (...args: unknown[]) => ({
             storage: args[0] as InMemoryStorageProvider,
-            authorizer: () => true,
           }),
         }),
       ],
@@ -50,22 +49,9 @@ describe('TelescopeModule.forRootAsync (async options applied)', () => {
     await service.flush();
 
     // Recorded entry landed in the async-resolved store and is served via the
-    // authorizer:() => true-gated API.
+    // API.
     const res = await request(app.getHttpServer()).get('/telescope/api/entries').expect(200);
     expect(res.body.data.length).toBe(1);
     expect(res.body.data[0].type).toBe('request');
-  });
-
-  it('denies the API when the async authorizer resolves to false', async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        TelescopeModule.forRootAsync({
-          useFactory: () => ({ authorizer: () => false }),
-        }),
-      ],
-    }).compile();
-    app = moduleRef.createNestApplication();
-    await app.init();
-    await request(app.getHttpServer()).get('/telescope/api/meta').expect(403);
   });
 });

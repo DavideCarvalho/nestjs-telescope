@@ -73,13 +73,7 @@ async function reachablePackages(entry: string): Promise<Set<string>> {
 }
 
 describe.skipIf(!built)('published module graph', () => {
-  it('the ./react/console launcher still reaches nothing but react', async () => {
-    // The launcher's whole promise: a host that wants only a button installs only react.
-    // Adding the vendored shadcn layer is a fresh chance to break it.
-    expect([...(await reachablePackages('react/console.js'))].sort()).toEqual(['react']);
-  });
-
-  it.each([['react/index.js'], ['react/console.js'], ['server/index.js'], ['client/index.js']])(
+  it.each([['react/index.js'], ['server/index.js'], ['client/index.js']])(
     'every package %s reaches is declared',
     async (entry) => {
       const declared = declaredPackages();

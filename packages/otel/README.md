@@ -79,6 +79,41 @@ const otel = new TelescopeOtelExporter();
 export class AppModule {}
 ```
 
+`GET /metrics` exposes your metrics (route names, queue names, error counts,
+AI cost…), so keep it reachable only by the scraper. A Prometheus scrape usually
+runs unauthenticated inside the cluster, so by default the scrape is **outside**
+the console's production rule: an undecorated `/metrics` still boots with
+`NODE_ENV === 'production'`. Restrict it with a network policy (don't route it
+through your public ingress), or with NestJS's own tools through `decorators`
+(applied to the metrics controller only, fresh per call, in every environment):
+
+```ts
+TelescopeOtelMetricsModule.forExporter(otel, {
+  decorators: [UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')],
+});
+```
+
+To make protection mandatory, set `requireProtectionInProduction: true`: with
+`NODE_ENV === 'production'`, mounting `/metrics` with no `decorators` (an empty
+array counts as none) then fails the boot, the same rule as the console's.
+
+```ts
+TelescopeOtelMetricsModule.forExporter(otel, {
+  requireProtectionInProduction: true, // default false
+  decorators: [UseGuards(BearerGuard)],
+});
+```
+
+Or mount it yourself: `{ routes: false }` mounts nothing and exports the exporter
+under `TELESCOPE_OTEL_EXPORTER`, so your own controller can extend
+`TelescopeOtelMetricsController` or call `exporter.prometheus()`:
+
+```ts
+@Can(MetricsPolicy, 'scrape')
+@Controller('ops')
+class OpsMetrics extends TelescopeOtelMetricsController {} // GET /ops/metrics
+```
+
 - **Metrics** are mirrored into the OTel Meter (OTLP push when your app has an
   OTel SDK) AND exposed as a dependency-free Prometheus scrape at `/metrics`.
 - **Spans** go through the OTel Tracer; point your SDK's OTLP exporter at Tempo/

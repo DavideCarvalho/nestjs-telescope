@@ -1,7 +1,8 @@
 {
   "name": "@dudousxd/nestjs-telescope-observe",
   "version": "0.1.0",
-  "description": "Forward @dudousxd/nestjs-telescope entries to NestJS Observe (observe.nestjs.com).",
+  "private": true,
+  "description": "DEPRECATED — not built or released. Forwarded @dudousxd/nestjs-telescope entries to NestJS Observe over its private ingest wire. Use @nestjs/observe directly.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -26,12 +27,6 @@
     }
   },
   "files": ["dist/", "README.md", "CHANGELOG.md"],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.spec.json --noEmit"
-  },
   "peerDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:^"
   },

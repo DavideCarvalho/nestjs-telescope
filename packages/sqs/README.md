@@ -81,8 +81,8 @@ the SDK dependency entirely.
 
 ## What surfaces
 
-This adds an `sqs` driver to the live-queue endpoints (same authorizer as the
-rest of the dashboard):
+This adds an `sqs` driver to the live-queue endpoints (protected like the rest
+of the console):
 
 | Method & path | Returns |
 |---------------|---------|
@@ -134,23 +134,25 @@ unavailable`, and such queues advertise `actions: []`. It surfaces as:
 |---------------|--------|
 | `POST /telescope/api/queues/live/sqs/:queue/actions/redrive` | Start a DLQ → source message-move task; responds `{ ok: true, count }` (the pre-action DLQ count). |
 
-### Gated by `authorizeAction` (default-deny)
+### Off until `mutations: true`
 
-Like all queue mutations, `redrive` runs behind the `TelescopeActionGuard` *on top
-of* the read `authorizer`, and that guard **fails closed**: without an
-`authorizeAction` callback, the redrive endpoint returns `403` even for callers
-the read authorizer already trusts. Opt in explicitly:
+Like all queue mutations, `redrive` returns `403` until you set
+`mutations: true`. Who may call it is decided by the console's protection (your
+`decorators`, or your own controllers):
 
 ```ts
 TelescopeModule.forRoot({
-  authorizer: (ctx) => isAdmin(ctx.request),
-  authorizeAction: (ctx, action) => {
-    // action: { driver: 'sqs', queue, action: 'redrive' }
-    return canRedriveQueues(ctx.request);
-  },
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  mutations: true,
   queueManagers: [new SqsQueueManager({ ops: createAwsSqsOps(client), queues })],
 });
 ```
+
+For a rule on mutations stricter than on reads, mount the routes yourself
+(`routes: false`) and override the mutation methods in your subclass of
+`TelescopeController` with an extra `@Can(...)` (class and method requirements
+both apply; re-declare the route decorators on the override). See
+[Protecting the routes](../../README.md#protecting-the-routes).
 
 > **Native redrive prerequisite.** `StartMessageMoveTask` requires the DLQ to have
 > been configured as a redrive *target* (i.e. the source queue's redrive policy

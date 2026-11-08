@@ -1,7 +1,11 @@
 import 'reflect-metadata';
-import { dynamicController, normalizeTelescopePath } from '@dudousxd/nestjs-telescope';
 import {
-  type CanActivate,
+  CONSOLE_DECORATORS_EXAMPLE,
+  assertConsoleProtected,
+  dynamicController,
+  normalizeTelescopePath,
+} from '@dudousxd/nestjs-telescope';
+import {
   type DynamicModule,
   type InjectionToken,
   Module,
@@ -11,50 +15,29 @@ import {
 import { TelescopeUiController } from './telescope-ui.controller.js';
 import { TELESCOPE_UI_OPTIONS, type TelescopeUiModuleOptions } from './telescope-ui.options.js';
 
-/**
- * `@nestjs/common`'s own `GUARDS_METADATA` key, INLINED rather than deep-imported
- * from '@nestjs/common/constants' — that subpath has no extension and a strict
- * ESM resolver 404s on it (same convention used by core's `TelescopeModule` and
- * `@dudousxd/nestjs-agent`'s `agent-dashboard.module.ts`). A drift spec asserts
- * this literal stays byte-identical to the real constant.
- */
-const GUARDS_METADATA = '__guards__';
-
-/** Narrows a `guards` entry to a class (constructor), not an already-built instance. */
-function isGuardClass(guard: Type<CanActivate> | CanActivate): guard is Type<CanActivate> {
-  return typeof guard === 'function';
-}
-
-/**
- * Stamp host guards onto the dashboard's page/asset controller. `TelescopeUiController`
- * carries no guard of its own, so — unlike core's `stampGuards` — there is nothing to
- * preserve: this is a plain REPLACE of whatever (nothing) was there before. A no-op
- * when `guards` is omitted/empty, leaving the controller unguarded exactly as before.
- */
-function stampGuards(
-  guards: Array<Type<CanActivate> | CanActivate> | undefined,
-  ...controllers: Type[]
-): void {
-  if (guards === undefined || guards.length === 0) return;
-  for (const controller of controllers) {
-    Reflect.defineMetadata(GUARDS_METADATA, guards, controller);
-  }
+/** The controller mounted when `routes` is not `false` (none when it is). */
+function uiControllers(
+  options: Pick<TelescopeUiModuleOptions, 'path' | 'decorators' | 'routes'>,
+): Type[] {
+  if (options.routes === false) return [];
+  const path = normalizeTelescopePath(options.path);
+  assertConsoleProtected(options.decorators, {
+    module: 'TelescopeUiModule',
+    decoratorsExample: `TelescopeUiModule.forRoot({ ${CONSOLE_DECORATORS_EXAMPLE} })`,
+    selfMountExample: `TelescopeUiModule.forRoot({ routes: false }) + @Controller('${path}') @Can(ConsolePolicy, 'view') class ConsolePage extends TelescopeUiController {}`,
+  });
+  return [dynamicController(TelescopeUiController, path, options.decorators)];
 }
 
 @Module({})
 export class TelescopeUiModule {
   static forRoot(options: TelescopeUiModuleOptions = {}): DynamicModule {
-    const path = normalizeTelescopePath(options.path);
-    const uiController = dynamicController(TelescopeUiController, path);
-    stampGuards(options.guards, uiController);
     return {
       module: TelescopeUiModule,
       imports: options.imports ?? [],
-      controllers: [uiController],
-      providers: [
-        { provide: TELESCOPE_UI_OPTIONS, useValue: options },
-        ...(options.guards ?? []).filter(isGuardClass),
-      ],
+      controllers: uiControllers(options),
+      providers: [{ provide: TELESCOPE_UI_OPTIONS, useValue: options }],
+      exports: [TELESCOPE_UI_OPTIONS],
     };
   }
 
@@ -72,23 +55,26 @@ export class TelescopeUiModule {
      */
     path?: string;
     /**
-     * Guard classes (or instances) fronting the dashboard's page/asset
-     * controller. Must be passed HERE (not inside the async-resolved options)
-     * because guard stamping happens at module-build time, synchronously —
-     * the SAME constraint as `path` above. See
-     * {@link TelescopeUiModuleOptions.guards}. A class guard's dependencies
-     * resolve from `imports` above.
+     * Class decorators applied to the dashboard's controller. Must be passed
+     * HERE (not inside the async-resolved options) because they shape the route
+     * at module-build time, before any factory runs — the SAME constraint as
+     * `path` above. See {@link TelescopeUiModuleOptions.decorators}.
      */
-    guards?: Array<Type<CanActivate> | CanActivate>;
+    decorators?: ClassDecorator[];
+    /**
+     * `false` mounts no controller. Must be passed HERE (not inside the
+     * async-resolved options): which controllers exist is decided at
+     * module-build time — the SAME constraint as `path` above. See
+     * {@link TelescopeUiModuleOptions.routes}.
+     */
+    routes?: boolean;
   }): DynamicModule {
     const path = normalizeTelescopePath(config.path);
-    const uiController = dynamicController(TelescopeUiController, path);
-    stampGuards(config.guards, uiController);
     const { useFactory } = config;
     return {
       module: TelescopeUiModule,
       imports: config.imports ?? [],
-      controllers: [uiController],
+      controllers: uiControllers(config),
       providers: [
         {
           provide: TELESCOPE_UI_OPTIONS,
@@ -102,8 +88,8 @@ export class TelescopeUiModule {
           }),
           inject: config.inject ?? [],
         },
-        ...(config.guards ?? []).filter(isGuardClass),
       ],
+      exports: [TELESCOPE_UI_OPTIONS],
     };
   }
 }

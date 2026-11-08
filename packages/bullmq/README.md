@@ -75,8 +75,8 @@ export class AppModule {}
 Pass an explicit allow-list to expose only some queues:
 `new BullMqQueueManager(['mail', 'reports'])`.
 
-This surfaces these read endpoints on the core controller, under the **existing
-Telescope authorizer** (same gate as the rest of the dashboard):
+This surfaces these read endpoints on the core controller, protected like the
+rest of the console:
 
 | Method & path | Returns |
 |---------------|---------|
@@ -105,31 +105,26 @@ These surface as **POST** endpoints on the core controller:
 `redrive` is **SQS-only** and is not implemented by `BullMqQueueManager`; calling
 `.../actions/redrive` against the bullmq driver returns `405 Method Not Allowed`.
 
-### Enabling mutations — `authorizeAction` (default-deny)
+### Enabling mutations — `mutations: true` (off by default)
 
-Mutations are **denied by default**. They run behind a second guard
-(`TelescopeActionGuard`) on top of the read `authorizer`, and that guard fails
-closed: **without an `authorizeAction` callback, every mutation endpoint returns
-`403`** — even for callers the read `authorizer` already trusts. Opt in by
-supplying `authorizeAction` on `TelescopeModule.forRoot`:
+Mutations are **off by default**: every mutation endpoint returns `403` until
+you set `mutations: true` on `TelescopeModule.forRoot`. Who may call them is
+decided by the same protection as the rest of the console (your `decorators`,
+or your own controllers):
 
 ```ts
 TelescopeModule.forRoot({
-  // Reads (browse queues/jobs) — the existing gate:
-  authorizer: (ctx) => isAdmin(ctx.request),
-  // Mutations (retry/remove/promote/retry-all) — separate, default-deny:
-  authorizeAction: (ctx, action) => {
-    // action: { driver, queue, action, jobId?, state? }
-    return canMutateQueues(ctx.request);
-  },
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  mutations: true, // retry / remove / promote / retry-all
   queueManagers: [new BullMqQueueManager()],
 });
 ```
 
-`authorizeAction` receives the same `AuthorizerContext` plus a typed
-`QueueActionRequest` describing the requested mutation. Returning a falsy value —
-or throwing — denies the request (`403`). Keep it strictly narrower than your
-read gate: browsing a queue should not imply the right to drain it.
+For a rule on mutations stricter than on reads, mount the routes yourself
+(`routes: false`) and override the mutation methods in your subclass of
+`TelescopeController` with an extra `@Can(...)` (class and method requirements
+both apply; re-declare the route decorators on the override). See
+[Protecting the routes](../../README.md#protecting-the-routes).
 
 ## Options
 

@@ -15,7 +15,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../react/ui/index.js';
-import { useAuthOptional } from './auth-context.js';
 import { CommandPalette, usePalette } from './command-palette.js';
 import { useTheme } from './theme-context.js';
 
@@ -143,34 +142,6 @@ function PaletteHint({ onClick }: { onClick: () => void }): JSX.Element {
   );
 }
 
-/**
- * Sign-out affordance, shown only when an AuthProvider has resolved an
- * authenticated session. Absent in disabled/no-provider contexts so the
- * no-auth header stays pixel-identical to today.
- */
-function LogoutButton(): JSX.Element | null {
-  const auth = useAuthOptional();
-  const [busy, setBusy] = useState(false);
-  if (auth === null || auth.phase !== 'app') return null;
-
-  async function onLogout(): Promise<void> {
-    if (auth === null) return;
-    setBusy(true);
-    try {
-      await auth.logout();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Button onClick={onLogout} disabled={busy} title="Sign out">
-      <span aria-hidden="true">⎋</span>
-      Sign out
-    </Button>
-  );
-}
-
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
   const { open, setOpen } = usePalette();
   // Watcher-driven nav: only show a type's link when its watcher is registered.
@@ -218,7 +189,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
             <PaletteHint onClick={() => setOpen(true)} />
             <ThemeToggle />
             <LiveTailToggle />
-            <LogoutButton />
           </TooltipProvider>
         </header>
         <main className="min-w-0 flex-1">{children}</main>

@@ -138,53 +138,6 @@ describe('ClientErrorController', () => {
     await request(server).post(ENDPOINT).send({ message: 'c' }).expect(429);
   });
 
-  it('authorize hook denies with 403 when it returns false', async () => {
-    const built = await makeApp({
-      clientErrors: { enabled: true, authorize: () => false },
-    });
-    app = built.app;
-    await request(app.getHttpServer()).post(ENDPOINT).send({ message: 'boom' }).expect(403);
-  });
-
-  it('authorize hook allows when it returns true', async () => {
-    const built = await makeApp({
-      clientErrors: { enabled: true, authorize: () => true },
-    });
-    app = built.app;
-    await request(app.getHttpServer()).post(ENDPOINT).send({ message: 'boom' }).expect(204);
-  });
-
-  it('authorize hook that throws is treated as a denial (403), never a 500', async () => {
-    const built = await makeApp({
-      clientErrors: {
-        enabled: true,
-        authorize: () => {
-          throw new Error('hook blew up');
-        },
-      },
-    });
-    app = built.app;
-    await request(app.getHttpServer()).post(ENDPOINT).send({ message: 'boom' }).expect(403);
-  });
-
-  it('authorize hook reads headers/user directly (typed request, no structural cast)', async () => {
-    const built = await makeApp({
-      clientErrors: {
-        enabled: true,
-        // `request` is typed `TelescopeHttpRequest` (not `unknown`) — headers
-        // are readable without a hand-rolled guard.
-        authorize: (req) => req.headers?.['x-allow'] === 'yes',
-      },
-    });
-    app = built.app;
-    await request(app.getHttpServer()).post(ENDPOINT).send({ message: 'boom' }).expect(403);
-    await request(app.getHttpServer())
-      .post(ENDPOINT)
-      .set('x-allow', 'yes')
-      .send({ message: 'boom' })
-      .expect(204);
-  });
-
   it('keeps clientIp/url/userAgent when a huge componentStack would exhaust the redaction budget', async () => {
     // A deeply-nested React error boundary produces a componentStack of many KB.
     // The short enrichment fields the Slack alert renders (clientIp/url/userAgent)

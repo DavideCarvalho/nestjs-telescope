@@ -168,7 +168,7 @@ export interface SamplingRule {
  */
 export type SamplingConfig = Record<string, number | SamplingRule>;
 
-/** Author-facing options. NestJS-specific fields (watchers, authorizer, path) are
+/** Author-facing options. NestJS-specific fields (watchers, decorators, path) are
  *  layered on in the Nest integration package; this shape is the agnostic subset. */
 export interface TelescopeCoreOptions {
   enabled?: boolean;

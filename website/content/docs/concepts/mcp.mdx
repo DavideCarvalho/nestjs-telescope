@@ -19,7 +19,7 @@ The server is **disabled by default**. Turn it on with the `mcp` option:
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 
 TelescopeModule.forRoot({
-  mcp: true, // dev-only: open when NODE_ENV !== 'production'
+  mcp: true, // omitted / false: the endpoint answers 404
 });
 ```
 
@@ -29,25 +29,18 @@ Once enabled it mounts at `POST <path>/api/mcp` — for the default mount path t
   The transport is stateless: `POST` carries every JSON-RPC call, `GET` returns `405` (there is no server→client notification stream to open), and `DELETE` is a `200` no-op (there is no session to terminate).
 </Callout>
 
-## Authentication
+## Protecting it
 
-| `mcp` value | Behavior |
-|---|---|
-| _omitted_ / `false` | Disabled — the endpoint is not mounted. |
-| `true` | Open when `NODE_ENV !== 'production'`; **refused (`403`) in production** so the surface never opens unguarded. |
-| `{ token }` | Requires `Authorization: Bearer <token>` on every request — in dev **and** prod. |
-
-This mirrors the default-open-in-dev dashboard authorizer. The MCP controller carries **no** cookie-session guard: the dashboard's cookie gate doesn't apply to a header-only agent client, so the controller enforces its own Bearer check. For any production use, configure a token:
+The MCP controller is a console route like the API: it receives the module's `decorators` and falls under the [production rule](/docs/dashboard/auth#the-production-rule), or you mount it yourself by extending `TelescopeMcpController` with `routes: false`. Agent clients send a header, not a cookie, so put a Bearer-capable `@nestjs/authentication` strategy in front of it:
 
 ```ts
 TelescopeModule.forRoot({
-  mcp: { token: process.env.TELESCOPE_MCP_TOKEN },
+  mcp: true,
+  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
 });
 ```
 
-<Callout type="warn">
-  A tokenless `mcp: true` in production is **refused**, not silently opened. To run MCP in production you must supply a `token`.
-</Callout>
+See [Protecting the routes](/docs/dashboard/auth).
 
 ## Connect an agent
 
@@ -57,14 +50,14 @@ For Claude Code, register the server over the HTTP transport:
 claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp
 ```
 
-When you've configured a token, pass it as a Bearer header:
+When your authentication strategy expects a Bearer token, pass it as a header:
 
 ```bash
 claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp \
-  --header "Authorization: Bearer $TELESCOPE_MCP_TOKEN"
+  --header "Authorization: Bearer $TOKEN"
 ```
 
-Any MCP-capable client works the same way — point it at the `<path>/api/mcp` URL and (when configured) supply the Bearer token.
+Any MCP-capable client works the same way — point it at the `<path>/api/mcp` URL and supply whatever credential your strategy reads.
 
 ## Tools
 

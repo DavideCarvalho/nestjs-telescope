@@ -108,7 +108,6 @@ describe('process crash capture (e2e, real module graph)', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           storage,
           traceContext: { current: () => traceAls.getStore() ?? null },
           exceptions: {
@@ -259,7 +258,6 @@ describe('process crash capture exit contract (e2e)', () => {
         imports: [
           TelescopeModule.forRoot({
             enabled: true,
-            authorizer: () => true,
             storage: new InMemoryStorageProvider(),
             exceptions: { processCrashes: { enabled: true } },
           }),

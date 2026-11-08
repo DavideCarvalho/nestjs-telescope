@@ -42,7 +42,6 @@ describe('GET /telescope/api/schedules/live', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           scheduleManagers: [fakeManager],
         }),
       ],
@@ -61,31 +60,10 @@ describe('GET /telescope/api/schedules/live', () => {
   });
 });
 
-describe('GET /telescope/api/schedules/live (read-guarded)', () => {
-  it('denies when the authorizer denies', async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        TelescopeModule.forRoot({
-          enabled: true,
-          authorizer: () => false,
-          scheduleManagers: [fakeManager],
-        }),
-      ],
-    }).compile();
-    const app = moduleRef.createNestApplication();
-    await app.init();
-    try {
-      await request(app.getHttpServer()).get('/telescope/api/schedules/live').expect(403);
-    } finally {
-      await app.close();
-    }
-  });
-});
-
 describe('GET /telescope/api/schedules/live (no manager configured)', () => {
   it('returns an empty task list', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => true })],
+      imports: [TelescopeModule.forRoot({ enabled: true })],
     }).compile();
     const app = moduleRef.createNestApplication();
     await app.init();

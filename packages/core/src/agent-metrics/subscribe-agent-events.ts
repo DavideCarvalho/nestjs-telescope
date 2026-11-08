@@ -22,6 +22,7 @@ export type AgentObservationListener = (observation: AgentObservation) => void;
  * Returns the unsubscribe function.
  */
 export function subscribeAgentObservations(listener: AgentObservationListener): () => void {
+  directListeners.add(listener);
   const handlers: [string, (message: unknown) => void][] = [];
   for (const event of AGENT_METRIC_EVENTS) {
     const name = `${AGENT_CHANNEL_PREFIX}${event}`;
@@ -38,6 +39,28 @@ export function subscribeAgentObservations(listener: AgentObservationListener): 
     handlers.push([name, handler]);
   }
   return () => {
+    directListeners.delete(listener);
     for (const [name, handler] of handlers) diagnostics_channel.unsubscribe(name, handler);
   };
+}
+
+/** Listeners of {@link subscribeAgentObservations}, also fed by {@link publishAgentObservation}. */
+const directListeners = new Set<AgentObservationListener>();
+
+/**
+ * Hand an observation that did NOT come from the `aviary:agent:*` channels to every
+ * {@link subscribeAgentObservations} listener — the Prometheus registry and the OTLP exporter —
+ * so another source of AI usage (e.g. `@nestjs/ai`'s `onUsage`, through
+ * `@dudousxd/nestjs-telescope-official`'s `telescopeAiUsage()`) is counted by the same metrics.
+ * Publish each event from ONE source only: an event published here and on the agent channels
+ * counts twice. A throwing listener is swallowed.
+ */
+export function publishAgentObservation(observation: AgentObservation): void {
+  for (const listener of directListeners) {
+    try {
+      listener(observation);
+    } catch {
+      // Observability must never break the caller that reported the usage.
+    }
+  }
 }

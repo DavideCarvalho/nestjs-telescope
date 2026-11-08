@@ -56,4 +56,11 @@ export interface Watcher {
   register(ctx: WatcherContext): void | Promise<void>;
   /** Optional cheap pre-filter before constructing an entry. */
   shouldRecord?(candidate: unknown): boolean;
+  /**
+   * Optional teardown, called once on application shutdown for a watcher whose `register()`
+   * succeeded: drop subscriptions (e.g. `diagnostics_channel` handlers) so a closed app stops
+   * recording and a second app in the same process does not record twice. Must not throw; a
+   * throw is logged and swallowed.
+   */
+  unregister?(): void | Promise<void>;
 }

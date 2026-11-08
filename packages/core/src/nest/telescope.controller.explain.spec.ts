@@ -48,7 +48,7 @@ describe('POST /telescope/api/queries/explain', () => {
   it('is 404 when no explainQuery hook is configured', async () => {
     const storage = new InMemoryStorageProvider();
     await storage.store([queryEntry('q1', { sql: 'select * from users' })]);
-    app = await makeApp({ enabled: true, authorizer: () => true, storage });
+    app = await makeApp({ enabled: true, storage });
     await request(app.getHttpServer())
       .post('/telescope/api/queries/explain')
       .send({ entryId: 'q1' })
@@ -59,7 +59,6 @@ describe('POST /telescope/api/queries/explain', () => {
     const storage = new InMemoryStorageProvider();
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       explainQuery: () => Promise.resolve({ plan: 'x' }),
     });
@@ -77,7 +76,6 @@ describe('POST /telescope/api/queries/explain', () => {
     const explainQuery = vi.fn(() => Promise.resolve({ query_block: { cost: '1.0' } }));
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       explainQuery: explainQuery as unknown as (
         sql: string,
@@ -97,7 +95,6 @@ describe('POST /telescope/api/queries/explain', () => {
     await storage.store([queryEntry('q1', { sql: 'select * from users' })]);
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage,
       explainQuery: () => Promise.reject(new Error('connection refused')),
     });

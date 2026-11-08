@@ -63,14 +63,14 @@ For every selected request the flow is: `shouldProfile(route)` (cheap gate) → 
 
 ## The headless API
 
-Everything the dashboard does is a plain HTTP call against the mounted API (default mount `/telescope`, so `/telescope/api/...`). Reads sit behind the normal read `authorizer`; **arming a capture is a mutation** — it incurs real overhead — so it's behind the same default-deny `authorizeAction` gate as *Prune now* and request replay.
+Everything the dashboard does is a plain HTTP call against the mounted API (default mount `/telescope`, so `/telescope/api/...`). Reads are protected like the rest of the console; **arming a capture is a mutation** — it incurs real overhead — so like *Prune now* and request replay it needs `mutations: true`.
 
 | Method | Path | Shape | Notes |
 |---|---|---|---|
 | `GET` | `/api/profiles/status` | read | `{ enabled, sampleRate, active, maxConcurrent, pendingManual }` — powers the dashboard's Profiles tab and its "enable `profiling`" empty state. |
 | `GET` | `/api/profiles` | read | Captured profiles, newest-first, **without** their (large) frame trees (`?limit=` to cap). |
 | `GET` | `/api/profiles/:id` | read | One profile's full flame tree — the flamegraph payload. `404` if the id isn't a `cpu_profile` entry. |
-| `POST` | `/api/profiles/arm` | mutation | Arm the next `count` requests (optional `label`). `403` when no `authorizeAction` is configured; `400` when profiling is disabled. |
+| `POST` | `/api/profiles/arm` | mutation | Arm the next `count` requests (optional `label`). `403` unless `mutations: true`; `400` when profiling is disabled. |
 
 Arm a capture straight from a script or `curl` — profile the next 3 hits to one route:
 
@@ -83,8 +83,8 @@ curl -X POST https://your-app/telescope/api/profiles/arm \
 
 The response returns the remaining manual budget across all arms. Omit `label` to profile the next `count` requests regardless of route; omit `count` to arm exactly one.
 
-<Callout type="warn" title="Arming needs `authorizeAction`">
-  Like every Telescope mutation, arming is **default-deny**. Without an `authorizeAction` configured the endpoint returns `403` ("Mutations are disabled"). And if `profiling.enabled` is false, arming returns `400` so the dashboard can explain why nothing happens — the switch has to be on first.
+<Callout type="warn" title="Arming needs `mutations: true`">
+  Like every Telescope mutation, arming is **off by default**. Without `mutations: true` the endpoint returns `403` ("Mutations are disabled"). And if `profiling.enabled` is false, arming returns `400` so the dashboard can explain why nothing happens — the switch has to be on first.
 </Callout>
 
 ## The dashboard flamegraph view

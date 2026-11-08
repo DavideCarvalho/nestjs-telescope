@@ -1,13 +1,11 @@
 // packages/core/src/sse/stream.controller.ts
-import { Controller, Inject, Sse, UseGuards } from '@nestjs/common';
+import { Controller, Inject, Sse } from '@nestjs/common';
 import { type Observable, merge, timer } from 'rxjs';
 import { bufferTime, filter, map } from 'rxjs/operators';
-import { TelescopeGuard } from '../nest/telescope.guard.js';
 import { EntryEvents } from './entry-events.js';
 
 type StreamMessage = { data: { types: string[] } | { heartbeat: true } };
 
-@UseGuards(TelescopeGuard)
 @Controller()
 export class StreamController {
   constructor(@Inject(EntryEvents) private readonly entryEvents: EntryEvents) {}

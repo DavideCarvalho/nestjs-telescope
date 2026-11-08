@@ -40,6 +40,10 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
   { id: 'model', label: 'Models', dot: 'bg-lime-400' },
   { id: 'redis', label: 'Redis', dot: 'bg-rose-400' },
   { id: 'inertia', label: 'Inertia', dot: 'bg-cyan-400' },
+  // NestJS first-party channels, recorded by @dudousxd/nestjs-telescope-official.
+  { id: 'resilience', label: 'Resilience', dot: 'bg-yellow-400' },
+  { id: 'workflow', label: 'Nest workflows', dot: 'bg-purple-300' },
+  { id: 'auth', label: 'Auth', dot: 'bg-red-300' },
 ];
 
 const FALLBACK_DOT = 'bg-zinc-500';

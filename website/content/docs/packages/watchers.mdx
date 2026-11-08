@@ -42,7 +42,6 @@ import { MikroOrmModule } from '@mikro-orm/nestjs';
 @Module({
   imports: [
     TelescopeModule.forRoot({
-      authorizer: () => true,           // restrict in production
       watchers: [new MikroOrmQueryWatcher()],
     }),
     MikroOrmModule.forRootAsync({
@@ -83,9 +82,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 @Module({
   imports: [
-    TelescopeModule.forRoot({
-      authorizer: () => true, // restrict in production
-    }),
+    TelescopeModule.forRoot({}),
     TypeOrmModule.forRootAsync({
       inject: [TelescopeService],
       useFactory: (telescope: TelescopeService) => ({
@@ -120,6 +117,13 @@ TelescopeModule.forRoot({ watchers: [new PrismaQueryWatcher(prisma, { slowMs: 50
 </Callout>
 
 ---
+
+## NestJS first-party packages
+
+`@nestjs/resilience`, `@nestjs/workflows`, `@nestjs/authentication`, `@nestjs/authorization` and
+`@nestjs/mail` publish their events on `nestjs:*` diagnostics channels. One package records all of
+them, with `watchers: [...officialWatchers()]`: see
+[`@dudousxd/nestjs-telescope-official`](/docs/packages/official).
 
 ## Behavioral watchers
 

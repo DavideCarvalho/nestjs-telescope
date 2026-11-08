@@ -7,7 +7,6 @@
     "custom-watcher",
     "building-an-extension",
     "capturing-axios",
-    "dashboard-auth",
     "tags-and-redaction",
     "request-context",
     "archiving-exceptions-to-s3",

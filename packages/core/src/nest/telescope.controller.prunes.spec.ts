@@ -48,7 +48,6 @@ describe('GET /telescope/api/prunes', () => {
   it('returns runs, the resolved config and a nextRunAt when prune is configured', async () => {
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage: new InMemoryStorageProvider(),
       prune: { after: '1h', keepLast: 50, intervalMs: 60_000, perType: { exception: '7d' } },
     });
@@ -66,7 +65,6 @@ describe('GET /telescope/api/prunes', () => {
   it('returns null config and null nextRunAt when no prune window is configured', async () => {
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       storage: new InMemoryStorageProvider(),
     });
     const res = await request(app.getHttpServer()).get('/telescope/api/prunes').expect(200);
@@ -81,8 +79,7 @@ describe('GET /telescope/api/prunes', () => {
     ]);
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       storage,
       prune: { after: '1h' },
     });
@@ -95,15 +92,5 @@ describe('GET /telescope/api/prunes', () => {
     expect(res.body.runs).toHaveLength(1);
     expect(res.body.runs[0].trigger).toBe('manual');
     expect(res.body.runs[0].deletedTotal).toBe(1);
-  });
-
-  it('is gated by the read guard (403 when unauthorized)', async () => {
-    app = await makeApp({
-      enabled: true,
-      authorizer: () => false,
-      storage: new InMemoryStorageProvider(),
-      prune: { after: '1h' },
-    });
-    await request(app.getHttpServer()).get('/telescope/api/prunes').expect(403);
   });
 });

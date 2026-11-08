@@ -1,0 +1,180 @@
+---
+title: "@dudousxd/nestjs-telescope-official"
+description: NestJS's first-party packages in Telescope — the resilience, workflows, authentication, authorization and mail diagnostics channels as entries, @nestjs/ai usage on the AI screen, and @nestjs/observe trace ids.
+icon: BadgeCheck
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+```bash
+pnpm add @dudousxd/nestjs-telescope-official
+```
+
+NestJS's first-party packages already publish what they do: each one emits its events on
+`node:diagnostics_channel` channels named `nestjs:<package>:<event>`, and `@nestjs/ai` hands every
+model call to an `onUsage` listener. This package records those as Telescope entries. It builds
+nothing those packages already do. It never imports them at runtime, and it reads every payload
+structurally, so a 0.x shape change shows up as fewer fields, never a crash. All the official
+packages are optional peers.
+
+| Package | Docs | What Telescope records |
+| --- | --- | --- |
+| `@nestjs/resilience` ≥ 0.0.3 | [docs.nestjs.com](https://docs.nestjs.com) | `resilience` entries from the 9 `nestjs:resilience:*` channels |
+| `@nestjs/workflows` ≥ 0.0.5 | [Workflows](https://docs.nestjs.com/reliability/workflows) | `workflow` entries from the 19 `nestjs:workflows:*` channels |
+| `@nestjs/authentication` ≥ 0.1.5 | [docs.nestjs.com](https://docs.nestjs.com) | `auth` entries from the 13 `nestjs:authentication:*` channels, redacted |
+| `@nestjs/authorization` ≥ 0.1.3 | [docs.nestjs.com](https://docs.nestjs.com) | `auth` entries from `nestjs:authorization:denied` |
+| `@nestjs/mail` ≥ 0.0.2 | [docs.nestjs.com](https://docs.nestjs.com) | built-in `mail` entries from `nestjs:mail:sent` / `nestjs:mail:failed` |
+| `@nestjs/ai` ≥ 0.0.2 | [AI overview](https://docs.nestjs.com/ai/overview) | `usage.recorded` rows on the [AI screen](/docs/dashboard/ai) and the AI metrics |
+| `@nestjs/observe` ≥ 0.3.20 | [docs.nestjs.com](https://docs.nestjs.com) | the trace id only, as Telescope's `traceContext` |
+
+## Channel watchers
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { officialWatchers } from '@dudousxd/nestjs-telescope-official';
+
+TelescopeModule.forRoot({
+  storage,
+  watchers: [...officialWatchers()],
+});
+```
+
+`officialWatchers()` returns one watcher per package. An uninstalled package publishes nothing,
+so its watcher records nothing and costs nothing. You can turn each one off, or use the classes
+directly:
+
+```ts
+officialWatchers({ mail: false, auth: { authorization: false } });
+// or: new NestResilienceWatcher(), new NestWorkflowsWatcher(), new NestAuthWatcher(), new NestMailWatcher()
+```
+
+**Correlation.** The payloads carry no trace id, and they don't need one. A channel calls its
+subscribers synchronously, in the publisher's async context. So each entry joins the request or
+job batch that emitted it, and carries the current trace from your `traceContext`
+(OpenTelemetry, `ObserveTraceContextProvider` below, or `@dudousxd/nestjs-context`).
+`@nestjs/workflows` runs instances on its worker loop, so workflow entries correlate to whatever
+batch is active there, usually none.
+
+Refusals and failures are tagged `failed`: timeouts, open or refusing breakers, bulkhead and
+rate-limit refusals, failed workflows and steps, timed-out signals, failed second factors, reused
+refresh tokens, refused magic links, failed session touches, denials and failed sends. Entries are
+grouped (`familyHash`) by `event:policy`, by workflow name, by auth event (a denial by
+`Policy.ability`), and by mail class.
+
+### What each entry holds
+
+- **`resilience`**: `event`, `policy`, `source` (the entrypoint), and the fields of the type:
+  `attempt` and `delayMs`, `timeoutMs`, a breaker's `from` and `to`, `retryAfterMs`, a bulkhead's
+  `reason`, `active` and `queued`, and the `error` (name, message, code).
+- **`workflow`**: `event`, the instance `id`, `workflow`, `version`, `at`, and per type: `run`,
+  `wakeAt` and `waits`, `step`, `attempt`, `durationMs` (also the entry's duration), `retryAt`,
+  the child, the signal, journal size, the custom `status`, the `output`, a retry's or a skipped
+  schedule's `from` and `to`, and the serialized `error` (no stack). `output` and `status` are your
+  data, so they go through Telescope's [redaction](/docs/recipes/tags-and-redaction) and size bounds.
+- **`auth`**: `source` (`authentication` or `authorization`) and `event`, plus the fields below.
+- **`mail`**: the same shape as the nodemailer watcher's (`mailer: '@nestjs/mail'`, `to` from the
+  envelope recipients, `subject`, `status`), plus `mail`, `transport`, `messageId`,
+  `providerMessageId`, `attempts`, `permanent` and `error`. The event carries no sender or body, so
+  `from` and `preview` are `null`.
+
+<Callout type="warn" title="Auth entries are redacted">
+  Only known fields are copied, so a field a later version adds isn't recorded until this package
+  reviews it. Session ids and refresh-token family ids become a short SHA-256 fingerprint
+  (`sessionRef`, `tokenFamilyRef`). That's enough to tell that a sign-in and a sign-out were the same
+  session, and nothing in it authenticates. Email addresses are masked (`j***@example.com`). The
+  session `metadata` keeps only its key names. A denial keeps the user's `id` / `sub` / `userId`
+  and the number of policy arguments, never the user object or the records, as
+  `@nestjs/authorization` advises.
+</Callout>
+
+<Callout type="info">
+  Don't record the same mailer twice. If a transport is also wrapped by
+  `@dudousxd/nestjs-telescope-mail`'s `MailWatcher`, pass `officialWatchers({ mail: false })`.
+</Callout>
+
+## `@nestjs/ai` usage
+
+```ts
+import { AiModule } from '@nestjs/ai';
+import { telescopeAiUsage } from '@dudousxd/nestjs-telescope-official';
+
+AiModule.forRoot({
+  models: { default: { model: anthropic('claude-sonnet-5-5'), pricing: { input: 3, output: 15 } } },
+  onUsage: telescopeAiUsage(),
+});
+```
+
+Each model call that answered becomes a `usage.recorded` row in the shape the
+[AI screen](/docs/dashboard/ai) already reads: the feature is the call's `label`, cached input
+counts as `cacheReadTokens`, and the cost is `costSource: 'estimate'`, because `@nestjs/ai` prices
+calls from the `pricing` you configured, not from the provider's bill. The same call is counted in
+the AI metrics (`aiMetrics.prometheus`, and the otel AI exporter). The entry joins the request that
+made the call.
+
+| Option | Default | |
+| --- | --- | --- |
+| `feature(event)` | `event.label ?? 'default'` | The AI screen's feature. |
+| `actor(event)` | `'@platform'` | Who pays: shown on the "by actor" breakdown, never a metric label. |
+| `toUsd(cost, event)` | the cost as given | `cost` is in your `pricing` unit; convert it here, or return `undefined` for unpriced. |
+| `record` | `true` | Record the `agent` entry. |
+| `metrics` | `true` | Count it in the AI metrics. |
+
+**Keep an existing `onUsage`** by calling both:
+
+```ts
+const toTelescope = telescopeAiUsage();
+
+AiModule.forRoot({
+  models,
+  onUsage: (event) => {
+    toTelescope(event);
+    return myOnUsage(event);
+  },
+});
+```
+
+Attach it in **one** place. `@nestjs/ai` calls the module's `onUsage` and then the call's own, so
+putting it on both counts every call twice. A call-level `onUsage: telescopeAiUsage({ feature: () => 'triage' })`
+is for a call the module-level listener doesn't already cover.
+
+## `@nestjs/observe` trace ids
+
+```ts
+import { TracerService } from '@nestjs/observe';
+import { ObserveTraceContextProvider } from '@dudousxd/nestjs-telescope-official';
+
+TelescopeModule.forRootAsync({
+  inject: [TracerService],
+  useFactory: (tracer: TracerService) => ({
+    storage,
+    traceContext: new ObserveTraceContextProvider(tracer),
+  }),
+});
+```
+
+Every entry carries the trace id NestJS Observe gives the request, so you can look one request up
+in both tools. Observe writes ids as UUIDs. The provider drops the dashes and gets the 32 hex
+digits of the W3C trace id (`4bf92f35-77b3-…` becomes `4bf92f3577b3…`). A free-form `x-request-id`
+that Observe keeps as the trace name is hashed into 32 hex digits, so the request's entries still
+share one trace. Observe exposes no span id, so the span id is a stable synthetic one derived from
+the trace id. The provider never throws: with no trace in flight it returns `null`.
+
+<Callout type="warn" title="Trace id only, never Observe's telemetry">
+  `@nestjs/observe` after 0.3.20 is under the NestJS Observe Agent License. Its telemetry may go
+  only to observe.nestjs.com, and the software may not be used to build a backend that receives
+  that telemetry or substitutes for the Service. So Telescope never ingests Observe's spans,
+  metrics, errors or logs; this provider calls `TracerService.currentTraceId()` and nothing else.
+  The license states that passing trace context is allowed: *"Passing trace context, such as
+  traceparent or x-request-id headers, between Your applications and the services they call does
+  not violate (a) or (b)."* `currentTraceId()` is documented for exactly this kind of use (logs,
+  outgoing headers). The former `@dudousxd/nestjs-telescope-observe` exporter, which pushed
+  Telescope entries into Observe over its private ingest wire, is deprecated: to report into
+  NestJS Observe, use `@nestjs/observe` itself.
+</Callout>
+
+## Channel lists
+
+The channel names live in this package (`OFFICIAL_CHANNEL_NAMES`, `RESILIENCE_EVENT_TYPES`,
+`WORKFLOW_EVENT_TYPES`, `AUTHENTICATION_EVENT_TYPES`). They were checked against the published
+tarballs of the versions in the table above, and they can come from `@dudousxd/nestjs-diagnostics`
+once that package publishes the same constants.

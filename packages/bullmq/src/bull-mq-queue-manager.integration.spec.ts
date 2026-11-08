@@ -43,7 +43,6 @@ class FailingProcessor extends WorkerHost {
   imports: [
     TelescopeModule.forRoot({
       enabled: true,
-      authorizer: () => true,
       queueManagers: [new BullMqQueueManager()],
     }),
     BullModule.forRoot({ connection }),

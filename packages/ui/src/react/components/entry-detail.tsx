@@ -6,6 +6,7 @@ import { CacheBadge } from './cache-badge.js';
 import { ExportJsonToolbar } from './export-json-toolbar.js';
 import { InertiaBadge } from './inertia-badge.js';
 import { InertiaBody } from './inertia-body.js';
+import { OfficialEventBody, isOfficialEventType } from './official-event.js';
 import { RequestTimeline } from './request-timeline.js';
 import { buildTraceHref } from './trace-link.js';
 import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
@@ -60,6 +61,8 @@ export function EntryDetail({
           </>
         ) : entry.type === 'request' ? (
           <RequestBody content={entry.content} />
+        ) : isOfficialEventType(entry.type) ? (
+          <OfficialEventBody type={entry.type} content={entry.content} />
         ) : entry.type === 'query' ? (
           <QueryBody
             entryId={entry.id}

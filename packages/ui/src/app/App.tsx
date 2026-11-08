@@ -1,8 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { TelescopeProvider } from '../react/index.js';
-import { AuthProvider, useAuth } from './auth-context.js';
-import { AuthScreen } from './auth-screen.js';
 import { DashboardLayout } from './dashboard-layout.js';
 import { OverviewPage } from './pages/OverviewPage.js';
 import { QueueManagerPage } from './pages/QueueManagerPage.js';
@@ -51,31 +49,12 @@ function Dashboard(): JSX.Element {
   );
 }
 
-/**
- * Boot gate: `auth.me()` decides what mounts.
- * - `loading`: a neutral splash while the first `me()` resolves.
- * - `disabled` / `app`: the dashboard (authenticated shows the logout button).
- * - `screen`: the AuthScreen for the offered modes.
- */
-function AuthGate(): JSX.Element {
-  const { phase, modes } = useAuth();
-  if (phase === 'loading') {
-    return <div className="min-h-screen bg-background" data-testid="auth-loading" />;
-  }
-  if (phase === 'screen') {
-    return <AuthScreen modes={modes} />;
-  }
-  return <Dashboard />;
-}
-
 export function App(): JSX.Element {
   return (
     <ThemeProvider>
       <TelescopeProvider>
         <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <AuthGate />
-          </AuthProvider>
+          <Dashboard />
         </QueryClientProvider>
       </TelescopeProvider>
     </ThemeProvider>

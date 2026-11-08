@@ -1,22 +1,14 @@
 // packages/core/src/nest/telescope.options.ts
-import type { CanActivate, DynamicModule, Type } from '@nestjs/common';
+import type { DynamicModule } from '@nestjs/common';
 import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
-import type { DashboardAuthOptions } from '../auth/dashboard-auth-config.js';
-import type { TelescopeSessionUser } from '../auth/session-cookie.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
 import type { TelescopeExtension } from '../extension/types.js';
 import type { PulseServiceOptions } from '../pulse/pulse.service.js';
-import type { QueueActionRequest, QueueManager } from '../queue/queue-manager.js';
+import type { QueueManager } from '../queue/queue-manager.js';
 import type { ScheduleManager } from '../schedule/schedule-manager.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Watcher } from './watcher.js';
-
-/** Context handed to the authorizer to decide API/UI access. */
-export interface AuthorizerContext {
-  /** The platform request object (Express or Fastify). */
-  request: unknown;
-}
 
 /**
  * The minimal structural request the telescope hooks receive — enough for
@@ -78,7 +70,7 @@ export function toTelescopeHttpRequest(request: unknown): TelescopeHttpRequest {
  * `new-exception` Slack alert, and in AI auto-mode spends model tokens
  * diagnosing intended behaviour. In production every permission denial would
  * page on-call and burn a diagnosis. (This default changed after exactly that
- * incident: Telescope's own client-errors `authorize` gate threw a 403, which
+ * incident: a 403 thrown by a gate on the client-errors route, which
  * was captured as a brand-new family and paged Slack.)
  *
  * The 4xx is NOT lost — the request-capture middleware still records the 4xx
@@ -173,13 +165,17 @@ export interface ProcessCrashCaptureOptions {
  * `client_exception` entries through the normal pipeline (family-hash,
  * `failed`/`client`/`user:<id>` tags, alerts, prune, archive, dashboard).
  *
- * DISABLED by default: a public, unauthenticated ingestion surface is opt-in.
- * While disabled the controller is mounted but returns 404 for every request, so
- * the route never silently accepts traffic and toggling needs no remount.
+ * DISABLED by default: a public ingestion surface is opt-in. While disabled the
+ * controller is mounted but returns 404 for every request, so the route never
+ * silently accepts traffic and toggling needs no remount.
  *
- * Security knobs, all best-effort and PER-POD (see the multi-replica caveat on
- * `rateLimit`): a byte cap (`maxBodyBytes`), an in-memory per-IP token bucket
- * (`rateLimit`), and an `authorize` hook for session/header validation.
+ * PUBLIC BY DESIGN: any visitor's browser (signed in or not) must reach it, so
+ * it does NOT take the module's `decorators` and does not count toward the
+ * production protection rule; it carries only the `@Can.Anyone()` mark. Its
+ * abuse dampers, all best-effort and PER-POD (see the multi-replica caveat on
+ * `rateLimit`), are a byte cap (`maxBodyBytes`) and an in-memory per-IP token
+ * bucket (`rateLimit`). To put it behind your own auth, use `routes: false` and
+ * extend `ClientErrorController` with your decorators.
  */
 export interface ClientErrorsOptions {
   /** Master switch. Default `false` — the endpoint 404s until explicitly enabled. */
@@ -199,13 +195,6 @@ export interface ClientErrorsOptions {
    * need a cross-pod store and is out of scope here.
    */
   rateLimit?: { perMinute: number };
-  /**
-   * Optional gate that runs FIRST, before validation/rate-limiting. Return
-   * `false` to reject with 403 — lets a host require a session cookie or a shared
-   * header on the public endpoint. A throw is treated as a denial (fail closed)
-   * and never crashes the request.
-   */
-  authorize?: (request: TelescopeHttpRequest) => boolean | Promise<boolean>;
 }
 
 /**
@@ -275,19 +264,17 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   scheduleManagers?: ScheduleManager[];
   /**
-   * Authorizes API access. Default: allow when NODE_ENV !== 'production',
-   * deny otherwise (until the host supplies one).
+   * Enables the console's mutations: queue job retry/remove/promote/retry-all/
+   * enqueue/redrive, prune, request replay and on-demand profiling. Default
+   * `false`: every mutation answers 403 and `meta.mutationsEnabled` is `false`.
+   *
+   * This is a feature switch, not access control: who may call the routes is
+   * decided by your `decorators` (or your own controllers with `routes: false`),
+   * exactly as for the read routes. To allow reads to more people than
+   * mutations, mount the routes yourself and put a stricter `@Can(...)` on the
+   * mutation methods you override.
    */
-  authorizer?: (ctx: AuthorizerContext) => boolean | Promise<boolean>;
-  /**
-   * Authorizes a queue MUTATION (retry/remove/promote/retry-all/redrive).
-   * Separate from `authorizer` (reads). DEFAULT: deny — every mutation is 403
-   * until the host supplies this. Throwing denies (fails closed).
-   */
-  authorizeAction?: (
-    ctx: AuthorizerContext,
-    action: QueueActionRequest,
-  ) => boolean | Promise<boolean>;
+  mutations?: boolean;
   /**
    * Whether TelescopeModule auto-registers the request-capture middleware via
    * NestJS `configure()`. Default `true`. Set `false` when the host app uses
@@ -337,15 +324,6 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   explainQuery?: (sql: string, bindings: unknown[]) => Promise<unknown>;
   /**
-   * Cookie-session gate for the dashboard. When set, every guarded `/api/*`
-   * route (except `/api/auth/*`) requires a valid signed session cookie, AND
-   * the existing `authorizer` still runs (AND semantics). The cookie is minted
-   * by either mode (`session` host-auth bridge / built-in `login`). When unset,
-   * gate behavior is unchanged (`authorizer` / NODE_ENV default). A configured
-   * `dashboardAuth` with a missing/empty `secret` or no hook is a boot error.
-   */
-  dashboardAuth?: DashboardAuthOptions;
-  /**
    * Pluggable-channel alerting. When set, Telescope evaluates `rules` and fans
    * each fired alert out to every configured `channels` entry (Slack / raw
    * webhook / custom sink) concurrently; one channel failing never blocks the
@@ -384,7 +362,7 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * `aviary:agent:*` diagnostics channels `@dudousxd/nestjs-agent` publishes (core >= 0.60.0).
    *
    * `prometheus: true` serves them as a Prometheus text scrape at `GET <path>/api/metrics`,
-   * behind the same guard (`authorizer`, `guards`, `dashboardAuth`) as the rest of the API. Off by
+   * protected like the rest of the API (your `decorators`, or your own controller). Off by
    * default: the endpoint answers 404 and nothing subscribes. For OTLP push instead (or as well),
    * register `TelescopeAiMetricsExporter` from `@dudousxd/nestjs-telescope-otel`.
    *
@@ -406,17 +384,13 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * "why is POST /checkout slow?" → the agent pulls the batch waterfall with
    * every query. Backed by the same storage/stats APIs as the dashboard.
    *
-   * AUTH: when a `token` is configured, every MCP request MUST carry a
-   * `Authorization: Bearer <token>` header (the MCP transport's auth model; the
-   * cookie-session dashboard gate doesn't apply to a header-only agent client).
-   * Without a token the endpoint is allowed ONLY when `NODE_ENV !== 'production'`
-   * (mirroring the default-open-in-dev dashboard authorizer) — in production a
-   * tokenless MCP config is refused (403) so the surface never opens unguarded.
+   * Protected like every other console route: by your `decorators` (e.g. an
+   * `@nestjs/authentication` guard with a Bearer strategy, since agent clients
+   * send a header, not a cookie) or by your own controller with `routes: false`.
    *
-   * Pass `true` for the dev-only default, or `{ token }` to require a Bearer
-   * token. DISABLED by default (`undefined`).
+   * Pass `true` to enable. DISABLED by default (`undefined`).
    */
-  mcp?: boolean | { token?: string };
+  mcp?: boolean;
   /**
    * Overhead guard / overload protection. Telescope watches the event-loop lag
    * (via `perf_hooks.monitorEventLoopDelay`) and, when the p99 lag crosses a
@@ -433,37 +407,73 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   overloadProtection?: boolean | { maxEventLoopLagMs?: number; startupGraceMs?: number };
   /**
-   * Guard classes (or already-instantiated `CanActivate`s) fronting the console's
-   * API controllers — `TelescopeController` (entries/metrics/traces/ext data
-   * providers/retention/…) and `StreamController`'s live SSE feed. Stamped
-   * ALONGSIDE Telescope's own built-in gate (`TelescopeGuard`'s `authorizer` /
-   * `dashboardAuth` / dev-open-prod-closed default) — APPEND, not replace: a
-   * request must pass the built-in gate AND every guard listed here.
+   * Class decorators applied to the console controllers this module mounts —
+   * the API (`TelescopeController`), the live feed (`StreamController`) and the
+   * MCP endpoint (`TelescopeMcpController`) — the same shape as `@nestjs/mcp`'s
+   * `decorators`. This is one of the two ways to protect the console, with the
+   * official NestJS tools (`@nestjs/authentication` + `@nestjs/authorization`):
    *
-   * This is deliberate and differs from a from-scratch dashboard: Telescope's
-   * console controllers already ship a default-deny-in-production gate, so
-   * `guards` is an ADDITIONAL seam for hosts that want to front the console with
-   * THEIR OWN auth — e.g. reusing the app's existing cookie-session guard —
-   * instead of (or in addition to) configuring `dashboardAuth`'s own
-   * login/session bridge. See the "Securing the console" guide.
+   * ```ts
+   * TelescopeModule.forRoot({
+   *   decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+   * })
+   * ```
    *
-   * IMPORTANT: pass the SAME `guards` (and matching `imports`) to
-   * `TelescopeUiModule.forRoot({ guards, imports })` too — the dashboard's page
-   * (HTML shell + hashed assets) lives in a SEPARATE package/module with no
-   * visibility into this option, so a `guards` set here alone still leaves the
-   * page itself reachable by an anonymous full-page navigation.
+   * The other is {@link routes}`: false` plus your own controllers.
    *
-   * A class guard's own DEPENDENCIES resolve from this module's `imports` (see
-   * {@link imports}) — `TelescopeModule` has no application context of its own
-   * to pull them from otherwise. An already-instantiated guard (a `CanActivate`
-   * object, not a class) needs no `imports` entry.
+   * PRODUCTION RULE: with `NODE_ENV === 'production'`, mounting the console
+   * with no `decorators` (an empty array counts as none) fails the boot.
+   * Outside production an undecorated console mounts open.
+   *
+   * Every mounted controller is also marked open to `@nestjs/authorization`'s
+   * deny-by-default global `AuthorizationGuard` (as `@Can.Anyone()` would), so
+   * adopting that package does not lock an undecorated dev console out. That
+   * mark only opens routes declaring no requirement: a `Can(...)` passed here
+   * is still enforced.
+   *
+   * The public client-error beacon (`ClientErrorController`, see
+   * {@link ClientErrorsOptions}) does NOT take these decorators: guests' browsers
+   * must reach it.
+   *
+   * Applied to a fresh subclass per registration, so decorators never leak
+   * between `forRoot` calls. With `forRootAsync`, pass it as the static
+   * top-level `decorators` (not from the factory). The UI page is a separate
+   * module: pass the same `decorators` to `TelescopeUiModule.forRoot` too.
    */
-  guards?: Array<Type<CanActivate> | CanActivate>;
+  decorators?: ClassDecorator[];
+  /**
+   * `false` mounts NO controller; every provider (capture, storage, watchers,
+   * pruning, alerts, the services below) still runs. Serve the routes you want
+   * from controllers of your own, protected with ordinary Nest decorators —
+   * the same "mount it yourself" path as `@nestjs/mcp`'s `path: false`:
+   *
+   * ```ts
+   * @Controller('ops/telescope/api')
+   * @Can(ConsolePolicy, 'view')
+   * class ConsoleApi extends TelescopeController {}
+   *
+   * @Module({
+   *   imports: [TelescopeModule.forRoot({ path: 'ops/telescope', routes: false })],
+   *   controllers: [ConsoleApi],
+   * })
+   * ```
+   *
+   * Each exported controller (`TelescopeController`, `StreamController`,
+   * `ClientErrorController`, `TelescopeMcpController`) can be extended this
+   * way; its dependencies are exported by the module. The base classes carry
+   * no guard of their own, so your decorators are the whole gate.
+   *
+   * Named `routes`, not `path: false`, because `path` keeps a job without
+   * routes: it is the base the request-capture self-skip and the UI's asset
+   * URLs use, so set it to where you mount the controllers. `decorators` only
+   * applies to mounted controllers and is ignored here. With `forRootAsync`,
+   * pass it as the static top-level `routes`. Default `true`.
+   */
+  routes?: boolean;
   /**
    * Extra `imports` merged into `TelescopeModule`'s own dynamic module — the DI
-   * resolution path for a class passed to {@link guards} (or any other provider
-   * the console controllers need reachable). Typically the host's own auth
-   * module, e.g. `imports: [AuthModule]` alongside `guards: [ConsoleAuthGuard]`.
+   * resolution path for whatever the {@link decorators} need (e.g. the module
+   * providing a guard passed through `UseGuards(...)`).
    */
   imports?: DynamicModule['imports'];
 }
@@ -475,8 +485,6 @@ export interface TelescopeOptionsFactory {
 export const TELESCOPE_OPTIONS = Symbol('TELESCOPE_OPTIONS');
 export const TELESCOPE_STORAGE = Symbol('TELESCOPE_STORAGE');
 export const TELESCOPE_CONFIG = Symbol('TELESCOPE_CONFIG');
-/** Resolved `dashboardAuth` config (or `null` when unconfigured). Boot-validated. */
-export const TELESCOPE_DASHBOARD_AUTH = Symbol('TELESCOPE_DASHBOARD_AUTH');
 /** Kept for future DI use; the registry reads `options.queueManagers` directly. */
 export const QUEUE_MANAGERS = Symbol('QUEUE_MANAGERS');
 /** Resolved ExtensionRegistry (built + boot-validated from options.extensions). */

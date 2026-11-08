@@ -36,14 +36,23 @@ and sampling. It needs no extra option. If both watchers store the same event (t
   breakdown are counted and shown as "no breakdown".
 </Callout>
 
+### With `@nestjs/ai`
+
+Apps on NestJS's own [`@nestjs/ai`](https://docs.nestjs.com/ai/overview) feed the **Spend** and
+**Unpriced** parts (not Runs) with `telescopeAiUsage()` from
+[`@dudousxd/nestjs-telescope-official`](/docs/packages/official#nestjsai-usage):
+`AiModule.forRoot({ onUsage: telescopeAiUsage() })`. Each model call is recorded as a
+`usage.recorded` row (feature = the call's `label`, priced as an estimate from your `pricing`) and
+counted by the metrics below.
+
 ## Metrics for Grafana
 
 The same events are exposed as metrics, read **directly from the diagnostics channels** (not from
 stored entries), so sampling and retention never change a count. Two ways out, use either or both:
 
 - **Prometheus scrape** — `TelescopeModule.forRoot({ aiMetrics: { prometheus: true } })` serves
-  `GET <path>/api/metrics` (default `/telescope/api/metrics`) in text exposition format, behind the
-  same `authorizer` / `guards` / `dashboardAuth` as the rest of the API. Off by default (404).
+  `GET <path>/api/metrics` (default `/telescope/api/metrics`) in text exposition format, protected
+  like the rest of the API (your `decorators`, or your own controller). Off by default (404).
 - **OTLP push** — `TelescopeAiMetricsExporter` from
   [`@dudousxd/nestjs-telescope-otel`](/docs/packages/otel#ai-usage-and-agent-run-metrics), with its
   own endpoint, independent of where your traces and logs go.

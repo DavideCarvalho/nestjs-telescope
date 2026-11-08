@@ -77,7 +77,6 @@ class TestProcessor extends WorkerHost {
   imports: [
     TelescopeModule.forRoot({
       enabled: true,
-      authorizer: () => true,
       storage,
       traceContext,
       watchers: [watcher],

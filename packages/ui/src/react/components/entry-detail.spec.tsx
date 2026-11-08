@@ -59,7 +59,6 @@ async function renderDetail(entryValue: EntryWithBatch, traceLink: string | null
     retention: null,
     pruneEnabled: false,
     explainEnabled: false,
-    auth: { enabled: false, modes: [] },
     sampling: {},
   };
   const result = render(
@@ -174,7 +173,6 @@ async function renderDetailWithBatch(entryValue: EntryWithBatch) {
     retention: null,
     pruneEnabled: false,
     explainEnabled: false,
-    auth: { enabled: false, modes: [] },
     sampling: {},
   };
   render(

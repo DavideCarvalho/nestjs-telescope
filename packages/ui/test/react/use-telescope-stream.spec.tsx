@@ -32,7 +32,6 @@ function makeClient(baseUrl = '/telescope/api'): TelescopeClient {
       retention: null,
       pruneEnabled: false,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     extData: async () => null,
@@ -44,11 +43,6 @@ function makeClient(baseUrl = '/telescope/api'): TelescopeClient {
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),
     queueEnqueue: async () => ({ id: null }),
-    auth: {
-      me: async () => ({ status: 'disabled' }),
-      login: async () => ({ ok: true }),
-      logout: async () => {},
-    },
   });
 }
 

@@ -28,9 +28,9 @@ import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 @Module({
   imports: [
     TelescopeModule.forRoot({
-      enabled: process.env.NODE_ENV !== 'production',
-      authorizer: () => true, // gates the API; defaults to deny in production
       prune: { after: '24h' },
+      // Required in production (else the boot fails): see Protecting the routes.
+      // decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
     }),
   ],
 })
@@ -113,17 +113,17 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `enabled` | Master switch. Compute inline (e.g. `NODE_ENV !== 'production'`). |
 | `storage` | `StorageProvider` (or factory). Defaults to the embedded SQLite store. |
 | `watchers` | Built-in + custom watchers; each individually configurable. |
-| `authorizer` | Gates the API. **Denies in production by default** until you supply one. |
-| `authorizeAction` | Separate, **default-deny** gate for queue mutations. |
-| `dashboardAuth` | Signed-cookie login for the dashboard — see [Dashboard auth](/docs/dashboard/auth). |
-| `guards` / `imports` | Bring-your-own `CanActivate` guard(s) fronting the console (appended to the built-in gate above) — see [Securing the console](/docs/dashboard/auth#securing-the-console-with-your-own-guards). |
+| `decorators` | Class decorators for the mounted console controllers (e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`). **Required in production** unless `routes: false` — see [Protecting the routes](/docs/dashboard/auth). |
+| `routes` | `false` mounts no controller, so you serve the routes from your own subclasses of the exported controllers. |
+| `mutations` | `true` turns on queue actions, prune, replay and profiling-arm (off: `403`). |
+| `imports` | Extra `imports` for whatever your `decorators` need. |
 | `redact` | Deep-redact configured `headers` / `query` / `body` paths (default sensitive keys always run). |
 | `prune` | Retention window driving the scheduled pruner (e.g. `{ after: '24h' }`). Supports `perType` for [per-type cutoffs](/docs/concepts/storage#per-type-retention) (e.g. `{ after: '5m', perType: { exception: '7d' } }`). |
 | `archive` | Export a type's entries to a sink **before** the pruner deletes them — see [Archiving before prune](/docs/concepts/storage#archiving-before-prune). |
 | `pulse` | Health-snapshot tuning. `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot — matches the `slow` tag threshold, so a quiet host shows no false hotspots. |
 | `traceContext` / `traceLink` | OpenTelemetry trace stamping + deep-link template — see [`-otel`](/docs/packages/otel). |
 | `queueManagers` | Live queue managers — see [queue managers](/docs/packages/queue-managers). |
-| `mcp` | Optional MCP server for coding agents — `true` (dev-only) or `{ token }`. Disabled by default. See [MCP server](/docs/concepts/mcp). |
+| `mcp` | Optional MCP server for coding agents — `true` enables it, protected by your `decorators`. Disabled by default. See [MCP server](/docs/concepts/mcp). |
 | `overloadProtection` | Pause capture under event-loop pressure. `true` (default, 200ms p99), `false`, or `{ maxEventLoopLagMs }`. See [Performance](/docs/concepts/performance#overload-protection--pause-under-event-loop-pressure). |
 
 See [Capture & correlation](/docs/concepts/capture) for the recorder pipeline and the `Entry` / `Watcher` / `StorageProvider` SPIs.

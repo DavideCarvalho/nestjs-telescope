@@ -47,7 +47,6 @@ function baseMeta(pruneEnabled: boolean): TelescopeMeta {
     retention: { afterMs: 3_600_000, keepLast: null },
     pruneEnabled,
     explainEnabled: false,
-    auth: { enabled: false, modes: [] },
     sampling: {},
   };
 }

@@ -56,11 +56,6 @@ export function mockTelescopeClient(overrides: Partial<TelescopeClient> = {}): T
     queueJobAction: unused,
     queueAction: unused,
     queueEnqueue: unused,
-    auth: {
-      me: unused,
-      login: unused,
-      logout: unused,
-    },
   };
   return { ...base, ...overrides };
 }

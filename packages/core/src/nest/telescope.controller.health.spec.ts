@@ -16,7 +16,6 @@ describe('GET /telescope/api/health', () => {
       imports: [
         TelescopeModule.forRoot({
           enabled: true,
-          authorizer: () => true,
           storage,
           instanceId: 'instance-health',
         }),
@@ -62,15 +61,5 @@ describe('GET /telescope/api/health', () => {
       body.overflowDropped + body.storeFailedDropped,
     );
     expect(body.captureCostNanos).toBeGreaterThan(0);
-  });
-
-  it('is gated by the read guard (403 when unauthorized)', async () => {
-    const denied = await Test.createTestingModule({
-      imports: [TelescopeModule.forRoot({ enabled: true, authorizer: () => false, storage })],
-    }).compile();
-    const deniedApp = denied.createNestApplication();
-    await deniedApp.init();
-    await request(deniedApp.getHttpServer()).get('/telescope/api/health').expect(403);
-    await deniedApp.close();
   });
 });

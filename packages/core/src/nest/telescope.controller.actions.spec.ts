@@ -91,8 +91,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     };
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     const res = await request(app.getHttpServer())
@@ -103,8 +102,8 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
   });
 
   it('rejects an out-of-context job action with 400', async () => {
-    // `redrive` is a valid QueueActionName (passes the guard) but is not a job
-    // action, so the jobs route rejects it with 400 (not the guard's 403).
+    // `redrive` is a valid QueueActionName but is not a job action, so the
+    // jobs route rejects it with 400.
     const spies: ActionSpies = {
       retry: vi.fn(() => Promise.resolve()),
       remove: vi.fn(() => Promise.resolve()),
@@ -113,8 +112,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     };
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())
@@ -122,7 +120,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
       .expect(400);
   });
 
-  it('rejects a bogus job action with 403 (guard rejects unknown action)', async () => {
+  it('rejects a bogus job action with 400', async () => {
     const spies: ActionSpies = {
       retry: vi.fn(() => Promise.resolve()),
       remove: vi.fn(() => Promise.resolve()),
@@ -131,13 +129,12 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     };
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())
       .post('/telescope/api/queues/live/bullmq/q1/jobs/5/bogus')
-      .expect(403);
+      .expect(400);
   });
 
   it('retries all failed jobs (200) with a count', async () => {
@@ -149,8 +146,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     };
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     const res = await request(app.getHttpServer())
@@ -169,8 +165,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     };
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())
@@ -178,7 +173,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
       .expect(405);
   });
 
-  it('is 403 by default when no authorizeAction is configured', async () => {
+  it('is 403 by default when `mutations` is not enabled', async () => {
     const spies: ActionSpies = {
       retry: vi.fn(() => Promise.resolve()),
       remove: vi.fn(() => Promise.resolve()),
@@ -187,26 +182,6 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     };
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      queueManagers: [makeManager(spies)],
-    });
-    await request(app.getHttpServer())
-      .post('/telescope/api/queues/live/bullmq/q1/jobs/5/retry')
-      .expect(403);
-    expect(spies.retry).not.toHaveBeenCalled();
-  });
-
-  it('is 403 when authorizeAction returns false', async () => {
-    const spies: ActionSpies = {
-      retry: vi.fn(() => Promise.resolve()),
-      remove: vi.fn(() => Promise.resolve()),
-      promote: vi.fn(() => Promise.resolve()),
-      retryAll: vi.fn(() => Promise.resolve(0)),
-    };
-    app = await makeApp({
-      enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => false,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())
@@ -220,8 +195,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     spies.enqueue = vi.fn(() => Promise.resolve({ id: '42' }));
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     const res = await request(app.getHttpServer())
@@ -235,12 +209,11 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     expect(spies.enqueue.mock.calls[0]![2]).toEqual({ name: 'send-email' });
   });
 
-  it('is 403 for enqueue when no authorizeAction is configured', async () => {
+  it('is 403 for enqueue when `mutations` is not enabled', async () => {
     const spies = baseSpies();
     spies.enqueue = vi.fn(() => Promise.resolve({ id: '1' }));
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())
@@ -255,8 +228,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     spies.enqueue = vi.fn(() => Promise.resolve({ id: '1' }));
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())
@@ -271,8 +243,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     spies.enqueue = vi.fn(() => Promise.resolve({ id: '1' }));
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())
@@ -285,8 +256,7 @@ describe('POST /telescope/api/queues/live/* (gated mutations)', () => {
     const spies = baseSpies(); // no enqueue spy → manager omits enqueue
     app = await makeApp({
       enabled: true,
-      authorizer: () => true,
-      authorizeAction: () => true,
+      mutations: true,
       queueManagers: [makeManager(spies)],
     });
     await request(app.getHttpServer())

@@ -32,7 +32,7 @@ TelescopeModule.forRoot({
 - **The result is redacted** by the recorder like any other content, so a `password`/`token` field on the user object is masked automatically. Don't pre-strip it.
 
 <Callout type="info">
-  `resolveUser` only sets the `user` field on the **request** entry. It does not gate the dashboard — that's [`dashboardAuth`](/docs/recipes/dashboard-auth). The two are unrelated.
+  `resolveUser` only sets the `user` field on the **request** entry. It does not protect the dashboard — that's [Protecting the routes](/docs/dashboard/auth). The two are unrelated.
 </Callout>
 
 ### Find everything a user did

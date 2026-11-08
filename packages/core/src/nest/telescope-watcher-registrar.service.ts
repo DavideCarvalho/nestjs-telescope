@@ -1,5 +1,11 @@
 // packages/core/src/nest/telescope-watcher-registrar.service.ts
-import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+  type OnApplicationShutdown,
+} from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { EntryType } from '../entry/entry.js';
@@ -12,10 +18,13 @@ import {
 } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 import { createWatcherContext } from './watcher-context.factory.js';
+import type { Watcher } from './watcher.js';
 
 @Injectable()
-export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
+export class TelescopeWatcherRegistrar implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(TelescopeWatcherRegistrar.name);
+  /** Watchers whose `register()` succeeded, for `unregister()` on shutdown. */
+  private active: Watcher[] = [];
 
   constructor(
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
@@ -36,6 +45,7 @@ export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
         // Only report a watcher as active once it has actually wired up — a
         // failed register() must not show as "watching" in /meta.
         registered.push(watcher.type);
+        this.active.push(watcher);
       } catch (error) {
         this.logger.error(
           `Telescope watcher "${watcher.type}" failed to register: ${(error as Error).message}`,
@@ -63,5 +73,19 @@ export class TelescopeWatcherRegistrar implements OnApplicationBootstrap {
     ];
     this.service.setWatchers(types);
     this.logger.log(`Telescope watching: ${types.join(', ')}`);
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    const active = this.active;
+    this.active = [];
+    for (const watcher of active) {
+      try {
+        await watcher.unregister?.();
+      } catch (error) {
+        this.logger.error(
+          `Telescope watcher "${watcher.type}" failed to unregister: ${(error as Error).message}`,
+        );
+      }
+    }
   }
 }

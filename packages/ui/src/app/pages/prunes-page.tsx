@@ -186,7 +186,7 @@ export function PrunesPage(): JSX.Element {
           title={
             pruneEnabled
               ? 'Run a prune cycle now'
-              : 'Mutations are disabled (configure authorizeAction to enable on-demand pruning).'
+              : 'Mutations are disabled (set `mutations: true` to enable on-demand pruning).'
           }
         >
           {prune.isPending ? 'Pruning…' : 'Prune now'}

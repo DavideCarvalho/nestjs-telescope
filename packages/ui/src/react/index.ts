@@ -5,8 +5,6 @@ export * from './use-telescope-stream.js';
 // `useOpenTelescopeConsole` (state only, your markup), `<OpenTelescopeConsoleButton>` (drop-in).
 // `openTelescopeConsoleMutationOptions` wires the same call into TanStack Query without this
 // package depending on TanStack.
-export * from './use-open-console.js';
-export * from './open-console-button.js';
 export * from './components/entry-types.js';
 export * from './components/entries-table.js';
 export * from './components/user-tag.js';

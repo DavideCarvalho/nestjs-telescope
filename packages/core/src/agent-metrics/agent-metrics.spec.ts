@@ -3,7 +3,7 @@ import diagnostics_channel from 'node:diagnostics_channel';
 import { describe, expect, it } from 'vitest';
 import { agentEventOfEntry, readRun, readUsage } from './agent-events.js';
 import { AgentMetricsRegistry, agentMetricPoints } from './agent-metrics.js';
-import { subscribeAgentObservations } from './subscribe-agent-events.js';
+import { publishAgentObservation, subscribeAgentObservations } from './subscribe-agent-events.js';
 
 const usage = {
   actorRef: 'user:42',
@@ -239,5 +239,22 @@ describe('subscribeAgentObservations', () => {
       diagnostics_channel.channel('aviary:agent:usage.recorded').publish({ payload: usage }),
     ).not.toThrow();
     off();
+  });
+});
+
+describe('publishAgentObservation', () => {
+  it('reaches every subscriber, isolates a throwing one, and stops after unsubscribe', () => {
+    const seen: string[] = [];
+    const offThrow = subscribeAgentObservations(() => {
+      throw new Error('boom');
+    });
+    const off = subscribeAgentObservations((o) => seen.push(o.kind));
+    const observation = readUsage(usage)!;
+    expect(() => publishAgentObservation(observation)).not.toThrow();
+    expect(seen).toEqual(['usage']);
+    off();
+    offThrow();
+    publishAgentObservation(observation);
+    expect(seen).toEqual(['usage']);
   });
 });

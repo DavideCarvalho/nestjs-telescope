@@ -34,7 +34,6 @@ function mockClient(rows: TraceSummary[]) {
       retention: null,
       pruneEnabled: false,
       explainEnabled: false,
-      auth: { enabled: false, modes: [] },
       sampling: {},
     }),
     queueJobAction: async () => ({ ok: true }),

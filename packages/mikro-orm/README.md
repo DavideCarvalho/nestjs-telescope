@@ -42,7 +42,6 @@ import { MikroOrmModule } from '@mikro-orm/nestjs';
 @Module({
   imports: [
     TelescopeModule.forRoot({
-      authorizer: () => true,          // restrict in production
       watchers: [new MikroOrmQueryWatcher()],
     }),
 
