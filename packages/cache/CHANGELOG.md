@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-cache
 
+## 2.0.1
+
+### Patch Changes
+
+- [#179](https://github.com/DavideCarvalho/nestjs-telescope/pull/179) [`3f6437a`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3f6437ae527264cc5acbbd4be7c0b9ab060cfdc9) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Republish the 2.0 release as 2.0.1. The 2.0.0 versions on npm are an old accidental build from 2026-06-05 (deprecated at the time), so `changeset publish` skipped them as "already published" and `^2.0.0` installs that June build. 2.0.1 is the real 2.0: the first-party NestJS integration and route protection release, with no further changes.
+
 ## 2.0.0
 
 ### Major Changes
