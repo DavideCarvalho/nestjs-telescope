@@ -80,6 +80,41 @@ describe('ChannelWatcher', () => {
     ).not.toThrow();
   });
 
+  it('one instance shared by two apps: records into both, and the first shutdown keeps the second recording', () => {
+    const a = harness();
+    const b = harness();
+    const w = track(
+      new ChannelWatcher('x', ['telescope-test:shared'], () => ({ type: 'x', content: {} })),
+    );
+    w.register(a.ctx);
+    w.register(b.ctx);
+    const publish = () => diagnostics_channel.channel('telescope-test:shared').publish({});
+
+    publish();
+    expect([a.recorded.length, b.recorded.length]).toEqual([1, 1]);
+
+    w.unregister(); // the first app shuts down
+    publish();
+    expect(b.recorded).toHaveLength(2);
+
+    w.unregister(); // the last registrar leaves: unsubscribed
+    publish();
+    expect(b.recorded).toHaveLength(2);
+    expect(diagnostics_channel.hasSubscribers('telescope-test:shared')).toBe(false);
+  });
+
+  it('a context that fails to record does not starve the other one', () => {
+    const w = track(
+      new ChannelWatcher('x', ['telescope-test:starve'], () => ({ type: 'x', content: {} })),
+    );
+    const ok = harness();
+    w.register(harness({ recordThrows: true }).ctx);
+    w.register(ok.ctx);
+    diagnostics_channel.channel('telescope-test:starve').publish({});
+    expect(ok.recorded).toHaveLength(1);
+    w.unregister();
+  });
+
   it('eventOf strips the nestjs:<lib>: prefix', () => {
     expect(eventOf('nestjs:workflows:step-failed')).toBe('step-failed');
     expect(eventOf('plain')).toBe('plain');
@@ -232,6 +267,19 @@ describe('authenticationEntry (redaction)', () => {
       metadataKeys: ['ip', 'ua'],
     });
     expect(JSON.stringify(e)).not.toMatch(/sess-secret|fam-secret|1\.2\.3\.4/);
+  });
+
+  it('keeps a numeric userId as its string form, like authorization denials', () => {
+    const e = authenticationEntry('nestjs:authentication:sign-in', {
+      type: 'sign-in',
+      userId: 42,
+    })!;
+    expect(e.content).toMatchObject({ userId: '42' });
+    const bad = authenticationEntry('nestjs:authentication:sign-in', {
+      type: 'sign-in',
+      userId: Number.NaN,
+    })!;
+    expect(bad.content).not.toHaveProperty('userId');
   });
 
   it('never copies an unknown field (a token or password a later version might add)', () => {

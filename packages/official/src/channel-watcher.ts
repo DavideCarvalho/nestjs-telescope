@@ -17,11 +17,23 @@ export type ChannelMapper = (channel: string, message: unknown) => RecordInput |
  *
  * ## Safety
  * A mapper or record failure is swallowed: a subscriber that throws is reported by Node on the next
- * tick as an uncaught exception, which would turn an observability bug into a crash. Subscribing is
- * idempotent; `unregister()` (called by Telescope on application shutdown) drops every handler.
+ * tick as an uncaught exception, which would turn an observability bug into a crash.
+ *
+ * ## Registration
+ * Registering the same context again is a no-op. One instance registered by two apps (a shared
+ * singleton; `officialWatchers()` returns fresh instances, which is preferred) subscribes once
+ * and records into both apps' contexts, just as two separate instances would. `unregister()`
+ * (called by Telescope on application shutdown) is reference-counted: `unregister()` takes no
+ * context, so it cannot tell which app left, and the handlers stay subscribed (recording into
+ * every registered context; a failure to record into a closed one is swallowed) until the last
+ * registrar unregisters. A leaving app never stops another app's recording.
  */
 export class ChannelWatcher implements Watcher {
   private handlers: [string, (message: unknown) => void][] = [];
+  /** Every context registered since the last full teardown; `contexts.length` is the refcount. */
+  private contexts: WatcherContext[] = [];
+  /** Registrars that have unregistered since the last full teardown. */
+  private left = 0;
 
   constructor(
     readonly type: string,
@@ -35,14 +47,25 @@ export class ChannelWatcher implements Watcher {
   }
 
   register(ctx: WatcherContext): void {
+    if (this.contexts.includes(ctx)) return;
+    this.contexts.push(ctx);
     if (this.handlers.length > 0) return;
     for (const name of this.channels) {
       const handler = (message: unknown): void => {
+        let input: RecordInput | null;
         try {
-          const input = this.map(name, message);
-          if (input !== null) ctx.record(input);
+          input = this.map(name, message);
         } catch {
           // Never let a payload Telescope can't read reach the publisher (or Node's uncaught path).
+          return;
+        }
+        if (input === null) return;
+        for (const target of this.contexts) {
+          try {
+            target.record(input);
+          } catch {
+            // A failing (or closed) context must not reach the publisher nor starve the others.
+          }
         }
       };
       diagnostics_channel.subscribe(name, handler);
@@ -50,7 +73,12 @@ export class ChannelWatcher implements Watcher {
     }
   }
 
+  /** Drops one registration; unsubscribes every handler once the last registrar has left. */
   unregister(): void {
+    this.left += 1;
+    if (this.left < this.contexts.length) return;
+    this.contexts = [];
+    this.left = 0;
     for (const [name, handler] of this.handlers) diagnostics_channel.unsubscribe(name, handler);
     this.handlers = [];
   }

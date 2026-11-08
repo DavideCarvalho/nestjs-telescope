@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import type { RecordInput } from '@dudousxd/nestjs-telescope';
 import { ChannelWatcher, eventOf } from './channel-watcher.js';
 import { OFFICIAL_CHANNEL_NAMES, OfficialEntryType } from './channels.js';
-import { asRecord, bool, num, pick, readError, str } from './read.js';
+import { asRecord, bool, id, num, pick, readError, str } from './read.js';
 
 /** Events that are a refusal or a security signal. Tagged `failed`. */
 const FAILURES = new Set([
@@ -35,9 +35,8 @@ function userIdOf(user: unknown): string | undefined {
   const u = asRecord(user);
   if (u === null) return undefined;
   for (const key of ['id', 'sub', 'userId']) {
-    const value = u[key];
-    if (typeof value === 'string' && value !== '') return value;
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    const value = id(u[key]);
+    if (value !== undefined) return value;
   }
   return undefined;
 }
@@ -51,7 +50,7 @@ function userIdOf(user: unknown): string | undefined {
  * - `email` → masked (`j***@example.com`);
  * - `metadata` (what the app stores beside the session) → its key names only;
  * - `error` → name, message and code; no stack.
- * `userId` is kept: it is what makes the audit trail useful, and Telescope already tags entries
+ * `userId` is kept (a numeric id as its string form, as for authorization denials): it is what makes the audit trail useful, and Telescope already tags entries
  * with the current user.
  */
 export function authenticationEntry(channel: string, message: unknown): RecordInput | null {
@@ -61,7 +60,8 @@ export function authenticationEntry(channel: string, message: unknown): RecordIn
   const content: Record<string, unknown> = {
     source: 'authentication',
     event,
-    ...pick(p, ['userId', 'method', 'mfa', 'reason'], str),
+    ...pick(p, ['userId'], id),
+    ...pick(p, ['method', 'mfa', 'reason'], str),
     ...pick(p, ['failures', 'count'], num),
     ...pick(p, ['locked', 'replaced', 'everywhere'], bool),
   };

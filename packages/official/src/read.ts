@@ -22,6 +22,12 @@ export function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+/** An identifier: a non-empty string, or a finite number as its string form (`7` → `'7'`). */
+export function id(value: unknown): string | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : undefined;
+  return str(value);
+}
+
 export function bool(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
