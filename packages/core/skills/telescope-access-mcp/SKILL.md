@@ -88,7 +88,7 @@ use a Bearer-capable `@nestjs/authentication` strategy in `decorators`.
 
 ```ts
 // Wrong — with NODE_ENV=production this throws at module build:
-// "TelescopeModule: refusing to mount unprotected routes with NODE_ENV=production…"
+// "TelescopeModule: refusing to mount undecorated routes with NODE_ENV=production…"
 TelescopeModule.forRoot({});
 
 // Correct — either way boots.

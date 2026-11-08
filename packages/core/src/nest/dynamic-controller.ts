@@ -84,6 +84,10 @@ export interface ConsoleProtectionHint {
  * as none) refuses to boot. Outside production it is a no-op, so an
  * undecorated console mounts open (marked can-anyone) for local work.
  *
+ * It only checks that decorators are present: it cannot tell whether they
+ * enforce anything (a no-op decorator, or a `Can(...)` with no
+ * `AuthorizationModule` installed, passes and leaves the routes open).
+ *
  * Throws at module-build time (`forRoot` / `forRootAsync`), so the app fails
  * before it listens rather than shipping an open console.
  */
@@ -95,9 +99,10 @@ export function assertConsoleProtected(
   if (decorators !== undefined && decorators.length > 0) return;
   throw new Error(
     [
-      `${hint.module}: refusing to mount unprotected routes with NODE_ENV=production. Protect them with the official NestJS tools (@nestjs/authentication, @nestjs/authorization), one of two ways:`,
+      `${hint.module}: refusing to mount undecorated routes with NODE_ENV=production. Protect them with the official NestJS tools (@nestjs/authentication, @nestjs/authorization), one of two ways:`,
       `  1. decorators on the mounted controllers: ${hint.decoratorsExample}`,
       `  2. mount the routes yourself: ${hint.selfMountExample}`,
+      'The check only sees that decorators are present, not that they enforce anything: pass ones that reject (a Can(...) needs AuthorizationModule installed).',
     ].join('\n'),
   );
 }

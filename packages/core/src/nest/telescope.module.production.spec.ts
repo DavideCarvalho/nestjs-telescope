@@ -43,7 +43,7 @@ async function boot(telescope: DynamicModule): Promise<INestApplication> {
 describe('TelescopeModule production rule', () => {
   it('fails the boot when the console mounts with no decorators', () => {
     expect(() => TelescopeModule.forRoot({})).toThrow(
-      /refusing to mount unprotected routes with NODE_ENV=production/,
+      /refusing to mount undecorated routes with NODE_ENV=production/,
     );
   });
 

@@ -80,7 +80,7 @@ apps are done in under five minutes — see the
 | **Request replay** | Re-issue a captured request against the local app from the dashboard (a mutation, so it needs `mutations: true`); replayed calls carry an `x-telescope-replay: 1` header and a `replay` tag. |
 | **MCP server** | A stateless JSON-RPC MCP endpoint lets coding agents (Claude Code, Cursor, …) query the captured data directly — list entries, pull a batch waterfall, read the health snapshot, diagnose an exception. |
 | **Overload protection** | Watches event-loop lag and auto-pauses capture under pressure, resuming when the loop recovers — a telescope under load can never amplify an incident (on by default). |
-| **Protected with NestJS's own tools** | `@nestjs/authentication` + `@nestjs/authorization` via `decorators` or your own controllers; an unprotected console refuses to boot in production. |
+| **Protected with NestJS's own tools** | `@nestjs/authentication` + `@nestjs/authorization` via `decorators` or your own controllers; an undecorated console refuses to boot in production (the decorators must actually enforce auth). |
 
 ## Dashboard
 

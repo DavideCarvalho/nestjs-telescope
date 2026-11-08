@@ -120,7 +120,7 @@ Source: `packages/core/src/config/options.ts` (`PruneOptions`).
 ### Mistake 1 — deploying to production with the defaults
 
 ```ts
-// Wrong — with NODE_ENV=production the boot fails: the console is unprotected.
+// Wrong — with NODE_ENV=production the boot fails: the console is undecorated.
 TelescopeModule.forRoot({});
 ```
 

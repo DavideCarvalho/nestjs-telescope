@@ -168,7 +168,7 @@ describe('TelescopeOtelMetricsModule production rule', () => {
           ...(decorators ? { decorators } : {}),
         }),
       ).toThrow(
-        /TelescopeOtelMetricsModule: refusing to mount unprotected routes with NODE_ENV=production/,
+        /TelescopeOtelMetricsModule: refusing to mount undecorated routes with NODE_ENV=production/,
       );
     }
   });

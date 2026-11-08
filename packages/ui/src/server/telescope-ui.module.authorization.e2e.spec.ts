@@ -151,7 +151,7 @@ describe('TelescopeUiModule production rule', () => {
       () => TelescopeUiModule.forRootAsync({ useFactory: () => ({ assetsDir: dir }) }),
     ]) {
       expect(register).toThrow(
-        /TelescopeUiModule: refusing to mount unprotected routes with NODE_ENV=production/,
+        /TelescopeUiModule: refusing to mount undecorated routes with NODE_ENV=production/,
       );
     }
     expect(() => TelescopeUiModule.forRoot({ assetsDir: dir })).toThrow(
