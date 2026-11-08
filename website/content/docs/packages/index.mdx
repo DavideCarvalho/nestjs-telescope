@@ -10,7 +10,7 @@ Telescope is a monorepo of small, single-purpose packages. You install [core](/d
 
 | Package | What it is |
 |---|---|
-| `@dudousxd/nestjs-telescope` | Core — request + exception watchers, recorder, ALS correlation, SQLite store, headless API, guard, pruner. |
+| `@dudousxd/nestjs-telescope` | Core — request + exception watchers, recorder, ALS correlation, SQLite store, headless API, pruner. |
 | `@dudousxd/nestjs-telescope-ui` | Bundled dashboard SPA + composable React components / hooks / client. |
 | `@dudousxd/nestjs-telescope-mikro-orm` | MikroORM query watcher + N+1 detector + MySQL/SQLite storage. |
 | `@dudousxd/nestjs-telescope-typeorm` | TypeORM query watcher (host-wired logger). |
@@ -23,6 +23,8 @@ Telescope is a monorepo of small, single-purpose packages. You install [core](/d
 | `@dudousxd/nestjs-telescope-redis-watcher` | Redis command watcher (wrapped `ioredis`). |
 | `@dudousxd/nestjs-telescope-mikro-orm-watcher` | Model watcher (MikroORM entity lifecycle changes). |
 | `@dudousxd/nestjs-telescope-redis` | Redis-backed shared storage (multi-instance). |
+| `@dudousxd/nestjs-telescope-parquet` | Tiered storage: a hot store plus a cold Parquet tier on S3 or disk. |
+| `@dudousxd/nestjs-telescope-clickhouse` | ClickHouse storage with TTL retention and pre-aggregated rollups. |
 | `@dudousxd/nestjs-telescope-bullmq` | BullMQ job watcher + live queue manager (browse + mutations). |
 | `@dudousxd/nestjs-telescope-sqs` | SQS live-queue manager (depth + DLQ inspection + redrive). |
 | `@dudousxd/nestjs-telescope-otel` | OpenTelemetry trace-context provider. |
@@ -31,10 +33,10 @@ Telescope is a monorepo of small, single-purpose packages. You install [core](/d
 | `@dudousxd/nestjs-telescope-testing` | In-memory store, `FakeClock`, watcher test harness. |
 
 <Cards>
-  <Card title="Core" href="/docs/packages/core" description="The module, recorder, API, guard, and SQLite store." />
+  <Card title="Core" href="/docs/packages/core" description="The module, recorder, API, and SQLite store." />
   <Card title="Dashboard (-ui)" href="/docs/packages/ui" description="Turnkey SPA + composable React layers + typed client." />
   <Card title="Watchers" href="/docs/packages/watchers" description="Query, mail, cache, schedule, events, logs, redis, model." />
-  <Card title="Storages" href="/docs/packages/storages" description="MikroORM (MySQL/SQLite) and Redis adapters." />
+  <Card title="Storages" href="/docs/packages/storages" description="MikroORM (MySQL/SQLite), Redis, tiered Parquet and ClickHouse adapters." />
   <Card title="Queue managers" href="/docs/packages/queue-managers" description="BullMQ and SQS live consoles + mutations." />
   <Card title="OpenTelemetry (-otel)" href="/docs/packages/otel" description="Stamp entries with the active trace/span." />
   <Card title="NestJS official packages (-official)" href="/docs/packages/official" description="Resilience, workflows, auth and mail events; @nestjs/ai usage; Observe trace ids." />

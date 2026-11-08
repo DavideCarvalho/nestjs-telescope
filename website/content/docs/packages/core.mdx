@@ -126,4 +126,15 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `mcp` | Optional MCP server for coding agents — `true` enables it, protected by your `decorators`. Disabled by default. See [MCP server](/docs/concepts/mcp). |
 | `overloadProtection` | Pause capture under event-loop pressure. `true` (default, 200ms p99), `false`, or `{ maxEventLoopLagMs }`. See [Performance](/docs/concepts/performance#overload-protection--pause-under-event-loop-pressure). |
 
+## Helpers for package authors
+
+Core also exports the pieces its own modules use, for a package that mounts routes or reports AI usage:
+
+| Export | What it does |
+|---|---|
+| `dynamicController(base, path, decorators?)` | Subclasses `base`, mounts it at `path`, and applies `decorators` to the subclass only, so one registration's decorators never leak into another. |
+| `applyControllerDecorators(controller, decorators?)` | Marks `controller` open to `@nestjs/authorization`'s global guard (as `Can.Anyone()` would), then applies `decorators` in order. Call it on a class built for one registration. |
+| `assertConsoleProtected(decorators, hint)` | The [production rule](/docs/dashboard/auth#the-production-rule): with `NODE_ENV=production` and no `decorators`, throws at module build. A no-op elsewhere. |
+| `publishAgentObservation(observation)` | Feeds an AI-usage or agent-run observation to the same metrics as the `aviary:agent:*` channels (Prometheus and OTLP). `-official`'s `telescopeAiUsage()` uses it. Publish each event from one source only, or it counts twice. |
+
 See [Capture & correlation](/docs/concepts/capture) for the recorder pipeline and the `Entry` / `Watcher` / `StorageProvider` SPIs.
