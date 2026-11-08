@@ -219,7 +219,7 @@ route decorators on the override).
 
 | Package | What it is |
 |---------|------------|
-| `@dudousxd/nestjs-telescope` | Core: request + exception watchers, recorder, ALS correlation, SQLite store, headless API, guard, pruner |
+| `@dudousxd/nestjs-telescope` | Core: request + exception watchers, recorder, ALS correlation, SQLite store, headless API, pruner |
 | `@dudousxd/nestjs-telescope-ui` | Bundled dashboard SPA + composable React components / hooks / client |
 | `@dudousxd/nestjs-telescope-mikro-orm` | MikroORM query watcher + N+1 detector |
 | `@dudousxd/nestjs-telescope-typeorm` | TypeORM query watcher (host-wired logger) |
@@ -228,7 +228,14 @@ route decorators on the override).
 | `@dudousxd/nestjs-telescope-mail` | Mail watcher (nodemailer `sendMail`) |
 | `@dudousxd/nestjs-telescope-cache` | Cache watcher (get/set hit/miss) |
 | `@dudousxd/nestjs-telescope-schedule` | Schedule watcher (`@nestjs/schedule` cron/interval) |
+| `@dudousxd/nestjs-telescope-events` | Event watcher (`@nestjs/event-emitter`) |
+| `@dudousxd/nestjs-telescope-logs` | Log watcher (Nest `Logger` output) |
+| `@dudousxd/nestjs-telescope-redis-watcher` | Redis command watcher (wrapped `ioredis`) |
+| `@dudousxd/nestjs-telescope-mikro-orm-watcher` | Model watcher (MikroORM entity lifecycle changes) |
 | `@dudousxd/nestjs-telescope-redis` | Redis-backed shared storage (multi-instance) |
+| `@dudousxd/nestjs-telescope-parquet` | Tiered storage: a hot store plus a cold Parquet tier on S3 or disk |
+| `@dudousxd/nestjs-telescope-clickhouse` | ClickHouse storage with TTL retention and pre-aggregated rollups |
+| `@dudousxd/nestjs-telescope-sqs` | SQS live-queue manager (depth + DLQ inspection + redrive) |
 | `@dudousxd/nestjs-telescope-ai` | AI exception diagnoser (Vercel AI SDK — Bedrock, OpenAI, any model) |
 | `@dudousxd/nestjs-telescope-otel` | OpenTelemetry trace-context provider + bridge |
 | `@dudousxd/nestjs-telescope-official` | NestJS first-party packages: resilience, workflows, authentication, authorization and mail channel events; `@nestjs/ai` usage; `@nestjs/observe` trace ids |

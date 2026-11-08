@@ -21,6 +21,7 @@ interface Watcher {
   readonly type: string;                     // the entry `type` this watcher produces
   register(ctx: WatcherContext): void | Promise<void>; // wire hooks, once at module init
   shouldRecord?(candidate: unknown): boolean; // optional cheap pre-filter
+  unregister?(): void | Promise<void>;        // optional teardown at app shutdown
 }
 
 interface WatcherContext {
@@ -32,6 +33,8 @@ interface WatcherContext {
   readonly moduleRef: ModuleRef;             // resolve providers from the Nest container
 }
 ```
+
+`unregister()` runs once on application shutdown, only for a watcher whose `register()` succeeded. Use it to drop what `register()` wired (a `diagnostics_channel` subscription, a patched method), so a closed app stops recording and a second app in the same process does not record twice. It must not throw; a throw is logged and swallowed.
 
 A `RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt? }`. Everything else (id, batchId, sequence, traceId, ...) is enriched by the recorder.
 

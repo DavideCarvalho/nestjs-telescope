@@ -168,6 +168,8 @@ class ConsoleApi extends TelescopeController {
 
 ## Migrating from the old options
 
+These options were removed in Telescope 2. The 2.x line starts at **2.0.1**: the `2.0.0` on npm is an older build that was published by mistake and is deprecated, so don't install it.
+
 | Old option | Now |
 |---|---|
 | `authorizer` | `decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`, or `routes: false` + your controllers |
