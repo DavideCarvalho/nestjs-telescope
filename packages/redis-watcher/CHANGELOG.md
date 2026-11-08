@@ -1,5 +1,16 @@
 # @dudousxd/nestjs-telescope-redis-watcher
 
+## 2.0.0
+
+### Major Changes
+
+- [#178](https://github.com/DavideCarvalho/nestjs-telescope/pull/178) [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Requires `@dudousxd/nestjs-telescope@2`: the `@dudousxd/nestjs-telescope` peer range moves from `^1` to `^2`. No API of this package changes. Core 2.0 protects the console's routes only with `decorators` / `routes: false` (`@nestjs/authentication` + `@nestjs/authorization`) and refuses to boot in production without them; queue mutations (bullmq, sqs) are switched on with `mutations: true` instead of `authorizeAction`. See core's changelog for the migration.
+
+### Patch Changes
+
+- Updated dependencies [[`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3), [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3), [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3)]:
+  - @dudousxd/nestjs-telescope@2.0.0
+
 ## 1.11.0
 
 ### Minor Changes

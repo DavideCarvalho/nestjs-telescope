@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-official",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "NestJS first-party integrations for @dudousxd/nestjs-telescope: the official diagnostics_channel events (resilience, workflows, authentication, authorization, mail), @nestjs/ai usage, and @nestjs/observe trace ids.",
   "license": "MIT",
   "repository": {
@@ -55,13 +55,27 @@
     "@nestjs/workflows": ">=0.0.5 <1"
   },
   "peerDependenciesMeta": {
-    "@nestjs/ai": { "optional": true },
-    "@nestjs/authentication": { "optional": true },
-    "@nestjs/authorization": { "optional": true },
-    "@nestjs/mail": { "optional": true },
-    "@nestjs/observe": { "optional": true },
-    "@nestjs/resilience": { "optional": true },
-    "@nestjs/workflows": { "optional": true }
+    "@nestjs/ai": {
+      "optional": true
+    },
+    "@nestjs/authentication": {
+      "optional": true
+    },
+    "@nestjs/authorization": {
+      "optional": true
+    },
+    "@nestjs/mail": {
+      "optional": true
+    },
+    "@nestjs/observe": {
+      "optional": true
+    },
+    "@nestjs/resilience": {
+      "optional": true
+    },
+    "@nestjs/workflows": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",

@@ -1,5 +1,32 @@
 # @dudousxd/nestjs-telescope
 
+## 2.0.0
+
+### Major Changes
+
+- [#178](https://github.com/DavideCarvalho/nestjs-telescope/pull/178) [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - **Breaking:** Telescope's routes are now protected only with NestJS's first-party tools, `@nestjs/authentication` and `@nestjs/authorization`, either with `decorators` on the mounted controllers or by mounting the routes yourself (`routes: false`). Every built-in access control is removed: `authorizer`, `guards`, `dashboardAuth` (the session cookie, the `/api/auth/*` controller `TelescopeAuthController`, the login / session modes, `revalidate`, `unauthenticatedPage`, and the exported cookie/session helpers), `TelescopeGuard` and its "open outside production, closed in production" default, `TelescopeActionGuard`, `authorizeAction`, `clientErrors.authorize`, the MCP Bearer token (`mcp: { token }`) and its dev-only check, and `meta.auth`.
+
+  `decorators` puts class decorators on the console controllers the module mounts (API, SSE stream, MCP), e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`; on `forRootAsync` it is a static top-level option. Every mounted controller is also marked open to `@nestjs/authorization`'s deny-by-default global `AuthorizationGuard` (the `Can.Anyone()` mark), and a `Can()` passed in `decorators` is still enforced. Each registration gets fresh controller subclasses, so decorators don't leak between registrations. `dynamicController` takes an optional `decorators` argument; `applyControllerDecorators` and `assertConsoleProtected` are exported.
+
+  **Production rule:** with `NODE_ENV=production`, mounting the console with no `decorators` (an empty array counts as none) fails the boot with an error naming both ways to protect it. The rule only checks that decorators are present, not that they enforce anything: a no-op decorator or a `Can(...)` without `AuthorizationModule` installed passes and leaves the routes open, so pass decorators that actually reject. `routes: false` always boots; outside production an undecorated console mounts open. The rule also covers `@dudousxd/nestjs-telescope-ui`'s page; the otel `GET /metrics` scrape is outside it unless `requireProtectionInProduction: true`. The client-error beacon (`POST <path>/api/client-errors`) is public by design: it takes no `decorators` and is outside the rule.
+
+  Features that used to ride on access control stay: `mutations: true` turns on queue actions, prune, replay and profiling-arm (off: 403, `meta.mutationsEnabled`), and `mcp: true` still enables the MCP endpoint (now 404 while off).
+
+  Migration:
+
+  - `authorizer` / `guards: [G]` → `decorators: [UseGuards(G), Can(Policy, 'view')]`, or `routes: false` + your own subclasses of `TelescopeController` / `StreamController`.
+  - `dashboardAuth` → your app's own sign-in through `@nestjs/authentication`.
+  - `authorizeAction` → `mutations: true`; for a stricter rule, override the mutation methods in your subclass with an extra `@Can(...)`.
+  - `clientErrors.authorize` → `routes: false` + your own `ClientErrorController` subclass.
+  - `mcp: { token }` → `mcp: true` + a Bearer strategy in `decorators`.
+  - Production deployments must now pass `decorators` (or use `routes: false`), or the boot fails.
+
+- [#178](https://github.com/DavideCarvalho/nestjs-telescope/pull/178) [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add `routes: false` to `TelescopeModule.forRoot` / `forRootAsync` (static top-level on the async variant): the module mounts no controller and every provider keeps running, so you serve the routes from your own controllers, protected with `@Can(...)` / `@UseGuards(...)`. The module now exports what those controllers need (`TELESCOPE_OPTIONS`, `TELESCOPE_CONFIG`, `EntryEvents`, `TelescopePruner`, `AiUsageService`, `QueueManagerRegistry`, `ScheduleManagerRegistry` on top of the existing exports), and `StreamController` / `EntryEvents` are now exported from the package, so `@Controller('ops/telescope/api') class ConsoleApi extends TelescopeController {}` works. The exported controllers carry no guard of their own, so a subclass's decorators are its whole gate.
+
+### Minor Changes
+
+- [#178](https://github.com/DavideCarvalho/nestjs-telescope/pull/178) [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `Watcher` gains an optional `unregister()`, called once on application shutdown for every watcher whose `register()` succeeded (a throw is logged and swallowed), so a watcher that subscribes to `diagnostics_channel` stops recording when its app closes. New `publishAgentObservation(observation)` hands an AI usage or run observation from a source other than the `aviary:agent:*` channels (such as `@nestjs/ai`, through `@dudousxd/nestjs-telescope-official`'s `telescopeAiUsage()`) to every `subscribeAgentObservations` listener, so the Prometheus AI metrics and the otel AI exporter count it.
+
 ## 1.31.1
 
 ### Patch Changes

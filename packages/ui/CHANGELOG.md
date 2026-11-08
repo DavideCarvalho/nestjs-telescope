@@ -1,5 +1,26 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 2.0.0
+
+### Major Changes
+
+- [#178](https://github.com/DavideCarvalho/nestjs-telescope/pull/178) [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - **Breaking:** the page is now protected only with `@nestjs/authentication` + `@nestjs/authorization`. Add a `decorators` option to `TelescopeUiModule.forRoot` / `forRootAsync` (static top-level on the async variant): the class decorators go on the dashboard controller, which is also marked open to `@nestjs/authorization`'s deny-by-default global guard; a `Can()` passed in `decorators` is still enforced. With `NODE_ENV=production`, mounting the page with no `decorators` (an empty array counts as none) fails the boot (the rule checks that decorators are present, not that they enforce auth); `routes: false` always boots.
+
+  Removed: the `guards` and `dashboardAuth` options (and `unauthenticatedPage`), the SPA's sign-in screen, sign-out button and `client.auth.*` methods, `meta.auth` in the client types, and the session-minting console launcher (`openTelescopeConsole`, `mintTelescopeConsoleSession`, `telescopeConsoleSessionUrl`, `ConsoleSessionError`, `useOpenTelescopeConsole`, `openTelescopeConsoleMutationOptions`, `<OpenTelescopeConsoleButton>` and the `./react/console` subpath). `telescopeConsoleUrl` stays in `./client`.
+
+  Migration: `guards: [G]` → `decorators: [UseGuards(G), Can(Policy, 'view')]` (pass the same list to `TelescopeModule`); `dashboardAuth` → your app's own sign-in through `@nestjs/authentication` (the page authenticates from your app's cookie); the launcher → a plain link to `telescopeConsoleUrl(basePath)`.
+
+- [#178](https://github.com/DavideCarvalho/nestjs-telescope/pull/178) [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Add `routes: false` to `TelescopeUiModule.forRoot` / `forRootAsync` (static top-level on the async variant): no controller is mounted, and `TelescopeUiController` and `TELESCOPE_UI_OPTIONS` are now exported (the module exports the options provider), so you can serve the page from your own subclass protected with `@Can(...)` / `@UseGuards(...)`.
+
+### Minor Changes
+
+- [#178](https://github.com/DavideCarvalho/nestjs-telescope/pull/178) [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Cards and nav entries for the entries `@dudousxd/nestjs-telescope-official` records from NestJS's first-party channels: `resilience` (Resilience), `workflow` (Nest workflows) and `auth` (Auth). Each card shows the event as a badge (red for a refusal or failure), its subject (the policy and entrypoint, the workflow and step, or the user / the denied `Policy.ability`), every scalar field the entry carries, the error, and the workflow output or status. The entries table labels them by event and subject, and labels `mail` entries `[status] subject`.
+
+### Patch Changes
+
+- Updated dependencies [[`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3), [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3), [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3)]:
+  - @dudousxd/nestjs-telescope@2.0.0
+
 ## 1.26.0
 
 ### Minor Changes

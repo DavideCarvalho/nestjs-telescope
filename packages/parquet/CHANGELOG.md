@@ -1,5 +1,12 @@
 # @dudousxd/nestjs-telescope-parquet
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies [[`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3), [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3), [`3222eae`](https://github.com/DavideCarvalho/nestjs-telescope/commit/3222eae574429a9807784ba413e8f0e43c3d98d3)]:
+  - @dudousxd/nestjs-telescope@2.0.0
+
 ## 0.1.2
 
 ### Patch Changes
