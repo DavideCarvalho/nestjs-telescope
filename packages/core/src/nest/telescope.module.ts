@@ -31,6 +31,7 @@ import { EntryEvents } from '../sse/entry-events.js';
 import { StreamController } from '../sse/stream.controller.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
 import {
   CONSOLE_DECORATORS_EXAMPLE,
@@ -204,10 +205,13 @@ export class TelescopeModule implements NestModule {
      */
     routes?: boolean;
   }): DynamicModule {
-    // `config` carries the build-time fields under the same names.
+    // `config` carries the build-time fields under the same names. The
+    // resolved options get the static `path` (so capture and the UI agree with
+    // the mount), and build-time fields the factory returned are logged.
     return TelescopeModule.build(config, {
       provide: TELESCOPE_OPTIONS,
-      useFactory: config.useFactory,
+      useFactory: async (...args: unknown[]) =>
+        withStaticOptions(await config.useFactory(...args), config),
       inject: config.inject ?? [],
     });
   }

@@ -80,7 +80,7 @@ method requirements both apply; re-declare the route decorators on the override)
 TelescopeModule.forRoot({ decorators: protect, mcp: true }); // POST <path>/api/mcp
 ```
 
-Without `mcp: true` the endpoint answers 404. Agent clients send
+Without `mcp: true` the handler answers 404 (the route stays mounted, so your decorators answer 401/403 first). Agent clients send
 `Authorization: Bearer <key>`, not the dashboard's cookie. Give MCP its own
 decorators with `mcpDecorators` (they REPLACE `decorators` on the MCP route
 only) and an `ApiKeyProvider` from `@nestjs/authentication`:
@@ -111,7 +111,10 @@ show `key` once), then
 `claude mcp add --transport http telescope <url>/api/mcp --header "Authorization: Bearer $KEY"`.
 The key signs in its user, so `Can(...)` still applies (403 for a denied user).
 `mcpDecorators: []` fails the production boot. With `forRootAsync`, pass
-`mcpDecorators` statically, like `decorators`.
+`mcpDecorators` statically, like `decorators` (`mcp: true` stays in the
+factory); returned from the factory it has no effect and the boot warns.
+If the app has a global filter turning 401 into a sign-in redirect, throw
+your own `HttpException` (401) from the MCP guard so agents get a real 401.
 
 ## Common mistakes
 

@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 // packages/core/src/nest/telescope-mcp.controller.ts
 import {
   Body,
@@ -20,6 +21,9 @@ import type { TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
+/** This package's version, for `serverInfo` (the same `../../package.json` from `src/nest` and `dist/nest`). */
+const SERVER_VERSION = (createRequire(import.meta.url)('../../package.json') as { version: string })
+  .version;
 const STATS_WINDOW = '1h';
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
@@ -155,7 +159,7 @@ export class TelescopeMcpController {
           return this.respond(id, {
             protocolVersion: params?.protocolVersion ?? PROTOCOL_VERSION,
             capabilities: { tools: {} },
-            serverInfo: { name: 'nestjs-telescope', version: '0.0.0' },
+            serverInfo: { name: 'nestjs-telescope', version: SERVER_VERSION },
           });
         case 'notifications/initialized':
         case 'notifications/cancelled':

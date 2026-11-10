@@ -1,4 +1,5 @@
 // packages/core/src/nest/telescope-mcp.controller.spec.ts
+import { createRequire } from 'node:module';
 import { MethodNotAllowedException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
@@ -21,6 +22,16 @@ describe('TelescopeMcpController', () => {
   it('GET returns 405 (stateless transport)', () => {
     const { controller } = build({ mcp: true });
     expect(() => controller.getStream()).toThrow(MethodNotAllowedException);
+  });
+
+  it('initialize reports the package version in serverInfo', async () => {
+    const { controller } = build({ mcp: true });
+    const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
+    const res = (await controller.rpc({ jsonrpc: '2.0', id: 1, method: 'initialize' })) as {
+      result: { serverInfo: { name: string; version: string } };
+    };
+    expect(res.result.serverInfo).toEqual({ name: 'nestjs-telescope', version: pkg.version });
+    expect(pkg.version).not.toBe('0.0.0');
   });
 
   it('DELETE is a 200 no-op', () => {

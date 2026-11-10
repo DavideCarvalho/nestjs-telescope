@@ -19,11 +19,13 @@ The server is **disabled by default**. Turn it on with the `mcp` option:
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 
 TelescopeModule.forRoot({
-  mcp: true, // omitted / false: the endpoint answers 404
+  mcp: true, // omitted / false: the handler answers 404
 });
 ```
 
-Once enabled it mounts at `POST <path>/api/mcp` — for the default mount path that's `POST /telescope/api/mcp`.
+Once enabled it answers at `POST <path>/api/mcp` — for the default mount path that's `POST /telescope/api/mcp`.
+
+The route is mounted either way, and `mcp` is checked in the handler. Your decorators run first, so while MCP is off a caller they refuse still gets their 401 or 403; only a caller they let through sees the 404.
 
 <Callout type="info">
   The transport is stateless: `POST` carries every JSON-RPC call, `GET` returns `405` (there is no server→client notification stream to open), and `DELETE` is a `200` no-op (there is no session to terminate).
@@ -84,7 +86,7 @@ TelescopeModule.forRoot({
 });
 ```
 
-`AuthenticationModule.forRoot()` registers `AuthenticationGuard` globally (its `globalGuard` default), so `Authenticate(...)` is enough here. With `globalGuard: false`, add `UseGuards(AuthenticationGuard)` to both lists. With `forRootAsync`, `mcpDecorators` is a static top-level option, like `decorators`.
+`AuthenticationModule.forRoot()` registers `AuthenticationGuard` globally (its `globalGuard` default), so `Authenticate(...)` is enough here. With `globalGuard: false`, add `UseGuards(AuthenticationGuard)` to both lists. With `forRootAsync`, `mcpDecorators` is a static top-level option, like `decorators`, while `mcp: true` stays in the factory's options. Returned from the factory, `mcpDecorators` has no effect (MCP keeps `decorators`), and the boot logs a warning.
 
 The key signs in **the user it belongs to**, and `Can(ConsolePolicy, 'view')` still decides: a key for a user the policy denies gets 403. Give the agent its own user, or bind keys to the developers who use them. For a rule per key, the policy can read the key id from the session (`ApiKeySession.keyId`).
 
@@ -99,6 +101,13 @@ console.log(key); // show it once: it is not stored anywhere
 Revoke a key by deleting its row (or setting `expiresAt`): `findKey` returns `null` and the agent gets 401.
 
 **4. Give it to the agent.** See [Connect an agent](#connect-an-agent) below.
+
+### When the agent gets a redirect or an OAuth prompt instead of a 401
+
+Two things in the host app decide what an agent sees when its key is refused:
+
+- **A global 401 filter.** Apps that render a sign-in page often have an exception filter turning every `UnauthorizedException` into a 302 to the login page. An agent then follows a redirect to HTML instead of reading a 401. Throw your own `HttpException` subclass from the MCP guard (status 401) so the filter doesn't match it, or exclude `<path>/api/mcp` from the filter.
+- **The `WWW-Authenticate` header.** `ApiKeyProvider` sends `WWW-Authenticate: Bearer realm="…"` with its 401, so a client knows a key is expected. A hand-written guard usually sends none, and some MCP clients answer a bare 401 by starting OAuth discovery against your app. Set the header in your guard's response (`Bearer realm="telescope"`) to keep them on the key.
 
 <Callout type="warn">
   `mcpDecorators: []` fails the boot with `NODE_ENV=production`, like an empty `decorators`: it would otherwise mount the MCP route open. Leave `mcpDecorators` out to give MCP the same `decorators` as the rest of the console.
