@@ -114,6 +114,7 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `storage` | `StorageProvider` (or factory). Defaults to the embedded SQLite store. |
 | `watchers` | Built-in + custom watchers; each individually configurable. |
 | `decorators` | Class decorators for the mounted console controllers (e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`). **Required in production** unless `routes: false` — see [Protecting the routes](/docs/dashboard/auth). |
+| `mcpDecorators` | Class decorators for the MCP route only, in place of `decorators` (e.g. an `ApiKeyProvider` for coding agents) — see the [API-key recipe](/docs/concepts/mcp#recipe-an-api-key-for-the-agent). |
 | `routes` | `false` mounts no controller, so you serve the routes from your own subclasses of the exported controllers. |
 | `mutations` | `true` turns on queue actions, prune, replay and profiling-arm (off: `403`). |
 | `imports` | Extra `imports` for whatever your `decorators` need. |

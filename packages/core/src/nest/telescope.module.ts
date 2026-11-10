@@ -191,6 +191,12 @@ export class TelescopeModule implements NestModule {
      */
     decorators?: ClassDecorator[];
     /**
+     * Class decorators for the MCP controller only, in place of `decorators`.
+     * Must be passed HERE, like `decorators`. See
+     * {@link TelescopeModuleOptions.mcpDecorators}.
+     */
+    mcpDecorators?: ClassDecorator[];
+    /**
      * `false` mounts no controller (serve the routes from your own). Must be
      * passed HERE (not inside the async-resolved options): which controllers
      * exist is decided at module-build time — the SAME constraint as `path`
@@ -208,10 +214,13 @@ export class TelescopeModule implements NestModule {
 
   /**
    * Shared by `forRoot` / `forRootAsync`. `staticOptions` carries only what is
-   * read at module-build time (`path`, `decorators`, `routes`, `imports`); everything else reaches the providers through `optionsProvider`.
+   * read at module-build time (`path`, `decorators`, `mcpDecorators`, `routes`, `imports`); everything else reaches the providers through `optionsProvider`.
    */
   private static build(
-    staticOptions: Pick<TelescopeModuleOptions, 'path' | 'decorators' | 'routes' | 'imports'>,
+    staticOptions: Pick<
+      TelescopeModuleOptions,
+      'path' | 'decorators' | 'mcpDecorators' | 'routes' | 'imports'
+    >,
     optionsProvider: Provider,
   ): DynamicModule {
     if (staticOptions.routes !== false) {
@@ -221,6 +230,15 @@ export class TelescopeModule implements NestModule {
         decoratorsExample: `TelescopeModule.forRoot({ ${CONSOLE_DECORATORS_EXAMPLE} })`,
         selfMountExample: `TelescopeModule.forRoot({ routes: false }) + @Controller('${api}') @Can(ConsolePolicy, 'view') class ConsoleApi extends TelescopeController {}`,
       });
+      // `mcpDecorators` replaces `decorators` on the MCP route, so an explicit
+      // empty list would mount it open: the same rule applies to it.
+      if (staticOptions.mcpDecorators !== undefined) {
+        assertConsoleProtected(staticOptions.mcpDecorators, {
+          module: 'TelescopeModule (mcpDecorators)',
+          decoratorsExample: `TelescopeModule.forRoot({ mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')] }), or leave mcpDecorators out to use decorators`,
+          selfMountExample: `TelescopeModule.forRoot({ routes: false }) + @Controller('${api}/mcp') @Can(ConsolePolicy, 'view') class ConsoleMcp extends TelescopeMcpController {}`,
+        });
+      }
     }
     return {
       module: TelescopeModule,
@@ -233,16 +251,17 @@ export class TelescopeModule implements NestModule {
 
   /** The controllers mounted when `routes` is not `false`, in mount order. */
   private static controllers(
-    staticOptions: Pick<TelescopeModuleOptions, 'path' | 'decorators'>,
+    staticOptions: Pick<TelescopeModuleOptions, 'path' | 'decorators' | 'mcpDecorators'>,
   ): Type[] {
     const path = normalizeTelescopePath(staticOptions.path);
     const decorators = staticOptions.decorators ?? [];
+    const mcpDecorators = staticOptions.mcpDecorators ?? decorators;
     return [
       // Public front-end error beacon: guests' browsers must reach it, so it
       // takes NO `decorators` (only the Can.Anyone mark). It 404s while
       // `clientErrors.enabled` is off. Mounts before the catch-all controller.
       dynamicController(ClientErrorController, `${path}/api/client-errors`),
-      dynamicController(TelescopeMcpController, `${path}/api/mcp`, decorators),
+      dynamicController(TelescopeMcpController, `${path}/api/mcp`, mcpDecorators),
       dynamicController(TelescopeController, `${path}/api`, decorators),
       dynamicController(StreamController, `${path}/api`, decorators),
     ];

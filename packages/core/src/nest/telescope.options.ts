@@ -384,9 +384,11 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * "why is POST /checkout slow?" → the agent pulls the batch waterfall with
    * every query. Backed by the same storage/stats APIs as the dashboard.
    *
-   * Protected like every other console route: by your `decorators` (e.g. an
-   * `@nestjs/authentication` guard with a Bearer strategy, since agent clients
-   * send a header, not a cookie) or by your own controller with `routes: false`.
+   * Protected like every other console route: by your `decorators`, by
+   * {@link mcpDecorators} when the agent signs in differently from the
+   * dashboard, or by your own controller with `routes: false`. Agent clients
+   * send a header, not a cookie, so the credential is a Bearer one, e.g. an
+   * `ApiKeyProvider` from `@nestjs/authentication`.
    *
    * Pass `true` to enable. DISABLED by default (`undefined`).
    */
@@ -441,6 +443,32 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * module: pass the same `decorators` to `TelescopeUiModule.forRoot` too.
    */
   decorators?: ClassDecorator[];
+  /**
+   * Class decorators for the MCP controller (`POST <path>/api/mcp`) only. When
+   * set, they REPLACE {@link decorators} on that route; the API and the live
+   * stream keep `decorators`. Leave it out and the MCP route takes
+   * `decorators` like the rest.
+   *
+   * Use it when the coding agent signs in differently from the people on the
+   * dashboard: an agent client sends `Authorization: Bearer <key>`, a browser
+   * sends a session cookie. With `@nestjs/authentication`, keep each
+   * credential to its routes with `Authenticate({ providers })`:
+   *
+   * ```ts
+   * TelescopeModule.forRoot({
+   *   mcp: true,
+   *   decorators: [Authenticate({ providers: [SessionCookieProvider] }), Can(ConsolePolicy, 'view')],
+   *   mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')],
+   * })
+   * ```
+   *
+   * where `TelescopeAgentKey` is your `ApiKeyProvider` subclass. The
+   * production rule applies to it too: `mcpDecorators: []` fails the boot
+   * with `NODE_ENV === 'production'` instead of mounting the MCP route open.
+   * With `forRootAsync`, pass it as a static top-level option, like
+   * `decorators`. Ignored with `routes: false`.
+   */
+  mcpDecorators?: ClassDecorator[];
   /**
    * `false` mounts NO controller; every provider (capture, storage, watchers,
    * pruning, alerts, the services below) still runs. Serve the routes you want

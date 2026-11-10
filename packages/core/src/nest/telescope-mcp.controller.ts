@@ -111,9 +111,10 @@ interface ToolArgs {
  * storage / pulse / diagnosis APIs as the dashboard.
  *
  * 404 unless `mcp` is enabled. It carries no guard of its own: protect it like
- * every other console route, with the module's `decorators` (agent clients send
- * a header, so use a Bearer-capable `@nestjs/authentication` strategy) or by
- * extending this class with `routes: false`.
+ * every other console route, with the module's `decorators`, with
+ * `mcpDecorators` (which replace them on this route, e.g. an `ApiKeyProvider`
+ * from `@nestjs/authentication`, since agent clients send a Bearer header), or
+ * by extending this class with `routes: false`.
  */
 @Controller()
 export class TelescopeMcpController {

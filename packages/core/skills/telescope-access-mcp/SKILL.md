@@ -7,7 +7,8 @@ description: >-
   forRoot({ decorators })) or routes:false plus your own subclasses of the
   exported controllers. With NODE_ENV=production an undecorated mounted console
   fails the boot. Queue mutations need mutations:true. MCP is enabled with
-  mcp:true and protected like any console route. Use for "lock down the
+  mcp:true and protected like any console route, or by its own mcpDecorators
+  (an ApiKeyProvider Bearer key for agents). Use for "lock down the
   dashboard", "boot fails in production", "retry/remove queue jobs are 403",
   "connect Claude Code / Cursor to Telescope".
 license: MIT
@@ -79,8 +80,38 @@ method requirements both apply; re-declare the route decorators on the override)
 TelescopeModule.forRoot({ decorators: protect, mcp: true }); // POST <path>/api/mcp
 ```
 
-Without `mcp: true` the endpoint answers 404. Agent clients send a header, so
-use a Bearer-capable `@nestjs/authentication` strategy in `decorators`.
+Without `mcp: true` the endpoint answers 404. Agent clients send
+`Authorization: Bearer <key>`, not the dashboard's cookie. Give MCP its own
+decorators with `mcpDecorators` (they REPLACE `decorators` on the MCP route
+only) and an `ApiKeyProvider` from `@nestjs/authentication`:
+
+```ts
+import { ApiKeyProvider, Authenticate, AuthenticationRegistry, SessionCookieProvider } from '@nestjs/authentication';
+
+@Injectable()
+export class TelescopeAgentKey extends ApiKeyProvider<User> {
+  constructor(private readonly agentKeys: AgentKeysRepository, registry: AuthenticationRegistry) {
+    super({ prefix: 'tsc' });
+    registry.registerProvider(this, { order: 2 });
+  }
+  findKey(id: string) {
+    return this.agentKeys.findWithUser(id); // { hash, user, expiresAt } or null
+  }
+}
+
+TelescopeModule.forRoot({
+  mcp: true,
+  decorators: [Authenticate({ providers: [SessionCookieProvider] }), Can(ConsolePolicy, 'view')],
+  mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')],
+});
+```
+
+Issue a key with `app.get(TelescopeAgentKey).generate()` (store `id` + `hash`,
+show `key` once), then
+`claude mcp add --transport http telescope <url>/api/mcp --header "Authorization: Bearer $KEY"`.
+The key signs in its user, so `Can(...)` still applies (403 for a denied user).
+`mcpDecorators: []` fails the production boot. With `forRootAsync`, pass
+`mcpDecorators` statically, like `decorators`.
 
 ## Common mistakes
 
