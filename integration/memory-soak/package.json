@@ -1,6 +1,6 @@
 {
   "name": "memory-soak",
-  "version": "0.0.49",
+  "version": "0.0.50",
   "private": true,
   "description": "Memory soak harness + regression guard for @dudousxd/nestjs-telescope under sustained HTTP load.",
   "license": "MIT",
