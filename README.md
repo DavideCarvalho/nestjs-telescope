@@ -108,7 +108,7 @@ it ran — backed by the same storage/stats/diagnosis APIs as the dashboard.
 
 ```ts
 TelescopeModule.forRoot({
-  mcp: true, // omit (or false) and the endpoint answers 404
+  mcp: true, // omit (or false) and the handler answers 404 (after your decorators)
 });
 ```
 

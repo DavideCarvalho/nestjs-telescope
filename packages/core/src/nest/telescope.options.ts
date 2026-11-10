@@ -390,7 +390,10 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * send a header, not a cookie, so the credential is a Bearer one, e.g. an
    * `ApiKeyProvider` from `@nestjs/authentication`.
    *
-   * Pass `true` to enable. DISABLED by default (`undefined`).
+   * Pass `true` to enable. DISABLED by default (`undefined`): the handler
+   * answers 404. The route is still mounted, so your decorators run first: a
+   * caller they refuse gets their 401/403, and only a caller they let through
+   * sees the 404.
    */
   mcp?: boolean;
   /**

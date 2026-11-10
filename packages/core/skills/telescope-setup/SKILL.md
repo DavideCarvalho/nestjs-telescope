@@ -62,8 +62,12 @@ Source: `packages/core/src/nest/telescope.module.ts`,
 ### Pattern 1 — async config with `forRootAsync`
 
 Use a factory when options depend on `ConfigService` or other providers. The
-`path` is a **static sibling** of `useFactory` — it is bound at module-build time
-and is NOT read from the factory result.
+`path` is a **static sibling** of `useFactory` — it mounts the routes at
+module-build time AND is copied into the resolved options so request capture
+and the UI agree with the mount. A different `path` returned by the factory is
+logged and overridden; a factory-only `path` (no static one) is kept for the
+providers but does not move the routes, and the boot warns unless
+`routes: false`.
 
 ```ts
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -136,7 +140,9 @@ by `enabled`. Source: `packages/core/src/nest/dynamic-controller.ts`.
 ### Mistake 2 — passing `path` through the async factory
 
 ```ts
-// Wrong — the route is bound at build time; this `path` is ignored.
+// Wrong — the route is bound at build time; this `path` does not move it.
+// With no static `path` it is kept for the providers but the routes stay at
+// the default, and the boot warns.
 TelescopeModule.forRootAsync({
   useFactory: () => ({ path: 'observability', enabled: true }),
 });
@@ -151,7 +157,10 @@ TelescopeModule.forRootAsync({
 ```
 
 Mechanism: the controller route is bound at module-build time, so the factory's
-returned `path` cannot move it. Source: `packages/core/src/nest/telescope.module.ts`.
+returned `path` cannot move it. The static `path` is copied into the resolved
+options so capture and the UI agree with the mount; a different factory `path`
+is logged and overridden. Source: `packages/core/src/nest/telescope.module.ts`,
+`packages/core/src/nest/async-static-options.ts` (`withStaticOptions`).
 
 ### Mistake 3 — using `setGlobalPrefix` and capturing only `/`
 
