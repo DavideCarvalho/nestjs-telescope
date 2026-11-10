@@ -121,9 +121,29 @@ claude mcp add --transport http telescope http://localhost:3000/telescope/api/mc
 Tools exposed: `list_entries` (filter by type/search/tag/time window),
 `get_entry` (one entry + its full batch), `get_batch`, `get_stats` (the last-hour
 health snapshot), and `diagnose_exception` (AI diagnosis, when `ai` is
-configured). It is protected like every console route, by your `decorators`;
-agent clients send a header, so use a Bearer-capable `@nestjs/authentication`
-strategy.
+configured). It is protected like every console route, by your `decorators`.
+
+Agent clients send `Authorization: Bearer <key>`, not your session cookie, so
+give the MCP route its own decorators with `mcpDecorators` (they replace
+`decorators` on that route only) and an `ApiKeyProvider` from
+`@nestjs/authentication`:
+
+```ts
+TelescopeModule.forRoot({
+  mcp: true,
+  decorators: [Authenticate({ providers: [SessionCookieProvider] }), Can(ConsolePolicy, 'view')],
+  mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')],
+});
+```
+
+```bash
+claude mcp add --transport http telescope https://app.example.com/telescope/api/mcp \
+  --header "Authorization: Bearer $TELESCOPE_MCP_KEY"
+```
+
+`TelescopeAgentKey` is your `ApiKeyProvider` subclass (one `findKey` method). The
+full recipe, issuing and revoking keys included, is in the
+[MCP docs](https://davidecarvalho.github.io/nestjs-telescope/docs/concepts/mcp#recipe-an-api-key-for-the-agent).
 
 ## Protecting the routes
 
@@ -134,7 +154,8 @@ There are two ways.
 
 **1. Decorators on the mounted controllers.** Keep Telescope's routes and pass
 `decorators`. They go on every console controller the module mounts (API, live
-stream, MCP). Pass the same list to the UI module, which serves the page:
+stream, MCP; `mcpDecorators` replaces them on MCP alone). Pass the same list to
+the UI module, which serves the page:
 
 ```ts
 const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
@@ -177,7 +198,7 @@ capture skips the console's own calls and the page rebases its assets on it.
 
 **The production rule.** With `NODE_ENV === 'production'`, a module that mounts
 its routes with no `decorators` (an empty array counts as none) fails the boot
-with an error naming both ways. This applies to `TelescopeModule` and
+with an error naming both ways (`mcpDecorators: []` too). This applies to `TelescopeModule` and
 `TelescopeUiModule`; the otel `GET /metrics` scrape is outside it by default
 (Prometheus usually scrapes unauthenticated inside the cluster: keep it
 reachable only by the scraper) and joins it with

@@ -14,7 +14,8 @@ There are two ways.
 
 **1. Decorators on the mounted controllers.** Keep Telescope's routes and pass
 `decorators`. They go on every console controller the module mounts (API, live
-stream, MCP). Pass the same list to the UI module, which serves the page:
+stream, MCP; `mcpDecorators` replaces them on MCP alone). Pass the same list to
+the UI module, which serves the page:
 
 ```ts
 const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
@@ -57,7 +58,7 @@ capture skips the console's own calls and the page rebases its assets on it.
 
 **The production rule.** With `NODE_ENV === 'production'`, a module that mounts
 its routes with no `decorators` (an empty array counts as none) fails the boot
-with an error naming both ways. This applies to `TelescopeModule`,
+with an error naming both ways (`mcpDecorators: []` too). This applies to `TelescopeModule`,
 `TelescopeUiModule` and `TelescopeOtelMetricsModule`. `routes: false` always
 boots. Outside production an undecorated console mounts open, so local work
 needs no setup. Every mounted controller is also marked open to
