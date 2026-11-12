@@ -89,6 +89,25 @@ describe('createTelescopeClient', () => {
     expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/ext/billing/data/revenue');
   });
 
+  it('posts a confirmed extension action and surfaces the server message on failure', async () => {
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ ok: true, result: { state: 'closed' } }),
+    );
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await expect(
+      client.extAction?.('resilience', 'reset-circuit', { name: 'a b' }),
+    ).resolves.toEqual({ ok: true, result: { state: 'closed' } });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/telescope/api/ext/resilience/actions/reset-circuit');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ confirmed: true, input: { name: 'a b' } });
+
+    fetchMock.mockResolvedValueOnce(statusResponse(404, { message: 'No circuit breaker "x".' }));
+    await expect(client.extAction?.('resilience', 'reset-circuit', { name: 'x' })).rejects.toThrow(
+      'No circuit breaker "x".',
+    );
+  });
+
   it('fetches pulse and queues with a window param', async () => {
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });

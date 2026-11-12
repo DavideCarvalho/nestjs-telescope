@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import type { Panel } from '../../../client/types.js';
+import { RowActionButton } from './panel-actions.js';
 import type { PanelColumnDef, PanelRow } from './table-features.js';
 
 /** The `table` panel variant's column shape, pulled from the discriminated union
@@ -25,6 +26,14 @@ export function fillTemplate(href: string, row: PanelRow): string {
  *  instance around it. */
 function CellContent({ spec, row }: { spec: TableColumnSpec; row: PanelRow }): JSX.Element {
   const text = String(row[spec.key] ?? '');
+  if (spec.action) {
+    return (
+      <>
+        {text}
+        <RowActionButton action={spec.action} row={row} />
+      </>
+    );
+  }
   if (!spec.link) return <>{text}</>;
   return (
     <a

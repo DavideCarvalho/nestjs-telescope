@@ -92,6 +92,81 @@ grouped (`familyHash`) by `event:policy`, by workflow name, by auth event (a den
   `@dudousxd/nestjs-telescope-mail`'s `MailWatcher`, pass `officialWatchers({ mail: false })`.
 </Callout>
 
+## Resilience page
+
+`resilienceTelescopeExtension()` adds a **Resilience** page (under *Libraries* in the nav) built
+from the `resilience` entries `NestResilienceWatcher` records, plus the live state of
+`@nestjs/resilience`'s `ResilienceService` when the app imports `ResilienceModule`:
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import {
+  officialWatchers,
+  resilienceTelescopeExtension,
+} from '@dudousxd/nestjs-telescope-official';
+
+TelescopeModule.forRoot({
+  storage,
+  mutations: true, // for the Reset button
+  watchers: [...officialWatchers()],
+  extensions: [resilienceTelescopeExtension()],
+});
+```
+
+The page shows:
+
+- **Now**: open and half-open circuits, and over the window: calls refused by a breaker
+  (short-circuited), circuits opened, retries, timeouts, bulkhead rejections and outbound rate-limit
+  refusals, each against the window before it.
+- **Circuits**: every circuit breaker, open ones first, with its status, the calls and failures in
+  its sliding window, failure rate and threshold, how often it opened and refused calls in the
+  window, its last change, and when an open breaker lets probe calls through.
+- **Events** over the window, stacked by type, and the **noisiest policies** (retries, timeouts,
+  refusals and fallbacks). Click a policy to filter the whole page by it.
+- **Bulkheads** (running, queued, limits, rejections) and **outbound rate limits** (refusals and
+  the last `retryAfterMs`).
+- **Recent transitions**: each breaker that opened, went half-open, closed or was reset, linked to
+  its entry, with who reset it.
+
+<Callout type="info" title="Live versus history">
+  Breakers live in each process. A circuit's status, window counts and bulkhead load come from the
+  process serving the console (*Source: live*). Counts, charts and transitions come from the
+  recorded entries, so they cover every instance writing to the same Telescope storage. A circuit
+  only another instance holds shows its last recorded transition (*Source: history*).
+  `@nestjs/resilience` doesn't list its outbound rate limits, so that table is built from their
+  refusals only.
+</Callout>
+
+### Reset a circuit
+
+Open and half-open live circuits get a **Reset** button. After you confirm, the breaker closes with
+an empty window, so calls reach the dependency again. The reset:
+
+- needs `mutations: true` and passes the console's `authorize`, like every console mutation;
+- writes an audit line (`extension action resilience.reset-circuit ok by user:42 via console …`)
+  through the `TelescopeAudit` logger;
+- records a `resilience` entry (`event: 'circuit-reset'`, with `by`) that shows under *Recent
+  transitions*.
+
+Options:
+
+```ts
+resilienceTelescopeExtension({
+  window: '6h', // what the counts, charts and transitions cover (default '1h')
+  reset: false, // no Reset button and no resilience_reset_circuit tool (default true)
+});
+```
+
+### Dev tools
+
+With the agent's dev MCP endpoint, the extension adds two tools next to Telescope's, behind the
+console's `authorize`:
+
+| Tool | Kind | What it does |
+| --- | --- | --- |
+| `resilience_circuits` | read | The circuits (live state merged with recorded transitions), open ones first, and the bulkheads' load. Filters: `status`, `limit` (default 20, max 100). |
+| `resilience_reset_circuit` | action | Resets the circuit `name` of this process. Writes the same audit line and entry as the page, with the MCP caller. |
+
 ## `@nestjs/ai` usage
 
 ```ts

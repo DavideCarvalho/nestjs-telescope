@@ -26,3 +26,8 @@ export {
   syntheticSpanId,
   toW3cTraceId,
 } from './observe-trace-context.provider.js';
+export {
+  resilienceTelescopeExtension,
+  type ResilienceCircuitRow,
+  type ResilienceTelescopeOptions,
+} from './resilience-telescope.js';

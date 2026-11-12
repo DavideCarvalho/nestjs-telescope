@@ -11,6 +11,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
 import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
+import type { ExtensionRegistry } from '../extension/registry.js';
 import { type TenantView, tenantViewOf, withTenantView } from '../storage/tenant-scoped-storage.js';
 import { type ConsoleDecide, resolveConsoleAuthorize } from './console-authorize.js';
 import {
@@ -19,8 +20,13 @@ import {
   resolveConsoleTenantScope,
   selectConsoleTenant,
 } from './console-tenant-scope.js';
+import { auditExtensionAction } from './extension-audit.js';
 import { type McpToolArgs, TelescopeMcpServer, isMcpToolNotice } from './telescope-mcp.server.js';
-import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
+import {
+  TELESCOPE_EXTENSIONS,
+  TELESCOPE_OPTIONS,
+  type TelescopeModuleOptions,
+} from './telescope.options.js';
 
 // ── the dev-tools contract (v1), re-declared: this package never imports the agent's MCP server ──
 
@@ -240,6 +246,37 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
   ];
 }
 
+/**
+ * The dev tools extensions contribute. Their data spans every organization, so with tenancy on a
+ * caller limited to some organizations gets an error instead of a run. Every run of an `action`
+ * tool writes the same audit line as the console's extension actions.
+ */
+export function extensionDevTools(
+  tools: TelescopeDevTool[],
+  ownerOf: (tool: TelescopeDevTool) => string | undefined,
+  viewFor?: (call?: DevToolCall) => TenantView | null,
+): TelescopeDevTool[] {
+  return tools.map((tool) => ({
+    ...tool,
+    run: async (input, call) => {
+      if (viewFor !== undefined && viewFor(call) !== null) {
+        throw new Error(`${tool.name} needs a caller who may see every organization.`);
+      }
+      if (tool.kind !== 'action') return tool.run(input, call);
+      const caller = { id: call?.caller.id ?? 'unknown', via: 'dev-tools' as const };
+      const ext = ownerOf(tool) ?? 'extension';
+      try {
+        const result = await tool.run(input, call);
+        auditExtensionAction(ext, tool.name, caller, input, 'ok');
+        return result;
+      } catch (error) {
+        auditExtensionAction(ext, tool.name, caller, input, 'failed');
+        throw error;
+      }
+    },
+  }));
+}
+
 /** A resolved console gate as a dev-tools gate. Never throws: a throw is `forbidden`. */
 export function devToolsGate(decide: ConsoleDecide): DevToolsLib['authorize'] {
   return async (context) => {
@@ -274,6 +311,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     @Inject(TelescopeMcpServer) private readonly server: TelescopeMcpServer,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
     @Optional() @Inject(CONTEXT_ACCESSOR) private readonly accessor?: unknown,
+    @Optional() @Inject(TELESCOPE_EXTENSIONS) private readonly extensions?: ExtensionRegistry,
   ) {}
 
   /** The organization view of a dev-tools call: as the console's, with no `?tenant=`. */
@@ -299,7 +337,14 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
         lib: 'telescope',
         title: 'Telescope',
         authorize: devToolsGate(decide),
-        tools: telescopeDevTools(this.server, (call) => this.viewFor(call)),
+        tools: [
+          ...telescopeDevTools(this.server, (call) => this.viewFor(call)),
+          ...extensionDevTools(
+            this.extensions?.devTools() ?? [],
+            (tool) => this.extensions?.devToolOwner(tool),
+            (call) => this.viewFor(call),
+          ),
+        ],
       });
     } catch (error) {
       // Another application in this process registered telescope's tools: keep the console up.

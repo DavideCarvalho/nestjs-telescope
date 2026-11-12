@@ -1,14 +1,19 @@
 import 'reflect-metadata';
-import type { ExecutionContext, INestApplication } from '@nestjs/common';
+import { type ExecutionContext, type INestApplication, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EntryType } from '../entry/entry.js';
 import type { Entry } from '../entry/entry.js';
 import type { PulseService } from '../pulse/pulse.service.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import { authorizeByToken } from './console-authorize.js';
-import { DEV_TOOLS_SLOT, type TelescopeDevTool, telescopeDevTools } from './dev-tools.js';
+import {
+  DEV_TOOLS_SLOT,
+  type TelescopeDevTool,
+  extensionDevTools,
+  telescopeDevTools,
+} from './dev-tools.js';
 import { TelescopeMcpServer } from './telescope-mcp.server.js';
 import { TelescopeModule } from './telescope.module.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
@@ -267,5 +272,75 @@ describe('telescope_diagnose_exception with a coordinator', () => {
     expect(await diagnose?.available?.()).toBe(true);
     expect(await diagnose?.run({ id: 'x1' })).toBe('## Cause');
     await expect(diagnose?.run({ id: 'nope' })).rejects.toThrow('Exception entry not found.');
+  });
+});
+
+describe('extension dev tools', () => {
+  const runs: Array<{ name: string; input: Record<string, unknown> }> = [];
+  const extension = {
+    name: 'demo',
+    devTools: (): TelescopeDevTool[] => [
+      {
+        name: 'demo_list',
+        kind: 'read',
+        description: 'list',
+        input: { type: 'object', properties: {} },
+        run: async (input) => {
+          runs.push({ name: 'demo_list', input });
+          return { items: [] };
+        },
+      },
+      {
+        name: 'demo_reset',
+        kind: 'action',
+        destructive: true,
+        description: 'reset',
+        input: { type: 'object', properties: { name: { type: 'string' } } },
+        run: async (input) => {
+          runs.push({ name: 'demo_reset', input });
+          if (input.name === 'boom') throw new Error('kaboom');
+          return { ok: true };
+        },
+      },
+    ],
+  };
+  const call = {
+    context: ctx({}),
+    caller: { id: 'token:abc', via: 'token' as const },
+    limits: { maxRows: 100, maxBytes: 100_000 },
+  };
+
+  afterEach(() => {
+    runs.length = 0;
+    vi.restoreAllMocks();
+  });
+
+  it('serves extension tools with telescope’s, and audits each action run', async () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    await boot({ authorize: authorizeByToken({ token: TOKEN }), extensions: [extension] });
+    const names = telescope()?.tools.map((t) => t.name) ?? [];
+    expect(names).toContain('telescope_list_entries');
+    expect(names.slice(-2)).toEqual(['demo_list', 'demo_reset']);
+
+    await tool('demo_list').run({}, call);
+    expect(log.mock.calls.some((c) => String(c[0]).includes('demo_list'))).toBe(false);
+
+    await expect(tool('demo_reset').run({ name: 'stripe' }, call)).resolves.toEqual({ ok: true });
+    await expect(tool('demo_reset').run({ name: 'boom' }, call)).rejects.toThrow('kaboom');
+    const lines = log.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('demo_reset'));
+    expect(lines).toEqual([
+      'extension action demo.demo_reset ok by token:abc via dev-tools input={"name":"stripe"}',
+      'extension action demo.demo_reset failed by token:abc via dev-tools input={"name":"boom"}',
+    ]);
+  });
+
+  it('refuses a caller limited to some organizations', async () => {
+    const tools = extensionDevTools(
+      extension.devTools(),
+      () => 'demo',
+      () => ({ empty: true, key: '', accept: () => false }),
+    );
+    await expect(tools[0]!.run({}, call)).rejects.toThrow(/every organization/);
+    expect(runs).toHaveLength(0);
   });
 });

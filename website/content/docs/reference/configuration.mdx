@@ -50,7 +50,7 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 
 With `forRootAsync`, `path`, `decorators`, `mcpDecorators`, `routes` and `imports` are static top-level options, next to `useFactory`: the routes are built before the factory runs. The static `path` also reaches the providers (request capture, the UI's asset URLs), overriding a different `path` from the factory. A build-time option returned by the factory has no effect, and the boot logs a warning naming it.
 | `imports` | `[]` | Extra Nest `imports` merged into the module, for whatever your `decorators` need. |
-| `mutations` | `false` | Turns on the console's mutations: queue actions, **Prune now**, [request replay](/docs/dashboard#replay-a-request), on-demand profiling. Off: they answer `403`. Who may call them is decided by `authorize`. |
+| `mutations` | `false` | Turns on the console's mutations: queue actions, **Prune now**, [request replay](/docs/dashboard#replay-a-request), on-demand profiling, [extension row actions](/docs/concepts/extensions#row-actions). Off: they answer `403`. Who may call them is decided by `authorize`. |
 | `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. Public by design: it takes neither `decorators` nor `authorize`. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
 
 ### Other modules

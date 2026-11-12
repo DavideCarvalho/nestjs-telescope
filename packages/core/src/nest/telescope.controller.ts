@@ -9,6 +9,7 @@ import {
   Get,
   Header,
   HttpCode,
+  HttpException,
   Inject,
   MethodNotAllowedException,
   NotFoundException,
@@ -27,6 +28,7 @@ import { tenantTagPrefix } from '../context/tenancy.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
+import type { ExtensionActionCaller } from '../extension/types.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import {
@@ -65,6 +67,7 @@ import type {
 import { activeTenantView, withoutTenantView } from '../storage/tenant-scoped-storage.js';
 import type { ConsoleTenancyInfo } from './console-tenant-scope.js';
 import { consoleTenantCallOf } from './console-tenant.interceptor.js';
+import { auditExtensionAction, consoleCallerOf } from './extension-audit.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { type ReplayResult, replayRequest } from './request-replay.js';
 import { type PruneRun, TelescopePruner } from './telescope-pruner.service.js';
@@ -199,6 +202,11 @@ function boundedCount(raw?: string): number | undefined {
   return raw !== undefined && raw !== '' && Number.isInteger(n) && n >= 0 ? n : undefined;
 }
 
+interface ExtensionActionBody {
+  confirmed?: unknown;
+  input?: unknown;
+}
+
 @Controller('telescope/api')
 export class TelescopeController {
   constructor(
@@ -218,7 +226,7 @@ export class TelescopeController {
     @Inject(TELESCOPE_CONFIG) private readonly extConfig: ResolvedCoreConfig,
     @Inject(TelescopePruner) private readonly pruner: TelescopePruner,
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
-    private readonly moduleRef: ModuleRef,
+    @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
   ) {}
 
   @Get('entries')
@@ -629,6 +637,50 @@ export class TelescopeController {
       return await found.resolve(query, ctx);
     } catch (error) {
       throw new BadGatewayException((error as Error).message);
+    }
+  }
+
+  /**
+   * Runs an extension's write action (a dashboard row button). A mutation: off unless
+   * `mutations: true`, behind the console's `authorize` like every route, refused from one
+   * organization's view (extension data spans every organization), and only with
+   * `{ confirmed: true }` in the body, which the dashboard sends after its confirmation dialog.
+   * Every run, successful or not, writes an audit line with the caller.
+   */
+  @Post('ext/:ext/actions/:action')
+  @HttpCode(200)
+  async extAction(
+    @Param('ext') ext: string,
+    @Param('action') action: string,
+    @Body() body: ExtensionActionBody | undefined,
+    @Req() request: unknown,
+  ): Promise<{ ok: true; result: unknown }> {
+    this.requireMutations();
+    this.requireAllTenants();
+    const found = this.extensions.findAction(ext, action);
+    if (!found) throw new NotFoundException(`Unknown extension action "${ext}.${action}".`);
+    if (body?.confirmed !== true) {
+      throw new BadRequestException('Confirm the action: send { "confirmed": true }.');
+    }
+    const input =
+      typeof body.input === 'object' && body.input !== null && !Array.isArray(body.input)
+        ? (body.input as Record<string, unknown>)
+        : {};
+    const caller: ExtensionActionCaller = { id: consoleCallerOf(request), via: 'console' };
+    const ctx = { ...createExtensionContext(this.moduleRef, this.extConfig), caller };
+    try {
+      const result = await found.run(input, ctx);
+      auditExtensionAction(ext, action, caller, input, 'ok');
+      return { ok: true, result: result ?? null };
+    } catch (error) {
+      auditExtensionAction(ext, action, caller, input, 'failed');
+      if (error instanceof HttpException) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      const status = (error as { status?: unknown } | null)?.status;
+      if (typeof status === 'number' && status >= 400 && status < 600) {
+        throw new HttpException(message, status);
+      }
+      throw new BadGatewayException(message);
     }
   }
 

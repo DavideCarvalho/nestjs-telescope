@@ -21,7 +21,7 @@ import { setTelescopeDump } from '../dump/telescope-dump.js';
 import { type BatchOrigin, type Entry, EntryType, type RecordInput } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
-import type { DashboardSection, Panel } from '../extension/types.js';
+import type { DashboardSection, ExtensionActionInfo, Panel } from '../extension/types.js';
 import {
   coveredEntryType,
   isTelescopeSpanProcessorActive,
@@ -98,6 +98,10 @@ export interface TelescopeMeta {
     panels: Panel[];
     sections?: DashboardSection[];
   }[];
+  /** Write actions extensions expose to their dashboards (`run` omitted). */
+  actions: ExtensionActionInfo[];
+  /** Whether mutations (queue actions, prune, extension actions…) are on (`mutations: true`). */
+  mutations: boolean;
 }
 
 /**
@@ -453,6 +457,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         // those dashboards showed nothing.
         ...(d.sections ? { sections: d.sections } : {}),
       })),
+      actions: this.extensions.actions(),
+      mutations: this.options.mutations === true,
     };
   }
 

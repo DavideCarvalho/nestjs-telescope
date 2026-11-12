@@ -36,6 +36,7 @@ export * from './nest/telescope.controller.js';
 export * from './nest/telescope-mcp.controller.js';
 export * from './nest/telescope-mcp.server.js';
 export * from './nest/dev-tools.js';
+export * from './nest/extension-audit.js';
 export * from './nest/console-switcher.js';
 export * from './nest/telescope-overload-guard.service.js';
 export * from './nest/client-error.controller.js';
