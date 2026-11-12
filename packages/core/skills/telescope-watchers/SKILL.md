@@ -49,7 +49,8 @@ interface WatcherContext {
 ```
 
 `RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt?, traceId?, spanId? }`.
-Everything else (id, batchId, sequence, traceId, …) is enriched by the recorder.
+Everything else (id, batchId, sequence, …) is enriched by the recorder; an explicit
+`traceId`/`spanId` wins over the ambient OTel context.
 `unregister()` runs once on application shutdown for every watcher whose
 `register()` succeeded (a throw is logged and swallowed), so a watcher that
 subscribes to `diagnostics_channel` stops recording when its app closes.
