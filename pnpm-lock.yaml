@@ -122,8 +122,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       ai:
         specifier: 5.0.259
         version: 5.0.259(zod@4.6.7)
@@ -132,7 +132,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/bullmq:
     devDependencies:
@@ -155,8 +155,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3))
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       '@types/supertest':
         specifier: 6.0.3
         version: 6.0.3
@@ -177,7 +177,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/cache:
     devDependencies:
@@ -188,8 +188,8 @@ importers:
         specifier: 12.0.0
         version: 12.0.0(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2))(cache-manager@7.2.8)(keyv@5.6.0)(rxjs@7.8.2)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -198,7 +198,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/clickhouse:
     devDependencies:
@@ -215,8 +215,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -228,7 +228,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/core:
     dependencies:
@@ -276,8 +276,8 @@ importers:
         specifier: 4.17.25
         version: 4.17.25
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       '@types/supertest':
         specifier: 6.0.3
         version: 6.0.3
@@ -301,7 +301,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/events:
     devDependencies:
@@ -318,8 +318,8 @@ importers:
         specifier: 12.0.1
         version: 12.0.1(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2))
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       eventemitter2:
         specifier: 6.4.9
         version: 6.4.9
@@ -334,7 +334,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/logs:
     devDependencies:
@@ -348,8 +348,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -361,7 +361,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/mail:
     dependencies:
@@ -373,14 +373,14 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/mikro-orm:
     devDependencies:
@@ -415,8 +415,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3))
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       '@types/supertest':
         specifier: 6.0.3
         version: 6.0.3
@@ -434,7 +434,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/mikro-orm-watcher:
     devDependencies:
@@ -457,8 +457,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3))
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -470,7 +470,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/observe:
     devDependencies:
@@ -478,14 +478,14 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/official:
     devDependencies:
@@ -526,8 +526,8 @@ importers:
         specifier: 0.0.5
         version: 0.0.5(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2))(kysely@0.29.2)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       '@types/supertest':
         specifier: 6.0.3
         version: 6.0.3
@@ -548,7 +548,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/otel:
     devDependencies:
@@ -589,8 +589,8 @@ importers:
         specifier: 2.11.0
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       '@types/supertest':
         specifier: 6.0.3
         version: 6.0.3
@@ -611,7 +611,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/parquet:
     dependencies:
@@ -641,8 +641,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -657,7 +657,7 @@ importers:
         version: 11.1.1
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/prisma:
     dependencies:
@@ -669,14 +669,14 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/redis:
     devDependencies:
@@ -690,8 +690,8 @@ importers:
         specifier: 8.2.8
         version: 8.2.8(ioredis@5.11.1)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       ioredis:
         specifier: 5.11.1
         version: 5.11.1
@@ -703,7 +703,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/redis-watcher:
     devDependencies:
@@ -711,8 +711,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       ioredis:
         specifier: 5.11.1
         version: 5.11.1
@@ -724,7 +724,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/schedule:
     devDependencies:
@@ -744,8 +744,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3))
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -757,7 +757,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/sqs:
     devDependencies:
@@ -774,8 +774,8 @@ importers:
         specifier: 12.0.3
         version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.3)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -784,7 +784,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/testing:
     devDependencies:
@@ -792,14 +792,14 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/typeorm:
     devDependencies:
@@ -807,8 +807,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -820,7 +820,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/ui:
     dependencies:
@@ -868,8 +868,8 @@ importers:
         specifier: 16.3.3
         version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@types/node':
-        specifier: 20.19.43
-        version: 20.19.43
+        specifier: 24.19.2
+        version: 24.19.2
       '@types/react':
         specifier: 18.3.31
         version: 18.3.31
@@ -881,7 +881,7 @@ importers:
         version: 6.0.3
       '@vitejs/plugin-react':
         specifier: 4.7.0
-        version: 4.7.0(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))
+        version: 4.7.0(vite@5.4.21(@types/node@24.19.2)(lightningcss@1.32.0))
       autoprefixer:
         specifier: 10.6.1
         version: 10.6.1(postcss@8.5.28)
@@ -920,10 +920,10 @@ importers:
         version: 5.9.3
       vite:
         specifier: 5.4.21
-        version: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+        version: 5.4.21(@types/node@24.19.2)(lightningcss@1.32.0)
       vitest:
         specifier: 3.2.7
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   website:
     dependencies:
@@ -3697,6 +3697,9 @@ packages:
 
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
+
+  '@types/node@24.19.2':
+    resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
   '@types/node@25.9.7':
     resolution: {integrity: sha512-Y+axoNWOFLvDNFxNbDA+kqqV05imHwTu5bZWWO6tQM3Y2NX1jvzUJkYlf4nYnMCnvu4wQBKW6Nr+ok6yHWA9aQ==}
@@ -9864,6 +9867,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/node@24.19.2':
+    dependencies:
+      undici-types: 7.24.6
+
   '@types/node@25.9.7':
     dependencies:
       undici-types: 7.24.6
@@ -9928,7 +9935,7 @@ snapshots:
 
   '@vercel/oidc@3.2.0': {}
 
-  '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))':
+  '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@24.19.2)(lightningcss@1.32.0))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
@@ -9936,7 +9943,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-beta.27
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+      vite: 5.4.21(@types/node@24.19.2)(lightningcss@1.32.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -9955,6 +9962,14 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+
+  '@vitest/mocker@3.2.7(vite@5.4.21(@types/node@24.19.2)(lightningcss@1.32.0))':
+    dependencies:
+      '@vitest/spy': 3.2.7
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 5.4.21(@types/node@24.19.2)(lightningcss@1.32.0)
 
   '@vitest/mocker@3.2.7(vite@5.4.21(@types/node@25.9.7)(lightningcss@1.32.0))':
     dependencies:
@@ -13730,6 +13745,24 @@ snapshots:
       - supports-color
       - terser
 
+  vite-node@3.2.4(@types/node@24.19.2)(lightningcss@1.32.0):
+    dependencies:
+      cac: 6.7.14
+      debug: 4.4.3
+      es-module-lexer: 1.7.0
+      pathe: 2.0.3
+      vite: 5.4.21(@types/node@24.19.2)(lightningcss@1.32.0)
+    transitivePeerDependencies:
+      - '@types/node'
+      - less
+      - lightningcss
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+
   vite-node@3.2.4(@types/node@25.9.7)(lightningcss@1.32.0):
     dependencies:
       cac: 6.7.14
@@ -13755,6 +13788,16 @@ snapshots:
       rollup: 4.61.0
     optionalDependencies:
       '@types/node': 20.19.43
+      fsevents: 2.3.3
+      lightningcss: 1.32.0
+
+  vite@5.4.21(@types/node@24.19.2)(lightningcss@1.32.0):
+    dependencies:
+      esbuild: 0.21.5
+      postcss: 8.5.28
+      rollup: 4.61.0
+    optionalDependencies:
+      '@types/node': 24.19.2
       fsevents: 2.3.3
       lightningcss: 1.32.0
 
@@ -13796,6 +13839,46 @@ snapshots:
     optionalDependencies:
       '@types/debug': 4.1.13
       '@types/node': 20.19.43
+      jsdom: 25.0.1
+    transitivePeerDependencies:
+      - less
+      - lightningcss
+      - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+
+  vitest@3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@25.0.1)(lightningcss@1.32.0):
+    dependencies:
+      '@types/chai': 5.2.3
+      '@vitest/expect': 3.2.7
+      '@vitest/mocker': 3.2.7(vite@5.4.21(@types/node@24.19.2)(lightningcss@1.32.0))
+      '@vitest/pretty-format': 3.2.7
+      '@vitest/runner': 3.2.7
+      '@vitest/snapshot': 3.2.7
+      '@vitest/spy': 3.2.7
+      '@vitest/utils': 3.2.7
+      chai: 5.3.3
+      debug: 4.4.3
+      expect-type: 1.3.0
+      magic-string: 0.30.21
+      pathe: 2.0.3
+      picomatch: 4.0.4
+      std-env: 3.10.0
+      tinybench: 2.9.0
+      tinyexec: 0.3.2
+      tinyglobby: 0.2.17
+      tinypool: 1.1.1
+      tinyrainbow: 2.0.0
+      vite: 5.4.21(@types/node@24.19.2)(lightningcss@1.32.0)
+      vite-node: 3.2.4(@types/node@24.19.2)(lightningcss@1.32.0)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/debug': 4.1.13
+      '@types/node': 24.19.2
       jsdom: 25.0.1
     transitivePeerDependencies:
       - less

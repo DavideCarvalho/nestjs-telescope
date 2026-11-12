@@ -40,7 +40,7 @@
     "@dudousxd/nestjs-telescope": "workspace:*",
     "@dudousxd/nestjs-telescope-testing": "workspace:*",
     "@types/ioredis-mock": "8.2.8",
-    "@types/node": "20.19.43",
+    "@types/node": "24.19.2",
     "ioredis": "5.11.1",
     "ioredis-mock": "8.13.1",
     "typescript": "5.9.3",

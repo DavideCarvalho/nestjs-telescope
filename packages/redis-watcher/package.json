@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",
-    "@types/node": "20.19.43",
+    "@types/node": "24.19.2",
     "ioredis": "5.11.1",
     "reflect-metadata": "0.2.2",
     "typescript": "5.9.3",
