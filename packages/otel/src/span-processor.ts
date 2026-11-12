@@ -248,6 +248,17 @@ export function telescopeSpanProcessor(
   const dashboardTraces = new BoundedSet<string>(MAX_TRACKED);
   /** Spans held at start, by the operation whose watcher decides on them. */
   const heldSpans = new Map<string, CoveredOperation>();
+  /** The Telescope batch active when each recordable span started (see `captureBatch`). */
+  const startBatches = new Map<string, unknown>();
+  const rememberBatch = (rt: TelescopeRuntime, spanId: string): void => {
+    const batch = rt.captureBatch?.();
+    if (batch === undefined) return;
+    startBatches.set(spanId, batch);
+    if (startBatches.size > MAX_TRACKED) {
+      const oldest = startBatches.keys().next();
+      if (oldest.done !== true) startBatches.delete(oldest.value);
+    }
+  };
   /** Spans ingested so far, per trace. */
   const perTrace = new Map<string, number>();
 
@@ -296,7 +307,12 @@ export function telescopeSpanProcessor(
     if (dashboardTraces.has(span.spanContext().traceId)) return;
     if (options.ignore?.(span) === true) return;
     if (!countAgainstTrace(span.spanContext().traceId)) return;
-    rt.record(toInput(span));
+    const spanId = span.spanContext().spanId;
+    const batch = startBatches.get(spanId);
+    startBatches.delete(spanId);
+    if (batch !== undefined && rt.recordInBatch !== undefined)
+      rt.recordInBatch(batch, toInput(span));
+    else rt.record(toInput(span));
   }
 
   // ── Sampled coverage ─────────────────────────────────────────────────────
@@ -325,6 +341,7 @@ export function telescopeSpanProcessor(
     if (head?.kind === 'outcome') {
       shift(key);
       if (!head.kept) release(span);
+      else startBatches.delete(span.spanContext().spanId);
       return;
     }
     push(key, { kind: 'span', span, at: Date.now() });
@@ -340,6 +357,7 @@ export function telescopeSpanProcessor(
       if (head?.kind === 'span') {
         shift(key);
         if (!kept) release(head.span);
+        else startBatches.delete(head.span.spanContext().spanId);
         return;
       }
       push(key, { kind: 'outcome', kept, at: Date.now() });
@@ -469,6 +487,7 @@ export function telescopeSpanProcessor(
           // Sampling may drop the watcher's entry: hold the span until the watcher decides.
           if (rt.isSampled?.(operation) === true) {
             heldSpans.set(spanId, operation);
+            rememberBatch(rt, spanId);
             if (heldSpans.size > MAX_TRACKED) {
               const oldest = heldSpans.keys().next();
               if (oldest.done !== true) heldSpans.delete(oldest.value);
@@ -482,6 +501,7 @@ export function telescopeSpanProcessor(
           const path = serverPath(span.attributes);
           if (path !== null && isUnder(path, rt.selfPath)) dashboardTraces.add(traceId);
         }
+        rememberBatch(rt, spanId);
       } catch {
         // Observability never breaks the instrumented code.
       }
@@ -497,8 +517,10 @@ export function telescopeSpanProcessor(
           hold(operation, span);
           return;
         }
-        if (rt.isPaused()) return;
-        if (shouldSkip(rt, span)) return;
+        if (rt.isPaused() || shouldSkip(rt, span)) {
+          startBatches.delete(span.spanContext().spanId);
+          return;
+        }
         ingest(rt, span);
       } catch {
         // Observability never breaks the instrumented code.
@@ -509,6 +531,7 @@ export function telescopeSpanProcessor(
     shutdown() {
       if (outcomeSlot[COVERED_OUTCOME_KEY] === settle) delete outcomeSlot[COVERED_OUTCOME_KEY];
       pending.clear();
+      startBatches.clear();
       pendingCount = 0;
       stopSweep();
       return Promise.resolve();

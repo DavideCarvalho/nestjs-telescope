@@ -81,6 +81,13 @@ export interface TelescopeRuntime {
    * (see {@link reportCoveredOutcome}). Absent on a runtime created by an older core.
    */
   isSampled?(operation: CoveredOperation): boolean;
+  /**
+   * The active Telescope batch, captured when a span starts, so a span that ends outside it
+   * (an ioredis reply callback) still records into its request's batch. Absent on older cores.
+   */
+  captureBatch?(): unknown;
+  /** Record `input` inside a batch from {@link captureBatch}. Absent on older cores. */
+  recordInBatch?(batch: unknown, input: RecordInput): void;
 }
 
 const globalSlot = globalThis as Record<symbol, unknown>;

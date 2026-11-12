@@ -233,6 +233,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       runtime.selfPath = `/${this.config.path}`;
       runtime.isSampled = (operation) =>
         samplingCanDrop(this.config.sampling, coveredEntryType(operation));
+      runtime.captureBatch = () => this.context.captureState();
+      runtime.recordInBatch = (batch, input) =>
+        this.context.runInState(batch, () => this.record(input));
     }
   }
 
@@ -306,6 +309,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     runtime.isPaused = () => false;
     runtime.selfPath = null;
     runtime.isSampled = () => false;
+    runtime.captureBatch = undefined;
+    runtime.recordInBatch = undefined;
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;

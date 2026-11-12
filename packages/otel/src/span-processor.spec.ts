@@ -96,6 +96,8 @@ afterEach(() => {
   const runtime = telescopeRuntime();
   runtime.record = null;
   runtime.selfPath = null;
+  runtime.captureBatch = undefined;
+  runtime.recordInBatch = undefined;
 });
 
 describe('telescopeSpanProcessor', () => {
@@ -132,6 +134,22 @@ describe('telescopeSpanProcessor', () => {
     });
     expect(input.startedAt?.getTime()).toBe(1_700_000_000_250);
     expect(isTelescopeSpanProcessorActive()).toBe(true);
+  });
+
+  it('records a span into the batch active when it STARTED, even if it ends outside it', () => {
+    const runtime = telescopeRuntime();
+    let active: string | undefined = 'request-batch';
+    const inBatch: Array<{ batch: unknown; name: string }> = [];
+    runtime.captureBatch = () => active;
+    runtime.recordInBatch = (batch, input) =>
+      inBatch.push({ batch, name: (input as RecordInput<SpanContent>).content.name });
+    const processor = make();
+    const s = span({ name: 'GET', scope: '@opentelemetry/instrumentation-ioredis' });
+    processor.onStart(s, undefined);
+    active = undefined; // the reply callback runs outside the request's batch
+    processor.onEnd(s);
+    expect(inBatch).toEqual([{ batch: 'request-batch', name: 'GET' }]);
+    expect(recorded).toHaveLength(0);
   });
 
   it('records nothing before Telescope boots or while it is paused', () => {
