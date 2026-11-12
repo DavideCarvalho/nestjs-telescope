@@ -12,6 +12,7 @@ import {
   type AviaryConsoleRegistry,
   consoleSwitcherConfig,
   isConsoleProbe,
+  isSameOriginPath,
   listVisibleConsoles,
   readAviaryConsoles,
   registerAviaryConsole,
@@ -213,6 +214,15 @@ function httpContext(request: Record<string, unknown> = {}): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+describe('isSameOriginPath', () => {
+  it('takes /x only: never //host, /\\host, a URL or a control character', () => {
+    expect(isSameOriginPath('/telescope#/entries/view/1')).toBe(true);
+    for (const bad of ['//evil', '/\\evil', 'https://x', 'x', '/a\nb', '', 1]) {
+      expect(isSameOriginPath(bad)).toBe(false);
+    }
+  });
+});
+
 describe('the probe marker', () => {
   it('is set on the request while other consoles’ authorize and search run, then removed', async () => {
     const seen: boolean[] = [];
@@ -270,6 +280,8 @@ describe('searchVisibleConsoles', () => {
             ...Array.from({ length: 7 }, (_, i) => hit(`run-${i}`)),
             { title: 'evil', href: 'https://evil.example' },
             { title: 'proto', href: '//evil.example' },
+            { title: 'backslash', href: '/\\evil.example' },
+            { title: 'control', href: '/\tevil' },
           ]),
         }),
         entry({ id: 'media', authorize: deny, search: search('media', [hit('m')]) }),

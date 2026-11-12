@@ -22,9 +22,18 @@ export interface SwitcherConsole {
   href: string;
 }
 
-/** A same-origin absolute path: `/x`, never `//host`, a scheme, or anything else. */
+/**
+ * A same-origin absolute path: `/x`, never `//host`, `/\host` (browsers read `\` as `/`), a
+ * scheme, a control character, or anything else.
+ */
 export function isSafeHref(href: unknown): href is string {
-  return typeof href === 'string' && href.startsWith('/') && !href.startsWith('//');
+  return (
+    typeof href === 'string' &&
+    href.startsWith('/') &&
+    href[1] !== '/' &&
+    href[1] !== '\\' &&
+    !/[\u0000-\u001f]/.test(href)
+  );
 }
 
 /** The `switcher` field of the config block `elementId`, or `undefined` when absent or unusable. */

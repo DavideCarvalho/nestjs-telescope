@@ -67,7 +67,10 @@ export function telescopeConsoleSearch(
         });
       }
       if (hits.length < limit) {
-        const tags = await storage.tags(undefined, { search: q, limit: limit - hits.length });
+        // A failing tag listing keeps the id hit.
+        const tags = await storage
+          .tags(undefined, { search: q, limit: limit - hits.length })
+          .catch(() => []);
         for (const { tag, count } of tags) {
           hits.push({
             title: tag,

@@ -191,9 +191,18 @@ async function verdicts(
   return answers.map((answer) => (answer === TIMED_OUT ? undefined : answer?.allowed === true));
 }
 
-/** Whether `path` is a same-origin absolute path (`/x`; never `//host` or a URL). */
+/**
+ * Whether `path` is a same-origin absolute path (`/x`; never `//host`, `/\host` or a URL). Browsers
+ * read `\` as `/` in http(s) URLs, so `/\evil.example` would leave the origin.
+ */
 export function isSameOriginPath(path: unknown): path is string {
-  return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//');
+  return (
+    typeof path === 'string' &&
+    path.startsWith('/') &&
+    path[1] !== '/' &&
+    path[1] !== '\\' &&
+    !/[\u0000-\u001f]/.test(path)
+  );
 }
 
 /** The registry, when one is set with a version this copy reads. */

@@ -187,6 +187,7 @@ describe('global search', () => {
               { title: 'run 1', subtitle: 'done', href: '/durable#/run/1' },
               { title: 'evil', href: '//evil.test' },
               { title: 'js', href: 'javascript:alert(1)' },
+              { title: 'backslash', href: '/\\evil.test' },
             ],
           },
           { id: 'media', title: 'Media', icon: 'media', hits: [{ title: 'x', href: 'https://x' }] },

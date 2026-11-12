@@ -528,6 +528,14 @@ describe('the switcher search (telescopeConsoleSearch)', () => {
     expect(await search(viewer({ allowed: false }), 'a1', 5)).toEqual([]);
   });
 
+  it('keeps the id hit when the tag listing fails', async () => {
+    const search = await searcher();
+    vi.spyOn(storage, 'tags').mockRejectedValue(new Error('tags down'));
+    expect(await search(viewer({ allowed: true, tenants: '*' }), 'a1', 5)).toEqual([
+      { title: 'request a1', subtitle: 'GET /a1 → 200', href: '/telescope#/entries/view/a1' },
+    ]);
+  });
+
   it('keeps to the limit', async () => {
     const search = await searcher();
     expect(await search(viewer({ allowed: true, tenants: '*' }), 'User', 1)).toHaveLength(1);
