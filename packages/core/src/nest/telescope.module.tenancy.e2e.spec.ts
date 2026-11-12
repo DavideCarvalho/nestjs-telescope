@@ -6,6 +6,7 @@ import 'reflect-metadata';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ExecutionContext, INestApplication } from '@nestjs/common';
 import { ForbiddenException, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,10 +14,11 @@ import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { TenantFilter } from '../context/tenancy.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import type { ConsoleAuthorizeResult } from './console-authorize.js';
+import { type ConsoleAuthorizeResult, resolveConsoleAuthorize } from './console-authorize.js';
+import { telescopeConsoleSearch } from './console-search.js';
 import { DEV_TOOLS_SLOT, type TelescopeDevTool } from './dev-tools.js';
 import { TelescopeModule } from './telescope.module.js';
-import type { TelescopeModuleOptions } from './telescope.options.js';
+import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
 
 const SLOT = Symbol.for('@dudousxd/nestjs-diagnostics:accessor');
 const holder = globalThis as Record<symbol, unknown>;
@@ -486,5 +488,48 @@ describe('the full contract (context >= 2.1)', () => {
       { id: 'A', label: 'A-slug' },
       { id: 'B', label: 'B' },
     ]);
+  });
+});
+
+describe('the switcher search (telescopeConsoleSearch)', () => {
+  function viewer(grant: ConsoleAuthorizeResult): ExecutionContext {
+    const req = { headers: { 'x-grant': JSON.stringify(grant) } };
+    return {
+      getType: () => 'http',
+      switchToHttp: () => ({ getRequest: () => req, getResponse: () => ({}) }),
+      getHandler: () => () => undefined,
+      getClass: () => class {},
+    } as unknown as ExecutionContext;
+  }
+
+  async function searcher() {
+    const started = await boot();
+    const moduleRef = started.get(ModuleRef);
+    const options = started.get(TELESCOPE_OPTIONS) as TelescopeModuleOptions;
+    const decide = await resolveConsoleAuthorize(options.authorize, moduleRef, {
+      warnIfMissing: false,
+    });
+    return telescopeConsoleSearch(moduleRef, decide, '/telescope');
+  }
+
+  it('finds an entry by id and tags, only inside the organizations authorize grants', async () => {
+    const search = await searcher();
+    const onlyA = viewer({ allowed: true, tenants: ['A'] });
+    expect(await search(onlyA, 'a1', 5)).toEqual([
+      { title: 'request a1', subtitle: 'GET /a1 → 200', href: '/telescope#/entries/view/a1' },
+    ]);
+    expect(await search(onlyA, 'b1', 5)).toEqual([]);
+    expect((await search(onlyA, 'User', 5)).map((hit) => hit.title)).toEqual(['user:User#1']);
+    expect((await search(onlyA, 'User', 5))[0]?.href).toBe(
+      '/telescope#/entries?tag=user%3AUser%231',
+    );
+    const everyone = viewer({ allowed: true, tenants: '*' });
+    expect((await search(everyone, 'b1', 5))[0]?.href).toBe('/telescope#/entries/view/b1');
+    expect(await search(viewer({ allowed: false }), 'a1', 5)).toEqual([]);
+  });
+
+  it('keeps to the limit', async () => {
+    const search = await searcher();
+    expect(await search(viewer({ allowed: true, tenants: '*' }), 'User', 1)).toHaveLength(1);
   });
 });

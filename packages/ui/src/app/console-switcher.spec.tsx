@@ -6,6 +6,8 @@ import {
   type SwitcherConfig,
   readSwitcherConfig,
   resetSwitcherCache,
+  sanitizeSearch,
+  searchConsoles,
 } from './console-switcher.js';
 
 const CONFIG: SwitcherConfig = { endpoint: '/telescope/api/consoles', others: 3 };
@@ -166,5 +168,78 @@ describe('ConsoleSwitcher', () => {
     );
     await mount(CONFIG);
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('global search', () => {
+  it('sanitizes the answer: unsafe hrefs and empty groups dropped, unknown icons generic', () => {
+    expect(
+      sanitizeSearch({
+        version: 1,
+        q: 'x',
+        partial: true,
+        results: [
+          {
+            id: 'durable',
+            title: 'Workflows',
+            icon: 'rocket',
+            hits: [
+              { title: 'run 1', subtitle: 'done', href: '/durable#/run/1' },
+              { title: 'evil', href: '//evil.test' },
+              { title: 'js', href: 'javascript:alert(1)' },
+            ],
+          },
+          { id: 'media', title: 'Media', icon: 'media', hits: [{ title: 'x', href: 'https://x' }] },
+          'junk',
+        ],
+      }),
+    ).toEqual({
+      partial: true,
+      groups: [
+        {
+          id: 'durable',
+          title: 'Workflows',
+          icon: 'generic',
+          hits: [{ title: 'run 1', subtitle: 'done', href: '/durable#/run/1' }],
+        },
+      ],
+    });
+    expect(sanitizeSearch(null)).toEqual({ groups: [], partial: false });
+  });
+
+  it('calls <endpoint>/search?q=, and a failure reads as no hits', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"results":[]}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await searchConsoles('/telescope/api/consoles', 'a b');
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe(
+      '/telescope/api/consoles/search?q=a%20b',
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    );
+    expect(await searchConsoles('/x', 'q')).toEqual({ groups: [], partial: false });
+  });
+
+  it('the menu offers "Search all consoles" when given onSearch', async () => {
+    serve([{ id: 'durable', title: 'Workflows', icon: 'workflow', href: '/durable' }]);
+    const onSearch = vi.fn();
+    render(
+      <ConsoleSwitcher
+        brand={brand}
+        current={{ title: 'Telescope', icon: 'telescope' }}
+        config={CONFIG}
+        onSearch={onSearch}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Telescope: switch console' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Search all consoles/ }));
+    expect(onSearch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

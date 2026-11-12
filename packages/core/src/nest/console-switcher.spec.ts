@@ -11,9 +11,11 @@ import {
   type AviaryConsoleEntry,
   type AviaryConsoleRegistry,
   consoleSwitcherConfig,
+  isConsoleProbe,
   listVisibleConsoles,
   readAviaryConsoles,
   registerAviaryConsole,
+  searchVisibleConsoles,
 } from './console-switcher.js';
 import { TelescopeModule } from './telescope.module.js';
 const TOKEN = 'console-token-123';
@@ -204,6 +206,132 @@ describe('listVisibleConsoles', () => {
   });
 });
 
+function httpContext(request: Record<string, unknown> = {}): ExecutionContext {
+  return {
+    getType: () => 'http',
+    switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({}) }),
+  } as unknown as ExecutionContext;
+}
+
+describe('the probe marker', () => {
+  it('is set on the request while other consoles’ authorize and search run, then removed', async () => {
+    const seen: boolean[] = [];
+    const req: Record<string, unknown> = {};
+    const ctx = httpContext(req);
+    const probe = entry({
+      id: 'agent',
+      authorize: async (c) => {
+        seen.push(isConsoleProbe(c));
+        return { allowed: true };
+      },
+      search: async (c) => {
+        seen.push(isConsoleProbe(c));
+        return [];
+      },
+    });
+    await listVisibleConsoles(registry(probe), 'telescope', ctx);
+    await searchVisibleConsoles(registry(probe), 'telescope', ctx, 'x');
+    expect(seen).toEqual([true, true, true]);
+    expect('aviaryProbe' in req).toBe(false);
+    expect(isConsoleProbe(ctx)).toBe(false);
+  });
+
+  it('keeps a marker that was already there', async () => {
+    const req: Record<string, unknown> = { aviaryProbe: false };
+    await listVisibleConsoles(registry(entry({ id: 'agent' })), 'telescope', httpContext(req));
+    expect(req.aviaryProbe).toBe(false);
+  });
+});
+
+describe('searchVisibleConsoles', () => {
+  const hit = (title: string, href = `/${title}`) => ({ title, href });
+
+  it('asks self and every allowed console with a search, by order, 5 safe hits each', async () => {
+    const queries: Array<[string, string, number]> = [];
+    const search =
+      (id: string, hits: unknown[]) => async (_c: unknown, q: string, limit: number) => {
+        queries.push([id, q, limit]);
+        return hits as never;
+      };
+    const result = await searchVisibleConsoles(
+      registry(
+        entry({
+          id: 'telescope',
+          order: 20,
+          icon: 'telescope',
+          search: search('telescope', [hit('t')]),
+        }),
+        entry({
+          id: 'durable',
+          order: 10,
+          icon: 'workflow',
+          title: 'Workflows',
+          search: search('durable', [
+            ...Array.from({ length: 7 }, (_, i) => hit(`run-${i}`)),
+            { title: 'evil', href: 'https://evil.example' },
+            { title: 'proto', href: '//evil.example' },
+          ]),
+        }),
+        entry({ id: 'media', authorize: deny, search: search('media', [hit('m')]) }),
+        entry({ id: 'agent' }),
+        entry({ id: 'empty', search: search('empty', []) }),
+      ),
+      'telescope',
+      httpContext(),
+      '  run  ',
+    );
+    expect(queries.map(([id]) => id).sort()).toEqual(['durable', 'empty', 'telescope']);
+    expect(queries.every(([, q, limit]) => q === 'run' && limit === 5)).toBe(true);
+    expect(result.q).toBe('run');
+    expect(result.partial).toBe(false);
+    expect(result.results.map((r) => r.id)).toEqual(['durable', 'telescope']);
+    expect(result.results[0]?.hits).toHaveLength(5);
+    expect(result.results[0]?.hits.every((h) => h.href.startsWith('/run-'))).toBe(true);
+  });
+
+  it('reports partial results when a console’s authorize or search fails or is slow', async () => {
+    vi.useFakeTimers();
+    const pending = searchVisibleConsoles(
+      registry(
+        entry({ id: 'slow', search: () => new Promise(() => undefined) }),
+        entry({
+          id: 'broken',
+          search: async () => {
+            throw new Error('down');
+          },
+        }),
+        entry({
+          id: 'stuck',
+          authorize: () => new Promise(() => undefined),
+          search: async () => [hit('x')],
+        }),
+        entry({ id: 'ok', search: async () => [hit('ok')] }),
+      ),
+      'telescope',
+      httpContext(),
+      'q',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+    const result = await pending;
+    expect(result.partial).toBe(true);
+    expect(result.results.map((r) => r.id)).toEqual(['ok']);
+  });
+
+  it('answers nothing for an empty query or without a registry', async () => {
+    const searched = vi.fn(async () => [hit('x')]);
+    expect(
+      await searchVisibleConsoles(
+        registry(entry({ id: 'a', search: searched })),
+        's',
+        context,
+        '  ',
+      ),
+    ).toEqual({ version: 1, q: '', partial: false, results: [] });
+    expect(searched).not.toHaveBeenCalled();
+    expect((await searchVisibleConsoles(undefined, 's', context, 'x')).results).toEqual([]);
+  });
+});
+
 // ── HTTP ───────────────────────────────────────────────────────────────────
 
 let app: INestApplication | undefined;
@@ -282,5 +410,41 @@ describe('GET <path>/api/consoles', () => {
   it('is not mounted with routes: false', async () => {
     const server = await boot({ routes: false, authorize: () => true });
     await request(server).get('/telescope/api/consoles').expect(404);
+  });
+});
+
+describe('GET <path>/api/consoles/search', () => {
+  it('is behind the console’s authorize, and searches the allowed consoles', async () => {
+    registerAviaryConsole(
+      entry({
+        id: 'durable',
+        order: 10,
+        icon: 'workflow',
+        title: 'Workflows',
+        search: async (_c, q) => [
+          { title: `run ${q}`, subtitle: 'completed', href: '/durable#/run/1' },
+        ],
+      }),
+    );
+    const server = await boot({ authorize: authorizeByToken({ token: TOKEN }) });
+    await request(server).get('/telescope/api/consoles/search?q=42').expect(401);
+    const res = await request(server)
+      .get('/telescope/api/consoles/search?q=42')
+      .set(bearer)
+      .expect(200);
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.body).toEqual({
+      version: 1,
+      q: '42',
+      partial: false,
+      results: [
+        {
+          id: 'durable',
+          title: 'Workflows',
+          icon: 'workflow',
+          hits: [{ title: 'run 42', subtitle: 'completed', href: '/durable#/run/1' }],
+        },
+      ],
+    });
   });
 });

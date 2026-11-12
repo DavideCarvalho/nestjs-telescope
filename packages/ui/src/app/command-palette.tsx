@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { ENTRY_TYPES } from '../react/index.js';
 import { Dialog, DialogContent } from '../react/ui/index.js';
+import { type ConsoleSearchAnswer, searchConsoles } from './console-switcher.js';
 
 /** A single navigable target in the palette. */
 export interface PaletteAction {
@@ -11,6 +12,54 @@ export interface PaletteAction {
   label: string;
   /** Hash-router path to navigate to, e.g. `/` or `/entries/request`. */
   to: string;
+  /** A global-search hit: a same-origin page (maybe another console's), opened as a link. */
+  href?: string;
+  /** Shown under the label (a hit's console and subtitle). */
+  detail?: string;
+}
+
+/** How long typing must pause before the palette searches the consoles. */
+const SEARCH_DEBOUNCE_MS = 200;
+/** Shortest query the palette sends to the global search. */
+const SEARCH_MIN_LENGTH = 2;
+
+/** The global-search hits as palette rows, grouped by console in the server's order. */
+export function searchActions(answer: ConsoleSearchAnswer): PaletteAction[] {
+  return answer.groups.flatMap((group) =>
+    group.hits.map((hit, index) => ({
+      id: `search-${group.id}-${index}`,
+      label: hit.title,
+      to: '',
+      href: hit.href,
+      detail: hit.subtitle ? `${group.title} · ${hit.subtitle}` : group.title,
+    })),
+  );
+}
+
+/**
+ * The global search behind the palette: `GET <endpoint>/search?q=` once typing pauses, the
+ * previous request aborted. `endpoint` undefined turns it off.
+ */
+function useConsoleSearch(endpoint: string | undefined, query: string): ConsoleSearchAnswer {
+  const [answer, setAnswer] = useState<ConsoleSearchAnswer>({ groups: [], partial: false });
+  useEffect(() => {
+    const q = query.trim();
+    if (endpoint === undefined || q.length < SEARCH_MIN_LENGTH) {
+      setAnswer({ groups: [], partial: false });
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void searchConsoles(endpoint, q, controller.signal).then((next) => {
+        if (!controller.signal.aborted) setAnswer(next);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [endpoint, query]);
+  return answer;
 }
 
 /**
@@ -73,14 +122,24 @@ export function usePalette(): { open: boolean; setOpen: (open: boolean) => void 
 export function CommandPalette({
   open,
   onClose,
-}: { open: boolean; onClose: () => void }): JSX.Element {
+  searchEndpoint,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** The consoles endpoint (`<api>/consoles`); the palette then also searches every console. */
+  searchEndpoint?: string;
+}): JSX.Element {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
   const listId = useId();
 
-  const results = useMemo(() => filterActions(PALETTE_ACTIONS, query), [query]);
+  const search = useConsoleSearch(open ? searchEndpoint : undefined, query);
+  const results = useMemo(
+    () => [...filterActions(PALETTE_ACTIONS, query), ...searchActions(search)],
+    [query, search],
+  );
 
   // Reset the query/highlight and focus the input each time the palette opens.
   useEffect(() => {
@@ -98,8 +157,9 @@ export function CommandPalette({
   const select = useCallback(
     (action: PaletteAction | undefined) => {
       if (!action) return;
-      navigate(action.to);
       onClose();
+      if (action.href !== undefined) window.location.assign(action.href);
+      else navigate(action.to);
     },
     [navigate, onClose],
   );
@@ -139,7 +199,7 @@ export function CommandPalette({
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Jump to…"
+          placeholder={searchEndpoint ? 'Jump to, or search by id or tag…' : 'Jump to…'}
           aria-label="Search actions"
           aria-controls={listId}
           aria-activedescendant={activeId}
@@ -173,11 +233,21 @@ export function CommandPalette({
                   }`}
                 >
                   {action.label}
+                  {action.detail && (
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {action.detail}
+                    </span>
+                  )}
                 </li>
               );
             })
           )}
         </ul>
+        {search.partial && (
+          <p className="border-t border-line px-4 py-2 text-[11px] text-muted-foreground">
+            Some consoles did not answer in time; their results are missing.
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );
