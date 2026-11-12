@@ -332,6 +332,9 @@ export function telescopeSpanProcessor(
 
   const settle = (operation: CoveredOperation, traceKey: string, kept: boolean): void => {
     try {
+      // Only operations whose spans get held (sampling on) need an outcome; skipping the rest
+      // keeps the pending map and the sweep timer idle in the default no-sampling setup.
+      if (runtime()?.isSampled?.(operation) !== true) return;
       const key = pendingKey(operation, traceKey);
       const head = pending.get(key)?.[0];
       if (head?.kind === 'span') {
