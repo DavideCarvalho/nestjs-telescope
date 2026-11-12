@@ -56,7 +56,8 @@ dashboard follows it). A throw denies (403).
 With tenancy on (`tenancy` option, default `'inherit'`), `{ allowed: true,
 tenants: '*' | string[] }` scopes the viewer to those organizations (`'*'`
 every organization); with no `tenants` the viewer sees their own
-organization, and with none an empty console. Every API call takes
+organization, and with none an empty console (with `tenancy: { required: true }`,
+no tenant and no grant instead answers the context's 403). Every API call takes
 `?tenant=<id>`, kept within that scope; a `tenant` outside it answers empty
 and is logged.
 
