@@ -52,12 +52,21 @@ describe('console tenant scope', () => {
       enabled: true,
       nullRows: 'tenantless',
       filter: () => {
-        throw new Error('E_TENANT_REQUIRED');
+        throw Object.assign(new Error('A tenant is required.'), { code: 'E_TENANT_REQUIRED' });
       },
     };
-    expect(() => resolveConsoleTenantScope(required, undefined)).toThrow('E_TENANT_REQUIRED');
+    expect(() => resolveConsoleTenantScope(required, undefined)).toThrow('A tenant is required.');
     expect(resolveConsoleTenantScope(required, ['B'])).toEqual({ tenants: ['B'] });
     expect(resolveConsoleTenantScope(required, '*')).toEqual({ tenants: '*' });
+    // Any other failure is never taken for a missing tenant, granted or not.
+    const broken: Tenancy = {
+      enabled: true,
+      nullRows: 'tenantless',
+      filter: () => {
+        throw new Error('accessor bug');
+      },
+    };
+    expect(() => resolveConsoleTenantScope(broken, ['B'])).toThrow('accessor bug');
   });
 
   it('a list: own tenant first, else the first; outside it is forged', () => {

@@ -192,8 +192,11 @@ function parseWindowMs(window: string | undefined): number {
 /** Organizations the header's picker lists per search. */
 const TENANT_OPTIONS = 50;
 
-/** Organizations of a granted list given a label (and so findable by it) per call. */
-const MAX_LABELLED = 200;
+/** Organizations labelled per call to the context's label resolver. */
+const LABEL_CHUNK = 200;
+
+/** Organizations of a granted list a picker search labels at most (and so finds by label). */
+const MAX_LABEL_SCAN = 2_000;
 
 /** Tags per request when a caller names no bound — a picker's list, not a listing. */
 const DEFAULT_TAG_PAGE = 50;
@@ -594,26 +597,32 @@ export class TelescopeController {
     }
     const kinds = typeof this.options.tenancy === 'object' ? this.options.tenancy.kinds : undefined;
     const fallbackKind = kinds?.[0] ?? own?.kind ?? 'tenant';
-    const labels = await tenantLabels(
-      ids
-        .slice(0, MAX_LABELLED)
-        .map((id) =>
-          own?.id === id
-            ? { id, kind: own.kind ?? fallbackKind, ...(own.slug ? { slug: own.slug } : {}) }
-            : { id, kind: fallbackKind },
-        ),
-      this.contextAccessor,
-    );
-    const label = (id: string): string => labels[id] ?? id;
+    const refOf = (id: string) =>
+      own?.id === id
+        ? { id, kind: own.kind ?? fallbackKind, ...(own.slug ? { slug: own.slug } : {}) }
+        : { id, kind: fallbackKind };
+    // Labelled a chunk at a time until the picker is full, so a search also finds organizations by
+    // label deep in a long granted list (bounded by MAX_LABEL_SCAN).
+    const options: { id: string; label: string }[] = [];
+    for (
+      let start = 0;
+      start < Math.min(ids.length, MAX_LABEL_SCAN) && options.length < TENANT_OPTIONS;
+      start += LABEL_CHUNK
+    ) {
+      const chunk = ids.slice(start, start + LABEL_CHUNK);
+      const labels = await tenantLabels(chunk.map(refOf), this.contextAccessor);
+      for (const id of chunk) {
+        const label = labels[id] ?? id;
+        if (!needle || `${id} ${label}`.toLowerCase().includes(needle)) options.push({ id, label });
+      }
+      if (!needle) break;
+    }
     return {
       enabled: true,
       tenants: scope.tenants,
       // A tenant outside the scope is never echoed back: the view is empty, nothing is selected.
       selected: selection.kind === 'tenant' ? selection.id : null,
-      options: ids
-        .filter((id) => !needle || `${id} ${label(id)}`.toLowerCase().includes(needle))
-        .slice(0, TENANT_OPTIONS)
-        .map((id) => ({ id, label: label(id) })),
+      options: options.slice(0, TENANT_OPTIONS),
     };
   }
 

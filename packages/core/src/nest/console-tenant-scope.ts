@@ -37,6 +37,15 @@ export function consoleTenantsOf(result: unknown): ConsoleTenants | undefined {
   return [...new Set(tenants.filter((id): id is string => typeof id === 'string' && id !== ''))];
 }
 
+/** The context's `TenantRequiredError` (`code: 'E_TENANT_REQUIRED'`), read structurally. */
+function isTenantRequired(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'E_TENANT_REQUIRED'
+  );
+}
+
 /**
  * The scope of a viewer `authorize` allowed. `null` when tenancy is off: the console shows
  * everything, as without tenancy. With tenancy on: `tenants` from the result when it has them,
@@ -49,12 +58,14 @@ export function resolveConsoleTenantScope(
 ): ConsoleTenantScope | null {
   if (!tenancy.enabled) return null;
   // A viewer `authorize` grants organizations to needs no tenant of its own; only one granted
-  // nothing meets the context's `required` (its TenantRequiredError, a 403).
+  // nothing meets the context's `required` (its TenantRequiredError, a 403). Any other failure is
+  // rethrown as it is.
   let filter: TenantFilter;
   let missing: unknown;
   try {
     filter = tenancy.filter();
   } catch (error) {
+    if (!isTenantRequired(error)) throw error;
     filter = { mode: 'tenantless' };
     missing = error;
   }

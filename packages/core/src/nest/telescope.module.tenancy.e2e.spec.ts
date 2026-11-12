@@ -394,7 +394,10 @@ describe('the full contract (context >= 2.1)', () => {
       tenantFilter: (options?: { required?: boolean }): TenantFilter => {
         const filter = accessor.tenantFilter();
         if (filter.mode === 'tenantless' && options?.required !== false) {
-          throw new ForbiddenException('A tenant is required.');
+          throw Object.assign(
+            new ForbiddenException({ code: 'E_TENANT_REQUIRED', message: 'A tenant is required.' }),
+            { code: 'E_TENANT_REQUIRED' },
+          );
         }
         return filter;
       },
@@ -432,6 +435,33 @@ describe('the full contract (context >= 2.1)', () => {
       { id: 'A', kind: 'organization', slug: 'A-slug' },
       { id: 'B', kind: 'clinic' },
     ]);
+  });
+
+  it('finds an organization by label deep in a long granted list', async () => {
+    const calls: number[] = [];
+    holder[SLOT] = {
+      current: {
+        ...accessor,
+        tenantLabels: async (tenants: Array<{ id: string }>) => {
+          calls.push(tenants.length);
+          return Object.fromEntries(tenants.map((t) => [t.id, `Clinic number ${t.id.slice(1)}`]));
+        },
+      },
+    };
+    await boot();
+    const ids = Array.from({ length: 450 }, (_, i) => `t${i}`);
+    const headers = { 'x-grant': JSON.stringify({ allowed: true, tenants: ids }) };
+    const info = await request(app?.getHttpServer())
+      .get('/telescope/api/tenancy?search=number 420')
+      .set(headers)
+      .expect(200);
+    expect(info.body.options).toEqual([{ id: 't420', label: 'Clinic number 420' }]);
+    expect(calls).toEqual([200, 200, 50]);
+    const first = await request(app?.getHttpServer())
+      .get('/telescope/api/tenancy')
+      .set(headers)
+      .expect(200);
+    expect(first.body.options).toHaveLength(50);
   });
 
   it('a labeler that throws falls back to the slug, then the id', async () => {

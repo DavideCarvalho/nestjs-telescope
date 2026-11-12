@@ -129,9 +129,10 @@ export function tenantTagPrefix(option: TelescopeTenancyOption | undefined): str
 }
 
 /**
- * The same option with `required: false`: for the paths that are not a request reading data (the
- * recorder stamping entries, the pruner, the console's own-tenant lookup), which must never throw
- * the context's `TenantRequiredError`.
+ * The same option with `required: false`, for the paths that are not a request reading data (the
+ * recorder stamping entries, the organization of a stored entry), which must never throw the
+ * context's `TenantRequiredError`. The console's scope does not use it: it reads the strict filter
+ * and lets the error through only when `authorize` granted nothing (`resolveConsoleTenantScope`).
  */
 export function lenientTenancy(option: TelescopeTenancyOption = 'inherit'): TelescopeTenancyOption {
   if (option === false) return false;
