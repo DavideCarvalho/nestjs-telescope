@@ -7,7 +7,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CONSOLE_AUTHORIZE_MISSING_WARNING,
   CONSOLE_GATE,
+  type ConsoleAuthorize,
   type ConsoleAuthorizer,
+  anyAuthorize,
   authorizeByToken,
   normalizeConsoleResult,
   resolveConsoleAuthorize,
@@ -281,5 +283,65 @@ describe('authorizeByToken', () => {
   it('throws at config time for an empty or missing token', () => {
     expect(() => authorizeByToken({ token: '' })).toThrow(/`token` is empty/);
     expect(() => authorizeByToken({ token: undefined })).toThrow(/`token` is empty/);
+  });
+});
+
+describe('anyAuthorize', () => {
+  const TOKEN = 'console-token-123';
+
+  @Injectable()
+  class AdminOnly implements ConsoleAuthorizer {
+    authorize(context: ExecutionContext) {
+      const user = context.switchToHttp().getRequest<{ user?: { admin?: boolean } }>().user;
+      return user?.admin === true;
+    }
+  }
+
+  async function decideWith(...forms: ConsoleAuthorize[]) {
+    const ref = await moduleRefWith();
+    return resolveConsoleAuthorize(anyAuthorize(...forms), ref);
+  }
+
+  it('allows when any form allows: a token OR an admin session (a class)', async () => {
+    const decide = await decideWith(authorizeByToken({ token: TOKEN }), AdminOnly);
+    expect(await decide(contextFor({ headers: { authorization: `Bearer ${TOKEN}` } }))).toEqual({
+      allowed: true,
+    });
+    expect(await decide(contextFor({ headers: {}, user: { admin: true } }))).toEqual({
+      allowed: true,
+    });
+    expect(await decide(contextFor({ headers: {}, user: { admin: false } }))).toEqual({
+      allowed: false,
+      reason: 'unauthenticated',
+    });
+  });
+
+  it('is unauthenticated when any form said so, keeping the first redirectTo', async () => {
+    const decide = await decideWith(
+      () => false,
+      () => ({ redirectTo: '/login' }),
+      () => ({ allowed: false, reason: 'unauthenticated' }) as const,
+    );
+    expect(await decide(ctx)).toEqual({
+      allowed: false,
+      reason: 'unauthenticated',
+      redirectTo: '/login',
+    });
+  });
+
+  it('is forbidden when every form forbids, and stops at the first allow', async () => {
+    const last = vi.fn(() => true);
+    const forbidden = await decideWith(
+      () => false,
+      () => ({ allowed: false, reason: 'forbidden' }) as const,
+    );
+    expect(await forbidden(ctx)).toEqual({ allowed: false, reason: 'forbidden' });
+    const first = await decideWith(() => true, last);
+    expect(await first(ctx)).toEqual({ allowed: true });
+    expect(last).not.toHaveBeenCalled();
+  });
+
+  it('needs at least one form', () => {
+    expect(() => anyAuthorize()).toThrow(/at least one/);
   });
 });

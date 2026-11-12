@@ -194,7 +194,7 @@ describe('TelescopeModule under @nestjs/authorization', () => {
       TelescopeModule.forRoot({ decorators: [marker] }),
       TelescopeModule.forRootAsync({ useFactory: () => ({}), decorators: [marker] }),
     ]) {
-      expect(mod.controllers).toHaveLength(4);
+      expect(mod.controllers).toHaveLength(5);
       for (const controller of mod.controllers ?? []) {
         expect(Reflect.getMetadata(AUTHORIZATION_CAN_ANYONE_METADATA, controller)).toBe(true);
         const isBeacon = controller.prototype instanceof ClientErrorController;

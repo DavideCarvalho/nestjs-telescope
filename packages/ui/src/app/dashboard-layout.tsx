@@ -16,6 +16,7 @@ import {
   TooltipTrigger,
 } from '../react/ui/index.js';
 import { CommandPalette, usePalette } from './command-palette.js';
+import { ConsoleSwitcher, readSwitcherConfig } from './console-switcher.js';
 import { useTheme } from './theme-context.js';
 
 interface TopNavItem {
@@ -142,6 +143,9 @@ function PaletteHint({ onClick }: { onClick: () => void }): JSX.Element {
   );
 }
 
+/** The switcher config the server put in the page (absent when this console is alone). */
+const switcherConfig = readSwitcherConfig('telescope-dashboard-config');
+
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
   const { open, setOpen } = usePalette();
   // Watcher-driven nav: only show a type's link when its watcher is registered.
@@ -157,7 +161,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
     <div className="flex min-h-screen bg-background font-mono text-sm text-foreground">
       <CommandPalette open={open} onClose={() => setOpen(false)} />
       <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-line px-3 py-4">
-        <span className="px-3 text-base font-semibold text-brand">Telescope</span>
+        <div className="px-3">
+          <ConsoleSwitcher
+            config={switcherConfig}
+            current={{ title: 'Telescope', icon: 'telescope' }}
+            brand={<span className="text-base font-semibold text-brand">Telescope</span>}
+          />
+        </div>
         <nav className="flex flex-col gap-1">
           {topNav.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={topLinkClass}>

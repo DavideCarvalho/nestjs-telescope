@@ -191,6 +191,12 @@ The v1 single `webhookUrl` is still accepted and is internally folded into a `we
 
 When you run the [OpenTelemetry provider](/docs/packages/watchers), each entry is stamped with the ambient `traceId` / `spanId`. The dashboard then offers a `#/traces/:traceId` route that lists every entry sharing that trace — the in-app correlation view — alongside a deep-link out to your trace backend (Jaeger / Grafana / …) via the configured `traceLink` template. The **Traces** nav item only appears once a `traceContext` provider is configured; without one there are no trace ids to correlate, so the link is hidden (the route still resolves on a direct visit).
 
+## Switching between consoles
+
+When the app mounts other Aviary consoles too (durable's Workflows, the Agents console, Media), the **Telescope** brand at the top of the sidebar becomes a menu that lists the ones the viewer may open, and links to them. Each is listed only when its own `authorize` allows the viewer, and that check runs once each time the page loads. With no other console, or none the viewer may open, the brand stays as it is.
+
+There is nothing to configure. Telescope is listed in the other consoles' menus while `TelescopeUiModule` serves the page, gated by the page's `authorize`. The menu reads the list from `GET <path>/api/consoles`, so mount `TelescopeModule` and `TelescopeUiModule` at the same `path`.
+
 ## Queues console (Horizon-style)
 
 When you register a [queue manager](/docs/packages/queue-managers), the dashboard gains a live queue console:
