@@ -1003,6 +1003,36 @@ describe('Recorder', () => {
       expect(seenKinds[0]).toEqual(['organization']);
     });
 
+    it('on: one tag per level of the chain, root first (context >= 2.1)', async () => {
+      const unit = { id: 'unit_3', kind: 'unit', source: 'app' };
+      const clinic = { id: 'clinic_1', kind: 'clinic', source: 'app' };
+      const chained = {
+        mode: 'tenant',
+        tenant: { ...unit, chain: [clinic, unit] },
+        chain: [clinic, unit],
+      };
+      const { accessor } = tenancyAccessor(true, chained as unknown as Filter);
+      expect(await tagsOf({ contextAccessor: accessor })).toEqual([
+        'tenant:clinic_1',
+        'tenant:unit_3',
+      ]);
+    });
+
+    it('on: never asks the context for a required tenant when recording', async () => {
+      const seen: unknown[] = [];
+      const accessor = {
+        ...tenancyAccessor(true, { mode: 'tenantless' }).accessor,
+        tenancy: () => ({ enabled: true, required: true }),
+        tenantFilter: (options?: { required?: boolean }) => {
+          seen.push(options?.required);
+          if (options?.required !== false) throw new Error('E_TENANT_REQUIRED');
+          return { mode: 'tenantless' as const };
+        },
+      };
+      expect(await tagsOf({ contextAccessor: accessor, tenancy: { required: true } })).toEqual([]);
+      expect(seen).toEqual([false]);
+    });
+
     it('off (context or `tenancy: false`): the plain tenantId tag, as before', async () => {
       const off = tenancyAccessor(false, org as Filter, 'acme').accessor;
       expect(await tagsOf({ contextAccessor: off })).toEqual(['tenant:acme']);

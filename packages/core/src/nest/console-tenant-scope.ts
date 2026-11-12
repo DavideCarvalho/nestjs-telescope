@@ -3,7 +3,7 @@
 // The console tenant scope: which organizations' data a console viewer sees. Every Aviary console
 // declares it locally with identical names and shapes (no cross-lib import), next to its
 // `authorize` contract.
-import type { Tenancy } from '../context/tenancy.js';
+import type { Tenancy, TenantFilter } from '../context/tenancy.js';
 
 /** What `authorize` may grant: `'*'` every tenant (and rows with none), or these tenant ids. */
 export type ConsoleTenants = '*' | string[];
@@ -15,7 +15,7 @@ export type ConsoleTenants = '*' | string[];
 export interface ConsoleTenantScope {
   tenants: ConsoleTenants;
   /** The viewer's own tenant (from the context), for its label. */
-  own?: { id: string; slug?: string };
+  own?: { id: string; kind?: string; slug?: string };
 }
 
 /** The data one console call answers with, after `?tenant=` met the scope. */
@@ -40,24 +40,36 @@ export function consoleTenantsOf(result: unknown): ConsoleTenants | undefined {
 /**
  * The scope of a viewer `authorize` allowed. `null` when tenancy is off: the console shows
  * everything, as without tenancy. With tenancy on: `tenants` from the result when it has them,
- * otherwise the viewer's own context tenant (none: an empty scope).
+ * otherwise the viewer's own context tenant: the level the configured `kinds` pick (none: an
+ * empty scope, or the context's `TenantRequiredError` when the tenancy is `required`).
  */
 export function resolveConsoleTenantScope(
   tenancy: Tenancy,
   tenants: ConsoleTenants | undefined,
 ): ConsoleTenantScope | null {
   if (!tenancy.enabled) return null;
-  const filter = tenancy.filter();
+  // A viewer `authorize` grants organizations to needs no tenant of its own; only one granted
+  // nothing meets the context's `required` (its TenantRequiredError, a 403).
+  let filter: TenantFilter;
+  let missing: unknown;
+  try {
+    filter = tenancy.filter();
+  } catch (error) {
+    filter = { mode: 'tenantless' };
+    missing = error;
+  }
   const own =
     filter.mode === 'tenant'
       ? {
           id: filter.tenant.id,
+          kind: filter.tenant.kind,
           ...(filter.tenant.slug !== undefined ? { slug: filter.tenant.slug } : {}),
         }
       : undefined;
   const withOwn = (scope: ConsoleTenantScope): ConsoleTenantScope =>
     own ? { ...scope, own } : scope;
   if (tenants !== undefined) return withOwn({ tenants });
+  if (missing !== undefined) throw missing;
   if (filter.mode === 'all') return { tenants: '*' };
   return withOwn({ tenants: own ? [own.id] : [] });
 }

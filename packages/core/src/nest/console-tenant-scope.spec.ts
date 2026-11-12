@@ -40,11 +40,24 @@ describe('console tenant scope', () => {
   it('no `tenants`: the own tenant, or none', () => {
     expect(resolveConsoleTenantScope(on(own), undefined)).toEqual({
       tenants: ['A'],
-      own: { id: 'A', slug: 'acme' },
+      own: { id: 'A', kind: 'organization', slug: 'acme' },
     });
     const none = resolveConsoleTenantScope(on({ mode: 'tenantless' }), undefined);
     expect(none).toEqual({ tenants: [] });
     expect(selectConsoleTenant(none, undefined)).toEqual({ kind: 'none' });
+  });
+
+  it('`required` and no tenant: the context’s error without a grant, a scope with one', () => {
+    const required: Tenancy = {
+      enabled: true,
+      nullRows: 'tenantless',
+      filter: () => {
+        throw new Error('E_TENANT_REQUIRED');
+      },
+    };
+    expect(() => resolveConsoleTenantScope(required, undefined)).toThrow('E_TENANT_REQUIRED');
+    expect(resolveConsoleTenantScope(required, ['B'])).toEqual({ tenants: ['B'] });
+    expect(resolveConsoleTenantScope(required, '*')).toEqual({ tenants: '*' });
   });
 
   it('a list: own tenant first, else the first; outside it is forged', () => {

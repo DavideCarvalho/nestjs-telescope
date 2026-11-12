@@ -24,7 +24,8 @@ import { ModuleRef } from '@nestjs/core';
 import { type AiUsageResult, AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { durationToMs } from '../config/parse-duration.js';
-import { tenantTagPrefix } from '../context/tenancy.js';
+import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
+import { tenantLabels, tenantTagPrefix } from '../context/tenancy.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
@@ -191,6 +192,9 @@ function parseWindowMs(window: string | undefined): number {
 /** Organizations the header's picker lists per search. */
 const TENANT_OPTIONS = 50;
 
+/** Organizations of a granted list given a label (and so findable by it) per call. */
+const MAX_LABELLED = 200;
+
 /** Tags per request when a caller names no bound — a picker's list, not a listing. */
 const DEFAULT_TAG_PAGE = 50;
 
@@ -228,6 +232,15 @@ export class TelescopeController {
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
   ) {}
+
+  /** The context accessor when `@dudousxd/nestjs-context` provides one (else the global slot is read). */
+  private get contextAccessor(): unknown {
+    try {
+      return this.moduleRef.get(CONTEXT_ACCESSOR, { strict: false });
+    } catch {
+      return undefined;
+    }
+  }
 
   @Get('entries')
   list(@Query() query: ListQuery): Promise<Page<Entry>> {
@@ -579,7 +592,19 @@ export class TelescopeController {
     } else {
       ids = scope.tenants;
     }
-    const label = (id: string): string => (own?.id === id && own.slug ? own.slug : id);
+    const kinds = typeof this.options.tenancy === 'object' ? this.options.tenancy.kinds : undefined;
+    const fallbackKind = kinds?.[0] ?? own?.kind ?? 'tenant';
+    const labels = await tenantLabels(
+      ids
+        .slice(0, MAX_LABELLED)
+        .map((id) =>
+          own?.id === id
+            ? { id, kind: own.kind ?? fallbackKind, ...(own.slug ? { slug: own.slug } : {}) }
+            : { id, kind: fallbackKind },
+        ),
+      this.contextAccessor,
+    );
+    const label = (id: string): string => labels[id] ?? id;
     return {
       enabled: true,
       tenants: scope.tenants,

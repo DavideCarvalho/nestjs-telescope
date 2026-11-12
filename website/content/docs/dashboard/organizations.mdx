@@ -23,11 +23,13 @@ TelescopeModule.forRoot({
 |------------------|---------|--------------|
 | `'inherit'` | yes | Follows `ContextModule`'s `tenancy.enabled`. |
 | `false` | | Keeps Telescope out of tenancy: entries keep the plain `tenant:<tenantId>` tag and the console shows everything. |
-| `{ enabled, kinds, nullRows, tag }` | | `enabled` (`'inherit'` or a boolean), `kinds` (the tenant kinds Telescope honours), `nullRows: 'shared'` (organizations also see entries recorded with no organization), `tag` (the tag prefix, default `'tenant'`). |
+| `{ enabled, kinds, family, required, nullRows, tag }` | | `enabled` (`'inherit'` or a boolean), `kinds` (the tenant kinds Telescope honours: with nested tenants, the most specific level of the chain whose kind is listed), `family` (scope by a secondary tenant family instead of the primary tenant), `required` (overrides `ContextModule`'s `tenancy.required` for the console), `nullRows: 'shared'` (organizations also see entries recorded with no organization), `tag` (the tag prefix, default `'tenant'`). |
 
 ## What gets recorded
 
-Every entry recorded for a request with a tenant is tagged `tenant:<id>`. Work run inside `Context.allTenants()` is tagged `tenant:*`. A request with no tenant records untagged entries.
+Every entry recorded for a request with a tenant is tagged `tenant:<id>`. With nested tenants (`@dudousxd/nestjs-context` 2.1 and later), it gets one tag per level of the chain: an entry recorded in unit `U` of clinic `C` is tagged `tenant:C` and `tenant:U`. A viewer of the clinic then sees its units' entries too, and a viewer of the unit sees only the unit's. Work run inside `Context.allTenants()` is tagged `tenant:*`. A request with no tenant records untagged entries.
+
+Recording never fails for a missing tenant, even when the tenancy is `required`.
 
 Exception families stay global: the same error in two organizations is one family, and each organization sees only its own occurrences.
 
@@ -52,7 +54,7 @@ TelescopeModule.forRoot({
 
 | `authorize` returns | The viewer sees |
 |---------------------|-----------------|
-| `true` or `{ allowed: true }` | Their own organization, the tenant of their request. With none, an empty console that says "Choose an organization to see its data". |
+| `true` or `{ allowed: true }` | Their own organization: the tenant of their request (the level `kinds` picks, with nested tenants). With none, an empty console that says "Choose an organization to see its data", or a `403` (`E_TENANT_REQUIRED`) when the tenancy is `required`. |
 | `{ allowed: true, tenants: ['org_1', 'org_2'] }` | Those organizations. |
 | `{ allowed: true, tenants: '*' }` | Every organization, plus entries recorded with no organization. A list containing `'*'` means the same. |
 
@@ -71,6 +73,17 @@ TelescopeModule.forRoot({
 ## The Organization control
 
 With tenancy on, the dashboard header shows an **Organization** control: a fixed chip when the viewer sees one organization, a searchable picker when they see several or all of them (**All organizations** first). The choice lives in the page URL as `?tenant=<id>`, so it survives a reload and can be shared.
+
+Organizations are labelled by `ContextModule`'s `tenancy.label(tenant)` (for example the organization's name), else the tenant's slug, else its id. The picker searches the labels of the granted organizations too.
+
+```ts
+ContextModule.forRoot({
+  tenancy: {
+    enabled: true,
+    label: async (tenant) => (await orgs.findById(tenant.id))?.name ?? tenant.id,
+  },
+}),
+```
 
 Every API call carries `?tenant=<id>`, and the server keeps it within what `authorize` granted. A `tenant` outside the viewer's organizations answers with no data and logs a warning. `?tenant=*` means **All organizations**.
 
