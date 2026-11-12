@@ -105,10 +105,9 @@ TelescopeModule.forRoot({
 });
 ```
 
-The endpoint is public by design: it does not receive the console's
-`decorators` and does not count toward the production protection rule. To gate
-it, use `routes: false` and extend `ClientErrorController` with your own
-decorators.
+The endpoint is public by design: it takes neither the console's `decorators`
+nor its `authorize`. To gate it, use `routes: false` and extend
+`ClientErrorController` with `UseConsoleAuthorize` or your own decorators.
 
 Source: `packages/core/src/nest/telescope.options.ts` (`ClientErrorsOptions`).
 

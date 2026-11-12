@@ -137,12 +137,12 @@ unavailable`, and such queues advertise `actions: []`. It surfaces as:
 ### Off until `mutations: true`
 
 Like all queue mutations, `redrive` returns `403` until you set
-`mutations: true`. Who may call it is decided by the console's protection (your
-`decorators`, or your own controllers):
+`mutations: true`. Who may call it is decided by the console's `authorize` (or
+your own controllers):
 
 ```ts
 TelescopeModule.forRoot({
-  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  authorize: { policy: ConsolePolicy, ability: 'view' },
   mutations: true,
   queueManagers: [new SqsQueueManager({ ops: createAwsSqsOps(client), queues })],
 });

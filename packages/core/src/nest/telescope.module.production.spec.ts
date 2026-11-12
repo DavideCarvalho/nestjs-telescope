@@ -1,7 +1,7 @@
 // packages/core/src/nest/telescope.module.production.spec.ts
 //
-// The production rule: with NODE_ENV=production, mounting the console with no
-// `decorators` fails the boot; `decorators` or `routes: false` boot fine.
+// Production: the console boots without `authorize` and answers 403; a `Can()`
+// in `decorators` still runs first; `routes: false` mounts nothing.
 import 'reflect-metadata';
 import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
 import type { DynamicModule, INestApplication } from '@nestjs/common';
@@ -40,39 +40,25 @@ async function boot(telescope: DynamicModule): Promise<INestApplication> {
   return app;
 }
 
-describe('TelescopeModule production rule', () => {
-  it('fails the boot when the console mounts with no decorators', () => {
-    expect(() => TelescopeModule.forRoot({})).toThrow(
-      /refusing to mount undecorated routes with NODE_ENV=production/,
-    );
+describe('TelescopeModule in production', () => {
+  it('no longer refuses to boot without decorators: it mounts and answers 403', async () => {
+    expect(() => TelescopeModule.forRoot({})).not.toThrow();
+    expect(() => TelescopeModule.forRoot({ decorators: [] })).not.toThrow();
+    expect(() => TelescopeModule.forRootAsync({ useFactory: () => ({}) })).not.toThrow();
+    const target = await boot(TelescopeModule.forRoot({}));
+    await request(target.getHttpServer())
+      .get('/telescope/api/meta')
+      .expect(403, { error: 'forbidden' });
   });
 
-  it('counts an empty decorators array as none, on forRoot and forRootAsync', () => {
-    expect(() => TelescopeModule.forRoot({ decorators: [] })).toThrow(/NODE_ENV=production/);
-    expect(() => TelescopeModule.forRootAsync({ useFactory: () => ({}) })).toThrow(
-      /NODE_ENV=production/,
-    );
+  it('answers once authorize allows', async () => {
+    const target = await boot(TelescopeModule.forRoot({ authorize: () => true }));
+    await request(target.getHttpServer()).get('/telescope/api/meta').expect(200);
   });
 
-  it('names both ways to protect it, with an example of each', () => {
-    let message = '';
-    try {
-      TelescopeModule.forRoot({ path: 'ops/telescope' });
-    } catch (error) {
-      message = (error as Error).message;
-    }
-    expect(message).toContain(
-      "TelescopeModule.forRoot({ decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')] })",
-    );
-    expect(message).toContain('TelescopeModule.forRoot({ routes: false })');
-    expect(message).toContain(
-      "@Controller('ops/telescope/api') @Can(ConsolePolicy, 'view') class ConsoleApi extends TelescopeController {}",
-    );
-  });
-
-  it('boots with decorators, and they protect the console', async () => {
+  it('decorators still run before authorize', async () => {
     const target = await boot(
-      TelescopeModule.forRoot({ decorators: [Can(ConsolePolicy, 'view')] }),
+      TelescopeModule.forRoot({ decorators: [Can(ConsolePolicy, 'view')], authorize: () => true }),
     );
     await request(target.getHttpServer()).get('/telescope/api/meta').expect(401);
   });
@@ -86,6 +72,7 @@ describe('TelescopeModule production rule', () => {
     const target = await boot(
       TelescopeModule.forRoot({
         decorators: [Can(ConsolePolicy, 'view')],
+        authorize: () => true,
         clientErrors: { enabled: true },
       }),
     );

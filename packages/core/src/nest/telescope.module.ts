@@ -4,6 +4,7 @@ import {
   type DynamicModule,
   Inject,
   type InjectionToken,
+  Logger,
   type MiddlewareConsumer,
   Module,
   type NestModule,
@@ -33,11 +34,9 @@ import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
-import {
-  CONSOLE_DECORATORS_EXAMPLE,
-  assertConsoleProtected,
-  dynamicController,
-} from './dynamic-controller.js';
+import { UseConsoleAuthorize } from './console-authorize.guard.js';
+import { consoleAuthorizeMissingWarning } from './console-authorize.js';
+import { dynamicController } from './dynamic-controller.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeCrashCapture } from './telescope-crash-capture.service.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
@@ -56,7 +55,24 @@ import {
 } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
+/** Logs the "no `authorize`" warning once at boot, mounted routes or not (`routes: false`). */
+const CONSOLE_AUTHORIZE_WARNING = Symbol('TELESCOPE_CONSOLE_AUTHORIZE_WARNING');
+/** Which registration the app used (`TelescopeModule.forRoot()` / `.forRootAsync()`), named by the warning. */
+const TELESCOPE_REGISTRATION = Symbol('TELESCOPE_REGISTRATION');
+
 const SHARED_PROVIDERS: Provider[] = [
+  {
+    provide: CONSOLE_AUTHORIZE_WARNING,
+    useFactory: (options: TelescopeModuleOptions, registration: string): true => {
+      if (options.authorize === undefined) {
+        new Logger('TelescopeModule').warn(
+          consoleAuthorizeMissingWarning('@dudousxd/nestjs-telescope', registration),
+        );
+      }
+      return true;
+    },
+    inject: [TELESCOPE_OPTIONS, TELESCOPE_REGISTRATION],
+  },
   {
     provide: TELESCOPE_CONFIG,
     useFactory: (options: TelescopeModuleOptions) => resolveConfig(options),
@@ -168,10 +184,11 @@ export class TelescopeModule implements NestModule {
   }
 
   static forRoot(options: TelescopeModuleOptions = {}): DynamicModule {
-    return TelescopeModule.build(options, {
-      provide: TELESCOPE_OPTIONS,
-      useValue: options,
-    });
+    return TelescopeModule.build(
+      options,
+      { provide: TELESCOPE_OPTIONS, useValue: options },
+      'TelescopeModule.forRoot()',
+    );
   }
 
   static forRootAsync(config: {
@@ -208,12 +225,16 @@ export class TelescopeModule implements NestModule {
     // `config` carries the build-time fields under the same names. The
     // resolved options get the static `path` (so capture and the UI agree with
     // the mount), and build-time fields the factory returned are logged.
-    return TelescopeModule.build(config, {
-      provide: TELESCOPE_OPTIONS,
-      useFactory: async (...args: unknown[]) =>
-        withStaticOptions(await config.useFactory(...args), config),
-      inject: config.inject ?? [],
-    });
+    return TelescopeModule.build(
+      config,
+      {
+        provide: TELESCOPE_OPTIONS,
+        useFactory: async (...args: unknown[]) =>
+          withStaticOptions(await config.useFactory(...args), config),
+        inject: config.inject ?? [],
+      },
+      'TelescopeModule.forRootAsync()',
+    );
   }
 
   /**
@@ -226,29 +247,17 @@ export class TelescopeModule implements NestModule {
       'path' | 'decorators' | 'mcpDecorators' | 'routes' | 'imports'
     >,
     optionsProvider: Provider,
+    registration: string,
   ): DynamicModule {
-    if (staticOptions.routes !== false) {
-      const api = `${normalizeTelescopePath(staticOptions.path)}/api`;
-      assertConsoleProtected(staticOptions.decorators, {
-        module: 'TelescopeModule',
-        decoratorsExample: `TelescopeModule.forRoot({ ${CONSOLE_DECORATORS_EXAMPLE} })`,
-        selfMountExample: `TelescopeModule.forRoot({ routes: false }) + @Controller('${api}') @Can(ConsolePolicy, 'view') class ConsoleApi extends TelescopeController {}`,
-      });
-      // `mcpDecorators` replaces `decorators` on the MCP route, so an explicit
-      // empty list would mount it open: the same rule applies to it.
-      if (staticOptions.mcpDecorators !== undefined) {
-        assertConsoleProtected(staticOptions.mcpDecorators, {
-          module: 'TelescopeModule (mcpDecorators)',
-          decoratorsExample: `TelescopeModule.forRoot({ mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')] }), or leave mcpDecorators out to use decorators`,
-          selfMountExample: `TelescopeModule.forRoot({ routes: false }) + @Controller('${api}/mcp') @Can(ConsolePolicy, 'view') class ConsoleMcp extends TelescopeMcpController {}`,
-        });
-      }
-    }
     return {
       module: TelescopeModule,
       imports: [DiscoveryModule, ...(staticOptions.imports ?? [])],
       controllers: staticOptions.routes === false ? [] : TelescopeModule.controllers(staticOptions),
-      providers: [optionsProvider, ...SHARED_PROVIDERS],
+      providers: [
+        optionsProvider,
+        { provide: TELESCOPE_REGISTRATION, useValue: registration },
+        ...SHARED_PROVIDERS,
+      ],
       exports: TELESCOPE_EXPORTS,
     };
   }
@@ -260,14 +269,30 @@ export class TelescopeModule implements NestModule {
     const path = normalizeTelescopePath(staticOptions.path);
     const decorators = staticOptions.decorators ?? [];
     const mcpDecorators = staticOptions.mcpDecorators ?? decorators;
+    // `authorize` is read once the options resolve (it may come from an async
+    // factory), so the guards look it up from TELESCOPE_OPTIONS at init. They
+    // run after the host's `decorators`, so its authentication sets the user first.
+    // The module logs the "no `authorize`" warning itself, so the guards stay quiet.
+    const consoleAccess = UseConsoleAuthorize({
+      from: { token: TELESCOPE_OPTIONS, select: (o) => (o as TelescopeModuleOptions).authorize },
+      warn: false,
+    });
+    const mcpAccess = UseConsoleAuthorize({
+      from: {
+        token: TELESCOPE_OPTIONS,
+        select: (o) =>
+          (o as TelescopeModuleOptions).mcpAuthorize ?? (o as TelescopeModuleOptions).authorize,
+      },
+      warn: false,
+    });
     return [
       // Public front-end error beacon: guests' browsers must reach it, so it
       // takes NO `decorators` (only the Can.Anyone mark). It 404s while
       // `clientErrors.enabled` is off. Mounts before the catch-all controller.
       dynamicController(ClientErrorController, `${path}/api/client-errors`),
-      dynamicController(TelescopeMcpController, `${path}/api/mcp`, mcpDecorators),
-      dynamicController(TelescopeController, `${path}/api`, decorators),
-      dynamicController(StreamController, `${path}/api`, decorators),
+      dynamicController(TelescopeMcpController, `${path}/api/mcp`, [...mcpDecorators, mcpAccess]),
+      dynamicController(TelescopeController, `${path}/api`, [...decorators, consoleAccess]),
+      dynamicController(StreamController, `${path}/api`, [...decorators, consoleAccess]),
     ];
   }
 }

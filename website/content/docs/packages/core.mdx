@@ -29,8 +29,8 @@ import { TelescopeModule } from '@dudousxd/nestjs-telescope';
   imports: [
     TelescopeModule.forRoot({
       prune: { after: '24h' },
-      // Required in production (else the boot fails): see Protecting the routes.
-      // decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+      // Required in production (else every console request answers 403):
+      // authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true,
     }),
   ],
 })
@@ -113,8 +113,10 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `enabled` | Master switch. Compute inline (e.g. `NODE_ENV !== 'production'`). |
 | `storage` | `StorageProvider` (or factory). Defaults to the embedded SQLite store. |
 | `watchers` | Built-in + custom watchers; each individually configurable. |
-| `decorators` | Class decorators for the mounted console controllers (e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`). **Required in production** unless `routes: false` — see [Protecting the routes](/docs/dashboard/auth). |
-| `mcpDecorators` | Class decorators for the MCP route only, in place of `decorators` (e.g. an `ApiKeyProvider` for coding agents) — see the [API-key recipe](/docs/concepts/mcp#recipe-an-api-key-for-the-agent). |
+| `authorize` | Who may use the console (API, live feed, MCP): a function, an `@Injectable()` class, a lazy import, `{ policy, ability }` or a gate name. Omitted: open outside production, 403 in production — see [Protecting the routes](/docs/dashboard/auth). |
+| `mcpAuthorize` | `authorize` for the MCP route only, in place of `authorize` (e.g. `authorizeByToken({ token })` for coding agents). |
+| `decorators` | Class decorators for the mounted console controllers, run before `authorize` (e.g. `[UseGuards(AuthenticationGuard)]`). |
+| `mcpDecorators` | Class decorators for the MCP route only, in place of `decorators`. |
 | `routes` | `false` mounts no controller, so you serve the routes from your own subclasses of the exported controllers. |
 | `mutations` | `true` turns on queue actions, prune, replay and profiling-arm (off: `403`). |
 | `imports` | Extra `imports` for whatever your `decorators` need. |
@@ -124,7 +126,7 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `pulse` | Health-snapshot tuning. `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot — matches the `slow` tag threshold, so a quiet host shows no false hotspots. |
 | `traceContext` / `traceLink` | OpenTelemetry trace stamping + deep-link template — see [`-otel`](/docs/packages/otel). |
 | `queueManagers` | Live queue managers — see [queue managers](/docs/packages/queue-managers). |
-| `mcp` | Optional MCP server for coding agents — `true` enables it, protected by your `decorators`. Disabled by default. See [MCP server](/docs/concepts/mcp). |
+| `mcp` | Optional MCP server for coding agents — `true` enables it, protected by `authorize` / `mcpAuthorize`. Disabled by default. See [MCP server](/docs/concepts/mcp). |
 | `overloadProtection` | Pause capture under event-loop pressure. `true` (default, 200ms p99), `false`, or `{ maxEventLoopLagMs }`. See [Performance](/docs/concepts/performance#overload-protection--pause-under-event-loop-pressure). |
 
 ## Helpers for package authors
@@ -135,7 +137,9 @@ Core also exports the pieces its own modules use, for a package that mounts rout
 |---|---|
 | `dynamicController(base, path, decorators?)` | Subclasses `base`, mounts it at `path`, and applies `decorators` to the subclass only, so one registration's decorators never leak into another. |
 | `applyControllerDecorators(controller, decorators?)` | Marks `controller` open to `@nestjs/authorization`'s global guard (as `Can.Anyone()` would), then applies `decorators` in order. Call it on a class built for one registration. |
-| `assertConsoleProtected(decorators, hint)` | The [production rule](/docs/dashboard/auth#the-production-rule): with `NODE_ENV=production` and no `decorators`, throws at module build. A no-op elsewhere. |
+| `UseConsoleAuthorize({ authorize, pages? })` | Class decorator applying the console's access guard and denial responses to a controller you mount yourself. `ConsoleAuthorizeGuard.for(...)` returns just the guard. |
+| `resolveConsoleAuthorize(authorize, moduleRef)` | Resolves any `authorize` form into one `(context) => Promise<ConsoleDecision>` that never throws. |
+| `authorizeByToken({ token })` | An `authorize` that allows `Authorization: Bearer <token>` (constant-time compare). |
 | `publishAgentObservation(observation)` | Feeds an AI-usage or agent-run observation to the same metrics as the `aviary:agent:*` channels (Prometheus and OTLP). `-official`'s `telescopeAiUsage()` uses it. Publish each event from one source only, or it counts twice. |
 
 See [Capture & correlation](/docs/concepts/capture) for the recorder pipeline and the `Entry` / `Watcher` / `StorageProvider` SPIs.

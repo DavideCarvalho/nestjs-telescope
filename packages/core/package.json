@@ -44,10 +44,14 @@
     "@nestjs/common": ">=10.0.0",
     "@nestjs/core": ">=10.0.0",
     "reflect-metadata": ">=0.1.13",
-    "rxjs": ">=7.0.0"
+    "rxjs": ">=7.0.0",
+    "@nestjs/authorization": ">=0.1.0"
   },
   "peerDependenciesMeta": {
     "@dudousxd/nestjs-context": {
+      "optional": true
+    },
+    "@nestjs/authorization": {
       "optional": true
     }
   },

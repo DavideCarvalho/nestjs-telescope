@@ -37,6 +37,8 @@ function buildTelescopeOptions(
     // The incident registers capture globally in bootstrap, not as module middleware.
     registerRequestMiddleware: false,
     // Custom cache emitter — the highest-cardinality stream, fired per request.
+    // The soak drives the console API itself; open it so the boot logs no warning.
+    authorize: () => true,
     watchers: [new CacheWatcher(holder.source())],
     // Recorder: a short flush keeps the buffer turning over like the incident.
     recorder: { flushIntervalMs: 1_000 },

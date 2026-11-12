@@ -1,158 +1,172 @@
 ---
 name: telescope-access-mcp
 description: >-
-  Protecting nestjs-telescope's routes and the MCP server. Routes are protected
-  only with @nestjs/authentication + @nestjs/authorization, one of two ways:
-  decorators on the mounted controllers (TelescopeModule/TelescopeUiModule
-  forRoot({ decorators })) or routes:false plus your own subclasses of the
-  exported controllers. With NODE_ENV=production an undecorated mounted console
-  fails the boot. Queue mutations need mutations:true. MCP is enabled with
-  mcp:true and protected like any console route, or by its own mcpDecorators
-  (an ApiKeyProvider Bearer key for agents). Use for "lock down the
-  dashboard", "boot fails in production", "retry/remove queue jobs are 403",
-  "connect Claude Code / Cursor to Telescope".
+  Protecting nestjs-telescope's routes and the MCP server with the `authorize`
+  option (TelescopeModule/TelescopeUiModule forRoot({ authorize }), otel
+  forExporter(exporter, { authorize })): a function, an @Injectable()
+  ConsoleAuthorizer class, a lazy import, { policy, ability } from
+  @nestjs/authorization, or a gate name from @dudousxd/nestjs-authz; or
+  routes:false plus your own subclasses with UseConsoleAuthorize. Without
+  authorize the console is open outside production and answers 403 in
+  production (one boot warning). Queue mutations need mutations:true. MCP is
+  enabled with mcp:true and follows authorize, or its own mcpAuthorize
+  (authorizeByToken for agents). Use for "lock down the dashboard", "console
+  answers 403 in production", "retry/remove queue jobs are 403", "connect
+  Claude Code / Cursor to Telescope", "protect /metrics".
 license: MIT
 metadata:
   type: core
   library: "@dudousxd/nestjs-telescope"
-  library_version: "1.12.0"
+  library_version: "3.0.0"
   framework: nestjs
 ---
 
 # Protecting the routes & MCP
 
-Telescope ships no access control of its own. Its routes are protected with
-NestJS's first-party tools, `@nestjs/authentication` and `@nestjs/authorization`.
+Telescope has no login of its own: sign-in stays the app's. One option,
+`authorize`, decides who may use the console. It runs after the app's
+authentication (global guards and `decorators`), so `request.user` is set.
 
 ## Core patterns
 
-### Pattern 1 — `decorators` on the mounted controllers
+### Pattern 1 — `authorize` on the modules
 
 ```ts
-import { UseGuards } from '@nestjs/common';
-import { AuthenticationGuard } from '@nestjs/authentication';
-import { Can } from '@nestjs/authorization';
+import { authorizeByToken } from '@dudousxd/nestjs-telescope';
 
-const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+const authorize = (ctx: ExecutionContext) =>
+  ctx.switchToHttp().getRequest().user?.isAdmin === true;
+// or: ConsoleAccess                                 (@Injectable() implements ConsoleAuthorizer)
+// or: () => import('./console-access.js')           (lazy, default export)
+// or: { policy: ConsolePolicy, ability: 'view' }    (@nestjs/authorization)
+// or: 'console.telescope'                           (gate name, @dudousxd/nestjs-authz)
+// or: authorizeByToken({ token: process.env.CONSOLE_TOKEN })
 
-TelescopeModule.forRoot({ decorators: protect });   // API, live stream, MCP
-TelescopeUiModule.forRoot({ decorators: protect }); // the page + assets
-// forRootAsync({ useFactory, decorators: protect }): a static top-level option
+TelescopeModule.forRoot({ authorize });   // API, live stream, MCP
+TelescopeUiModule.forRoot({ authorize }); // the page + assets
+// forRootAsync: `authorize` may come from the factory
 ```
 
-The page is a full-page navigation (cookies, no `Authorization` header), so the
-authentication strategy in front of it must read a cookie session.
+Results: `true`/`{ allowed: true }` allow; `false` → 403 `{ error: 'forbidden' }`
+(the page gets an "Access denied" HTML page); `{ allowed: false, reason:
+'unauthenticated' }` → 401; `{ redirectTo: '/login' }` → 302 for a page
+navigation, 401 `{ error: 'unauthenticated', redirectTo }` for the API (the
+dashboard follows it). A throw denies (403).
+
+The page is a full-page navigation (cookies, no `Authorization` header), so its
+check must read a cookie session. `decorators` (e.g.
+`[UseGuards(AuthenticationGuard)]`) still apply and run before `authorize`.
 
 ### Pattern 2 — `routes: false` and your own controllers
 
 ```ts
+import { UseConsoleAuthorize } from '@dudousxd/nestjs-telescope';
+
+// ABOVE the auth guard: Nest applies class decorators bottom-up, so the auth
+// guard runs first and sets request.user before `authorize` runs.
 @Controller('ops/telescope/api')
-@UseGuards(AuthenticationGuard)
-@Can(ConsolePolicy, 'view')
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsoleApi extends TelescopeController {}
 
 @Module({
-  imports: [TelescopeModule.forRoot({ path: 'ops/telescope', routes: false })],
+  imports: [
+    TelescopeModule.forRoot({
+      path: 'ops/telescope',
+      routes: false,
+      authorize: { policy: ConsolePolicy, ability: 'view' },
+    }),
+  ],
   controllers: [ConsoleApi],
 })
 export class OpsModule {}
 ```
 
+`@UseConsoleAuthorize()` runs `TelescopeModule.forRoot({ authorize })`;
+`@UseConsoleAuthorize({ authorize })` runs its own check. With `routes: false`
+the module still logs the "no `authorize`" boot warning when it is omitted.
 `StreamController`, `TelescopeMcpController`, `ClientErrorController` and
-`TelescopeUiController` (from the UI package) extend the same way. The base
-classes carry no guard, so your decorators are the whole gate. Keep `path` set
-to the mount.
+`TelescopeUiController` (from the UI package; it answers denied page
+navigations with a page or a redirect) extend the same way. The base classes
+carry no guard. Keep `path` set to the mount.
 
 ### Pattern 3 — queue mutations
 
 ```ts
-TelescopeModule.forRoot({ decorators: protect, mutations: true });
+TelescopeModule.forRoot({ authorize, mutations: true });
 ```
 
 Retry/remove/promote/redrive/enqueue, prune, replay and profiling-arm answer
 403 until `mutations: true`. For a rule on mutations stricter than on reads,
-use Pattern 2 and override those methods with an extra `@Can(...)` (class and
-method requirements both apply; re-declare the route decorators on the override).
+use Pattern 2 and override those methods with an extra `@Can(...)`
+(re-declare the route decorators on the override).
 
 ### Pattern 4 — the MCP server
 
 ```ts
-TelescopeModule.forRoot({ decorators: protect, mcp: true }); // POST <path>/api/mcp
-```
-
-Without `mcp: true` the handler answers 404 (the route stays mounted, so your decorators answer 401/403 first). Agent clients send
-`Authorization: Bearer <key>`, not the dashboard's cookie. Give MCP its own
-decorators with `mcpDecorators` (they REPLACE `decorators` on the MCP route
-only) and an `ApiKeyProvider` from `@nestjs/authentication`:
-
-```ts
-import { ApiKeyProvider, Authenticate, AuthenticationRegistry, SessionCookieProvider } from '@nestjs/authentication';
-
-@Injectable()
-export class TelescopeAgentKey extends ApiKeyProvider<User> {
-  constructor(private readonly agentKeys: AgentKeysRepository, registry: AuthenticationRegistry) {
-    super({ prefix: 'tsc' });
-    registry.registerProvider(this, { order: 2 });
-  }
-  findKey(id: string) {
-    return this.agentKeys.findWithUser(id); // { hash, user, expiresAt } or null
-  }
-}
-
 TelescopeModule.forRoot({
-  mcp: true,
-  decorators: [Authenticate({ providers: [SessionCookieProvider] }), Can(ConsolePolicy, 'view')],
-  mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')],
+  mcp: true, // POST <path>/api/mcp
+  authorize: { policy: ConsolePolicy, ability: 'view' },
+  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
 });
 ```
 
-Issue a key with `app.get(TelescopeAgentKey).generate()` (store `id` + `hash`,
-show `key` once), then
-`claude mcp add --transport http telescope <url>/api/mcp --header "Authorization: Bearer $KEY"`.
-The key signs in its user, so `Can(...)` still applies (403 for a denied user).
-`mcpDecorators: []` fails the production boot. With `forRootAsync`, pass
-`mcpDecorators` statically, like `decorators` (`mcp: true` stays in the
-factory); returned from the factory it has no effect and the boot warns.
-If the app has a global filter turning 401 into a sign-in redirect, throw
-your own `HttpException` (401) from the MCP guard so agents get a real 401.
+Without `mcp: true` the handler answers 404 (the route stays mounted, so the
+access check answers 401/403 first). Agent clients send `Authorization: Bearer
+<key>`, not the dashboard's cookie; `mcpAuthorize` REPLACES `authorize` on the
+MCP route only. Then
+`claude mcp add --transport http telescope <url>/api/mcp --header "Authorization: Bearer $TELESCOPE_MCP_TOKEN"`.
+
+For a key per developer, use an `ApiKeyProvider` from `@nestjs/authentication`
+in `mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] })]` (they
+replace `decorators` on MCP) and keep `authorize` for the policy.
+
+### Pattern 5 — `GET /metrics` (otel)
+
+```ts
+TelescopeOtelMetricsModule.forExporter(exporter, {
+  authorize: authorizeByToken({ token: process.env.METRICS_TOKEN }),
+});
+```
+
+Same contract and default as the console. Prometheus sends the token via
+`authorization.credentials` in its scrape config.
 
 ## Common mistakes
 
-### Mistake 1 — mounting the console in production with no decorators
+### Mistake 1 — no `authorize` in production
 
 ```ts
-// Wrong — with NODE_ENV=production this throws at module build:
-// "TelescopeModule: refusing to mount undecorated routes with NODE_ENV=production…"
-TelescopeModule.forRoot({});
+// Wrong — boots, but every console request answers 403 in production, and the
+// boot logs: "[@dudousxd/nestjs-telescope] console has no `authorize` configured…"
+TelescopeModule.forRoot({ decorators: [UseGuards(AuthenticationGuard)] });
 
-// Correct — either way boots.
-TelescopeModule.forRoot({ decorators: protect });
-TelescopeModule.forRoot({ routes: false }); // + your own controllers
+// Correct
+TelescopeModule.forRoot({ decorators: [UseGuards(AuthenticationGuard)], authorize });
 ```
 
-`decorators: []` counts as none. The same rule applies to `TelescopeUiModule`.
-`TelescopeOtelMetricsModule` stays outside it by default: an undecorated
-`GET /metrics` still boots with `NODE_ENV=production` (a Prometheus scrape
-usually runs unauthenticated inside the cluster) unless
-`requireProtectionInProduction: true` puts it under the same rule.
-`routes: false` always boots. Outside production an undecorated console
-mounts open. Source: `packages/core/src/nest/dynamic-controller.ts`
-(`assertConsoleProtected`), `packages/otel/src/telescope-otel-metrics.module.ts`
-(`requireProtectionInProduction`).
+`decorators` alone do not count. The same rule applies to `TelescopeUiModule`
+and `TelescopeOtelMetricsModule` (`/metrics`). Outside production the console
+is open. Source: `packages/core/src/nest/console-authorize.guard.ts`.
 
-### Mistake 2 — expecting the client-error beacon to be protected
+### Mistake 2 — a token in the URL
+
+`authorizeByToken` reads only the `Authorization: Bearer` header; `?token=` is
+ignored. An empty token throws at config time.
+
+### Mistake 3 — expecting the client-error beacon to be protected
 
 `POST <path>/api/client-errors` is public by design (visitors' browsers report
-to it), so it does not receive `decorators`. It is off until
+to it), so it takes neither `decorators` nor `authorize`. It is off until
 `clientErrors.enabled`, and keeps its byte cap and per-IP rate limit. To gate
 it, use `routes: false` and extend `ClientErrorController`.
 
-### Mistake 3 — expecting mutations to work once reads do
+### Mistake 4 — expecting mutations to work once reads do
 
 ```ts
 // Wrong — reads work, but retry/remove/promote still 403.
-TelescopeModule.forRoot({ decorators: protect });
+TelescopeModule.forRoot({ authorize });
 
 // Correct
-TelescopeModule.forRoot({ decorators: protect, mutations: true });
+TelescopeModule.forRoot({ authorize, mutations: true });
 ```

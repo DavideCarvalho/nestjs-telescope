@@ -80,37 +80,31 @@ export class AppModule {}
 ```
 
 `GET /metrics` exposes your metrics (route names, queue names, error counts,
-AI cost…), so keep it reachable only by the scraper. A Prometheus scrape usually
-runs unauthenticated inside the cluster, so by default the scrape is **outside**
-the console's production rule: an undecorated `/metrics` still boots with
-`NODE_ENV === 'production'`. Restrict it with a network policy (don't route it
-through your public ingress), or with NestJS's own tools through `decorators`
-(applied to the metrics controller only, fresh per call, in every environment):
+AI cost…), so it follows the console's access rule: `authorize` decides who may
+scrape it. Prometheus sends a Bearer token (`authorization.credentials` in the
+scrape config), so the usual check is `authorizeByToken`:
 
 ```ts
+import { authorizeByToken } from '@dudousxd/nestjs-telescope-otel';
+
 TelescopeOtelMetricsModule.forExporter(otel, {
-  decorators: [UseGuards(AuthenticationGuard), Can(MetricsPolicy, 'scrape')],
+  authorize: authorizeByToken({ token: process.env.METRICS_TOKEN }),
 });
 ```
 
-To make protection mandatory, set `requireProtectionInProduction: true`: with
-`NODE_ENV === 'production'`, mounting `/metrics` with no `decorators` (an empty
-array counts as none) then fails the boot, the same rule as the console's.
-
-```ts
-TelescopeOtelMetricsModule.forExporter(otel, {
-  requireProtectionInProduction: true, // default false
-  decorators: [UseGuards(BearerGuard)],
-});
-```
+`authorize` takes the same forms as the console's (a function, an injectable
+class, a lazy import, `{ policy, ability }`, a gate name). Without it `/metrics`
+is open outside production; with `NODE_ENV === 'production'` every scrape
+answers 403 and one warning is logged at boot. `decorators` still apply to the
+metrics controller (fresh per call) and run before `authorize`.
 
 Or mount it yourself: `{ routes: false }` mounts nothing and exports the exporter
 under `TELESCOPE_OTEL_EXPORTER`, so your own controller can extend
 `TelescopeOtelMetricsController` or call `exporter.prometheus()`:
 
 ```ts
-@Can(MetricsPolicy, 'scrape')
 @Controller('ops')
+@UseConsoleAuthorize({ authorize: authorizeByToken({ token: process.env.METRICS_TOKEN }) })
 class OpsMetrics extends TelescopeOtelMetricsController {} // GET /ops/metrics
 ```
 

@@ -39,8 +39,7 @@ class TooManyRequestsException extends HttpException {
 /**
  * Public front-end error ingestion. PUBLIC BY DESIGN: ordinary visitors'
  * browsers (signed in or not) hit it, so `TelescopeModule` mounts it WITHOUT the
- * console's `decorators` and it does not count toward the production protection
- * rule. Abuse is dampened by the per-endpoint knobs in {@link ClientErrorsOptions}:
+ * console's `decorators` or `authorize`. Abuse is dampened by the per-endpoint knobs in {@link ClientErrorsOptions}:
  * an opt-in `enabled` flag (404 while off), a body byte cap and a per-IP token
  * bucket. To gate it, mount it yourself (`routes: false`) by extending this class.
  *

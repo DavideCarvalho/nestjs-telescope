@@ -58,8 +58,9 @@ Everything lives in [`src/app.module.ts`](./src/app.module.ts):
 ```ts
 TelescopeModule.forRoot({
   watchers: [new CacheWatcher(cacheHolder.source())],
+  authorize: consoleAccess,
 }),
-TelescopeUiModule.forRoot(),
+TelescopeUiModule.forRoot({ authorize: consoleAccess }),
 ```
 
 `TelescopeModule.forRoot({})` is zero-config — it defaults to an in-memory SQLite
@@ -68,10 +69,8 @@ serves the bundled React dashboard at `/telescope`.
 
 ### Protecting it
 
-The demo runs outside production, so the console mounts open. With
-`NODE_ENV=production` the boot fails until you protect the routes with the
-official NestJS tools (`@nestjs/authentication`, `@nestjs/authorization`):
-pass `decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`
-to both `TelescopeModule.forRoot` and `TelescopeUiModule.forRoot`, or set
-`routes: false` and mount the routes from your own controllers. See
-"Protecting the routes" in the main README.
+The demo passes `authorize` to both `TelescopeModule.forRoot` and
+`TelescopeUiModule.forRoot`. It has no sign-in, so its check opens the console
+outside production only. In your app, check the signed-in user instead, e.g.
+`authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true`.
+See "Protecting the routes" in the main README.

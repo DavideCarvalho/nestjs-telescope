@@ -516,7 +516,7 @@ export class TelescopeController {
   /**
    * Mutations (queue actions, enqueue, prune, replay, profiling arm) are a
    * feature switched on by `mutations: true`; who may call them is decided by
-   * the host's decorators, like every other route. Off → 403.
+   * the console's `authorize`, like every other route. Off → 403.
    */
   private requireMutations(): void {
     if (this.options.mutations !== true) {

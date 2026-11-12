@@ -1,5 +1,6 @@
 // E2E against the REAL `@nestjs/authorization` (deny-by-default global guard).
 import 'reflect-metadata';
+import { authorizeByToken } from '@dudousxd/nestjs-telescope';
 import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
 import {
   Controller,
@@ -7,11 +8,12 @@ import {
   Get,
   type INestApplication,
   Inject,
+  Logger,
   type Type,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TELESCOPE_OTEL_EXPORTER, TelescopeOtelMetricsController } from './metrics.controller.js';
 import { TelescopeOtelExporter } from './telescope-otel-exporter.js';
 import { TelescopeOtelMetricsModule } from './telescope-otel-metrics.module.js';
@@ -38,7 +40,7 @@ async function boot(imports: DynamicModule[], controllers: Type[] = []): Promise
     controllers,
     providers: [MetricsPolicy],
   }).compile();
-  app = moduleRef.createNestApplication();
+  app = moduleRef.createNestApplication({ logger: false });
   app.use(
     (req: { headers: Record<string, string>; user?: unknown }, _res: unknown, next: () => void) => {
       const raw = req.headers['x-user'];
@@ -137,78 +139,67 @@ describe('TelescopeOtelMetricsModule under @nestjs/authorization', () => {
   });
 });
 
-describe('TelescopeOtelMetricsModule production rule', () => {
+describe('TelescopeOtelMetricsModule authorize', () => {
   const previous = process.env.NODE_ENV;
   afterEach(() => {
     process.env.NODE_ENV = previous;
+    vi.restoreAllMocks();
   });
 
-  it('boots by default with no decorators: the scrape is outside the rule', async () => {
-    process.env.NODE_ENV = 'production';
+  it('omitted: open outside production', async () => {
+    process.env.NODE_ENV = 'development';
     const target = await boot([
-      AuthorizationModule.forRoot(),
       TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter()),
     ]);
     await get(target).expect(200);
-    expect(() =>
-      TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
-        decorators: [],
-        requireProtectionInProduction: false,
-      }),
-    ).not.toThrow();
   });
 
-  it('requireProtectionInProduction: fails the boot with no decorators (an empty array counts as none)', () => {
+  it('omitted: boots in production, answers 403 and warns once', async () => {
     process.env.NODE_ENV = 'production';
-    const exporter = new TelescopeOtelExporter();
-    for (const decorators of [undefined, []]) {
-      expect(() =>
-        TelescopeOtelMetricsModule.forExporter(exporter, {
-          requireProtectionInProduction: true,
-          ...(decorators ? { decorators } : {}),
-        }),
-      ).toThrow(
-        /TelescopeOtelMetricsModule: refusing to mount undecorated routes with NODE_ENV=production/,
-      );
-    }
-  });
-
-  it('requireProtectionInProduction: mounts open outside production', async () => {
-    process.env.NODE_ENV = 'development';
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const target = await boot([
+      AuthorizationModule.forRoot(),
       TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
-        requireProtectionInProduction: true,
+        decorators: [Can(MetricsPolicy, 'scrape')],
       }),
     ]);
-    await get(target).expect(200);
+    await get(target, { id: 's', scraper: true }).expect(403, { error: 'forbidden' });
+    const warnings = warn.mock.calls.filter(([message]) =>
+      String(message).includes('console has no `authorize` configured'),
+    );
+    expect(warnings.map(([message]) => message)).toEqual([
+      '[@dudousxd/nestjs-telescope-otel] console has no `authorize` configured: it is open outside production and denies every request in production. Set `authorize` in TelescopeOtelMetricsModule.forExporter().',
+    ]);
   });
 
-  it('enforces decorators in production, with or without requireProtectionInProduction', async () => {
+  it('authorizeByToken: a Prometheus Bearer token scrapes in production', async () => {
     process.env.NODE_ENV = 'production';
-    for (const requireProtectionInProduction of [undefined, true]) {
-      const target = await boot([
-        AuthorizationModule.forRoot(),
-        TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
-          decorators: [Can(MetricsPolicy, 'scrape')],
-          ...(requireProtectionInProduction ? { requireProtectionInProduction } : {}),
-        }),
-      ]);
-      await get(target).expect(401);
-      await get(target, { id: 'u', scraper: false }).expect(403);
-      await get(target, { id: 's', scraper: true }).expect(200);
-      await target.close();
-      app = undefined;
-    }
-  });
-
-  it('routes: false boots even with requireProtectionInProduction', async () => {
-    process.env.NODE_ENV = 'production';
-    const exporter = new TelescopeOtelExporter();
-    const selfMounted = await boot([
-      TelescopeOtelMetricsModule.forExporter(exporter, {
-        routes: false,
-        requireProtectionInProduction: true,
+    const target = await boot([
+      TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
+        authorize: authorizeByToken({ token: 'scrape-key' }),
       }),
+    ]);
+    await get(target).expect(401, { error: 'unauthenticated' });
+    await get(target).set('Authorization', 'Bearer wrong').expect(401);
+    await get(target).set('Authorization', 'Bearer scrape-key').expect(200);
+  });
+
+  it('the policy form runs @nestjs/authorization', async () => {
+    const target = await boot([
+      AuthorizationModule.forRoot(),
+      TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), {
+        authorize: { policy: MetricsPolicy, ability: 'scrape' },
+      }),
+    ]);
+    await get(target).expect(401);
+    await get(target, { id: 'u', scraper: false }).expect(403);
+    await get(target, { id: 's', scraper: true }).expect(200);
+  });
+
+  it('routes: false boots in production and mounts nothing', async () => {
+    process.env.NODE_ENV = 'production';
+    const selfMounted = await boot([
+      TelescopeOtelMetricsModule.forExporter(new TelescopeOtelExporter(), { routes: false }),
     ]);
     await request(selfMounted.getHttpServer()).get('/metrics').expect(404);
   });
