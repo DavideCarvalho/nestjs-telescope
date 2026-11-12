@@ -61,6 +61,8 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
           return familyHash;
         },
         durationMs: took,
+        // Logged once the query returns: anchor createdAt to when it started.
+        ...(took !== null ? { startedAt: new Date(Date.now() - took) } : {}),
         ...(tags.length > 0 ? { tags } : {}),
       });
     }

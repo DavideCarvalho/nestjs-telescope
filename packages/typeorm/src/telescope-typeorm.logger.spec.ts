@@ -1,6 +1,6 @@
 // packages/typeorm/src/telescope-typeorm.logger.spec.ts
 import type { RecordInput } from '@dudousxd/nestjs-telescope';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { telescopeTypeOrmLogger } from './telescope-typeorm.logger.js';
 
 describe('telescopeTypeOrmLogger', () => {
@@ -42,6 +42,21 @@ describe('telescopeTypeOrmLogger', () => {
     expect(entry.durationMs).toBe(1500);
     expect(entry.tags).toContain('slow');
     expect(entry.familyHash).toBeTruthy();
+  });
+
+  it('anchors a slow query at its start, and a logQuery entry at the call (before execution)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(10_000);
+      const records: RecordInput[] = [];
+      const logger = telescopeTypeOrmLogger((input) => records.push(input));
+      logger.logQuery('select 1');
+      logger.logQuerySlow(1500, 'select 2');
+      expect(records[0]?.startedAt).toBeUndefined();
+      expect(records[1]?.startedAt?.getTime()).toBe(8_500);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not double-record: logQuery and other Logger methods are independent', () => {

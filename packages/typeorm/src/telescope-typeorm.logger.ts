@@ -68,6 +68,8 @@ export class TelescopeTypeOrmLogger implements Logger {
         return familyHash;
       },
       durationMs: time,
+      // Logged after the query returns: anchor createdAt to when it started.
+      startedAt: new Date(Date.now() - time),
       tags: ['slow'],
     });
   }

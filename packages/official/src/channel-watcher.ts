@@ -60,6 +60,10 @@ export class ChannelWatcher implements Watcher {
           return;
         }
         if (input === null) return;
+        // Channels publish on completion: a mapped duration walks createdAt back to the start.
+        if (input.startedAt === undefined && typeof input.durationMs === 'number') {
+          input.startedAt = new Date(Date.now() - Math.max(0, input.durationMs));
+        }
         for (const target of this.contexts) {
           try {
             target.record(input);

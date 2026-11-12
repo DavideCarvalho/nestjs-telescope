@@ -2,6 +2,7 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
+import { buildWaterfall } from '../metrics/waterfall.js';
 import { telescopeRuntime } from '../otel/telescope-runtime.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
 import {
@@ -91,6 +92,47 @@ describe('TelescopeRequestMiddleware', () => {
     expect(request?.batchId).toBe(query?.batchId); // correlated
     // The request entry groups by its normalized route family (id segment → :id).
     expect(request?.familyHash).toBe('GET /orders/:id');
+  });
+
+  it('anchors the request entry at its start, so a child query renders inside it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(10_000);
+      const storage = new InMemoryStorageProvider();
+      const service = new TelescopeService(resolveConfig({}), storage, {});
+      const mw = new TelescopeRequestMiddleware(service);
+      const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+
+      mw.use({ method: 'GET', url: '/orders', headers: {} }, res, vi.fn());
+      // A query that ran [30, 50] ms into the request, logged when it returned.
+      vi.setSystemTime(10_050);
+      service.record({
+        type: 'query',
+        content: { sql: 'select 1' },
+        durationMs: 20,
+        startedAt: new Date(Date.now() - 20),
+      });
+      vi.setSystemTime(10_150);
+      res.emit('finish');
+      await service.flush();
+
+      const entries = (await storage.get({})).data;
+      const request = entries.find((e) => e.type === 'request');
+      expect(request?.createdAt.getTime()).toBe(10_000);
+      expect(request?.durationMs).toBe(150);
+
+      const wf = buildWaterfall(entries);
+      expect(wf?.totalDurationMs).toBe(150);
+      expect(wf?.spans).toHaveLength(1);
+      const root = wf?.spans[0];
+      expect(root?.type).toBe('request');
+      expect(root?.offsetMs).toBe(0);
+      expect(root?.children.map((c) => [c.type, c.offsetMs, c.durationMs])).toEqual([
+        ['query', 30, 20],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('records a non-root, prefixed-style path (regression for global-prefix capture)', async () => {

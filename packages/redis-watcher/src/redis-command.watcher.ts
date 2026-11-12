@@ -195,6 +195,11 @@ export class RedisCommandWatcher implements Watcher {
         tags: ['redis', `redis:${name}`],
         content: { command: name, args, durationMs },
       };
+      if (durationMs !== null) {
+        input.durationMs = durationMs;
+        // Recorded once the reply arrives: anchor createdAt to when it was sent.
+        input.startedAt = new Date(Date.now() - durationMs);
+      }
       ctx.record(input);
     } catch (recordError) {
       const message = recordError instanceof Error ? recordError.message : String(recordError);

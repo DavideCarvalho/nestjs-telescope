@@ -50,7 +50,9 @@ interface WatcherContext {
 
 `RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt?, traceId?, spanId? }`.
 Everything else (id, batchId, sequence, …) is enriched by the recorder; an explicit
-`traceId`/`spanId` wins over the ambient OTel context.
+`traceId`/`spanId` wins over the ambient OTel context. An entry's `createdAt` is the
+start of the work it describes: a watcher that records once the work has finished passes
+`startedAt` (now minus `durationMs`), or the trace waterfall draws it at its end.
 `unregister()` runs once on application shutdown for every watcher whose
 `register()` succeeded (a throw is logged and swallowed), so a watcher that
 subscribes to `diagnostics_channel` stops recording when its app closes.

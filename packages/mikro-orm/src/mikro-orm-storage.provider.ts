@@ -89,7 +89,9 @@ const DEFAULT_LIMIT = 50;
  * emit but the fingerprint inputs below can't see). Incrementing this forces
  * every pod to re-run the additive `schema.update` once, then re-cache.
  */
-const SCHEMA_REVISION = 1;
+// 2: `created_at` became `datetime(3)`. Bumped so every existing install re-runs
+// `schema.update` and gets the column altered, whatever the driver reports in metadata.
+const SCHEMA_REVISION = 2;
 
 /** Stable PK of the single fingerprint marker row. */
 const SCHEMA_META_ID = 'mikro-orm';

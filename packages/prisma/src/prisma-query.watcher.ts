@@ -107,6 +107,8 @@ export class PrismaQueryWatcher implements Watcher {
           return familyHash;
         },
         durationMs: event.duration,
+        // The event fires after the query: anchor createdAt to when it started.
+        startedAt: new Date(Date.now() - event.duration),
         ...(event.duration >= this.slowMs ? { tags: ['slow'] } : {}),
       };
       ctx.record(input);

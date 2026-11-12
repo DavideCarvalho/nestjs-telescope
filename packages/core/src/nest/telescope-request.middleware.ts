@@ -264,6 +264,8 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
             statusCode: response.statusCode,
           },
           durationMs: Date.now() - startedAt,
+          // Recorded on finish: anchor createdAt to when the request arrived.
+          startedAt: new Date(startedAt),
         });
         // Stop + record the profile within the same async context so its
         // `cpu_profile` entry shares this request's batchId/traceId. Fire-and-

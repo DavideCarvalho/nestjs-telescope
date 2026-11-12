@@ -78,17 +78,17 @@ describe('encodeJob', () => {
   it('maps a completed run', () => {
     const job = encodeJob(batch(jobRoot()), options());
 
-    // The entry is recorded once the run finished, so `c` is `createdAt` minus
-    // the 250ms it ran, and `ea` is that start minus the 400ms it waited.
+    // `c` is the entry's `createdAt` (the run's start), and `ea` is that start
+    // minus the 400ms it waited.
     expect(job).toEqual({
       i: 'job-7',
       s: 'completed',
-      c: '2026-01-01T00:00:09.750Z',
+      c: '2026-01-01T00:00:10.000Z',
       ti: 'batch-1',
       n: 'send-invoice',
       q: 'emails',
       d: 250,
-      ea: '2026-01-01T00:00:09.350Z',
+      ea: '2026-01-01T00:00:09.600Z',
       wd: 400,
       am: 2,
       ma: 5,

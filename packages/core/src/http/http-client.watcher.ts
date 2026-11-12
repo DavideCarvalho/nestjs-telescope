@@ -325,22 +325,30 @@ export class HttpClientWatcher implements Watcher {
         // Marked as covered, so the span processor skips the undici span of this call: the
         // http_client entry already has it.
         const response = await runCoveredByTelescope(() => current(input, init));
-        watcher.safeRecord(ctx, {
-          method,
-          url,
-          host,
-          statusCode: response.status,
-          durationMs: watcher.clock.now() - startedAt,
-        });
+        watcher.safeRecord(
+          ctx,
+          {
+            method,
+            url,
+            host,
+            statusCode: response.status,
+            durationMs: watcher.clock.now() - startedAt,
+          },
+          startedAt,
+        );
         return response;
       } catch (error) {
-        watcher.safeRecord(ctx, {
-          method,
-          url,
-          host,
-          statusCode: null,
-          durationMs: watcher.clock.now() - startedAt,
-        });
+        watcher.safeRecord(
+          ctx,
+          {
+            method,
+            url,
+            host,
+            statusCode: null,
+            durationMs: watcher.clock.now() - startedAt,
+          },
+          startedAt,
+        );
         throw error; // never swallow the host's network error
       }
     };
@@ -411,14 +419,15 @@ export class HttpClientWatcher implements Watcher {
     const safeConfig: AxiosRequestConfigLike = config ?? {};
     const startedAt = config ? this.axiosStartedAt.get(config) : undefined;
     if (config) this.axiosStartedAt.delete(config);
-    const durationMs = startedAt === undefined ? 0 : Math.max(0, this.clock.now() - startedAt);
+    const nowMs = this.clock.now();
+    const durationMs = startedAt === undefined ? 0 : Math.max(0, nowMs - startedAt);
     const { method, url, host } = describeAxiosRequest(safeConfig);
-    this.safeRecord(ctx, { method, url, host, statusCode, durationMs });
+    this.safeRecord(ctx, { method, url, host, statusCode, durationMs }, nowMs - durationMs);
   }
 
   /** Hand an entry to the Recorder, swallowing any failure so a telescope bug
    *  can never alter the host's HTTP call. */
-  private safeRecord(ctx: WatcherContext, content: HttpClientContent): void {
+  private safeRecord(ctx: WatcherContext, content: HttpClientContent, startedAtMs: number): void {
     try {
       const tags: string[] = [];
       if (content.host) tags.push(`host:${content.host}`);
@@ -433,6 +442,8 @@ export class HttpClientWatcher implements Watcher {
         // aggregates regardless of ids — the pulse slow-outgoing hotspot key/label.
         familyHash: normalizeHttpTarget(content.method, content.url),
         durationMs: content.durationMs,
+        // Recorded once the call settles: anchor createdAt to when it started.
+        startedAt: new Date(startedAtMs),
         ...(tags.length > 0 ? { tags } : {}),
       });
     } catch (recordError) {

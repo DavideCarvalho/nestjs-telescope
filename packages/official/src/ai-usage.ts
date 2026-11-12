@@ -84,7 +84,13 @@ export function telescopeAiUsage(options: TelescopeAiUsageOptions = {}): Telesco
           familyHash: `${String(payload.feature)}:${String(payload.modelId)}`,
           content: payload,
           tags: fallback ? ['ai', 'ai:fallback'] : ['ai'],
-          ...(typeof payload.durationMs === 'number' ? { durationMs: payload.durationMs } : {}),
+          // Reported on completion: anchor createdAt to when the call started.
+          ...(typeof payload.durationMs === 'number'
+            ? {
+                durationMs: payload.durationMs,
+                startedAt: new Date(Date.now() - Math.max(0, payload.durationMs)),
+              }
+            : {}),
         });
       }
       if (metrics) {

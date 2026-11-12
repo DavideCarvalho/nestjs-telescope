@@ -161,6 +161,8 @@ describe('HttpClientWatcher', () => {
     expect((entry.content as { method: string }).method).toBe('POST');
     expect((entry.content as { statusCode: number }).statusCode).toBe(503);
     expect(entry.durationMs).toBe(1500);
+    // Recorded when the call settles, anchored to when it started.
+    expect(entry.startedAt?.getTime()).toBe(0);
     expect(entry.tags).toContain('failed');
     expect(entry.tags).toContain('slow');
     expect(entry.tags).toContain('host:api.example.com');
@@ -293,6 +295,7 @@ describe('HttpClientWatcher', () => {
         statusCode: 201,
         durationMs: 25,
       });
+      expect(recorded[0]!.startedAt?.getTime()).toBe(0);
       expect(recorded[0]!.familyHash).toBe('POST api.example.com/users');
     });
 

@@ -6,6 +6,12 @@
 "@dudousxd/nestjs-telescope-mikro-orm": minor
 "@dudousxd/nestjs-telescope-prisma": minor
 "@dudousxd/nestjs-telescope-redis-watcher": minor
+"@dudousxd/nestjs-telescope-bullmq": minor
+"@dudousxd/nestjs-telescope-schedule": minor
+"@dudousxd/nestjs-telescope-mail": minor
+"@dudousxd/nestjs-telescope-mikro-orm-watcher": minor
+"@dudousxd/nestjs-telescope-official": minor
+"@dudousxd/nestjs-telescope-observe": minor
 ---
 
 Telescope works with your app's OpenTelemetry SDK instead of running its own exporter.
@@ -15,7 +21,9 @@ Telescope works with your app's OpenTelemetry SDK instead of running its own exp
 - `TelescopeOtelExporter` no longer re-exports `span` entries (they came from the SDK).
 - core: new `span` entry type and `RecordInput.spanId`; the dashboard lists **Spans** when the processor is on.
 - core: the trace waterfall nests entries that name a parent span (`content.parentSpanId`) under the entry with that `spanId`, and falls back to time containment for the rest.
-- mikro-orm: `created_at` has millisecond precision (`datetime(3)` on MySQL/MariaDB), so the waterfall no longer collapses a trace onto whole seconds. With the default `ensureSchema`, the column is altered on the next boot (a table rebuild on MySQL). With `ensureSchema: false`, run `ALTER TABLE telescope_entries MODIFY created_at DATETIME(3) NOT NULL;`.
+- Every entry's `createdAt` is when its work started. The request middleware, the http-client watcher, the TypeORM/MikroORM/Prisma query watchers, the redis, BullMQ, schedule, mail and MikroORM flush/transaction watchers, the official channel watchers, the AI usage listener and CPU profiles pass `RecordInput.startedAt`, so the waterfall draws a request from offset 0 with its queries inside it. Redis and mail entries now carry `durationMs`. Observe reads `createdAt` as the start.
+- core: when many entries share a span id (every entry in a request carries the server span's id), the waterfall hangs children on the entry that owns the span (the `request` or `span` entry), and entries recorded inside a span nest under it.
+- mikro-orm: `created_at` has millisecond precision (`datetime(3)` on MySQL/MariaDB), so the waterfall no longer collapses a trace onto whole seconds. With the default `ensureSchema`, the schema revision bump re-runs `schema.update` on the next boot and alters the column (a table rebuild on MySQL). With `ensureSchema: false`, run `ALTER TABLE telescope_entries MODIFY created_at DATETIME(3) NOT NULL;`.
 
 **Breaking (otel):**
 

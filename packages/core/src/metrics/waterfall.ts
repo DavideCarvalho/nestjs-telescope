@@ -69,6 +69,11 @@ function labelFor(entry: Entry): string {
   return entry.type;
 }
 
+/** Whether the entry represents its own `spanId` (rather than being recorded inside it). */
+function ownsSpan(entry: Entry): boolean {
+  return entry.type === EntryType.Span || entry.type === EntryType.Request;
+}
+
 /** The parent span id an entry names (span entries carry `content.parentSpanId`), or null. */
 function parentSpanIdOf(entry: Entry): string | null {
   const parent = asRecord(entry.content)?.parentSpanId;
@@ -78,9 +83,11 @@ function parentSpanIdOf(entry: Entry): string | null {
 /**
  * Reconstruct a nested span waterfall from a batch/trace's entries.
  *
- * An entry that names its parent span (`content.parentSpanId`, as the OpenTelemetry span
- * processor's `span` entries do) nests under the entry with that `spanId` when it is in the
- * trace. Every other entry nests by **time-interval containment**, as Sentry/Tempo do when
+ * Every entry's `createdAt` is the start of the work it describes. An entry that names its
+ * parent span (`content.parentSpanId`, as the OpenTelemetry span processor's `span` entries do)
+ * nests under the entry that owns that span id when it is in the trace: the `span` or `request`
+ * entry, since every entry recorded inside a span carries its id. An entry recorded inside an
+ * owned span (a query under the request's server span) nests under its owner. Every other entry nests by **time-interval containment**, as Sentry/Tempo do when
  * parent links are missing: under the tightest enclosing span whose `[start, end]` strictly
  * contains it, with `sequence` as a stable tie-break for spans that start at the same instant.
  *
@@ -121,18 +128,32 @@ export function buildWaterfall(entries: Entry[]): Waterfall | null {
     });
   }
 
-  // Explicit links first: span id -> the entry carrying it.
+  // Explicit links first: span id -> the entry that IS that span. Many entries can carry one
+  // span id (every entry recorded inside the request carries the server span's id), so the
+  // owner is the entry that represents the span: a `span` entry or the `request` entry, falling
+  // back to the earliest carrier.
   const bySpanId = new Map<string, Interval>();
   for (const interval of ordered) {
     const spanId = interval.entry.spanId;
-    if (spanId !== null && spanId !== undefined && !bySpanId.has(spanId)) {
+    if (spanId === null || spanId === undefined) continue;
+    const current = bySpanId.get(spanId);
+    if (current === undefined || (!ownsSpan(current.entry) && ownsSpan(interval.entry))) {
       bySpanId.set(spanId, interval);
     }
   }
   const parentOf = new Map<Interval, Interval>();
   for (const interval of ordered) {
     const parentSpanId = parentSpanIdOf(interval.entry);
-    const parent = parentSpanId === null ? undefined : bySpanId.get(parentSpanId);
+    let parent = parentSpanId === null ? undefined : bySpanId.get(parentSpanId);
+    // An entry recorded inside a span (a query under the request's server span) nests under
+    // the entry that owns that span.
+    if (parent === undefined && !ownsSpan(interval.entry)) {
+      const owner =
+        interval.entry.spanId === null || interval.entry.spanId === undefined
+          ? undefined
+          : bySpanId.get(interval.entry.spanId);
+      if (owner !== undefined && ownsSpan(owner.entry)) parent = owner;
+    }
     if (parent !== undefined && parent !== interval) parentOf.set(interval, parent);
   }
   // A cycle of explicit links (corrupt data) is broken by dropping the link that closes it.

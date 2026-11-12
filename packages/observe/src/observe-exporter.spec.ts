@@ -177,8 +177,7 @@ describe('ObserveExporter', () => {
       const exporter = build();
       // The order the Recorder really produces: children during the handler,
       // the request itself only once the response finished.
-      // The request ran [START - 30, START]; the query finished 10ms before the
-      // response after 4ms of work, so it began 16ms into the request.
+      // The request ran [START, START + 30]; the query began 16ms into it.
       exporter.observeFlush([
         entry(
           'query',
@@ -186,7 +185,7 @@ describe('ObserveExporter', () => {
           {
             sequence: 1,
             durationMs: 4,
-            createdAt: new Date(START - 10),
+            createdAt: new Date(START + 16),
           },
         ),
       ]);

@@ -95,6 +95,9 @@ describe('RedisCommandWatcher', () => {
     expect(content.command).toBe('GET');
     expect(content.args).toEqual(['user:1']);
     expect(typeof content.durationMs).toBe('number');
+    // The entry carries the duration too, anchored to when the command was sent.
+    expect(get!.durationMs).toBe(content.durationMs);
+    expect(get!.startedAt).toBeInstanceOf(Date);
     expect(get!.tags).toContain('redis:GET');
   });
 
