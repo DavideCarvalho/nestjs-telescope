@@ -303,13 +303,14 @@ export function telescopeSpanProcessor(
   }
 
   function ingest(rt: TelescopeRuntime, span: ReadableSpanLike): void {
+    // Take the start batch first, so every early return below also frees its slot.
+    const spanId = span.spanContext().spanId;
+    const batch = startBatches.get(spanId);
+    startBatches.delete(spanId);
     if (rt.record === null || rt.isPaused()) return;
     if (dashboardTraces.has(span.spanContext().traceId)) return;
     if (options.ignore?.(span) === true) return;
     if (!countAgainstTrace(span.spanContext().traceId)) return;
-    const spanId = span.spanContext().spanId;
-    const batch = startBatches.get(spanId);
-    startBatches.delete(spanId);
     if (batch !== undefined && rt.recordInBatch !== undefined)
       rt.recordInBatch(batch, toInput(span));
     else rt.record(toInput(span));
