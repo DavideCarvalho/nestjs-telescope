@@ -1,6 +1,7 @@
 import type {
   AiUsageReport,
   CachedDiagnosis,
+  ConsoleTenancyInfo,
   CpuProfileContent,
   DiagnoseResult,
   EntriesQuery,
@@ -57,6 +58,11 @@ export interface TelescopeClientOptions {
    * access-denied screen).
    */
   onAccessDenied?: (denial: TelescopeAccessDenial) => void;
+  /**
+   * The organization every call asks for, sent as `?tenant=`; the server keeps it within what
+   * `authorize` granted. Default: the page's own `?tenant=`.
+   */
+  tenant?: () => string | undefined;
 }
 
 /** A refusal from the console's `authorize`. */
@@ -95,6 +101,18 @@ function defaultOnAccessDenied(denial: TelescopeAccessDenial): void {
     return;
   }
   window.dispatchEvent(new CustomEvent(TELESCOPE_ACCESS_DENIED_EVENT, { detail: denial }));
+}
+
+/** The page's `?tenant=`: the organization the console shows. */
+export function pageTenant(): string | undefined {
+  const search = typeof window === 'undefined' ? undefined : window.location?.search;
+  return search ? new URLSearchParams(search).get('tenant') || undefined : undefined;
+}
+
+/** Adds `tenant=<id>` to a URL string (a URL that already names one keeps it). */
+function withTenant(input: RequestInfo | URL, tenant: string | undefined): RequestInfo | URL {
+  if (tenant === undefined || typeof input !== 'string' || /[?&]tenant=/.test(input)) return input;
+  return `${input}${input.includes('?') ? '&' : '?'}tenant=${encodeURIComponent(tenant)}`;
 }
 
 /** Derives the API base from the server-injected mount base, falling back to the default. */
@@ -138,6 +156,8 @@ export interface TelescopeClient {
    */
   tags(prefix?: string, opts?: TagPageOptions): Promise<TagCount[]>;
   meta(): Promise<TelescopeMeta>;
+  /** The console's organization scope (`GET tenancy`); `{ enabled: false }` from older servers. */
+  tenancy?(search?: string): Promise<ConsoleTenancyInfo>;
   /**
    * Fetches data for an extension dashboard panel from a registered provider:
    * `GET ext/:ext/data/:provider`. The optional `query` is serialized to the
@@ -218,10 +238,11 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
   const baseUrl = (options.baseUrl ?? defaultBaseUrl()).replace(/\/$/, '');
   const rawFetch = options.fetch ?? globalThis.fetch;
   const onAccessDenied = options.onAccessDenied ?? defaultOnAccessDenied;
+  const tenant = options.tenant ?? pageTenant;
   // Every call goes through here, so a refusal from the console's `authorize`
   // reaches `onAccessDenied` whichever endpoint hit it.
   const doFetch: typeof globalThis.fetch = async (input, init) => {
-    const response = await rawFetch(input, init);
+    const response = await rawFetch(withTenant(input, tenant()), init);
     const denial = await readAccessDenial(response);
     if (denial) onAccessDenied(denial);
     return response;
@@ -388,6 +409,14 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         offset: opts?.offset,
       }),
     meta: () => get<TelescopeMeta>('/meta'),
+    tenancy: async (search) => {
+      const qs = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+      const response = await rawGet(`/tenancy${qs}`);
+      // 404: a server without organization scopes.
+      if (response.status === 404) return { enabled: false };
+      if (!response.ok) throw new Error(`Telescope API /tenancy failed: ${response.status}`);
+      return (await response.json()) as ConsoleTenancyInfo;
+    },
     extData: (ext, provider, query) => {
       const qs =
         query && Object.keys(query).length

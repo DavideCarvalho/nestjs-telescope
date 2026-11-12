@@ -6,9 +6,19 @@ import {
   Logger,
   type OnModuleDestroy,
   type OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
+import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
+import { type TenantView, tenantViewOf, withTenantView } from '../storage/tenant-scoped-storage.js';
 import { type ConsoleDecide, resolveConsoleAuthorize } from './console-authorize.js';
+import {
+  consoleTenantsFor,
+  rememberConsoleTenants,
+  resolveConsoleTenantScope,
+  selectConsoleTenant,
+} from './console-tenant-scope.js';
 import { type McpToolArgs, TelescopeMcpServer, isMcpToolNotice } from './telescope-mcp.server.js';
 import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
 
@@ -113,8 +123,23 @@ async function found(result: Promise<unknown>, notFound?: string): Promise<unkno
  * Telescope's developer tools: the MCP catalogue of `POST <path>/api/mcp`, prefixed `telescope_`,
  * answered by the same {@link TelescopeMcpServer} over the stored (already redacted) entries. An
  * unknown or pruned id is an error ("… not found").
+ *
+ * `viewFor` (tenancy on) gives each call the organization view its caller may see: every tool
+ * then reads only that organization's entries.
  */
-export function telescopeDevTools(server: TelescopeMcpServer): TelescopeDevTool[] {
+export function telescopeDevTools(
+  server: TelescopeMcpServer,
+  viewFor?: (call?: DevToolCall) => TenantView | null,
+): TelescopeDevTool[] {
+  const tools = telescopeTools(server);
+  if (viewFor === undefined) return tools;
+  return tools.map((tool) => ({
+    ...tool,
+    run: (input, call) => withTenantView(viewFor(call), () => tool.run(input, call)),
+  }));
+}
+
+function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
   return [
     {
       name: 'telescope_list_entries',
@@ -219,7 +244,11 @@ export function telescopeDevTools(server: TelescopeMcpServer): TelescopeDevTool[
 export function devToolsGate(decide: ConsoleDecide): DevToolsLib['authorize'] {
   return async (context) => {
     try {
-      return await decide(context);
+      const decision = await decide(context);
+      if (decision.allowed && context.getType() === 'http') {
+        rememberConsoleTenants(context.switchToHttp().getRequest(), decision.tenants);
+      }
+      return decision;
     } catch {
       return { allowed: false, reason: 'forbidden' };
     }
@@ -244,7 +273,19 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     @Inject(TELESCOPE_ROUTES_MOUNTED) private readonly routesMounted: boolean,
     @Inject(TelescopeMcpServer) private readonly server: TelescopeMcpServer,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
+    @Optional() @Inject(CONTEXT_ACCESSOR) private readonly accessor?: unknown,
   ) {}
+
+  /** The organization view of a dev-tools call: as the console's, with no `?tenant=`. */
+  private viewFor(call?: DevToolCall): TenantView | null {
+    const tenancy = readTenancy(this.options.tenancy, this.accessor);
+    if (!tenancy.enabled) return null;
+    const request =
+      call?.context.getType() === 'http' ? call.context.switchToHttp().getRequest() : undefined;
+    const scope = resolveConsoleTenantScope(tenancy, consoleTenantsFor(request));
+    const selection = selectConsoleTenant(scope, undefined);
+    return tenantViewOf(selection, tenantTagPrefix(this.options.tenancy), tenancy.nullRows);
+  }
 
   async onModuleInit(): Promise<void> {
     if (!(this.options.devTools ?? this.routesMounted)) return;
@@ -258,7 +299,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
         lib: 'telescope',
         title: 'Telescope',
         authorize: devToolsGate(decide),
-        tools: telescopeDevTools(this.server),
+        tools: telescopeDevTools(this.server, (call) => this.viewFor(call)),
       });
     } catch (error) {
       // Another application in this process registered telescope's tools: keep the console up.

@@ -5,6 +5,7 @@ export { telescopeConsoleUrl } from './console-url.js';
 export {
   TELESCOPE_ACCESS_DENIED_EVENT,
   createTelescopeClient,
+  pageTenant,
   readAccessDenial,
 } from './telescope-client.js';
 export type {

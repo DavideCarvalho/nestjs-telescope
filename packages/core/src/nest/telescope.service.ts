@@ -174,6 +174,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       // Additive, opt-in context enrichment (traceId fallback + user/tenant
       // tags). Present only when nestjs-context bound the shared accessor token.
       ...(this.contextAccessor ? { contextAccessor: this.contextAccessor } : {}),
+      // Tenancy on: the tenant tag comes from the context's tenant filter instead.
+      ...(this.options.tenancy !== undefined ? { tenancy: this.options.tenancy } : {}),
       // Complete-count metrics tap: fan every record out to extension observers
       // (e.g. the OTel exporter) before sampling, so exported counters are honest.
       onRecorded: (input) => this.extensions.notifyRecord(input),

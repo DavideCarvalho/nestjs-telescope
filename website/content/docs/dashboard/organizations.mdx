@@ -1,0 +1,84 @@
+---
+title: Organizations
+description: Show each console viewer only the data of the organizations they may see, when your app uses @dudousxd/nestjs-context tenancy.
+icon: Building2
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+When your app makes the request's organization its tenant with [`@dudousxd/nestjs-context` tenancy](https://davidecarvalho.github.io/aviary/docs/context/tenancy), Telescope tags what each organization's requests record and shows each console viewer only the organizations they may see. Without tenancy, nothing on this page applies and the console shows everything.
+
+## Turn it on
+
+Turn tenancy on in the context and set the tenant of each request (see [Tenancy](https://davidecarvalho.github.io/aviary/docs/context/tenancy)). Telescope follows it:
+
+```ts
+ContextModule.forRoot({ tenancy: { enabled: true, kinds: ['organization'] } }),
+TelescopeModule.forRoot({
+  authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isStaff === true,
+}),
+```
+
+| `tenancy` option | Default | What it does |
+|------------------|---------|--------------|
+| `'inherit'` | yes | Follows `ContextModule`'s `tenancy.enabled`. |
+| `false` | | Keeps Telescope out of tenancy: entries keep the plain `tenant:<tenantId>` tag and the console shows everything. |
+| `{ enabled, kinds, nullRows, tag }` | | `enabled` (`'inherit'` or a boolean), `kinds` (the tenant kinds Telescope honours), `nullRows: 'shared'` (organizations also see entries recorded with no organization), `tag` (the tag prefix, default `'tenant'`). |
+
+## What gets recorded
+
+Every entry recorded for a request with a tenant is tagged `tenant:<id>`. Work run inside `Context.allTenants()` is tagged `tenant:*`. A request with no tenant records untagged entries.
+
+Exception families stay global: the same error in two organizations is one family, and each organization sees only its own occurrences.
+
+## Who sees what
+
+`authorize` decides which organizations a viewer sees, by what it returns:
+
+```ts
+TelescopeModule.forRoot({
+  authorize: (ctx) => {
+    const user = ctx.switchToHttp().getRequest().user;
+    if (user?.isSupport) return { allowed: true, tenants: '*' };          // every organization
+    if (user?.isPartner) return { allowed: true, tenants: user.orgIds }; // these organizations
+    return user?.isOrgAdmin === true;                                     // their own organization
+  },
+}),
+```
+
+| `authorize` returns | The viewer sees |
+|---------------------|-----------------|
+| `true` or `{ allowed: true }` | Their own organization, the tenant of their request. With none, an empty console that says "Choose an organization to see its data". |
+| `{ allowed: true, tenants: ['org_1', 'org_2'] }` | Those organizations. |
+| `{ allowed: true, tenants: '*' }` | Every organization, plus entries recorded with no organization. |
+
+The same rule applies to the API, the MCP endpoint and Telescope's tools on the [Aviary dev MCP endpoint](/docs/concepts/mcp#on-the-aviary-dev-mcp-endpoint).
+
+A caller signed in with `authorizeByToken` has no organization of its own, so it sees an empty console. Grant it organizations explicitly:
+
+```ts
+const byToken = authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN });
+
+TelescopeModule.forRoot({
+  mcpAuthorize: (ctx) => (byToken(ctx) === true ? { allowed: true, tenants: '*' } : byToken(ctx)),
+}),
+```
+
+## The Organization control
+
+With tenancy on, the dashboard header shows an **Organization** control: a fixed chip when the viewer sees one organization, a searchable picker when they see several or all of them (**All organizations** first). The choice lives in the page URL as `?tenant=<id>`, so it survives a reload and can be shared.
+
+Every API call carries `?tenant=<id>`, and the server keeps it within what `authorize` granted. A `tenant` outside the viewer's organizations answers with no data and logs a warning.
+
+<Callout type="info">
+  Clearing entries, **Prune now**, live queues and schedules, and extension panels span every organization. A viewer limited to some organizations does not get them; a viewer with `tenants: '*'` and **All organizations** selected does.
+</Callout>
+
+## Your own client
+
+`createTelescopeClient` sends the page's `?tenant=` on every call. Pass `tenant` to choose it yourself, and read the viewer's organizations with `client.tenancy()`:
+
+```ts
+const client = createTelescopeClient({ tenant: () => currentOrgId });
+const scope = await client.tenancy(); // { enabled: true, tenants, selected, options }
+```

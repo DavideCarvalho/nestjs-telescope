@@ -33,6 +33,7 @@ import { EntryEvents } from '../sse/entry-events.js';
 import { StreamController } from '../sse/stream.controller.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { asTenantScopedStorage } from '../storage/tenant-scoped-storage.js';
 import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { UseConsoleAuthorize } from './console-authorize.guard.js';
@@ -86,8 +87,11 @@ const SHARED_PROVIDERS: Provider[] = [
     provide: TELESCOPE_STORAGE,
     // Every storage call runs as Telescope's own work: no OpenTelemetry spans for it in the
     // app's traces, and nothing it causes is ingested by the span processor.
-    useFactory: (options: TelescopeModuleOptions): StorageProvider =>
-      asTelescopeWorkStorage(options.storage ?? new SqliteStorageProvider()),
+    // With tenancy on, a console call's reads only see the organization it shows (a no-op otherwise).
+    useFactory: (options: TelescopeModuleOptions): StorageProvider => {
+      const storage = asTelescopeWorkStorage(options.storage ?? new SqliteStorageProvider());
+      return options.tenancy === false ? storage : asTenantScopedStorage(storage);
+    },
     inject: [TELESCOPE_OPTIONS],
   },
   {
