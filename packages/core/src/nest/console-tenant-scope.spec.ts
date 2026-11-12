@@ -63,5 +63,11 @@ describe('console tenant scope', () => {
     const scope = resolveConsoleTenantScope(on(own), '*');
     expect(selectConsoleTenant(scope, undefined)).toEqual({ kind: 'all' });
     expect(selectConsoleTenant(scope, 'Z')).toEqual({ kind: 'tenant', id: 'Z' });
+    expect(selectConsoleTenant(scope, '*')).toEqual({ kind: 'all' });
+  });
+
+  it("a list naming '*' grants every organization", () => {
+    expect(consoleTenantsOf({ allowed: true, tenants: ['*'] })).toBe('*');
+    expect(consoleTenantsOf({ allowed: true, tenants: ['A', '*'] })).toBe('*');
   });
 });

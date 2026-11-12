@@ -46,7 +46,11 @@ export function OrganizationPicker(): JSX.Element | null {
   const info = current.data;
   if (!info?.enabled) return null;
   const label = (id: string | null): string =>
-    id === null ? ALL : (info.options.find((o) => o.id === id)?.label ?? id);
+    id === null
+      ? info.tenants === '*'
+        ? ALL
+        : 'none'
+      : (info.options.find((o) => o.id === id)?.label ?? id);
   const chip = 'rounded border border-line px-2 py-1 text-xs';
 
   if (Array.isArray(info.tenants) && info.tenants.length <= 1) {

@@ -31,6 +31,10 @@ Every entry recorded for a request with a tenant is tagged `tenant:<id>`. Work r
 
 Exception families stay global: the same error in two organizations is one family, and each organization sees only its own occurrences.
 
+[AI diagnoses](/docs/dashboard/ai) are kept per organization: a viewer of one organization gets a diagnosis built only from that organization's occurrences, never another organization's. A viewer with `tenants: '*'` and **All organizations** selected gets the family's latest diagnosis from any organization.
+
+The dashboard's live updates follow the same rule: a viewer of one organization is only told about that organization's new entries.
+
 ## Who sees what
 
 `authorize` decides which organizations a viewer sees, by what it returns:
@@ -50,7 +54,7 @@ TelescopeModule.forRoot({
 |---------------------|-----------------|
 | `true` or `{ allowed: true }` | Their own organization, the tenant of their request. With none, an empty console that says "Choose an organization to see its data". |
 | `{ allowed: true, tenants: ['org_1', 'org_2'] }` | Those organizations. |
-| `{ allowed: true, tenants: '*' }` | Every organization, plus entries recorded with no organization. |
+| `{ allowed: true, tenants: '*' }` | Every organization, plus entries recorded with no organization. A list containing `'*'` means the same. |
 
 The same rule applies to the API, the MCP endpoint and Telescope's tools on the [Aviary dev MCP endpoint](/docs/concepts/mcp#on-the-aviary-dev-mcp-endpoint).
 
@@ -68,7 +72,7 @@ TelescopeModule.forRoot({
 
 With tenancy on, the dashboard header shows an **Organization** control: a fixed chip when the viewer sees one organization, a searchable picker when they see several or all of them (**All organizations** first). The choice lives in the page URL as `?tenant=<id>`, so it survives a reload and can be shared.
 
-Every API call carries `?tenant=<id>`, and the server keeps it within what `authorize` granted. A `tenant` outside the viewer's organizations answers with no data and logs a warning.
+Every API call carries `?tenant=<id>`, and the server keeps it within what `authorize` granted. A `tenant` outside the viewer's organizations answers with no data and logs a warning. `?tenant=*` means **All organizations**.
 
 <Callout type="info">
   Clearing entries, **Prune now**, live queues and schedules, and extension panels span every organization. A viewer limited to some organizations does not get them; a viewer with `tenants: '*'` and **All organizations** selected does.

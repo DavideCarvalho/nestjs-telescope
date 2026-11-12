@@ -575,12 +575,8 @@ export class TelescopeController {
     return {
       enabled: true,
       tenants: scope.tenants,
-      selected:
-        selection.kind === 'tenant'
-          ? selection.id
-          : selection.kind === 'none'
-            ? (selection.forged ?? null)
-            : null,
+      // A tenant outside the scope is never echoed back: the view is empty, nothing is selected.
+      selected: selection.kind === 'tenant' ? selection.id : null,
       options: ids
         .filter((id) => !needle || `${id} ${label(id)}`.toLowerCase().includes(needle))
         .slice(0, TENANT_OPTIONS)

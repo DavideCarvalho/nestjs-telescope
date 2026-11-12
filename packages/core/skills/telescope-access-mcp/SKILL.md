@@ -112,7 +112,8 @@ use Pattern 2 and override those methods with an extra `@Can(...)`
 With tenancy on, clearing entries and `Prune now` are only for a viewer of
 every organization (403 otherwise); live queues and schedules answer empty,
 per-driver queue routes and extension data answer 404, and the Prometheus
-scrape (`GET <path>/api/metrics`) answers 404.
+scrape (`GET <path>/api/metrics`) answers 404. The SSE live feed only ticks
+for the viewer's organization, and AI diagnoses are per organization.
 
 ### Pattern 4 — the MCP server
 

@@ -16,8 +16,9 @@ import { samplingCanDrop, samplingRates } from '../config/sampling.js';
 import { createBatch } from '../context/batch.js';
 import { CONTEXT_ACCESSOR, type ContextAccessor } from '../context/context-accessor.js';
 import { TelescopeContext } from '../context/telescope-context.js';
+import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
 import { setTelescopeDump } from '../dump/telescope-dump.js';
-import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js';
+import { type BatchOrigin, type Entry, EntryType, type RecordInput } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
 import type { DashboardSection, Panel } from '../extension/types.js';
@@ -31,6 +32,7 @@ import { setTelescopeRecordSink } from '../record/telescope-record.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { type TenantView, tenantViewOf } from '../storage/tenant-scoped-storage.js';
 import { type ExceptionCaptureDetails, captureException } from './exception-capture.js';
 import {
   TELESCOPE_CONFIG,
@@ -156,7 +158,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     // coordinator is a no-op on the flush path in on-demand mode.
     this.diagnosis =
       this.options.ai !== undefined
-        ? new DiagnosisCoordinator(this.options.ai, this.storage)
+        ? new DiagnosisCoordinator(this.options.ai, this.storage, {
+            // Tenancy on: a diagnosis is cached and built per organization.
+            tenancy: { viewOfEntry: (entry) => this.tenantViewOfEntry(entry) },
+          })
         : null;
     this.recorder = new Recorder({
       storage,
@@ -190,7 +195,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       // forget diagnosis (no-op in on-demand mode / when AI is off).
       onFlushStored: (entries) => {
         this.diagnosis?.observeFlush(entries);
-        this.entryEvents.emitTypes(entries.map((e) => e.type));
+        this.entryEvents.emitEntries(entries);
         // Exception alerts queue behind the flush (the alerter serializes them
         // and never rejects), so a slow channel cannot stall the next flush.
         void this.alerter?.evaluateFlush(entries);
@@ -212,8 +217,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         // diagnosis and attach it. on-demand / off → no hook, no enrichment.
         ...(this.diagnosis?.isAuto
           ? {
-              diagnosisFor: (familyHash: string) =>
-                this.diagnosis?.awaitForAlert(familyHash) ?? Promise.resolve(null),
+              diagnosisFor: (_familyHash: string, entry: Entry) =>
+                this.diagnosis?.awaitForAlert(entry) ?? Promise.resolve(null),
             }
           : {}),
       });
@@ -449,6 +454,23 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         ...(d.sections ? { sections: d.sections } : {}),
       })),
     };
+  }
+
+  /**
+   * The organization view of an entry (tenancy on): the organization its tenant tag names.
+   * `null` with tenancy off, or for an entry with no organization (or recorded for all of them).
+   */
+  private tenantViewOfEntry(entry: Entry): TenantView | null {
+    const tenancy = readTenancy(this.options.tenancy, this.contextAccessor);
+    if (!tenancy.enabled) return null;
+    const prefix = `${tenantTagPrefix(this.options.tenancy)}:`;
+    const tag = entry.tags.find((t) => t.startsWith(prefix) && t !== `${prefix}*`);
+    if (tag === undefined || tag === prefix) return null;
+    return tenantViewOf(
+      { kind: 'tenant', id: tag.slice(prefix.length) },
+      tenantTagPrefix(this.options.tenancy),
+      tenancy.nullRows,
+    );
   }
 
   /**

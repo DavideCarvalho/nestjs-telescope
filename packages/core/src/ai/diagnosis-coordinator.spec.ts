@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Entry } from '../entry/entry.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
+import { tenantViewOf, withTenantView } from '../storage/tenant-scoped-storage.js';
 import type { DiagnoseContext, ExceptionDiagnoser } from './diagnoser.js';
 import { DiagnosisCache } from './diagnosis-cache.js';
 import { DiagnosisCoordinator } from './diagnosis-coordinator.js';
@@ -174,5 +175,78 @@ describe('DiagnosisCoordinator', () => {
     const result = await coordinator.diagnose(exceptionEntry('fam-A'), 1);
     expect(result.cached).toBe(true);
     expect(diagnoser.calls).toHaveLength(1);
+  });
+
+  describe('organizations as tenants', () => {
+    const viewOf = (id: string) => tenantViewOf({ kind: 'tenant', id }, 'tenant', 'tenantless');
+    const tenancy = {
+      viewOfEntry: (entry: Entry) => {
+        const tag = entry.tags.find((t) => t.startsWith('tenant:'));
+        return tag ? viewOf(tag.slice('tenant:'.length)) : null;
+      },
+    };
+    function tenantException(tenant: string, message: string): Entry {
+      return {
+        ...exceptionEntry('fam-A', `batch-${tenant}`),
+        id: `ex-${tenant}`,
+        tags: [`tenant:${tenant}`],
+        content: { class: 'TypeError', message, stack: 'TypeError\n  at a' },
+      };
+    }
+    /** Echoes the message it was given, so a cross-organization diagnosis is visible. */
+    const echo: ExceptionDiagnoser = { diagnose: async (context) => `cause: ${context.message}` };
+
+    it("auto-mode: tenant B never reads the diagnosis of tenant A's occurrence", async () => {
+      const a = tenantException('A', 'secret of A');
+      const b = tenantException('B', 'trouble of B');
+      const storage = new InMemoryStorageProvider();
+      await storage.store([a, b]);
+      const coordinator = new DiagnosisCoordinator({ diagnoser: echo, mode: 'auto' }, storage, {
+        tenancy,
+      });
+
+      expect(await coordinator.onNewFamily(a, 1)).toBe('cause: secret of A');
+      expect(await withTenantView(viewOf('B'), async () => coordinator.peekCached(b))).toBeNull();
+      expect(await coordinator.awaitForAlert(b, 10)).toBeNull();
+      expect(await withTenantView(viewOf('A'), async () => coordinator.peekCached(a))).toBe(
+        'cause: secret of A',
+      );
+      // The unscoped slot, for a viewer of every organization.
+      expect(coordinator.peekCached(b)).toBe('cause: secret of A');
+
+      // B's first occurrence of the family is new for B: B gets its own diagnosis.
+      expect(await coordinator.onNewFamily(b, 1)).toBe('cause: trouble of B');
+      expect(await withTenantView(viewOf('B'), async () => coordinator.peekCached(b))).toBe(
+        'cause: trouble of B',
+      );
+    });
+
+    it("on-demand in B's view: B's batch only, never A's entries in it", async () => {
+      const b = tenantException('B', 'trouble of B');
+      const stray: Entry = {
+        ...exceptionEntry(null, 'batch-B'),
+        id: 'q-A',
+        type: 'query',
+        tags: ['tenant:A'],
+        content: { sql: 'select a_secret' },
+      };
+      const storage = new InMemoryStorageProvider();
+      await storage.store([b, stray]);
+      const diagnoser = countingDiagnoser();
+      const coordinator = new DiagnosisCoordinator({ diagnoser }, storage, { tenancy });
+      await withTenantView(viewOf('B'), () => coordinator.diagnose(b, 1));
+      expect(diagnoser.calls[0]?.recentQueries).toEqual([]);
+      await expect(withTenantView(viewOf('A'), () => coordinator.diagnose(b, 1))).rejects.toThrow();
+    });
+
+    it('tenancy off: one slot per family', async () => {
+      const a = tenantException('A', 'secret of A');
+      const storage = new InMemoryStorageProvider();
+      await storage.store([a]);
+      const coordinator = new DiagnosisCoordinator({ diagnoser: echo, mode: 'auto' }, storage);
+      await coordinator.onNewFamily(a, 1);
+      expect(coordinator.peekCached(tenantException('B', 'x'))).toBe('cause: secret of A');
+      expect(await coordinator.awaitForAlert('fam-A', 10)).toBe('cause: secret of A');
+    });
   });
 });

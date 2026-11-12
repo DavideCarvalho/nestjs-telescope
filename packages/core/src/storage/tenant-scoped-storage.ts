@@ -18,8 +18,10 @@ import type {
 /** Which entries a view lets through. `tag` is pushed down to the store as the query's tag. */
 export interface TenantView {
   empty: boolean;
+  /** Names the organization the view shows (its tenant tag), for per-organization caches. */
+  key: string;
   tag?: string;
-  accept(entry: Entry): boolean;
+  accept(entry: Pick<Entry, 'tags'>): boolean;
 }
 
 interface ViewState {
@@ -39,16 +41,17 @@ export function tenantViewOf(
   nullRows: 'tenantless' | 'shared',
 ): TenantView | null {
   if (selection.kind === 'all') return null;
-  if (selection.kind === 'none') return { empty: true, accept: () => false };
+  if (selection.kind === 'none') return { empty: true, key: '', accept: () => false };
   const tag = `${prefix}:${selection.id}`;
   if (nullRows === 'shared') {
     const own = `${prefix}:`;
     return {
       empty: false,
+      key: tag,
       accept: (entry) => entry.tags.includes(tag) || !entry.tags.some((t) => t.startsWith(own)),
     };
   }
-  return { empty: false, tag, accept: (entry) => entry.tags.includes(tag) };
+  return { empty: false, key: tag, tag, accept: (entry) => entry.tags.includes(tag) };
 }
 
 /** The view of the running console call, if any. */

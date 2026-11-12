@@ -24,12 +24,16 @@ export type ConsoleTenantSelection =
   | { kind: 'tenant'; id: string }
   | { kind: 'none'; forged?: string };
 
-/** Reads `tenants` from an `authorize` result: `'*'`, a list of non-empty ids, or absent. */
+/**
+ * Reads `tenants` from an `authorize` result: `'*'`, a list of non-empty ids, or absent. A list
+ * naming `'*'` grants every organization, as `'*'` does.
+ */
 export function consoleTenantsOf(result: unknown): ConsoleTenants | undefined {
   if (typeof result !== 'object' || result === null || !('tenants' in result)) return undefined;
   const tenants = (result as { tenants?: unknown }).tenants;
   if (tenants === '*') return '*';
   if (!Array.isArray(tenants)) return undefined;
+  if (tenants.includes('*')) return '*';
   return [...new Set(tenants.filter((id): id is string => typeof id === 'string' && id !== ''))];
 }
 
@@ -60,7 +64,7 @@ export function resolveConsoleTenantScope(
 
 /**
  * Meets the `?tenant=` of a call with the scope. Tenancy off: everything, the parameter ignored.
- * `'*'`: everything when no tenant is asked for, else that tenant. A list: the asked tenant when it
+ * `'*'`: everything when no tenant (or `'*'`) is asked for, else that tenant. A list: the asked tenant when it
  * is in the list, the viewer's own (else the first) when none is asked for. A tenant outside the
  * scope is `none` with `forged` set: the call answers empty.
  */
@@ -69,7 +73,8 @@ export function selectConsoleTenant(
   requested: unknown,
 ): ConsoleTenantSelection {
   if (scope === null) return { kind: 'all' };
-  const id = typeof requested === 'string' && requested !== '' ? requested : undefined;
+  const id =
+    typeof requested === 'string' && requested !== '' && requested !== '*' ? requested : undefined;
   if (scope.tenants === '*') return id === undefined ? { kind: 'all' } : { kind: 'tenant', id };
   if (id !== undefined) {
     return scope.tenants.includes(id) ? { kind: 'tenant', id } : { kind: 'none', forged: id };

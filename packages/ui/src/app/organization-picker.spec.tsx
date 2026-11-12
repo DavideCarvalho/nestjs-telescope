@@ -69,6 +69,20 @@ describe('Organization control', () => {
     expect(screen.queryByText('child')).toBeNull();
   });
 
+  it('several organizations and none selected: never claims all of them', async () => {
+    renderWith({
+      enabled: true,
+      tenants: ['A', 'B'],
+      selected: null,
+      options: [
+        { id: 'A', label: 'A' },
+        { id: 'B', label: 'B' },
+      ],
+    });
+    expect(await screen.findByRole('button', { name: /Organization: none/ })).toBeTruthy();
+    expect(screen.queryByText('All organizations')).toBeNull();
+  });
+
   it("'*': a picker with All organizations first", async () => {
     renderWith({
       enabled: true,
