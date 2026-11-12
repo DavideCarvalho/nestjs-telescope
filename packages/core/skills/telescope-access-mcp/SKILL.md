@@ -135,8 +135,10 @@ For a key per developer, use an `ApiKeyProvider` from `@nestjs/authentication`
 in `mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] })]` (they
 replace `decorators` on MCP) and keep `authorize` for the policy.
 
-With tenancy on the MCP endpoint and the dev tools follow the same rule:
-each call runs inside the caller's organization view.
+With tenancy on the MCP endpoint and telescope's own dev tools follow the same rule:
+each call runs inside the caller's organization view. Extension-contributed dev
+tools instead span every organization, so a caller limited to some organizations
+is refused instead of running.
 
 ### Pattern 5 — `GET /metrics` (otel)
 
