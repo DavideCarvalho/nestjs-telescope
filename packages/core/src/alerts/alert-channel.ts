@@ -3,9 +3,8 @@ import type { AlertPayload } from './alert-rule.js';
 import { type SlackChannelOptions, formatSlackMessage } from './slack-format.js';
 
 /**
- * A delivery destination for a fired alert. Channels are the v2 generalization of
- * the v1 single `webhookUrl`: an alert fans out to EVERY configured channel
- * concurrently, and a single channel failing NEVER blocks the others (the alerter
+ * A delivery destination for a fired alert. An alert fans out to EVERY configured
+ * channel concurrently, and a single channel failing NEVER blocks the others (the alerter
  * isolates and warn-logs failures per channel). Implementations MUST NOT throw
  * into the host on their own — but even if one does, the alerter catches it; the
  * contract is simply "deliver this payload, or reject, and we'll log it".
@@ -61,8 +60,7 @@ async function postJson(fetchImpl: ChannelFetch, url: string, body: unknown): Pr
 /**
  * Raw-JSON webhook channel — today's v1 behavior, preserved verbatim: it POSTs
  * the {@link AlertPayload} as-is so existing relays that parse the raw body keep
- * working. The legacy top-level `webhookUrl` option is internally rewritten into
- * one of these, which is why the payload shape stayed additive/backward-compatible.
+ * working.
  *
  * @param url Destination that receives `POST <AlertPayload as JSON>`.
  * @param fetchImpl Test seam; defaults to global `fetch`.

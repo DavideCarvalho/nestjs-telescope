@@ -44,9 +44,8 @@ const NAV: TopNavItem[] = [
  * (`#/traces`) only has content when the host wired a `traceContext` provider —
  * otherwise every entry's `trace_id` is null and the page is permanently empty,
  * so we drop the dead nav item. Mirrors `visibleEntryTypes`' watcher logic:
- *  - `tracesEnabled === undefined` → meta hasn't loaded or is from an older
- *    server that predates the field; show Traces (no flash-of-hidden-nav, and
- *    old servers keep working).
+ *  - `tracesEnabled === undefined` → meta hasn't loaded yet; show Traces (no
+ *    flash-of-hidden-nav).
  *  - only a POSITIVE `false` hides it. The route stays mounted, so a direct
  *    `#/traces` visit still resolves.
  *
@@ -62,7 +61,7 @@ export function visibleTopNav(
     if (item.to === '/traces' && tracesEnabled === false) return false;
     // Profiles is hidden unless profiling is POSITIVELY enabled — unlike Traces,
     // the page has no fallback content and the feature is off by default, so we
-    // hide on undefined too (older servers without the field never show it).
+    // hide on undefined (meta still loading) too.
     if (item.to === '/profiles' && profilingEnabled !== true) return false;
     return true;
   });

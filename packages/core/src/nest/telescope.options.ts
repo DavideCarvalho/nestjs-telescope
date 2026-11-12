@@ -329,8 +329,7 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * Pluggable-channel alerting. When set, Telescope evaluates `rules` and fans
    * each fired alert out to every configured `channels` entry (Slack / raw
    * webhook / custom sink) concurrently; one channel failing never blocks the
-   * others. The legacy single `webhookUrl` is still accepted and folded into the
-   * channels. A configured `alerts` with NO destination or empty `rules` is a
+   * others. A configured `alerts` with NO channels or empty `rules` is a
    * fail-closed boot error. See {@link AlertsOptions}.
    */
   alerts?: AlertsOptions;

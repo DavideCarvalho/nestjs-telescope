@@ -1,7 +1,7 @@
 // packages/core/src/alerts/resolve-alerts.spec.ts
 import { describe, expect, it } from 'vitest';
-import { customChannel } from './alert-channel.js';
-import type { AlertRule } from './alert-rule.js';
+import { customChannel, webhookChannel } from './alert-channel.js';
+import type { AlertRule, AlertsOptions } from './alert-rule.js';
 import { resolveAlerts } from './resolve-alerts.js';
 
 const rule: AlertRule = { type: 'exception-rate', window: '5m', threshold: 10 };
@@ -11,8 +11,8 @@ describe('resolveAlerts', () => {
     expect(resolveAlerts(undefined)).toBeNull();
   });
 
-  it('folds a legacy webhookUrl into a webhook channel (backward compat)', () => {
-    const resolved = resolveAlerts({ webhookUrl: 'https://hook', rules: [rule] });
+  it('resolves channels with the default durations', () => {
+    const resolved = resolveAlerts({ channels: [webhookChannel('https://hook')], rules: [rule] });
     expect(resolved?.channels).toHaveLength(1);
     expect(resolved?.channels[0]?.name).toBe('webhook');
     expect(resolved?.intervalMs).toBe(60_000);
@@ -20,11 +20,10 @@ describe('resolveAlerts', () => {
     expect(resolved?.dashboardUrl).toBeNull();
   });
 
-  it('keeps explicit channels and appends the legacy webhookUrl after them', () => {
+  it('keeps channels in the order given', () => {
     const custom = customChannel(async () => {}, 'mine');
     const resolved = resolveAlerts({
-      channels: [custom],
-      webhookUrl: 'https://hook',
+      channels: [custom, webhookChannel('https://hook')],
       rules: [rule],
     });
     expect(resolved?.channels.map((c) => c.name)).toEqual(['mine', 'webhook']);
@@ -41,7 +40,7 @@ describe('resolveAlerts', () => {
 
   it('resolves custom every/cooldown durations to ms', () => {
     const resolved = resolveAlerts({
-      webhookUrl: 'https://hook',
+      channels: [webhookChannel('https://hook')],
       every: '30s',
       cooldown: '1h',
       rules: [rule],
@@ -51,21 +50,31 @@ describe('resolveAlerts', () => {
   });
 
   it('throws (fail-closed) when no destination is configured', () => {
-    expect(() => resolveAlerts({ rules: [rule] })).toThrow(/destination/);
+    expect(() => resolveAlerts({ rules: [rule] } as unknown as AlertsOptions)).toThrow(
+      /destination/,
+    );
   });
 
-  it('throws (fail-closed) when webhookUrl is blank and no channels are set', () => {
-    expect(() => resolveAlerts({ webhookUrl: '   ', rules: [rule] })).toThrow(/destination/);
+  it('throws (fail-closed) when channels is empty', () => {
+    expect(() => resolveAlerts({ channels: [], rules: [rule] })).toThrow(/destination/);
+  });
+
+  it('throws (fail-closed) on the removed webhookUrl option', () => {
+    expect(() =>
+      resolveAlerts({ webhookUrl: 'https://hook', rules: [rule] } as unknown as AlertsOptions),
+    ).toThrow(/destination/);
   });
 
   it('throws (fail-closed) when rules is empty', () => {
-    expect(() => resolveAlerts({ webhookUrl: 'https://hook', rules: [] })).toThrow(/rules/);
+    expect(() => resolveAlerts({ channels: [webhookChannel('https://hook')], rules: [] })).toThrow(
+      /rules/,
+    );
   });
 
   it('throws on an unparseable rule window duration', () => {
     expect(() =>
       resolveAlerts({
-        webhookUrl: 'https://hook',
+        channels: [webhookChannel('https://hook')],
         rules: [{ type: 'slow-request-rate', window: 'soon', thresholdMs: 500, count: 5 }],
       }),
     ).toThrow(/Invalid duration/);
@@ -74,7 +83,7 @@ describe('resolveAlerts', () => {
   it('validates the new-exception rule window at boot', () => {
     expect(() =>
       resolveAlerts({
-        webhookUrl: 'https://hook',
+        channels: [webhookChannel('https://hook')],
         rules: [{ type: 'new-exception', window: 'eventually' }],
       }),
     ).toThrow(/Invalid duration/);
@@ -82,7 +91,7 @@ describe('resolveAlerts', () => {
 
   it('throws on an unparseable every duration', () => {
     expect(() =>
-      resolveAlerts({ webhookUrl: 'https://hook', every: 'often', rules: [rule] }),
+      resolveAlerts({ channels: [webhookChannel('https://hook')], every: 'often', rules: [rule] }),
     ).toThrow(/Invalid duration/);
   });
 });

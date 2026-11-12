@@ -33,7 +33,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20.20.2
+          node-version: 24.22.2
           cache: pnpm
 
       - name: Install dependencies
@@ -72,7 +72,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20.20.2
+          node-version: 24.22.2
           cache: pnpm
           # Writes ~/.npmrc pointing at npm; the credential itself comes from the OIDC
           # exchange at publish time, not from a committed token.
@@ -245,7 +245,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20.20.2
+          node-version: 24.22.2
           cache: pnpm
           # Writes ~/.npmrc pointing at npm; the credential itself comes from the OIDC
           # exchange at publish time, not from a committed token.

@@ -1,6 +1,7 @@
 // packages/core/src/nest/telescope.service.spec.ts
 import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { webhookChannel } from '../alerts/alert-channel.js';
 import { resolveConfig } from '../config/resolve-config.js';
 import { telescopeDump } from '../dump/telescope-dump.js';
 import type { Entry, RecordInput } from '../entry/entry.js';
@@ -481,7 +482,7 @@ describe('TelescopeService', () => {
   it('getMeta reports alerts enabled with the rule count when configured', async () => {
     const service = new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {
       alerts: {
-        webhookUrl: 'https://hook',
+        channels: [webhookChannel('https://hook')],
         rules: [
           { type: 'exception-rate', window: '5m', threshold: 10 },
           { type: 'dropped-entries', threshold: 100 },
@@ -492,13 +493,13 @@ describe('TelescopeService', () => {
     expect((await service.getMeta()).alerts).toEqual({ enabled: true, ruleCount: 2 });
   });
 
-  it('constructor fails closed when alerts is configured without a webhookUrl', () => {
+  it('constructor fails closed when alerts is configured without a channel', () => {
     expect(
       () =>
         new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {
-          alerts: { webhookUrl: '', rules: [{ type: 'dropped-entries', threshold: 1 }] },
+          alerts: { channels: [], rules: [{ type: 'dropped-entries', threshold: 1 }] },
         }),
-    ).toThrow(/webhookUrl/);
+    ).toThrow(/destination/);
   });
 
   it('onModuleInit starts an alerter timer when alerts are configured; shutdown stops it', async () => {
@@ -507,7 +508,10 @@ describe('TelescopeService', () => {
       resolveConfig({ recorder: { flushIntervalMs: 5 } }),
       new InMemoryStorageProvider(),
       {
-        alerts: { webhookUrl: 'https://hook', rules: [{ type: 'dropped-entries', threshold: 1 }] },
+        alerts: {
+          channels: [webhookChannel('https://hook')],
+          rules: [{ type: 'dropped-entries', threshold: 1 }],
+        },
       },
     );
     await service.onModuleInit();

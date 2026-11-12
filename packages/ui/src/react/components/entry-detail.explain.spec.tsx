@@ -50,6 +50,11 @@ function meta(explainEnabled: boolean): TelescopeMeta {
     pruneEnabled: false,
     explainEnabled,
     sampling: {},
+    tracesEnabled: true,
+    ai: { enabled: false, mode: null },
+    entryTypes: [],
+    dashboards: [],
+    profiling: { enabled: false, sampleRate: 0 },
   };
 }
 

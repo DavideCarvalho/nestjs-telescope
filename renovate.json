@@ -13,6 +13,13 @@
       "enabled": false
     },
     {
+      "description": "Build and release stay on one pinned Node major (24); CI tests 24 and 26 in a matrix. A Node major bump of the pinned toolchain is a deliberate decision, not a Renovate PR.",
+      "matchManagers": ["nvm", "nodenv", "github-actions"],
+      "matchDepNames": ["node"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "Patch, minor and pin bumps merge on their own once CI is green. These are the ones `release.yml` turns into an automatic patch release. `pin` is its own update type in Renovate rather than a flavour of patch, so it has to be named here or the initial pinning PR sits open forever.",
       "matchDepTypes": ["dependencies", "devDependencies"],
       "matchUpdateTypes": ["patch", "minor", "pin"],

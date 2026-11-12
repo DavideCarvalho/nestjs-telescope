@@ -11,7 +11,7 @@
   "author": "Davi Carvalho <davi@goflip.ai>",
   "packageManager": "pnpm@9.0.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "build": "turbo run build",
@@ -23,13 +23,16 @@
     "format": "biome format --write .",
     "changeset": "changeset",
     "version-packages": "changeset version && biome check --write --max-diagnostics=none .",
-    "release": "pnpm --filter './packages/*' build && changeset publish"
+    "release": "pnpm --filter './packages/*' build && pnpm check:package && changeset publish",
+    "check:package": "node scripts/check-package.mjs"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
     "@biomejs/biome": "1.9.4",
     "@changesets/changelog-github": "0.7.0",
     "@changesets/cli": "2.31.1",
     "@swc/core": "1.16.2",
+    "publint": "0.3.25",
     "turbo": "2.10.13",
     "typescript": "5.9.3",
     "vitest": "3.2.7"

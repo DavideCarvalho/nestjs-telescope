@@ -140,7 +140,7 @@ a new family and page Slack for every permission denial. The 4xx is still on the
 ### Mistake 2 — `alerts` with rules but no channel
 
 ```ts
-// Wrong — no channels and no webhookUrl is a fail-closed BOOT error.
+// Wrong — no channels is a fail-closed BOOT error.
 TelescopeModule.forRoot({ alerts: { rules: [{ type: 'new-exception', window: '1h' }] } });
 ```
 
@@ -151,8 +151,7 @@ TelescopeModule.forRoot({
 });
 ```
 
-Mechanism: a configured `alerts` with no destination (neither `channels` nor the
-legacy `webhookUrl`) or empty `rules` throws at boot rather than silently never
+Mechanism: a configured `alerts` with no `channels` or empty `rules` throws at boot rather than silently never
 alerting. Source: `packages/core/src/alerts/alert-rule.ts` (`AlertsOptions`).
 
 ### Mistake 3 — hand-rolling a Slack POST instead of the channel helper

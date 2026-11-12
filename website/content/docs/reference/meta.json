@@ -3,6 +3,7 @@
   "icon": "BookMarked",
   "pages": [
     "configuration",
+    "upgrading",
     "changelog",
     "vs-nestjs-observe"
   ]

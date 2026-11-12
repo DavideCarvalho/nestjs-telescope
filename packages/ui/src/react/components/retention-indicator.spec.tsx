@@ -68,6 +68,11 @@ function meta(over: Partial<TelescopeMeta>): TelescopeMeta {
     explainEnabled: false,
     sampling: {},
     ...over,
+    tracesEnabled: true,
+    ai: { enabled: false, mode: null },
+    entryTypes: [],
+    dashboards: [],
+    profiling: { enabled: false, sampleRate: 0 },
   };
 }
 

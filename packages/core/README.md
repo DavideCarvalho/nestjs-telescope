@@ -220,16 +220,20 @@ prune on demand. Pruning is a **mutation**, so like the queue console it needs
 `mutations: true` (`403` otherwise), and `400` when no `prune` window is set. The Overview **Retention**
 card shows a *Prune now* button only when both are in place (`meta.pruneEnabled`).
 
-## Alerts (webhook)
+## Alerts
 
-Telescope can POST a JSON alert to a webhook when a rule trips. It's
-**webhook-only** (v1) and runs on an unref'd interval — a failing webhook is
-logged once per rule kind and **never** crashes the host.
+Telescope sends an alert to every configured channel when a rule trips. Rules run
+on an unref'd interval; a failing channel is logged and **never** crashes the host.
 
 ```ts
+import { slackChannel, webhookChannel } from '@dudousxd/nestjs-telescope';
+
 TelescopeModule.forRoot({
   alerts: {
-    webhookUrl: process.env.SLACK_WEBHOOK_URL, // any endpoint that accepts a JSON POST
+    channels: [
+      slackChannel(process.env.SLACK_WEBHOOK_URL!), // formatted Slack message
+      webhookChannel('https://relay.example/alerts'), // raw JSON POST
+    ],
     every: '1m',       // evaluation cadence (default '1m')
     cooldown: '15m',   // per-rule re-notify suppression (default '15m')
     rules: [
@@ -245,15 +249,13 @@ TelescopeModule.forRoot({
 - `slow-request-rate` — fires when `>= count` requests slower than `thresholdMs` were recorded in `window`.
 - `dropped-entries` — fires when the Recorder's `droppedCount` grew by `>= threshold` since the previous evaluation (a delta).
 
-A configured `alerts` with an empty `webhookUrl` or empty `rules` is a
-**fail-closed boot error**. The POSTed payload is:
+A configured `alerts` with no `channels` or empty `rules` is a
+**fail-closed boot error**. `webhookChannel` POSTs this payload:
 
 ```json
 { "rule": { "...": "..." }, "value": 12, "threshold": 10, "firedAt": "2026-06-04T00:00:00.000Z", "instanceId": "host-1" }
 ```
 
-For Slack, point `webhookUrl` at an incoming-webhook URL; the raw payload lands
-as the message body (wrap it in your own relay if you want a formatted message).
 `meta.alerts` reports `{ enabled, ruleCount }`.
 
 ## Overload protection

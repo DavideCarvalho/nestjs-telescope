@@ -55,6 +55,11 @@ function mockClient(tasks: ScheduledTask[]): TelescopeClient {
       pruneEnabled: false,
       explainEnabled: false,
       sampling: {},
+      tracesEnabled: true,
+      ai: { enabled: false, mode: null },
+      entryTypes: [],
+      dashboards: [],
+      profiling: { enabled: false, sampleRate: 0 },
     }),
     liveQueues: async () => ({
       queues: [],

@@ -95,7 +95,7 @@ The Overview page surfaces a **Retention** card with the configured window (from
 
 ## Alerts
 
-Telescope fires an alert when a rule trips and fans it out to one or more **channels** — Slack (formatted), a raw webhook, or your own custom sink. Rules are evaluated on an unref'd interval (`every`, default `1m`); each rule has a per-rule `cooldown` (default `15m`) to suppress re-notifies. A failing channel is logged once per channel and **never** crashes the host — one channel failing never blocks the others. A configured `alerts` with **no destination** (neither `channels` nor the legacy `webhookUrl`) or empty `rules` is a fail-closed boot error.
+Telescope fires an alert when a rule trips and fans it out to one or more **channels** — Slack (formatted), a raw webhook, or your own custom sink. Rules are evaluated on an unref'd interval (`every`, default `1m`); each rule has a per-rule `cooldown` (default `15m`) to suppress re-notifies. A failing channel is logged once per channel and **never** crashes the host — one channel failing never blocks the others. A configured `alerts` with **no `channels`** or empty `rules` is a fail-closed boot error.
 
 ```ts
 import { slackChannel, webhookChannel, customChannel } from '@dudousxd/nestjs-telescope';
@@ -177,15 +177,13 @@ When a `new-exception` or `every-exception` rule fires, the payload adds an `exc
 
 `clientIp` is the sibling request's `ip` (`request.ip` / first `x-forwarded-for` hop) for a server exception, or the server-filled browser IP for a `client_exception` — **never** sourced from an untrusted body. `geo` is populated only when a `geoLookup` hook is configured and the alert has a `clientIp`; `componentStack` and `extra` are present only for browser-reported errors that supplied them.
 
-The legacy raw-webhook JSON is **backward compatible**: every v1 field (`rule`, `value`, `threshold`, `firedAt`, `instanceId`) is unchanged; `exception`/`dashboardUrl` and the enrichment fields (`clientIp`, `geo`, `referer`, `userAgent`, `componentStack`, `extra`) are purely additive.
+The raw-webhook JSON keeps every v1 field (`rule`, `value`, `threshold`, `firedAt`, `instanceId`) unchanged; `exception`/`dashboardUrl` and the enrichment fields (`clientIp`, `geo`, `referer`, `userAgent`, `componentStack`, `extra`) are purely additive.
 
 <Callout type="warn">
   **Multi-replica dedup.** When the storage provider implements `markFamilySeen`, the `new-exception` check is an atomic check-and-set in that store, so a new error family pages **once** across every replica writing to it. The SQLite provider (processes sharing its file), ClickHouse (with Keeper or ZooKeeper, see [Storages](/docs/packages/storages)) and the tiered store (when its hot store has it) implement it. On a provider without it (MikroORM, Redis, Prisma, TypeORM, most third-party stores), and whenever a `markFamilySeen` call fails, dedup falls back to an in-memory per-pod map (capped at ~10k families, oldest evicted), so the **same** new family may alert **once per pod** the first time each pod sees it. The per-family cooldown clocks are always per pod.
 </Callout>
 
-### Legacy `webhookUrl`
-
-The v1 single `webhookUrl` is still accepted and is internally folded into a `webhookChannel(webhookUrl)`, appended after any explicit `channels`. Prefer `channels` for new configs. `meta.alerts` reports `{ enabled, ruleCount }`.
+`meta.alerts` reports `{ enabled, ruleCount }`.
 
 ## Traces
 

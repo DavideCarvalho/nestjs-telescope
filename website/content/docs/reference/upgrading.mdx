@@ -1,0 +1,54 @@
+---
+title: Upgrading
+description: What to change in your project when you move to a new major of the nestjs-telescope packages.
+icon: CircleArrowUp
+---
+
+## Telescope 4 (Node.js 24)
+
+`@dudousxd/nestjs-telescope` 4.x, `@dudousxd/nestjs-telescope-ui` 4.x, and the watcher and storage packages released
+with them, need **Node.js 24 or newer**. Upgrade the Node.js version your app runs and builds on, then upgrade the
+packages. Under `engine-strict`, installing on Node 20 or 22 fails.
+
+The core package now depends on `better-sqlite3` 12, which ships prebuilt binaries for Node 24 and 26.
+
+### `alerts.webhookUrl` is removed
+
+Pass a webhook channel instead. It sends the same raw JSON payload:
+
+```ts
+import { webhookChannel } from '@dudousxd/nestjs-telescope';
+
+// Before
+TelescopeModule.forRoot({ alerts: { webhookUrl: process.env.ALERT_URL, rules } });
+
+// After
+TelescopeModule.forRoot({ alerts: { channels: [webhookChannel(process.env.ALERT_URL!)], rules } });
+```
+
+`alerts.channels` is now required. A config with no channel still fails at boot.
+
+### `BarChartCard`'s `onBarClick` is removed
+
+Use `onSelect`, which every chart card shares. It receives a `ChartSelection` (`label`, `id`, `value`) instead of the
+raw datum:
+
+```tsx
+// Before
+<BarChartCard data={bars} onBarClick={(datum) => open(datum.id)} />
+
+// After
+<BarChartCard data={bars} onSelect={(selection) => open(selection.id)} />
+```
+
+### Chart style constants are removed
+
+`chartTheme`, `tooltipContentStyle`, `tooltipLabelStyle`, `tooltipItemStyle` and `axisTickStyle` are no longer exported
+from `@dudousxd/nestjs-telescope-ui/react`. `ChartContainer` styles the grid, axes and legend, and `ChartTooltipContent`
+renders the tooltip. Drop the props you passed these into.
+
+### `TelescopeMeta` fields are required
+
+On the UI client's `TelescopeMeta` type, `tracesEnabled`, `ai`, `entryTypes`, `dashboards` and `profiling` are no longer
+optional. The server has always sent them. If you build a `TelescopeMeta` by hand, in a test double for example, add
+the missing fields.

@@ -52,6 +52,11 @@ function mockClient(capabilities: QueueCapabilities): TelescopeClient {
       pruneEnabled: false,
       explainEnabled: false,
       sampling: {},
+      tracesEnabled: true,
+      ai: { enabled: false, mode: null },
+      entryTypes: [],
+      dashboards: [],
+      profiling: { enabled: false, sampleRate: 0 },
     }),
     liveQueues: async () => ({ queues: summaries, capabilities }),
     queueCounts: async () => summaries[0]?.counts ?? ({} as never),
@@ -79,12 +84,15 @@ function renderPage(capabilities: QueueCapabilities) {
 describe('QueueManagerPage', () => {
   it('renders the queue list, a state tab, and a job row', async () => {
     renderPage({ mutationsEnabled: false, actionsByDriver: {} });
-    // queue list entry (in the sidebar)
-    expect(await screen.findAllByText('mail')).toBeTruthy();
+    // Job row first: it only renders once the page has auto-selected the first queue
+    // (an effect after the queue list arrives), so awaiting it means the selection —
+    // and with it the state tabs — is in place. Asserting the tabs straight after the
+    // sidebar entry appears raced that effect.
+    expect(await screen.findByText('send-digest')).toBeTruthy();
+    // queue list entry (in the sidebar) and the selected-queue heading
+    expect(screen.getAllByText('mail').length).toBeGreaterThan(0);
     // state tab label
     expect(screen.getByText('waiting')).toBeTruthy();
-    // job row (auto-selected first queue, default 'waiting' state)
-    expect(await screen.findByText('send-digest')).toBeTruthy();
   });
 
   it('hides job actions when mutationsEnabled is false', async () => {

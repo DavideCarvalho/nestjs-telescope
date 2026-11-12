@@ -43,12 +43,6 @@ export interface BarChartCardProps {
   valueFormatter?: (value: number) => ReactNode;
   /** Drill-down: called with the bar under a click. Omit and the chart is inert. */
   onSelect?: (selection: ChartSelection) => void;
-  /**
-   * @deprecated Use {@link BarChartCardProps.onSelect}, which reports the same
-   * click in the shape every chart card uses. Still called, so existing callers
-   * keep working.
-   */
-  onBarClick?: (datum: BarChartDatum) => void;
 }
 
 /** Categorical bar chart (e.g. per-queue failure rate) with a hover card. */
@@ -63,7 +57,6 @@ export function BarChartCard({
   truncateLabel,
   valueFormatter,
   onSelect,
-  onBarClick,
 }: BarChartCardProps): JSX.Element {
   const bodyHeight = height - 64;
   const config = useMemo(
@@ -79,7 +72,6 @@ export function BarChartCard({
   function handleBarClick(_value: unknown, index: number): void {
     const datum = data[index];
     if (!datum) return;
-    onBarClick?.(datum);
     onSelect?.(chartSelection({ label: datum.label, id: datum.id, value: datum.value }));
   }
 
@@ -89,7 +81,7 @@ export function BarChartCard({
     truncateLabel !== undefined
       ? { tickFormatter: (value: string) => truncate(value, truncateLabel) }
       : {};
-  const interactive = onSelect !== undefined || onBarClick !== undefined;
+  const interactive = onSelect !== undefined;
   const barInteractionProps = interactive
     ? { onClick: handleBarClick, cursor: 'pointer' as const }
     : {};

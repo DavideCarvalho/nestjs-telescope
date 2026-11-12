@@ -102,9 +102,9 @@ function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
             data={familyBars(stats.families)}
             horizontal
             truncateLabel={40}
-            onBarClick={(datum) => {
-              if (datum.id !== undefined) {
-                navigate(`/entries/query?familyHash=${encodeURIComponent(datum.id)}`);
+            onSelect={(selection) => {
+              if (selection.id !== undefined) {
+                navigate(`/entries/query?familyHash=${encodeURIComponent(selection.id)}`);
               }
             }}
           />

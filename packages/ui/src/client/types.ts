@@ -194,12 +194,10 @@ export interface TelescopeMeta {
   watchers: string[];
   traceLink: string | null;
   /**
-   * Whether the host wired a `traceContext` provider. Absent on older servers
-   * that predate the field — treated as "show the Traces nav" so the UI stays
-   * backward-compatible. Only a positive `false` hides the (otherwise empty)
-   * Traces page.
+   * Whether the host wired a `traceContext` provider. `false` hides the
+   * (otherwise empty) Traces page from the nav.
    */
-  tracesEnabled?: boolean;
+  tracesEnabled: boolean;
   /** Resolved retention window from `prune`, or `null` when unbounded. */
   retention: { afterMs: number; keepLast: number | null } | null;
   /** Whether on-demand pruning is available (prune window AND mutations enabled). */
@@ -211,25 +209,22 @@ export interface TelescopeMeta {
   /**
    * AI exception-diagnosis state. `enabled` is true when the host configured a
    * `diagnoser`; the dashboard renders the "Diagnose with AI" button on exception
-   * detail pages only then. `mode` is informational. OPTIONAL so the UI stays
-   * backward-compatible with older servers that predate the field (treated as
-   * disabled).
+   * detail pages only then. `mode` is informational.
    */
-  ai?: { enabled: boolean; mode: 'auto' | 'on-demand' | null };
+  ai: { enabled: boolean; mode: 'auto' | 'on-demand' | null };
   /**
    * Entry types contributed by extensions, merged with the built-in types by the
    * core. Each carries a stable `id` (the backend `type` filter), a `label`, and
-   * a Tailwind `bg-*` dot color. OPTIONAL for backward-compat with older servers
-   * that predate extension support.
+   * a Tailwind `bg-*` dot color.
    */
-  entryTypes?: { id: string; label: string; dot: string }[];
+  entryTypes: { id: string; label: string; dot: string }[];
   /**
    * Custom dashboards contributed by extensions. Each has a stable `id`, a nav
    * `label`, an optional `navGroup` for grouping in the sidebar, and a list of
    * {@link Panel}s rendered by the dashboard page (Task 9) / panel renderer
-   * (Task 8). OPTIONAL for backward-compat with older servers.
+   * (Task 8).
    */
-  dashboards?: {
+  dashboards: {
     id: string;
     label: string;
     navGroup?: string;
@@ -238,10 +233,9 @@ export interface TelescopeMeta {
   }[];
   /**
    * CPU flamegraph profiling state. `enabled` gates the Profiles nav item;
-   * `sampleRate` is shown as a read-only badge. OPTIONAL for backward-compat with
-   * older servers that predate profiling (treated as disabled → nav hidden).
+   * `sampleRate` is shown as a read-only badge.
    */
-  profiling?: { enabled: boolean; sampleRate: number };
+  profiling: { enabled: boolean; sampleRate: number };
 }
 
 /** A node in the aggregated flamegraph tree (mirrors core's `FlameNode`). */

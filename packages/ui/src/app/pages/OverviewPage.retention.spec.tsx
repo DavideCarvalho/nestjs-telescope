@@ -48,6 +48,11 @@ function baseMeta(pruneEnabled: boolean): TelescopeMeta {
     pruneEnabled,
     explainEnabled: false,
     sampling: {},
+    tracesEnabled: true,
+    ai: { enabled: false, mode: null },
+    entryTypes: [],
+    dashboards: [],
+    profiling: { enabled: false, sampleRate: 0 },
   };
 }
 
