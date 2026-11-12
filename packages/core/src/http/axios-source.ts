@@ -17,7 +17,7 @@ import type { WatcherContext } from '../nest/watcher.js';
 /** A request config as axios hands it to a request interceptor. Every field is
  *  optional because axios populates them progressively (e.g. a relative `url`
  *  with a shared `baseURL`, or a config with no `params`). We read these to
- *  reconstruct the outbound target; we never mutate the config. */
+ *  reconstruct the outbound target. The only field we set is `adapter`. */
 export interface AxiosRequestConfigLike {
   method?: string;
   url?: string;
@@ -25,6 +25,9 @@ export interface AxiosRequestConfigLike {
   /** Query params; axios accepts many shapes, so we serialize conservatively
    *  (only plain objects) and otherwise skip them — see the watcher. */
   params?: unknown;
+  /** The adapter axios will call (a function, an adapter name, or a list of names). The watcher
+   *  replaces it with a wrapper that runs the original as a covered call. */
+  adapter?: unknown;
 }
 
 /** A fulfilled response as axios hands it to a response interceptor. We read the

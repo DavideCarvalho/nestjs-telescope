@@ -38,9 +38,9 @@ describe('TelescopeModule.forRootAsync (async options applied)', () => {
     app = moduleRef.createNestApplication();
     await app.init();
 
-    // The DI-resolved storage provider is the exact instance from the factory,
-    // not the default SqliteStorageProvider.
-    expect(app.get(TELESCOPE_STORAGE)).toBe(memory);
+    // The DI-resolved storage provider wraps the instance from the factory (so
+    // its calls run as Telescope's own work), not the default SqliteStorageProvider.
+    expect(app.get(TELESCOPE_STORAGE)).toBeInstanceOf(InMemoryStorageProvider);
 
     const service = app.get(TelescopeService);
     await service.runInBatch('http', async () => {

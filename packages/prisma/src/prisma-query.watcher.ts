@@ -6,6 +6,8 @@ import {
   type WatcherContext,
   queryFamilyHash,
 } from '@dudousxd/nestjs-telescope';
+// Namespace import: `markCoveredByTelescope` is new in core 3, so with core 2 the call below is skipped.
+import * as telescope from '@dudousxd/nestjs-telescope';
 
 /** The structural shape of a Prisma `query` event. Mirrors `Prisma.QueryEvent`
  *  without coupling to the generated `@prisma/client` types. */
@@ -63,6 +65,7 @@ export interface PrismaQueryWatcherOptions {
 export class PrismaQueryWatcher implements Watcher {
   readonly type = EntryType.Query;
   private readonly slowMs: number;
+  private releaseCovered: (() => void) | null = null;
 
   constructor(
     private readonly client: PrismaQueryEmitter,
@@ -73,6 +76,13 @@ export class PrismaQueryWatcher implements Watcher {
 
   register(ctx: WatcherContext): void {
     this.client.$on('query', (event) => this.safeRecord(ctx, event));
+    // SQL is recorded here, so the OpenTelemetry span processor skips Prisma's spans.
+    this.releaseCovered ??= telescope.markCoveredByTelescope?.('query') ?? null;
+  }
+
+  unregister(): void {
+    this.releaseCovered?.();
+    this.releaseCovered = null;
   }
 
   /** Build + hand a query entry to the Recorder, swallowing any failure. Core's
@@ -97,6 +107,8 @@ export class PrismaQueryWatcher implements Watcher {
           return familyHash;
         },
         durationMs: event.duration,
+        // The event fires after the query: anchor createdAt to when it started.
+        startedAt: new Date(Date.now() - event.duration),
         ...(event.duration >= this.slowMs ? { tags: ['slow'] } : {}),
       };
       ctx.record(input);

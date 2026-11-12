@@ -162,4 +162,174 @@ describe('buildWaterfall', () => {
     if (wf === null) throw new Error('expected waterfall');
     expect(wf.spans[0]?.label).toBe('agent:llm.turn');
   });
+
+  describe('with span entries naming their parent', () => {
+    function spanEntry(
+      id: string,
+      spanId: string,
+      parentSpanId: string | null,
+      over: Partial<Entry> = {},
+    ): Entry {
+      return entry({
+        id,
+        type: 'span',
+        // Whole seconds, as a MySQL `datetime` column stores them: containment can't tell
+        // these apart.
+        createdAt: new Date(5000),
+        durationMs: 40,
+        spanId,
+        content: { name: id, spanId, parentSpanId },
+        ...over,
+      });
+    }
+
+    function shape(nodes: { id: string; depth: number; children: unknown[] }[]): unknown {
+      return nodes.map((n) => ({
+        id: n.id,
+        depth: n.depth,
+        children: shape(n.children as typeof nodes),
+      }));
+    }
+
+    it('nests by parentSpanId even when timestamps collide', () => {
+      const wf = buildWaterfall([
+        spanEntry('root', 'a', null, { durationMs: 900, sequence: 0 }),
+        spanEntry('load', 'b', 'a', { durationMs: 300, sequence: 1 }),
+        spanEntry('select', 'c', 'b', { durationMs: 300, sequence: 2 }),
+        spanEntry('render', 'd', 'a', { durationMs: 100, sequence: 3 }),
+      ]);
+      expect(shape(wf?.spans ?? [])).toEqual([
+        {
+          id: 'root',
+          depth: 0,
+          children: [
+            {
+              id: 'load',
+              depth: 1,
+              children: [{ id: 'select', depth: 2, children: [] }],
+            },
+            { id: 'render', depth: 1, children: [] },
+          ],
+        },
+      ]);
+    });
+
+    it('falls back to containment when the parent is not in the trace', () => {
+      const wf = buildWaterfall([
+        entry({
+          id: 'req',
+          type: 'request',
+          createdAt: new Date(1000),
+          durationMs: 100,
+          content: { method: 'GET', uri: '/' },
+        }),
+        // Its parent is the HTTP server span, which the request entry stands for.
+        spanEntry('load', 'b', 'server-span', { createdAt: new Date(1010), durationMs: 20 }),
+        // A watcher entry without links nests by time.
+        entry({ id: 'q', type: 'query', createdAt: new Date(1020), durationMs: 5, sequence: 2 }),
+      ]);
+      expect(shape(wf?.spans ?? [])).toEqual([
+        {
+          id: 'req',
+          depth: 0,
+          children: [{ id: 'load', depth: 1, children: [{ id: 'q', depth: 2, children: [] }] }],
+        },
+      ]);
+    });
+
+    it('hangs entries sharing the server span id on the request, not on the first query', () => {
+      // The flip shape: the OTel trace context stamps the request's server span id ('srv') on
+      // every entry recorded in the request. The first query sorts before the request, so
+      // "first entry with that span id" picked it as the owner of 'srv'.
+      const wf = buildWaterfall([
+        entry({
+          id: 'q1',
+          type: 'query',
+          createdAt: new Date(1000),
+          durationMs: 200,
+          spanId: 'srv',
+          sequence: 0,
+        }),
+        entry({
+          id: 'req',
+          type: 'request',
+          createdAt: new Date(1000),
+          durationMs: 150,
+          spanId: 'srv',
+          sequence: 3,
+          content: { method: 'GET', uri: '/' },
+        }),
+        entry({
+          id: 'q2',
+          type: 'query',
+          createdAt: new Date(1040),
+          durationMs: 5,
+          spanId: 'srv',
+          sequence: 1,
+        }),
+        entry({
+          id: 'out',
+          type: 'http_client',
+          createdAt: new Date(1060),
+          durationMs: 30,
+          spanId: 'srv',
+          sequence: 2,
+        }),
+        spanEntry('load', 'app', 'srv', { createdAt: new Date(1010), durationMs: 20, sequence: 4 }),
+        // A query recorded inside the app span carries that span's id.
+        entry({
+          id: 'q3',
+          type: 'query',
+          createdAt: new Date(1012),
+          durationMs: 4,
+          spanId: 'app',
+          sequence: 5,
+        }),
+      ]);
+      expect(shape(wf?.spans ?? [])).toEqual([
+        {
+          id: 'req',
+          depth: 0,
+          children: [
+            { id: 'q1', depth: 1, children: [] },
+            { id: 'load', depth: 1, children: [{ id: 'q3', depth: 2, children: [] }] },
+            { id: 'q2', depth: 1, children: [] },
+            { id: 'out', depth: 1, children: [] },
+          ],
+        },
+      ]);
+    });
+
+    it('falls back to the earliest carrier when no entry owns the span id', () => {
+      const wf = buildWaterfall([
+        entry({ id: 'job', type: 'job', createdAt: new Date(1000), durationMs: 100, spanId: 's' }),
+        spanEntry('child', 'c', 's', { createdAt: new Date(1000), durationMs: 100, sequence: 1 }),
+      ]);
+      expect(shape(wf?.spans ?? [])).toEqual([
+        { id: 'job', depth: 0, children: [{ id: 'child', depth: 1, children: [] }] },
+      ]);
+    });
+
+    it('never nests an entry under its own descendant', () => {
+      // `child` names `parent`, but `child` encloses `parent` in time.
+      const wf = buildWaterfall([
+        spanEntry('child', 'c', 'p', { createdAt: new Date(1000), durationMs: 100 }),
+        spanEntry('parent', 'p', null, { createdAt: new Date(1010), durationMs: 10 }),
+      ]);
+      expect(shape(wf?.spans ?? [])).toEqual([
+        { id: 'parent', depth: 0, children: [{ id: 'child', depth: 1, children: [] }] },
+      ]);
+    });
+
+    it('breaks a cycle of parent links', () => {
+      const wf = buildWaterfall([
+        spanEntry('x', 'x', 'y', { sequence: 0 }),
+        spanEntry('y', 'y', 'x', { sequence: 1 }),
+      ]);
+      const ids = JSON.stringify(shape(wf?.spans ?? []));
+      expect(ids).toContain('"x"');
+      expect(ids).toContain('"y"');
+      expect(wf?.spans).toHaveLength(1);
+    });
+  });
 });

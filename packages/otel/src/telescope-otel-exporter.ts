@@ -1,4 +1,9 @@
-import type { Entry, RecordInput, TelescopeExtension } from '@dudousxd/nestjs-telescope';
+import {
+  type Entry,
+  EntryType,
+  type RecordInput,
+  type TelescopeExtension,
+} from '@dudousxd/nestjs-telescope';
 import {
   type Counter,
   type Histogram,
@@ -49,6 +54,9 @@ export class TelescopeOtelExporter implements TelescopeExtension {
 
   observeFlush(entries: Entry[]): void {
     for (const entry of entries) {
+      // `span` entries came FROM the app's OpenTelemetry SDK (telescopeSpanProcessor), which
+      // already exports them; sending them back would duplicate every span.
+      if (entry.type === EntryType.Span) continue;
       const shape = entryToSpan(entry);
       const span = this.tracer.startSpan(shape.name, {
         startTime: shape.startMs,

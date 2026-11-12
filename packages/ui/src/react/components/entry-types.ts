@@ -40,6 +40,8 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
   { id: 'model', label: 'Models', dot: 'bg-lime-400' },
   { id: 'redis', label: 'Redis', dot: 'bg-rose-400' },
   { id: 'inertia', label: 'Inertia', dot: 'bg-cyan-400' },
+  // App OpenTelemetry spans, ingested by telescopeSpanProcessor() from @dudousxd/nestjs-telescope-otel.
+  { id: 'span', label: 'Spans', dot: 'bg-slate-400' },
   // NestJS first-party channels, recorded by @dudousxd/nestjs-telescope-official.
   { id: 'resilience', label: 'Resilience', dot: 'bg-yellow-400' },
   { id: 'workflow', label: 'Nest workflows', dot: 'bg-purple-300' },

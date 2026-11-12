@@ -25,6 +25,21 @@ export class TelescopeContext {
     this.als.enterWith({ batch, sequence: 0 });
   }
 
+  /**
+   * The active batch state (batch + capture sequence), to re-enter later with
+   * {@link runInState}: a callback that ends outside the batch it started in (an
+   * ioredis reply, an OTel span ended in a socket callback) still records into it.
+   */
+  captureState(): unknown {
+    return this.als.getStore();
+  }
+
+  /** Run `fn` inside a state from {@link captureState}; outside any batch when it is undefined. */
+  runInState<T>(state: unknown, fn: () => T): T {
+    if (state === undefined || state === null) return fn();
+    return this.als.run(state as BatchState, fn);
+  }
+
   current(): Batch | undefined {
     return this.als.getStore()?.batch;
   }

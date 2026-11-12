@@ -38,6 +38,14 @@ interface WatcherContext {
 
 A `RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt? }`. Everything else (id, batchId, sequence, traceId, ...) is enriched by the recorder.
 
+The entry's `createdAt` is `startedAt`, or the time of the `record()` call when you leave it out. The trace waterfall draws every entry from its `createdAt`, so when you record after the work has finished, pass when it started:
+
+```ts
+const startedAt = Date.now();
+await doWork();
+ctx.record({ type: 'my-op', content, durationMs: Date.now() - startedAt, startedAt: new Date(startedAt) });
+```
+
 ### Capturing a throw off the Nest pipeline
 
 `exception` entries are normally produced by a `NestInterceptor`, which only runs on the Nest execution pipeline — HTTP routes and bound RPC/WS handlers. A queue job body, a scheduled callback, a durable step or an event listener never goes through it, so a throw there used to leave no exception entry at all: no family, no `new-exception` alert, no AI diagnosis, nothing in the exceptions view.

@@ -24,6 +24,7 @@ import { ServerStatsService } from '../metrics/server-stats.service.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { TimeseriesService } from '../metrics/timeseries.service.js';
 import { TracesService } from '../metrics/traces.service.js';
+import { asTelescopeWorkStorage } from '../otel/telescope-runtime.js';
 import { ProfilerService } from '../profiling/profiler.service.js';
 import { PulseService } from '../pulse/pulse.service.js';
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
@@ -80,8 +81,10 @@ const SHARED_PROVIDERS: Provider[] = [
   },
   {
     provide: TELESCOPE_STORAGE,
+    // Every storage call runs as Telescope's own work: no OpenTelemetry spans for it in the
+    // app's traces, and nothing it causes is ingested by the span processor.
     useFactory: (options: TelescopeModuleOptions): StorageProvider =>
-      options.storage ?? new SqliteStorageProvider(),
+      asTelescopeWorkStorage(options.storage ?? new SqliteStorageProvider()),
     inject: [TELESCOPE_OPTIONS],
   },
   {

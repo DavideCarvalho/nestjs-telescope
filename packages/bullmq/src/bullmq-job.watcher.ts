@@ -206,10 +206,10 @@ export class BullMqJobWatcher implements Watcher {
         const result = await invoke();
         // safeRecord never throws, so a telescope failure cannot turn a
         // successful job into a failed one.
-        this.safeRecord(ctx, job, 'completed', this.clock.now() - startedAt, undefined);
+        this.safeRecord(ctx, job, 'completed', startedAt, undefined);
         return result;
       } catch (error) {
-        this.safeRecord(ctx, job, 'failed', this.clock.now() - startedAt, error);
+        this.safeRecord(ctx, job, 'failed', startedAt, error);
         this.safeRecordException(ctx, job, error);
         throw error; // never swallow the host's error
       }
@@ -268,9 +268,10 @@ export class BullMqJobWatcher implements Watcher {
     ctx: WatcherContext,
     job: unknown,
     status: JobStatus,
-    durationMs: number,
+    startedAt: number,
     error: unknown,
   ): void {
+    const durationMs = this.clock.now() - startedAt;
     try {
       const content = buildJobContent(toJobLike(job), status, error, this.includeJobData);
       const familyHash = [content.queue, content.name].filter(Boolean).join(':') || null;
@@ -286,6 +287,8 @@ export class BullMqJobWatcher implements Watcher {
         content,
         familyHash,
         durationMs,
+        // Recorded once the job settles: anchor createdAt to when it started.
+        startedAt: new Date(startedAt),
       };
       if (tags.length > 0) input.tags = tags;
       ctx.record(input);

@@ -6,7 +6,7 @@ import {
   type WatcherContext,
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type PrismaQueryEvent, PrismaQueryWatcher } from './prisma-query.watcher.js';
 
 /** A structural fake of the Prisma `query` event channel. Captures the callback
@@ -51,6 +51,20 @@ describe('PrismaQueryWatcher', () => {
     expect((entry.content as { took: number }).took).toBe(5);
     expect(entry.familyHash).toBeTruthy();
     expect(entry.durationMs).toBe(5);
+  });
+
+  it('anchors the entry at the query start, since the event fires after it', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(10_000);
+      const { ctx, recorded } = makeHarness();
+      const client = new FakePrismaClient();
+      new PrismaQueryWatcher(client).register(ctx);
+      client.callback?.({ query: 'SELECT 1', params: '[]', duration: 30 });
+      expect(recorded[0]?.startedAt?.getTime()).toBe(9_970);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('tags slow queries when duration >= the default slowMs (1000)', () => {

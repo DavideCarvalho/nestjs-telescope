@@ -14,8 +14,14 @@ export { entryToSpan, type SpanShape } from './entry-to-span.js';
 export {
   TelescopeAiMetricsExporter,
   type TelescopeAiMetricsExporterOptions,
-  type OtelMetricsSdk,
 } from './ai-metrics-exporter.js';
+export {
+  telescopeSpanProcessor,
+  type ReadableSpanLike,
+  type StartedSpanLike,
+  type TelescopeSpanProcessor,
+  type TelescopeSpanProcessorOptions,
+} from './span-processor.js';
 // The console access contract, re-exported from core so `/metrics`'s
 // `authorize` can be written from this entry point.
 export {

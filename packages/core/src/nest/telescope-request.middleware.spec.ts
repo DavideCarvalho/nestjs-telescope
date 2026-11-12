@@ -2,8 +2,13 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
+import { buildWaterfall } from '../metrics/waterfall.js';
+import { telescopeRuntime } from '../otel/telescope-runtime.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
+import {
+  TelescopeRequestMiddleware,
+  telescopeRequestCapture,
+} from './telescope-request.middleware.js';
 import type { TelescopeHttpRequest, TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
@@ -32,6 +37,30 @@ async function captureRequestEntry(
 }
 
 describe('TelescopeRequestMiddleware', () => {
+  describe('span processor coverage', () => {
+    const covered = telescopeRuntime().covered;
+    const service = new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {});
+
+    it('covers requests when the module applies the middleware', () => {
+      covered.delete('request');
+      new TelescopeRequestMiddleware(service, undefined, {});
+      expect(covered.has('request')).toBe(true);
+    });
+
+    it('does not cover requests with registerRequestMiddleware: false', () => {
+      covered.delete('request');
+      new TelescopeRequestMiddleware(service, undefined, { registerRequestMiddleware: false });
+      expect(covered.has('request')).toBe(false);
+    });
+
+    it('covers requests through the manual telescopeRequestCapture', () => {
+      covered.delete('request');
+      telescopeRequestCapture(service, { requestCapture: { skipBody: () => true } });
+      expect(covered.has('request')).toBe(true);
+      covered.delete('request');
+    });
+  });
+
   it('opens a batch and records a request entry on response finish', async () => {
     const storage = new InMemoryStorageProvider();
     const service = new TelescopeService(resolveConfig({}), storage, {});
@@ -63,6 +92,47 @@ describe('TelescopeRequestMiddleware', () => {
     expect(request?.batchId).toBe(query?.batchId); // correlated
     // The request entry groups by its normalized route family (id segment → :id).
     expect(request?.familyHash).toBe('GET /orders/:id');
+  });
+
+  it('anchors the request entry at its start, so a child query renders inside it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(10_000);
+      const storage = new InMemoryStorageProvider();
+      const service = new TelescopeService(resolveConfig({}), storage, {});
+      const mw = new TelescopeRequestMiddleware(service);
+      const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+
+      mw.use({ method: 'GET', url: '/orders', headers: {} }, res, vi.fn());
+      // A query that ran [30, 50] ms into the request, logged when it returned.
+      vi.setSystemTime(10_050);
+      service.record({
+        type: 'query',
+        content: { sql: 'select 1' },
+        durationMs: 20,
+        startedAt: new Date(Date.now() - 20),
+      });
+      vi.setSystemTime(10_150);
+      res.emit('finish');
+      await service.flush();
+
+      const entries = (await storage.get({})).data;
+      const request = entries.find((e) => e.type === 'request');
+      expect(request?.createdAt.getTime()).toBe(10_000);
+      expect(request?.durationMs).toBe(150);
+
+      const wf = buildWaterfall(entries);
+      expect(wf?.totalDurationMs).toBe(150);
+      expect(wf?.spans).toHaveLength(1);
+      const root = wf?.spans[0];
+      expect(root?.type).toBe('request');
+      expect(root?.offsetMs).toBe(0);
+      expect(root?.children.map((c) => [c.type, c.offsetMs, c.durationMs])).toEqual([
+        ['query', 30, 20],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('records a non-root, prefixed-style path (regression for global-prefix capture)', async () => {

@@ -88,12 +88,13 @@ export class MailWatcher implements Watcher {
     const watcher = this;
 
     transport.sendMail = async function patchedSendMail(options: MailOptions): Promise<unknown> {
+      const startedAt = Date.now();
       try {
         const result = await original(options);
-        watcher.safeRecord(ctx, options, 'sent');
+        watcher.safeRecord(ctx, options, 'sent', startedAt);
         return result;
       } catch (error) {
-        watcher.safeRecord(ctx, options, 'failed');
+        watcher.safeRecord(ctx, options, 'failed', startedAt);
         throw error; // never swallow the host's error
       }
     };
@@ -101,7 +102,12 @@ export class MailWatcher implements Watcher {
 
   /** Build + record a mail entry, swallowing any record failure so a telescope
    *  error can never turn a successful send into a failed one. */
-  private safeRecord(ctx: WatcherContext, options: MailOptions, status: 'sent' | 'failed'): void {
+  private safeRecord(
+    ctx: WatcherContext,
+    options: MailOptions,
+    status: 'sent' | 'failed',
+    startedAt: number,
+  ): void {
     try {
       const mailer = options.mailer ?? this.mailer;
       const input: RecordInput = {
@@ -115,6 +121,9 @@ export class MailWatcher implements Watcher {
           preview: buildPreview(options),
           status,
         },
+        // Recorded once the send settles: anchor createdAt to when it started.
+        durationMs: Date.now() - startedAt,
+        startedAt: new Date(startedAt),
       };
       if (status === 'failed') input.tags = ['failed'];
       ctx.record(input);

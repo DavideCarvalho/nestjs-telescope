@@ -30,6 +30,11 @@ export const EntryType = {
    * bounded. Associated to its request by `batchId`/`traceId` like any entry.
    */
   CpuProfile: 'cpu_profile',
+  /**
+   * A span from the app's OpenTelemetry instrumentation, ingested by `telescopeSpanProcessor()`
+   * (`@dudousxd/nestjs-telescope-otel/span-processor`). Its `content` is a {@link SpanContent}.
+   */
+  Span: 'span',
 } as const;
 
 export type BuiltinEntryType = (typeof EntryType)[keyof typeof EntryType];
@@ -67,6 +72,11 @@ export interface RecordInput<TContent = unknown> {
   familyHash?: string | null;
   tags?: string[];
   durationMs?: number | null;
+  /**
+   * When the work this entry describes began; becomes the entry's `createdAt` (default: the
+   * time of the `record()` call). A watcher that records after the work finished passes it, so
+   * every entry's `createdAt` is a start and the trace waterfall lines them up.
+   */
   startedAt?: Date;
   /**
    * Explicit trace correlation id, for a watcher that already knows it (e.g. a
@@ -76,4 +86,9 @@ export interface RecordInput<TContent = unknown> {
    * absent, ambient enrichment behaves exactly as before this field existed.
    */
   traceId?: string;
+  /**
+   * Explicit span id, for an entry that IS a span (the OpenTelemetry span processor). Takes
+   * precedence over the ambient {@link TraceContextProvider}'s span id.
+   */
+  spanId?: string;
 }

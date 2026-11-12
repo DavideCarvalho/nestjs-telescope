@@ -56,6 +56,9 @@ describe('MailWatcher', () => {
     expect(recorded).toHaveLength(1);
     const entry = recorded[0]!;
     expect(entry.type).toBe('mail');
+    // Timed: anchored to when the send started.
+    expect(typeof entry.durationMs).toBe('number');
+    expect(entry.startedAt).toBeInstanceOf(Date);
     expect(entry.content).toMatchObject({
       mailer: 'nodemailer',
       from: 'a@x',

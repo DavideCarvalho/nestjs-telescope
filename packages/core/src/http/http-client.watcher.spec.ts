@@ -7,7 +7,9 @@ import {
   type WatcherContext,
   resolveConfig,
 } from '@dudousxd/nestjs-telescope';
+import axiosModule from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { telescopeRuntime } from '../otel/telescope-runtime.js';
 import type {
   AxiosInterceptorLike,
   AxiosRequestConfigLike,
@@ -159,6 +161,8 @@ describe('HttpClientWatcher', () => {
     expect((entry.content as { method: string }).method).toBe('POST');
     expect((entry.content as { statusCode: number }).statusCode).toBe(503);
     expect(entry.durationMs).toBe(1500);
+    // Recorded when the call settles, anchored to when it started.
+    expect(entry.startedAt?.getTime()).toBe(0);
     expect(entry.tags).toContain('failed');
     expect(entry.tags).toContain('slow');
     expect(entry.tags).toContain('host:api.example.com');
@@ -291,6 +295,7 @@ describe('HttpClientWatcher', () => {
         statusCode: 201,
         durationMs: 25,
       });
+      expect(recorded[0]!.startedAt?.getTime()).toBe(0);
       expect(recorded[0]!.familyHash).toBe('POST api.example.com/users');
     });
 
@@ -403,6 +408,39 @@ describe('HttpClientWatcher', () => {
         url: 'https://api.example.com/from-source',
         statusCode: 200,
       });
+    });
+
+    it('runs the request inside the covered scope, so the span processor skips its span', async () => {
+      const seen: boolean[] = [];
+      const client = axiosModule.create({
+        adapter: async (config) => {
+          seen.push(telescopeRuntime().isCoveredCall());
+          return { status: 200, statusText: 'OK', headers: {}, config, data: null };
+        },
+      });
+      const { recorded } = registerWithAxios(client);
+
+      await client.get('http://api.example.com/a');
+      await client.get('http://api.example.com/b');
+
+      expect(seen).toEqual([true, true]);
+      expect(recorded).toHaveLength(2);
+      // Outside the request, calls are not covered.
+      expect(telescopeRuntime().isCoveredCall()).toBe(false);
+    });
+
+    it("resolves axios's named adapters and covers them", async () => {
+      const client = axiosModule.create();
+      const configs: AxiosRequestConfigLike[] = [];
+      client.interceptors.request.use((config) => {
+        configs.push(config);
+        return config;
+      });
+      registerWithAxios(client);
+      // Fails fast (nothing listens on port 9): only the adapter swap is under test.
+      await client.get('http://127.0.0.1:9/').catch(() => undefined);
+
+      expect(typeof configs[0]?.adapter).toBe('function');
     });
   });
 });

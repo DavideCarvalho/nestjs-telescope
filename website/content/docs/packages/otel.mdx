@@ -1,20 +1,56 @@
 ---
 title: "@dudousxd/nestjs-telescope-otel"
-description: OpenTelemetry trace-context provider — stamp every captured entry with the active traceId/spanId so a Telescope batch maps 1:1 to a trace.
+description: OpenTelemetry for Telescope — your app's spans in the trace waterfall, entries stamped with the active trace, metrics and spans out through your OpenTelemetry SDK.
 icon: Activity
 ---
 
 ```bash
-pnpm add @dudousxd/nestjs-telescope-otel
+pnpm add @dudousxd/nestjs-telescope-otel @opentelemetry/api
 ```
 
-Implements core's `TraceContextProvider` SPI by reading the **active** OpenTelemetry span via `@opentelemetry/api`, so each recorded entry is stamped with the ambient `traceId` / `spanId`.
+Telescope works with the OpenTelemetry SDK your app already runs (`@opentelemetry/sdk-node`'s
+`NodeSDK`). It never exports anything itself: spans, metrics and AI metrics go through the SDK's
+global providers, to whatever exporters you configured there.
 
-This package is **read-only**: it reads whatever span is already active in the caller's context. It does **not** create, sample, or export spans — your existing OpenTelemetry SDK owns that. `@opentelemetry/api` is an optional peer; when it (or an active span) is absent, the provider returns `null` and recording proceeds without a trace link — it never throws.
+- `telescopeSpanProcessor()` brings your app's spans into Telescope's trace waterfall.
+- `OtelTraceContextProvider` stamps every Telescope entry with the active trace, so entries and
+  spans of one request share a trace.
+- `TelescopeOtelExporter` sends Telescope's entries out as metrics and spans, and serves a
+  Prometheus `/metrics`.
+- `TelescopeAiMetricsExporter` records the AI-usage and agent-run metrics on the global meter.
 
-## Usage
+## Set up the SDK
 
-Register the provider as `traceContext`, and pair it with a `traceLink` template to deep-link each entry to your trace backend (the `{traceId}` placeholder is substituted at render time):
+Start the SDK before the app loads, in its own file, and add `telescopeSpanProcessor()` next to
+your exporter's processor:
+
+```ts
+// src/instrumentation.ts
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { telescopeSpanProcessor } from '@dudousxd/nestjs-telescope-otel/span-processor';
+
+new NodeSDK({
+  serviceName: 'my-app',
+  spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter()), telescopeSpanProcessor()],
+  metricReaders: [new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() })],
+  instrumentations: [getNodeAutoInstrumentations()],
+}).start();
+```
+
+```bash
+node --import ./dist/instrumentation.js dist/main.js
+```
+
+Import `telescopeSpanProcessor` from the `/span-processor` subpath in this file: it loads nothing
+else (no OpenTelemetry package, no Nest), so the instrumentations can still patch the libraries
+your app imports afterwards.
+
+Then wire Telescope in the app:
 
 ```ts
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
@@ -31,39 +67,159 @@ import { OtelTraceContextProvider } from '@dudousxd/nestjs-telescope-otel';
 export class AppModule {}
 ```
 
-Every entry recorded inside an active span then carries `traceId` and `spanId` (lower-case hex). The dashboard uses these to group entries by trace at `#/traces/:traceId` (see the [dashboard tour](/docs/dashboard)) and to render the "view in trace" deep-link. The **Traces** nav item only appears once a `traceContext` provider is configured — without one every `trace_id` is null and the page stays empty, so the dashboard hides the link.
+## Your spans in the waterfall
+
+`telescopeSpanProcessor()` turns each span your instrumentation ends into a `span` entry with the
+span's trace id, so it shows in the request's trace next to Telescope's own entries (open a trace
+from the **Traces** page, or filter the **Spans** tab).
+
+No duplicates: where a Telescope watcher records the same operation, the watcher's entry stays and
+the OpenTelemetry span is skipped, together with the driver spans under it.
+
+| OpenTelemetry spans | Skipped while |
+|---|---|
+| HTTP server (`@opentelemetry/instrumentation-http`, server kind) | the request middleware records requests (the default) |
+| SQL drivers (`pg`, `mysql`, `mysql2`, `tedious`, `oracledb`, `knex`, Prisma) | the TypeORM logger, the MikroORM logger or the Prisma watcher records queries |
+| `ioredis` / `redis` | the redis watcher is registered |
+| HTTP client (`@opentelemetry/instrumentation-undici`, `@opentelemetry/instrumentation-http` client kind) | that call went through the http-client watcher: `fetch`, or the axios instance passed as `axios` |
+
+Turn the watcher off and the span comes through instead, so nothing goes missing. HTTP client spans
+are matched per call: an SDK that calls `http.request` itself (the AWS SDK, for example) still
+shows up as spans.
+
+With [`sampling`](/docs/reference/configuration#capture--correlation) on a covered type (`query: 0.05`, say), a span stands in
+for each entry sampling drops: the processor holds the call's span until the watcher records the
+call, skips it when the entry was kept and records it when the entry was dropped. Every call
+shows up once, as an entry or as a span. Calls of the same kind in one trace are paired in the
+order they finish, so with concurrent queries the span shown can belong to a sibling query. A held
+span the watcher never records (a query sent without the ORM) comes through after two seconds.
+The HTTP server span is the exception: it is skipped whenever the request middleware is on, even
+for requests sampling drops.
+
+Telescope's own work never shows up: the processor skips spans Telescope emits and every span of a
+request to the dashboard, and Telescope's storage reads and writes run with tracing suppressed, so
+they don't reach your traces either.
+
+Spans go through the same pipeline as every entry (redaction, sampling, the overload guard,
+retention). On top of that:
+
+```ts
+telescopeSpanProcessor({
+  // Keep a span out. Runs after the built-in skips.
+  ignore: (span) => span.name.startsWith('middleware - '),
+  maxSpansPerTrace: 200, // the rest of a trace is dropped
+  maxAttributes: 64, // per span and per span event
+  maxAttributeLength: 2048, // longer string values are cut
+});
+```
+
+Before Telescope boots (and after it shuts down), the processor records nothing. It never throws
+into your code.
+
+## Trace context on entries
+
+`OtelTraceContextProvider` reads the active span through `@opentelemetry/api` and stamps every
+recorded entry with its `traceId` and `spanId`. The dashboard groups entries by trace at
+`#/traces/:traceId` and renders the "view in trace" link from `traceLink`. The **Traces** page only
+appears once a `traceContext` provider is configured. Without an active span the provider returns
+`null` and the entry is recorded without a trace.
+
+## Exporting Telescope's entries
+
+`TelescopeOtelExporter` sends what Telescope records out through the global meter and tracer:
+complete metrics (counted before sampling) and spans for the stored entries. Register the same
+instance in two places:
+
+```ts
+import {
+  OtelTraceContextProvider,
+  TelescopeOtelExporter,
+  TelescopeOtelMetricsModule,
+  authorizeByToken,
+} from '@dudousxd/nestjs-telescope-otel';
+
+const otel = new TelescopeOtelExporter();
+
+@Module({
+  imports: [
+    TelescopeModule.forRoot({
+      traceContext: new OtelTraceContextProvider(),
+      extensions: [otel],
+    }),
+    // GET /metrics in Prometheus text format
+    TelescopeOtelMetricsModule.forExporter(otel, {
+      authorize: authorizeByToken({ token: process.env.METRICS_TOKEN }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+`span` entries are not sent back out: they came from your SDK, which already exported them.
+Durations are histograms (buckets in ms: `5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000`)
+in both the scrape and the meter. Each metric keeps at most 2000 label series; new ones past that
+are dropped and counted in `telescope_metrics_dropped_series_total{metric}`. `/metrics` follows
+the [console access rule](/docs/dashboard/auth).
 
 ## AI usage and agent-run metrics
 
-`TelescopeAiMetricsExporter` pushes the `aviary_ai_*` / `aviary_agent_*` metrics (cost, tokens,
-audio, calls, run duration / queue / model / tools time, tool duration — the full table is on
-[AI usage and agent runs](/docs/dashboard/ai#metrics-for-grafana)) over OTLP/HTTP from a **private**
-`MeterProvider`. It never registers a global provider, so it cannot clash with your own OTel SDK,
-and its endpoint is its own: metrics can go to one Collector while your traces go elsewhere.
-
-```bash
-pnpm add @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http @opentelemetry/resources
-```
-
-The three are optional peers, imported lazily when the exporter starts; without them it logs once
-and stays off.
+`TelescopeAiMetricsExporter` records the `aviary_ai_*` / `aviary_agent_*` metrics (cost, tokens,
+audio, calls, run duration / queue / model / tools time, tool duration; the full table is on
+[AI usage and agent runs](/docs/dashboard/ai#metrics-for-grafana)) on the global meter
+(`metrics.getMeter('telescope')`), so they leave with the rest of your metrics through the SDK's
+metric reader.
 
 ```ts
 import { TelescopeAiMetricsExporter } from '@dudousxd/nestjs-telescope-otel';
 
-const aiMetrics = new TelescopeAiMetricsExporter({
-  endpoint: 'http://localhost:4318', // default: OTEL_EXPORTER_OTLP_ENDPOINT, else localhost:4318
-  path: '/v1/metrics', // default
-  headers: {}, // e.g. { Authorization: 'Bearer …' }
-  exportIntervalMs: 60_000, // default
-  serviceName: 'my-app', // default: OTEL_SERVICE_NAME, else 'nestjs-app'
-});
-
-TelescopeModule.forRoot({ extensions: [aiMetrics] });
-// on shutdown: await aiMetrics.shutdown();
+TelescopeModule.forRoot({ extensions: [new TelescopeAiMetricsExporter()] });
 ```
 
 It starts with Telescope's watcher registration and reads the agent's diagnostics channels
 directly, so every `usage.recorded` and terminal run event counts exactly once regardless of
-sampling. An importable Grafana dashboard ships at
-`@dudousxd/nestjs-telescope-otel/grafana/aviary-ai-dashboard.json`.
+sampling. Pass `{ meter }` to record on a meter of your own. An importable Grafana dashboard ships
+at `@dudousxd/nestjs-telescope-otel/grafana/aviary-ai-dashboard.json`.
+
+## Migrating from 2.x
+
+`TelescopeAiMetricsExporter` no longer runs its own OTLP exporter. The `endpoint`, `path`,
+`headers`, `exportIntervalMs`, `timeoutMs` and `serviceName` options are gone, and passing any of
+them throws at boot. Configure them on the SDK instead; `flush()` is gone too (the SDK flushes on
+`sdk.shutdown()`). The `@opentelemetry/sdk-metrics`, `@opentelemetry/exporter-metrics-otlp-http`
+and `@opentelemetry/resources` peers are dropped.
+
+Before:
+
+```ts
+const aiMetrics = new TelescopeAiMetricsExporter({
+  endpoint: 'http://localhost:4318',
+  headers: { Authorization: 'Bearer …' },
+  exportIntervalMs: 15_000,
+  serviceName: 'my-app',
+});
+TelescopeModule.forRoot({ extensions: [aiMetrics] });
+```
+
+After:
+
+```ts
+// src/instrumentation.ts
+new NodeSDK({
+  serviceName: 'my-app',
+  metricReaders: [
+    new PeriodicExportingMetricReader({
+      exporter: new OTLPMetricExporter({
+        url: 'http://localhost:4318/v1/metrics',
+        headers: { Authorization: 'Bearer …' },
+      }),
+      exportIntervalMillis: 15_000,
+    }),
+  ],
+}).start();
+
+// app.module.ts
+TelescopeModule.forRoot({ extensions: [new TelescopeAiMetricsExporter()] });
+```
+
+The metric names, attributes and buckets are unchanged, so existing Grafana dashboards keep
+working. The instrumentation scope is now `telescope` (it was `@dudousxd/nestjs-telescope-otel`).

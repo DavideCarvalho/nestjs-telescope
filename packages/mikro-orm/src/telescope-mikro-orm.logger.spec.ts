@@ -2,7 +2,7 @@
 import { setTelescopeRecordSink } from '@dudousxd/nestjs-telescope';
 import type { RecordInput } from '@dudousxd/nestjs-telescope';
 import type { LoggerOptions } from '@mikro-orm/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { telescopeMikroOrmLogger } from './telescope-mikro-orm.logger.js';
 
 describe('telescopeMikroOrmLogger', () => {
@@ -34,6 +34,21 @@ describe('telescopeMikroOrmLogger', () => {
     expect(entry.durationMs).toBe(150);
     expect(entry.familyHash).toBeTruthy();
     expect(entry.tags).toContain('slow'); // 150 >= 100
+  });
+
+  it('anchors the entry at the query start, not when it was logged', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(10_000);
+      const records: RecordInput[] = [];
+      const logger = telescopeMikroOrmLogger((input) => records.push(input))({
+        writer: () => undefined,
+      });
+      logger.logQuery({ query: 'select 1', params: [], took: 40, level: 'info' } as never);
+      expect(records[0]?.startedAt?.getTime()).toBe(9_960);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not tag fast queries as slow', () => {

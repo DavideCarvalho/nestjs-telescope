@@ -13,6 +13,7 @@ import {
   type RecordInput,
   type WatcherContext,
   resolveConfig,
+  telescopeRuntime,
 } from '@dudousxd/nestjs-telescope';
 import { describe, expect, it } from 'vitest';
 import {
@@ -94,6 +95,9 @@ describe('RedisCommandWatcher', () => {
     expect(content.command).toBe('GET');
     expect(content.args).toEqual(['user:1']);
     expect(typeof content.durationMs).toBe('number');
+    // The entry carries the duration too, anchored to when the command was sent.
+    expect(get!.durationMs).toBe(content.durationMs);
+    expect(get!.startedAt).toBeInstanceOf(Date);
     expect(get!.tags).toContain('redis:GET');
   });
 
@@ -116,6 +120,19 @@ describe('RedisCommandWatcher', () => {
     await client.set('after', 'cleanup');
 
     expect(recorded).toHaveLength(0);
+  });
+
+  it('stops covering redis spans on cleanup', () => {
+    const covered = telescopeRuntime().covered;
+    const count = (): number => covered.get('redis') ?? 0;
+    const before = count();
+    const watcher = new RedisCommandWatcher(fakeClient());
+    watcher.register(makeHarness().ctx);
+    expect(count()).toBe(before + 1);
+    watcher.cleanup();
+    expect(count()).toBe(before);
+    watcher.unregister();
+    expect(count()).toBe(before);
   });
 
   it('wraps sendCommand exactly once across repeated register calls', async () => {

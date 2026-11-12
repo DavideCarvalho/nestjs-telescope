@@ -163,6 +163,13 @@ export interface RecorderOptions {
    * breaks the synchronous record path. Powers the OTel/Prometheus metrics tap.
    */
   onRecorded?: (input: RecordInput) => void;
+  /**
+   * Best-effort hook fired with the sampling decision for each `record()` call that reaches
+   * sampling (not while paused). Runs synchronously in the caller's async context. A throw is
+   * swallowed. Feeds the OpenTelemetry span processor, which shows a span for a covered call
+   * only when its entry was sampled out.
+   */
+  onSampled?: (input: RecordInput, kept: boolean) => void;
 }
 
 /**
@@ -374,7 +381,9 @@ export class Recorder {
         this.notifyDrop(1, 'overflow');
         return;
       }
-      if (!this.passesSampling(input)) {
+      const kept = this.passesSampling(input);
+      this.notifySampled(input, kept);
+      if (!kept) {
         return;
       }
       const entry = this.enrich(input);
@@ -532,6 +541,16 @@ export class Recorder {
     }
   }
 
+  /** Invoke the `onSampled` hook. Isolated: a throw never affects capture. */
+  private notifySampled(input: RecordInput, kept: boolean): void {
+    if (this.options.onSampled === undefined) return;
+    try {
+      this.options.onSampled(input, kept);
+    } catch {
+      // Best-effort hook; never break record().
+    }
+  }
+
   /**
    * Tail-sampling decision. Delegates to the shared resolver so the same logic
    * backs both the live path and the benchmark. The hot-path cost is shallow
@@ -594,7 +613,7 @@ export class Recorder {
       origin: batch?.origin ?? 'manual',
       instanceId: this.options.instanceId,
       traceId,
-      spanId: trace?.spanId ?? null,
+      spanId: input.spanId ?? trace?.spanId ?? null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
     // Swap in the tagger-enriched tags IN PLACE rather than cloning the whole

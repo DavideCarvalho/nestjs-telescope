@@ -248,6 +248,8 @@ export class MikroOrmModelWatcher implements Watcher {
         tags: ['model', 'model:flush'],
         content,
         durationMs,
+        // Recorded after the flush: anchor createdAt to when it started.
+        ...(durationMs !== null ? { startedAt: new Date(Date.now() - durationMs) } : {}),
       };
       ctx.record(input);
     } catch (recordError) {
@@ -270,6 +272,8 @@ export class MikroOrmModelWatcher implements Watcher {
         tags: ['model', 'model:transaction', `transaction:${outcome}`],
         content,
         durationMs,
+        // Recorded at commit/rollback: anchor createdAt to when the transaction began.
+        ...(durationMs !== null ? { startedAt: new Date(Date.now() - durationMs) } : {}),
       };
       ctx.record(input);
     } catch (recordError) {

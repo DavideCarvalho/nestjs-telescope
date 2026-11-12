@@ -161,6 +161,7 @@ export class ProfilerService {
         familyHash: label ?? null,
         tags: ['profile', handle.reason],
         durationMs: result.durationMs,
+        startedAt: new Date(handle.startedAt),
       });
     } catch {
       // A failed capture must never affect the request it wrapped.

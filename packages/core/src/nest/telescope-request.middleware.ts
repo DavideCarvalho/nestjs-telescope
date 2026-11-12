@@ -1,6 +1,7 @@
-// packages/core/src/nest/telescope-request.middleware.ts
 import { Inject, Injectable, type NestMiddleware, Optional } from '@nestjs/common';
 import { EntryType } from '../entry/entry.js';
+// packages/core/src/nest/telescope-request.middleware.ts
+import { markCoveredByTelescope } from '../otel/telescope-runtime.js';
 import type { ProfileHandle } from '../profiling/profiler.service.js';
 import { ProfilerService } from '../profiling/profiler.service.js';
 import { normalizeRoute } from '../query/normalize-route.js';
@@ -202,6 +203,10 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     moduleOptions: TelescopeModuleOptions | undefined = undefined,
   ) {
     this.captureConfig = resolveRequestCapture(moduleOptions?.requestCapture);
+    // Incoming requests are recorded here, so the span processor skips the HTTP server spans.
+    // With `registerRequestMiddleware: false` the module never applies this instance, so it
+    // must not claim coverage (the manual `telescopeRequestCapture` path builds its own).
+    if (moduleOptions?.registerRequestMiddleware !== false) markCoveredByTelescope('request');
   }
 
   use(req: unknown, res: unknown, next: (error?: unknown) => void): void {
@@ -259,6 +264,8 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
             statusCode: response.statusCode,
           },
           durationMs: Date.now() - startedAt,
+          // Recorded on finish: anchor createdAt to when the request arrived.
+          startedAt: new Date(startedAt),
         });
         // Stop + record the profile within the same async context so its
         // `cpu_profile` entry shares this request's batchId/traceId. Fire-and-
@@ -292,6 +299,12 @@ export function telescopeRequestCapture(
   // so the capture gates are passed here — same shape as the module option:
   // `telescopeRequestCapture(service, { requestCapture: { skipBody: ... } })`.
   // Omitted → the safe defaults (128 KiB cap + binary content-type list).
-  const middleware = new TelescopeRequestMiddleware(service, undefined, options);
+  // Only `requestCapture` is forwarded, so this instance always marks requests as covered.
+  const capture = options?.requestCapture;
+  const middleware = new TelescopeRequestMiddleware(
+    service,
+    undefined,
+    capture === undefined ? undefined : { requestCapture: capture },
+  );
   return (req, res, next) => middleware.use(req, res, next);
 }

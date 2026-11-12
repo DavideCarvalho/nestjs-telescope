@@ -12,7 +12,7 @@ import { DiagnosisCoordinator } from '../ai/diagnosis-coordinator.js';
 import { resolveAlerts } from '../alerts/resolve-alerts.js';
 import { TelescopeAlerter } from '../alerts/telescope-alerter.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
-import { samplingRates } from '../config/sampling.js';
+import { samplingCanDrop, samplingRates } from '../config/sampling.js';
 import { createBatch } from '../context/batch.js';
 import { CONTEXT_ACCESSOR, type ContextAccessor } from '../context/context-accessor.js';
 import { TelescopeContext } from '../context/telescope-context.js';
@@ -21,6 +21,12 @@ import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
 import type { DashboardSection, Panel } from '../extension/types.js';
+import {
+  coveredEntryType,
+  isTelescopeSpanProcessorActive,
+  reportCoveredOutcome,
+  telescopeRuntime,
+} from '../otel/telescope-runtime.js';
 import { setTelescopeRecordSink } from '../record/telescope-record.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
@@ -171,6 +177,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       // Complete-count metrics tap: fan every record out to extension observers
       // (e.g. the OTel exporter) before sampling, so exported counters are honest.
       onRecorded: (input) => this.extensions.notifyRecord(input),
+      // Tells the OpenTelemetry span processor whether a covered call's entry was kept, so it
+      // shows the call's span only when sampling dropped the entry.
+      onSampled: (input, kept) => reportCoveredOutcome(input.type, kept),
       // Per-flush new-exception evaluation: cheap map lookup per stored exception,
       // batch-context fetch only on a real fire. Delegates to the alerter built
       // just below; the closure reads `this.alerter` at flush time (always set by
@@ -215,6 +224,19 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     // at `MikroORM.init()` before Nest DI has this service) without
     // injecting it. Cleared on shutdown.
     setTelescopeRecordSink((input) => this.record(input));
+    // Hand the same sink to code outside DI that reads the global runtime (the OpenTelemetry
+    // span processor). Cleared on shutdown.
+    if (this.config.enabled) {
+      const runtime = telescopeRuntime();
+      runtime.record = (input) => this.record(input);
+      runtime.isPaused = () => this.recorder.isPaused;
+      runtime.selfPath = `/${this.config.path}`;
+      runtime.isSampled = (operation) =>
+        samplingCanDrop(this.config.sampling, coveredEntryType(operation));
+      runtime.captureBatch = () => this.context.captureState();
+      runtime.recordInBatch = (batch, input) =>
+        this.context.runInState(batch, () => this.record(input));
+    }
   }
 
   /**
@@ -282,6 +304,13 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     setTelescopeDump(null);
     // Detach the global record sink so stray post-shutdown calls become no-ops.
     setTelescopeRecordSink(null);
+    const runtime = telescopeRuntime();
+    runtime.record = null;
+    runtime.isPaused = () => false;
+    runtime.selfPath = null;
+    runtime.isSampled = () => false;
+    runtime.captureBatch = undefined;
+    runtime.recordInBatch = undefined;
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
@@ -376,7 +405,11 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     return {
       enabled: this.config.enabled,
       droppedCount: this.recorder.droppedCount,
-      watchers: [...this.watcherTypes],
+      // `span` entries come from the OpenTelemetry span processor, which is not a watcher.
+      watchers:
+        isTelescopeSpanProcessorActive() && !this.watcherTypes.includes(EntryType.Span)
+          ? [...this.watcherTypes, EntryType.Span]
+          : [...this.watcherTypes],
       traceLink: this.config.traceLink ?? null,
       tracesEnabled: this.config.traceContext !== undefined,
       retention: this.config.prune

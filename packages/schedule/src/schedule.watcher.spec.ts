@@ -291,6 +291,8 @@ describe('ScheduleWatcher', () => {
 
     const jobEntry = harness.recorded.find((e) => e.type === 'job');
     expect(jobEntry!.durationMs).toBe(150);
+    // Recorded when the run settles, anchored to when it started.
+    expect(jobEntry!.startedAt?.getTime()).toBe(0);
     expect(jobEntry!.tags).toContain('slow');
   });
 

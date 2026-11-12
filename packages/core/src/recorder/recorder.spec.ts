@@ -976,4 +976,32 @@ describe('Recorder', () => {
       expect(recorder.droppedCount).toBe(0); // hook error is isolated, not a record-error
     });
   });
+
+  describe('onSampled hook', () => {
+    it('reports whether sampling kept each entry, and nothing while paused', () => {
+      const seen: Array<[string, boolean]> = [];
+      const { recorder } = makeRecorder({
+        sampling: { query: 0 },
+        onSampled: (input, kept) => seen.push([input.type, kept]),
+      });
+      recorder.record({ type: 'query', content: { sql: 'select 1', bindings: [], took: 1 } });
+      recorder.record({ type: 'redis', content: { command: 'GET', args: [], durationMs: 1 } });
+      recorder.pause();
+      recorder.record({ type: 'query', content: { sql: 'select 2', bindings: [], took: 1 } });
+      expect(seen).toEqual([
+        ['query', false],
+        ['redis', true],
+      ]);
+    });
+
+    it('swallows a throwing hook', () => {
+      const { recorder } = makeRecorder({
+        onSampled: () => {
+          throw new Error('hook boom');
+        },
+      });
+      expect(() => recorder.record({ type: 'log', content: { message: 'x' } })).not.toThrow();
+      expect(recorder.droppedCount).toBe(0);
+    });
+  });
 });

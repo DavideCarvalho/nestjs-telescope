@@ -279,10 +279,10 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
       const startedAt = this.clock.now();
       try {
         const result = await invoke();
-        this.safeRecord(ctx, name, label, 'completed', this.clock.now() - startedAt, undefined);
+        this.safeRecord(ctx, name, label, 'completed', startedAt, undefined);
         return result;
       } catch (error) {
-        this.safeRecord(ctx, name, label, 'failed', this.clock.now() - startedAt, error);
+        this.safeRecord(ctx, name, label, 'failed', startedAt, error);
         this.safeRecordException(ctx, name, label, error);
         throw error; // never break the scheduled task
       }
@@ -331,9 +331,10 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
     name: string,
     label: string,
     status: 'completed' | 'failed',
-    durationMs: number,
+    startedAt: number,
     error: unknown,
   ): void {
+    const durationMs = this.clock.now() - startedAt;
     // Track the last run for the Schedule console (additive to recording).
     this.lastRuns.set(name, {
       at: new Date(this.clock.now()).toISOString(),
@@ -351,6 +352,8 @@ export class ScheduleWatcher implements Watcher, ScheduleManager {
         type: EntryType.Job,
         familyHash: `schedule:${name}`,
         durationMs,
+        // Recorded once the run settles: anchor createdAt to when it started.
+        startedAt: new Date(startedAt),
         tags,
         content: {
           id: null,

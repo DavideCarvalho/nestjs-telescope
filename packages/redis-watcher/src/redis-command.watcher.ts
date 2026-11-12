@@ -5,6 +5,8 @@ import {
   type Watcher,
   type WatcherContext,
 } from '@dudousxd/nestjs-telescope';
+// Namespace import: `markCoveredByTelescope` is new in core 3, so with core 2 the call below is skipped.
+import * as telescope from '@dudousxd/nestjs-telescope';
 
 /** A single ioredis command, structurally. `name` is the command (e.g. `get`);
  *  `args` are its arguments. */
@@ -104,12 +106,15 @@ export class RedisCommandWatcher implements Watcher {
   private readonly source: RedisClientLike | CustomRedisSource;
   private patched: BrandedRedisClient | null = null;
   private original: RedisClientLike['sendCommand'] | null = null;
+  private releaseCovered: (() => void) | null = null;
 
   constructor(source: RedisClientLike | CustomRedisSource) {
     this.source = source;
   }
 
   register(ctx: WatcherContext): void {
+    // Commands are recorded here, so the OpenTelemetry span processor skips the redis spans.
+    this.releaseCovered ??= telescope.markCoveredByTelescope?.('redis') ?? null;
     if (isCustomRedisSource(this.source)) {
       this.source.instrument((client) => {
         this.wrap(ctx, client);
@@ -119,15 +124,26 @@ export class RedisCommandWatcher implements Watcher {
     this.wrap(ctx, this.source);
   }
 
+  unregister(): void {
+    this.release();
+  }
+
   /** Restore the original `sendCommand` if we wrapped it. Safe to call when
    *  never registered. */
   cleanup(): void {
+    // No longer capturing, so the span processor must stop skipping redis spans.
+    this.release();
     if (this.patched && this.original) {
       this.patched.sendCommand = this.original;
       this.patched[PATCHED] = false;
     }
     this.patched = null;
     this.original = null;
+  }
+
+  private release(): void {
+    this.releaseCovered?.();
+    this.releaseCovered = null;
   }
 
   /** Monkey-patch `client.sendCommand` to time + record each command. No-op when
@@ -179,6 +195,11 @@ export class RedisCommandWatcher implements Watcher {
         tags: ['redis', `redis:${name}`],
         content: { command: name, args, durationMs },
       };
+      if (durationMs !== null) {
+        input.durationMs = durationMs;
+        // Recorded once the reply arrives: anchor createdAt to when it was sent.
+        input.startedAt = new Date(Date.now() - durationMs);
+      }
       ctx.record(input);
     } catch (recordError) {
       const message = recordError instanceof Error ? recordError.message : String(recordError);

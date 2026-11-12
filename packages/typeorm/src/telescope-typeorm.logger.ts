@@ -1,5 +1,7 @@
 // packages/typeorm/src/telescope-typeorm.logger.ts
 import { EntryType, type RecordInput, queryFamilyHash } from '@dudousxd/nestjs-telescope';
+// Namespace import: `markCoveredByTelescope` is new in core 3, so with core 2 the call below is skipped.
+import * as telescope from '@dudousxd/nestjs-telescope';
 import type { Logger, QueryRunner } from 'typeorm';
 
 export interface TelescopeTypeOrmLoggerOptions {
@@ -19,7 +21,10 @@ export class TelescopeTypeOrmLogger implements Logger {
   constructor(
     private readonly record: (input: RecordInput) => void,
     private readonly slowMs = 1000,
-  ) {}
+  ) {
+    // SQL is recorded here, so the OpenTelemetry span processor skips the DB driver spans.
+    telescope.markCoveredByTelescope?.('query');
+  }
 
   logQuery(query: string, parameters?: unknown[], _queryRunner?: QueryRunner): void {
     // TypeORM's logQuery gives no duration -> took/durationMs are null.
@@ -63,6 +68,8 @@ export class TelescopeTypeOrmLogger implements Logger {
         return familyHash;
       },
       durationMs: time,
+      // Logged after the query returns: anchor createdAt to when it started.
+      startedAt: new Date(Date.now() - time),
       tags: ['slow'],
     });
   }

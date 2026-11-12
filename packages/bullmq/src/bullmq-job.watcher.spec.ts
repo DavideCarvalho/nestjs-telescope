@@ -325,6 +325,8 @@ describe('BullMqJobWatcher', () => {
     await run({ id: '3', name: 'slow', queueName: 'reports' });
 
     expect(harness.recorded[0]!.durationMs).toBe(150);
+    // Recorded when the job settles, anchored to when it started.
+    expect(harness.recorded[0]!.startedAt?.getTime()).toBe(0);
     expect(harness.recorded[0]!.tags).toContain('slow');
   });
 

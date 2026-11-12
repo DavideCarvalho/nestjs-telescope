@@ -9,97 +9,36 @@ import {
   agentMetricPoints,
   subscribeAgentObservations,
 } from '@dudousxd/nestjs-telescope';
-import type { Counter, Histogram } from '@opentelemetry/api';
+import { type Counter, type Histogram, type Meter, metrics } from '@opentelemetry/api';
 
 export interface TelescopeAiMetricsExporterOptions {
   /**
-   * Base URL of the OTLP/HTTP receiver for METRICS — a Collector, or Grafana's `grafana/otel-lgtm`.
-   * Independent of wherever your traces and logs go, so metrics can land in a local Grafana while
-   * traces keep flowing elsewhere. Default `process.env.OTEL_EXPORTER_OTLP_ENDPOINT`,
-   * else `'http://localhost:4318'`.
+   * Meter the instruments are created on. Default `metrics.getMeter('telescope')`, read when
+   * Telescope starts, so the global `MeterProvider` your OpenTelemetry SDK registers is used.
    */
-  endpoint?: string;
-  /** Path appended to `endpoint`. Default `'/v1/metrics'`. */
-  path?: string;
-  /** Extra headers on every export (e.g. an auth token for a hosted Collector). */
-  headers?: Record<string, string>;
-  /** How often the reader pushes, in ms. Default `60000`. */
-  exportIntervalMs?: number;
-  /** Per-export HTTP timeout, in ms. Default `10000`. */
-  timeoutMs?: number;
-  /** `service.name` resource attribute. Default `process.env.OTEL_SERVICE_NAME`, else `'nestjs-app'`. */
-  serviceName?: string;
+  meter?: Meter;
 }
 
-/** The pieces of the OTel metrics SDK this exporter needs — injectable for tests. */
-export interface OtelMetricsSdk {
-  createMeterProvider(options: {
-    url: string;
-    headers: Record<string, string>;
-    exportIntervalMs: number;
-    timeoutMs: number;
-    serviceName: string;
-  }): {
-    getMeter(name: string): {
-      createCounter(name: string, options?: { description?: string; unit?: string }): Counter;
-      createHistogram(
-        name: string,
-        options?: {
-          description?: string;
-          unit?: string;
-          advice?: { explicitBucketBoundaries?: number[] };
-        },
-      ): Histogram;
-    };
-    forceFlush(): Promise<void>;
-    shutdown(): Promise<void>;
-  };
-}
+/** Options of the private OTLP exporter this class used to run. Exporting is the SDK's job now. */
+const REMOVED_OPTIONS = [
+  'endpoint',
+  'path',
+  'headers',
+  'exportIntervalMs',
+  'timeoutMs',
+  'serviceName',
+] as const;
 
 /**
- * Loads `@opentelemetry/sdk-metrics`, `@opentelemetry/exporter-metrics-otlp-http` and
- * `@opentelemetry/resources` lazily — they are optional peers, so a host that never constructs
- * this exporter never needs them installed.
- */
-async function loadSdk(): Promise<OtelMetricsSdk> {
-  const [metricsSdk, exporterPkg, resources] = await Promise.all([
-    import('@opentelemetry/sdk-metrics'),
-    import('@opentelemetry/exporter-metrics-otlp-http'),
-    import('@opentelemetry/resources'),
-  ]);
-  return {
-    createMeterProvider(options) {
-      const exporter = new exporterPkg.OTLPMetricExporter({
-        url: options.url,
-        headers: options.headers,
-        timeoutMillis: options.timeoutMs,
-      });
-      const reader = new metricsSdk.PeriodicExportingMetricReader({
-        exporter,
-        exportIntervalMillis: options.exportIntervalMs,
-        exportTimeoutMillis: Math.min(options.timeoutMs, options.exportIntervalMs),
-      });
-      return new metricsSdk.MeterProvider({
-        resource: resources.resourceFromAttributes({ 'service.name': options.serviceName }),
-        readers: [reader],
-      });
-    },
-  };
-}
-
-type Provider = ReturnType<OtelMetricsSdk['createMeterProvider']>;
-
-/**
- * Pushes the AI-usage and agent-run metrics (`aviary_ai_*`, `aviary_agent_*`, see
- * `AGENT_METRICS` in `@dudousxd/nestjs-telescope`) over OTLP/HTTP from a PRIVATE `MeterProvider`
- * — it never registers a global provider, so it cannot clash with the host's own OTel SDK.
+ * Records the AI-usage and agent-run metrics (`aviary_ai_*`, `aviary_agent_*`, see
+ * `AGENT_METRICS` in `@dudousxd/nestjs-telescope`) on the global OpenTelemetry meter. Your
+ * OpenTelemetry SDK (`NodeSDK` with a metric reader) decides where they go.
  *
  * Fed straight from the `aviary:agent:*` diagnostics channels, not from recorded entries, so
  * sampling and retention never change a count.
  *
  * ```ts
- * const aiMetrics = new TelescopeAiMetricsExporter({ endpoint: 'http://localhost:4318' });
- * TelescopeModule.forRoot({ extensions: [aiMetrics] });
+ * TelescopeModule.forRoot({ extensions: [new TelescopeAiMetricsExporter()] });
  * ```
  *
  * Instruments are created with an empty unit (the unit is in the name), so Prometheus' OTLP
@@ -107,54 +46,42 @@ type Provider = ReturnType<OtelMetricsSdk['createMeterProvider']>;
  */
 export class TelescopeAiMetricsExporter implements TelescopeExtension {
   readonly name = 'otel-ai-metrics';
-  private provider: Provider | null = null;
   private unsubscribe: (() => void) | null = null;
-  private starting: Promise<void> | null = null;
   private readonly instruments = new Map<AgentMetricKey, Counter | Histogram>();
 
-  constructor(
-    private readonly options: TelescopeAiMetricsExporterOptions = {},
-    private readonly sdkLoader: () => Promise<OtelMetricsSdk> = loadSdk,
-  ) {}
+  constructor(private readonly options: TelescopeAiMetricsExporterOptions = {}) {
+    // `{ endpoint: process.env.X }` with the env unset passes `undefined`: treat it as omitted.
+    const given = options as Record<string, unknown>;
+    const removed = REMOVED_OPTIONS.filter((key) => given[key] !== undefined);
+    if (removed.length > 0) {
+      const keys = removed.map((key) => `\`${key}\``).join(', ');
+      const verb = removed.length === 1 ? 'is' : 'are';
+      throw new Error(
+        [
+          `@dudousxd/nestjs-telescope-otel: TelescopeAiMetricsExporter no longer exports metrics itself, so ${keys} ${verb} not supported.`,
+          'Configure the endpoint, headers, interval and service name on your OpenTelemetry SDK',
+          '(`new NodeSDK({ serviceName, metricReaders: [new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter({ url, headers }), exportIntervalMillis })] })`)',
+          'and the AI metrics go out with the rest of your metrics.',
+        ].join(' '),
+      );
+    }
+  }
 
   /** Starts on Telescope's watcher registration, so it follows the module's lifecycle. */
   watchers(): Watcher[] {
-    return [{ type: 'otel-ai-metrics', register: () => this.start() }];
+    return [
+      {
+        type: 'otel-ai-metrics',
+        register: () => this.start(),
+        unregister: () => this.shutdown(),
+      },
+    ];
   }
 
-  /** Build the meter provider and subscribe. Idempotent. Never throws: a missing peer is logged. */
-  start(): Promise<void> {
-    if (this.starting !== null) return this.starting;
-    this.starting = this.doStart();
-    return this.starting;
-  }
-
-  private async doStart(): Promise<void> {
-    let sdk: OtelMetricsSdk;
-    try {
-      sdk = await this.sdkLoader();
-    } catch (err) {
-      console.error(
-        '@dudousxd/nestjs-telescope-otel: TelescopeAiMetricsExporter needs @opentelemetry/sdk-metrics, ' +
-          '@opentelemetry/exporter-metrics-otlp-http and @opentelemetry/resources installed. ' +
-          'AI metrics export is off.',
-        err,
-      );
-      return;
-    }
-    const base = (
-      this.options.endpoint ??
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
-      'http://localhost:4318'
-    ).replace(/\/+$/, '');
-    const provider = sdk.createMeterProvider({
-      url: `${base}${this.options.path ?? '/v1/metrics'}`,
-      headers: this.options.headers ?? {},
-      exportIntervalMs: this.options.exportIntervalMs ?? 60_000,
-      timeoutMs: this.options.timeoutMs ?? 10_000,
-      serviceName: this.options.serviceName ?? process.env.OTEL_SERVICE_NAME ?? 'nestjs-app',
-    });
-    const meter = provider.getMeter('@dudousxd/nestjs-telescope-otel');
+  /** Create the instruments and subscribe. Idempotent. */
+  start(): void {
+    if (this.unsubscribe !== null) return;
+    const meter = this.options.meter ?? metrics.getMeter('telescope');
     for (const key of Object.keys(AGENT_METRICS) as AgentMetricKey[]) {
       const def = AGENT_METRICS[key];
       this.instruments.set(
@@ -168,7 +95,6 @@ export class TelescopeAiMetricsExporter implements TelescopeExtension {
             }),
       );
     }
-    this.provider = provider;
     this.unsubscribe = subscribeAgentObservations((o) => this.observe(o));
   }
 
@@ -185,20 +111,10 @@ export class TelescopeAiMetricsExporter implements TelescopeExtension {
     }
   }
 
-  /** Push whatever is pending now. */
-  async flush(): Promise<void> {
-    await this.provider?.forceFlush();
-  }
-
-  /** Unsubscribe, flush and shut the meter provider down (call from your app's shutdown). */
-  async shutdown(): Promise<void> {
-    // Let an in-flight start() finish first, so its subscription is the one removed here.
-    await this.starting;
+  /** Unsubscribe from the agent events. The SDK flushes and shuts its providers down. */
+  shutdown(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
-    await this.provider?.shutdown().catch(() => undefined);
-    this.provider = null;
-    this.starting = null;
     this.instruments.clear();
   }
 }
