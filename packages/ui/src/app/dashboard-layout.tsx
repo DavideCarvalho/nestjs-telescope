@@ -17,6 +17,7 @@ import {
 } from '../react/ui/index.js';
 import { CommandPalette, usePalette } from './command-palette.js';
 import { ConsoleSwitcher, readSwitcherConfig } from './console-switcher.js';
+import { OrganizationPicker, useNoOrganization } from './organization-picker.js';
 import { useTheme } from './theme-context.js';
 
 interface TopNavItem {
@@ -152,6 +153,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
   // `meta.watchers` is undefined until /api/meta resolves (or on older servers),
   // in which case `visibleEntryTypes` shows everything — no flash-of-hidden-nav.
   const meta = useMeta();
+  const noOrganization = useNoOrganization();
   const watcherTypes = visibleEntryTypes(allEntryTypes(meta.data?.entryTypes), meta.data?.watchers);
   // Hide the Traces nav item when meta positively reports no traceContext: the
   // page would be permanently empty. Undefined meta → show it (same backward-
@@ -195,13 +197,22 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-end gap-4 border-b border-line px-4 py-2">
           <TooltipProvider delay={200}>
+            <OrganizationPicker />
             <RetentionIndicator />
             <PaletteHint onClick={() => setOpen(true)} />
             <ThemeToggle />
             <LiveTailToggle />
           </TooltipProvider>
         </header>
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 flex-1">
+          {noOrganization ? (
+            <p className="p-8 text-center text-muted-foreground">
+              Choose an organization to see its data.
+            </p>
+          ) : (
+            children
+          )}
+        </main>
       </div>
     </div>
   );

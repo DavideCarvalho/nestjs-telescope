@@ -7,10 +7,15 @@ import 'reflect-metadata';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { type ExecutionContext, Logger, type Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { type ConsoleTenants, consoleTenantsOf } from './console-tenant-scope.js';
 
+/**
+ * `tenants` (with tenancy on) is what the viewer may see: `'*'` every organization and the data
+ * of none, or these organization ids. Without it, the viewer's own organization.
+ */
 export type ConsoleAuthorizeResult =
   | boolean
-  | { allowed: true }
+  | { allowed: true; tenants?: ConsoleTenants }
   | { allowed: false; reason?: 'unauthenticated' | 'forbidden' }
   | { redirectTo: string };
 
@@ -34,7 +39,7 @@ export type ConsoleAuthorize =
   | string; // registered gate name
 
 export type ConsoleDecision =
-  | { allowed: true }
+  | { allowed: true; tenants?: ConsoleTenants }
   | { allowed: false; reason: 'unauthenticated' | 'forbidden'; redirectTo?: string };
 
 /** What a resolved `authorize` is: called once per request, never throws. */
@@ -104,7 +109,10 @@ export function normalizeConsoleResult(result: unknown): ConsoleDecision {
   if (typeof result.redirectTo === 'string' && result.allowed !== true) {
     return { allowed: false, reason: 'unauthenticated', redirectTo: result.redirectTo };
   }
-  if (result.allowed === true) return allow();
+  if (result.allowed === true) {
+    const tenants = consoleTenantsOf(result);
+    return tenants === undefined ? allow() : { allowed: true, tenants };
+  }
   return result.reason === 'unauthenticated' ? unauthenticated() : forbidden();
 }
 

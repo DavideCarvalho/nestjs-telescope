@@ -18,6 +18,7 @@ import {
   type Type,
   UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { HttpAdapterHost, ModuleRef } from '@nestjs/core';
 import {
@@ -27,6 +28,8 @@ import {
   type ConsoleDecision,
   resolveConsoleAuthorize,
 } from './console-authorize.js';
+import { rememberConsoleTenants } from './console-tenant-scope.js';
+import { ConsoleTenantInterceptor } from './console-tenant.interceptor.js';
 import { TELESCOPE_OPTIONS } from './telescope.options.js';
 
 /** Options of {@link UseConsoleAuthorize} and {@link ConsoleAuthorizeGuard.for}. */
@@ -197,14 +200,20 @@ export class ConsoleAuthorizeGuard implements CanActivate, OnModuleInit {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const decision = await (await this.init())(context);
-    if (decision.allowed) return true;
+    if (decision.allowed) {
+      if (context.getType() === 'http') {
+        rememberConsoleTenants(context.switchToHttp().getRequest(), decision.tenants);
+      }
+      return true;
+    }
     throw new ConsoleAccessDenied(decision, isPageNavigation(context));
   }
 }
 
 /**
- * The guard and its filter as one class decorator, for a console controller
- * you mount yourself (`routes: false`). With no `authorize` it runs
+ * The guard, its filter and the tenant scope (with tenancy on, each call sees
+ * the organizations `authorize` granted) as one class decorator, for a console
+ * controller you mount yourself (`routes: false`). With no `authorize` it runs
  * `TelescopeModule`'s. List it ABOVE your authentication guards: Nest applies
  * class decorators bottom-up, so your authentication runs first.
  *
@@ -223,5 +232,6 @@ export function UseConsoleAuthorize(options?: ConsoleAuthorizeGuardConfig): Clas
   return (target) => {
     UseGuards(guard)(target);
     UseFilters(ConsoleAuthorizeFilter)(target);
+    UseInterceptors(ConsoleTenantInterceptor)(target);
   };
 }

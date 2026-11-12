@@ -3,6 +3,7 @@ import type { DynamicModule } from '@nestjs/common';
 import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
+import type { TelescopeTenancyOption } from '../context/tenancy.js';
 import type { TelescopeExtension } from '../extension/types.js';
 import type { PulseServiceOptions } from '../pulse/pulse.service.js';
 import type { QueueManager } from '../queue/queue-manager.js';
@@ -435,10 +436,24 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * Omitted: open outside production; with `NODE_ENV === 'production'` every
    * request answers 403, and one warning is logged at boot.
    *
+   * With {@link tenancy} on, `{ allowed: true, tenants: ['org_1'] }` limits the
+   * viewer to those organizations and `tenants: '*'` grants all of them; with
+   * no `tenants`, the viewer sees their own organization.
+   *
    * With `forRootAsync` it can come from the factory. The UI page is a
    * separate module: pass the same `authorize` to `TelescopeUiModule.forRoot`.
    */
   authorize?: ConsoleAuthorize;
+  /**
+   * Organizations as tenants (`@dudousxd/nestjs-context` tenancy). With it on,
+   * entries recorded for a tenant are tagged `tenant:<id>` (`tenant:*` inside
+   * `Context.allTenants`), and the console shows each viewer only the
+   * organizations {@link authorize} granted. `'inherit'` (default) follows
+   * `ContextModule`'s `tenancy.enabled`; `false` keeps telescope out. `tag`
+   * renames the tag prefix. Off: entries keep the plain `tenant:<tenantId>`
+   * tag and the console shows everything.
+   */
+  tenancy?: TelescopeTenancyOption;
   /**
    * Who may call the MCP endpoint (`POST <path>/api/mcp`). When set, it
    * REPLACES {@link authorize} on that route only; leave it out and the MCP

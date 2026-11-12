@@ -722,3 +722,19 @@ export interface AiUsageReport {
   scanned: number;
   truncated: boolean;
 }
+
+/**
+ * The console's organization scope (`GET tenancy`), for the header's "Organization" control.
+ * `tenants: []` means the viewer has none: the console asks to choose an organization.
+ */
+export type ConsoleTenancyInfo =
+  | { enabled: false }
+  | {
+      enabled: true;
+      /** What `authorize` granted: every organization, or these ids. */
+      tenants: '*' | string[];
+      /** The organization this view shows; `null` for all of them. */
+      selected: string | null;
+      /** Organizations to pick from, narrowed by the search. */
+      options: { id: string; label: string }[];
+    };

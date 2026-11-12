@@ -411,6 +411,16 @@ export function useEntry(id: string) {
 export function useMeta() {
   return useQuery(metaQuery(useTelescopeClient(), usePaused()));
 }
+/** The console's organization scope (`GET tenancy`), narrowed by `search`. */
+export function useTenancy(search = '') {
+  const client = useTelescopeClient();
+  return useQuery({
+    queryKey: ['telescope', 'tenancy', search],
+    queryFn: () =>
+      client.tenancy ? client.tenancy(search) : Promise.resolve({ enabled: false as const }),
+    staleTime: 30_000,
+  });
+}
 export function useServerStats() {
   return useQuery(serverStatsQuery(useTelescopeClient(), usePaused()));
 }

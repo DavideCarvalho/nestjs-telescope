@@ -23,6 +23,7 @@ import { ModuleRef } from '@nestjs/core';
 import { type AiUsageResult, AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { durationToMs } from '../config/parse-duration.js';
+import { tenantTagPrefix } from '../context/tenancy.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
@@ -61,6 +62,9 @@ import type {
   StorageProvider,
   TagCount,
 } from '../storage/storage-provider.js';
+import { activeTenantView, withoutTenantView } from '../storage/tenant-scoped-storage.js';
+import type { ConsoleTenancyInfo } from './console-tenant-scope.js';
+import { consoleTenantCallOf } from './console-tenant.interceptor.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { type ReplayResult, replayRequest } from './request-replay.js';
 import { type PruneRun, TelescopePruner } from './telescope-pruner.service.js';
@@ -180,6 +184,9 @@ function parseWindowMs(window: string | undefined): number {
   }
   return windowMs;
 }
+
+/** Organizations the header's picker lists per search. */
+const TENANT_OPTIONS = 50;
 
 /** Tags per request when a caller names no bound — a picker's list, not a listing. */
 const DEFAULT_TAG_PAGE = 50;
@@ -363,7 +370,7 @@ export class TelescopeController {
   @Get('metrics')
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   metrics(): string {
-    if (!this.aiUsage.prometheusEnabled) {
+    if (!this.aiUsage.prometheusEnabled || activeTenantView() !== null) {
       throw new NotFoundException('The metrics endpoint is off (set aiMetrics.prometheus: true).');
     }
     return this.aiUsage.prometheus();
@@ -391,7 +398,8 @@ export class TelescopeController {
 
   @Get('queues/live')
   async liveQueues(): Promise<{ queues: QueueSummary[]; capabilities: QueueCapabilities }> {
-    const managers = this.queueManagers.all();
+    // Live queues carry no tenant: one organization's view shows none of them.
+    const managers = activeTenantView() === null ? this.queueManagers.all() : [];
     const all = await Promise.all(managers.map((m) => m.listQueues()));
     const actionsByDriver: Record<string, QueueActionName[]> = {};
     for (const manager of managers) {
@@ -410,6 +418,7 @@ export class TelescopeController {
 
   @Get('schedules/live')
   async liveSchedules(): Promise<{ tasks: ScheduledTask[] }> {
+    if (activeTenantView() !== null) return { tasks: [] };
     const ctx = this.scheduleManagers.context();
     const all = await Promise.all(this.scheduleManagers.all().map((m) => m.listTasks(ctx)));
     return { tasks: all.flat() };
@@ -518,6 +527,13 @@ export class TelescopeController {
    * feature switched on by `mutations: true`; who may call them is decided by
    * the console's `authorize`, like every other route. Off → 403.
    */
+  /** Clearing and pruning touch every organization's entries: not from one organization's view. */
+  private requireAllTenants(): void {
+    if (activeTenantView() !== null) {
+      throw new ForbiddenException('Only a viewer of every organization can do this.');
+    }
+  }
+
   private requireMutations(): void {
     if (this.options.mutations !== true) {
       throw new ForbiddenException('Mutations are disabled (set `mutations: true`).');
@@ -525,9 +541,47 @@ export class TelescopeController {
   }
 
   private requireManager(driver: string): QueueManager {
-    const manager = this.queueManagers.get(driver);
+    const manager = activeTenantView() === null ? this.queueManagers.get(driver) : undefined;
     if (!manager) throw new NotFoundException(`Unknown queue driver: ${driver}`);
     return manager;
+  }
+
+  /**
+   * The header's "Organization" control: the organizations this viewer may see (tenancy on), the
+   * one this view shows, and the ones to pick from, narrowed by `search`.
+   */
+  @Get('tenancy')
+  async tenancy(
+    @Req() request: unknown,
+    @Query('search') search?: string,
+  ): Promise<ConsoleTenancyInfo> {
+    const call = consoleTenantCallOf(request);
+    if (call === undefined || call.scope === null) return { enabled: false };
+    const { scope, selection } = call;
+    const needle = search?.trim().toLowerCase() ?? '';
+    const own = scope.own;
+    let ids: string[];
+    if (scope.tenants === '*') {
+      const prefix = `${tenantTagPrefix(this.options.tenancy)}:`;
+      const rows = await withoutTenantView(() =>
+        this.storage.tags(prefix, { ...(needle ? { search: needle } : {}), limit: TENANT_OPTIONS }),
+      );
+      ids = rows.map((row) => row.tag.slice(prefix.length)).filter((id) => id !== '' && id !== '*');
+      if (own && !ids.includes(own.id)) ids.unshift(own.id);
+    } else {
+      ids = scope.tenants;
+    }
+    const label = (id: string): string => (own?.id === id && own.slug ? own.slug : id);
+    return {
+      enabled: true,
+      tenants: scope.tenants,
+      // A tenant outside the scope is never echoed back: the view is empty, nothing is selected.
+      selected: selection.kind === 'tenant' ? selection.id : null,
+      options: ids
+        .filter((id) => !needle || `${id} ${label(id)}`.toLowerCase().includes(needle))
+        .slice(0, TENANT_OPTIONS)
+        .map((id) => ({ id, label: label(id) })),
+    };
   }
 
   @Get('meta')
@@ -563,7 +617,8 @@ export class TelescopeController {
     @Param('provider') provider: string,
     @Query() query: Record<string, unknown>,
   ): Promise<unknown> {
-    const found = this.extensions.findProvider(provider);
+    // Extension data carries no tenant: one organization's view shows none of it.
+    const found = activeTenantView() === null ? this.extensions.findProvider(provider) : undefined;
     // The `:ext` segment must name the extension that actually owns the provider —
     // a mismatch is treated as not-found so the URL namespace can't be spoofed.
     if (!found || this.extensions.providerOwner(provider) !== ext) {
@@ -628,6 +683,7 @@ export class TelescopeController {
   @HttpCode(200)
   async prune(): Promise<{ pruned: number }> {
     this.requireMutations();
+    this.requireAllTenants();
     if (!this.options.prune) {
       throw new BadRequestException('No `prune` retention window is configured.');
     }
@@ -813,6 +869,7 @@ export class TelescopeController {
 
   @Delete('entries')
   async clear(): Promise<{ cleared: true }> {
+    this.requireAllTenants();
     await this.storage.clear();
     return { cleared: true };
   }

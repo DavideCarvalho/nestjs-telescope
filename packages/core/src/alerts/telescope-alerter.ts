@@ -57,7 +57,7 @@ export interface TelescopeAlerterDeps {
    * `diagnosis`. Returning `null` (or being unset) simply means no AI note — the
    * alert fires either way. Never blocks the alert beyond the hook's own cap.
    */
-  diagnosisFor?: (familyHash: string) => Promise<string | null>;
+  diagnosisFor?: (familyHash: string, entry: Entry) => Promise<string | null>;
 }
 
 /**
@@ -468,7 +468,7 @@ export class TelescopeAlerter {
     // hook caps its own wait, so this never holds the alert beyond the grace.
     const diagnosis =
       this.deps.diagnosisFor !== undefined && entry.familyHash !== null
-        ? await this.deps.diagnosisFor(entry.familyHash).catch(() => null)
+        ? await this.deps.diagnosisFor(entry.familyHash, entry).catch(() => null)
         : null;
 
     return {

@@ -7,9 +7,11 @@ description: >-
   async form, as are decorators and routes; the path must match
   TelescopeModule); without authorize the page answers 403 in production.
   call the headless API from any frontend with createTelescopeClient({ baseUrl?,
-  fetch?, onAccessDenied? }) from the /client subpath; build a custom console with the React
+  fetch?, onAccessDenied?, tenant? }) from the /client subpath (with tenancy on
+  it sends the page's `?tenant=` on every call; read the scope with
+  client.tenancy()); build a custom console with the React
   components, hooks (TelescopeProvider, useTelescopeClient, useEntries, usePulse,
-  useTimeseries) from the /react subpath. Use for "show the Telescope dashboard",
+  useTimeseries, useTenancy) from the /react subpath. Use for "show the Telescope dashboard",
   "custom path", "call the Telescope API from React", "embed Telescope components".
 license: MIT
 metadata:
@@ -93,7 +95,12 @@ Source: `packages/ui/src/server/telescope-ui.module.ts`,
 JSON API, usable in any frontend. `baseUrl` defaults to
 `window.__TELESCOPE_BASE__ + '/api'`, else `/telescope/api`. `onAccessDenied`
 runs when `authorize` refuses a call (default: follow `redirectTo`, else show
-the access-denied screen).
+the access-denied screen). With tenancy on, every call carries the page's
+`?tenant=` (override with the `tenant` option, `() => string | undefined`);
+`client.tenancy(search?)` reads the viewer's organizations from
+`GET <api>/tenancy` (`{ enabled: false }` on older servers), and the dashboard
+header shows an "Organization" control (chip for one, searchable picker for
+several or all).
 
 ```ts
 import { createTelescopeClient } from '@dudousxd/nestjs-telescope-ui/client';

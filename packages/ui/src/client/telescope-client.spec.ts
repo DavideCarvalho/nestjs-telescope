@@ -353,3 +353,40 @@ describe('createTelescopeClient access denials', () => {
     }
   });
 });
+
+describe('organization scope', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the page's ?tenant= on every call", async () => {
+    vi.stubGlobal('window', { location: { search: '?tenant=org%201' } });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ data: [] }));
+    const client = createTelescopeClient({ baseUrl: '/t/api', fetch: fetchMock });
+    await client.meta();
+    await client.entries({ type: 'request' });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/t/api/meta?tenant=org%201',
+      '/t/api/entries?type=request&tenant=org%201',
+    ]);
+  });
+
+  it('sends nothing without a tenant, and reads the scope from GET tenancy', async () => {
+    vi.stubGlobal('window', { location: { search: '' } });
+    const info = { enabled: true, tenants: ['A'], selected: 'A', options: [] };
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse(info));
+    const client = createTelescopeClient({ baseUrl: '/t/api', fetch: fetchMock });
+    expect(await client.tenancy?.('ac')).toEqual(info);
+    expect(fetchMock.mock.calls[0]![0]).toBe('/t/api/tenancy?search=ac');
+  });
+
+  it('an older server without GET tenancy (404) has no scope', async () => {
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => statusResponse(404, {}));
+    const client = createTelescopeClient({
+      baseUrl: '/t/api',
+      fetch: fetchMock,
+      tenant: () => undefined,
+    });
+    expect(await client.tenancy?.()).toEqual({ enabled: false });
+  });
+});

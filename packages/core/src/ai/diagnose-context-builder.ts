@@ -7,6 +7,7 @@ import type {
 } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import type { TenantView } from '../storage/tenant-scoped-storage.js';
 import type { DiagnoseContext } from './diagnoser.js';
 
 /**
@@ -38,14 +39,18 @@ const QUERY_SQL_CHAR_LIMIT = 2_000;
  * @param storage    Where to read the exception's batch from.
  * @param entry      The exception (or client_exception) entry to diagnose.
  * @param occurrenceCount Times this family was seen in the window (>= 1).
+ * @param view    The organization the diagnosis is for (tenancy on): only its entries of the
+ *                batch reach the model. `null`: the whole batch.
  */
 export async function buildDiagnoseContext(
   storage: StorageProvider,
   entry: Entry,
   occurrenceCount: number,
+  view: TenantView | null = null,
 ): Promise<DiagnoseContext> {
   const isClient = entry.type === EntryType.ClientException;
-  const batch = await storage.batch(entry.batchId);
+  const members = await storage.batch(entry.batchId);
+  const batch = view === null ? members : members.filter((member) => view.accept(member));
   const recentQueries = collectRecentQueries(batch);
 
   if (isClient) {

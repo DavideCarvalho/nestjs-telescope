@@ -4,6 +4,7 @@
   "pages": [
     "index",
     "ai",
-    "auth"
+    "auth",
+    "organizations"
   ]
 }

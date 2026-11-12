@@ -2,6 +2,7 @@ import type { SamplingConfig } from '../config/options.js';
 import { passesSampling } from '../config/sampling.js';
 import type { ContextAccessor } from '../context/context-accessor.js';
 import type { TelescopeContext } from '../context/telescope-context.js';
+import { type TelescopeTenancyOption, readTenancy, tenantTagPrefix } from '../context/tenancy.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
 import type { CompiledRedactSpec, RedactOptions } from '../redaction/redact.js';
@@ -147,6 +148,13 @@ export interface RecorderOptions {
    * enrichment and never throws into `record()`.
    */
   contextAccessor?: ContextAccessor;
+  /**
+   * Organizations as tenants. With `@dudousxd/nestjs-context` tenancy on, the
+   * tenant tag is `<tag>:<id>` for the context's tenant (none for a request
+   * without one, or of a kind outside `kinds`) and `<tag>:*` inside
+   * `Context.allTenants`. Off: the plain `tenant:<tenantId>` tag above.
+   */
+  tenancy?: TelescopeTenancyOption;
   /**
    * Best-effort hook fired with the entries a flush JUST persisted (after a
    * successful `store()`, before the next flush). Powers per-flush alert
@@ -633,8 +641,9 @@ export class Recorder {
    */
   private readContextEnrichment(): { traceId: string | null; tags: string[] } {
     const accessor = this.options.contextAccessor;
+    const tenantTag = this.readTenantTag(accessor);
     if (accessor === undefined) {
-      return { traceId: null, tags: [] };
+      return { traceId: null, tags: typeof tenantTag === 'string' ? [tenantTag] : [] };
     }
     const tags: string[] = [];
     let traceId: string | null = null;
@@ -657,6 +666,10 @@ export class Recorder {
     } catch {
       // Degrade silently.
     }
+    if (tenantTag !== null) {
+      if (tenantTag !== undefined) tags.push(tenantTag);
+      return { traceId, tags };
+    }
     try {
       const tenantId = accessor.tenantId();
       if (typeof tenantId === 'string' && tenantId.length > 0) {
@@ -666,6 +679,25 @@ export class Recorder {
       // Degrade silently.
     }
     return { traceId, tags };
+  }
+
+  /**
+   * The tenant tag with tenancy on (`undefined`: this entry has no tenant), or `null` when tenancy
+   * is off and the plain `tenantId` tag applies.
+   */
+  private readTenantTag(accessor: ContextAccessor | undefined): string | null | undefined {
+    try {
+      const tenancy = readTenancy(this.options.tenancy, accessor);
+      if (!tenancy.enabled) return null;
+      const filter = tenancy.filter();
+      const prefix = tenantTagPrefix(this.options.tenancy);
+      if (filter.mode === 'tenant') return `${prefix}:${filter.tenant.id}`;
+      if (filter.mode === 'all') return `${prefix}:*`;
+      return undefined;
+    } catch {
+      // A misbehaving accessor: no tenant tag rather than a throw into record().
+      return undefined;
+    }
   }
 
   /**

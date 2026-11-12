@@ -4,6 +4,11 @@ import { NewExceptionTracker } from '../alerts/new-exception-tracker.js';
 import { durationToMs } from '../config/parse-duration.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import {
+  type TenantView,
+  activeTenantView,
+  withTenantView,
+} from '../storage/tenant-scoped-storage.js';
 import { buildDiagnoseContext } from './diagnose-context-builder.js';
 import type { ExceptionDiagnoser, TelescopeAiOptions } from './diagnoser.js';
 import { DiagnosisCache } from './diagnosis-cache.js';
@@ -22,6 +27,14 @@ const AUTO_NEW_FAMILY_WINDOW = '1h';
  * we'd rather page promptly with no AI note than hold the page waiting on a model.
  */
 const DEFAULT_ALERT_GRACE_MS = 10_000;
+
+/**
+ * Organizations as tenants, for the coordinator: the view of the organization an entry was
+ * recorded for (`null`: tenancy off, or the entry has no organization).
+ */
+export interface DiagnosisTenancy {
+  viewOfEntry(entry: Entry): TenantView | null;
+}
 
 /** Outcome of a diagnose request: the markdown plus whether it was a cache hit. */
 export interface DiagnoseResult {
@@ -42,24 +55,37 @@ export interface DiagnoseResult {
  *    Fire-and-forget — it NEVER throws into the flush path; a failure is swallowed
  *    and logged. The in-flight promise is tracked so an alert firing for the same
  *    family can briefly await it ({@link awaitForAlert}) and attach the result.
+ *
+ * Organizations as tenants: a diagnosis is cached per organization and family, and built only
+ * from that organization's entries. A console call inside an organization's view reads and
+ * writes that organization's slot; a call with no view (tenancy off, or a viewer of every
+ * organization) reads the unscoped slot, which every diagnosis also fills. Tenancy off, every
+ * key is the bare family hash.
  */
 export class DiagnosisCoordinator {
   private readonly logger: Logger;
   private readonly diagnoser: ExceptionDiagnoser;
   readonly mode: 'auto' | 'on-demand';
   private readonly cache: DiagnosisCache;
-  /** In-flight auto-mode diagnoses keyed by familyHash (so alerts can await). */
+  /** In-flight auto-mode diagnoses keyed by cache key (so alerts can await). */
   private readonly inFlight = new Map<string, Promise<string | null>>();
   private readonly alertGraceMs: number;
   /** First-seen tracker backing auto-mode (independent of the alerter's). */
   private readonly newFamilyTracker: NewExceptionTracker;
   private readonly newFamilyWindowMs: number;
   private readonly now: () => number;
+  private readonly tenancy: DiagnosisTenancy | null;
 
   constructor(
     options: TelescopeAiOptions,
     private readonly storage: StorageProvider,
-    deps?: { cache?: DiagnosisCache; logger?: Logger; alertGraceMs?: number; now?: () => number },
+    deps?: {
+      cache?: DiagnosisCache;
+      logger?: Logger;
+      alertGraceMs?: number;
+      now?: () => number;
+      tenancy?: DiagnosisTenancy;
+    },
   ) {
     this.diagnoser = options.diagnoser;
     this.mode = options.mode ?? 'on-demand';
@@ -67,6 +93,7 @@ export class DiagnosisCoordinator {
     this.logger = deps?.logger ?? new Logger(DiagnosisCoordinator.name);
     this.alertGraceMs = deps?.alertGraceMs ?? DEFAULT_ALERT_GRACE_MS;
     this.now = deps?.now ?? Date.now;
+    this.tenancy = deps?.tenancy ?? null;
     this.newFamilyTracker = new NewExceptionTracker();
     this.newFamilyWindowMs = durationToMs(AUTO_NEW_FAMILY_WINDOW);
   }
@@ -87,7 +114,8 @@ export class DiagnosisCoordinator {
         continue;
       }
       if (entry.familyHash === null) continue;
-      const isNew = this.newFamilyTracker.observe(entry.familyHash, nowMs, this.newFamilyWindowMs);
+      const key = cacheKey(entry.familyHash, this.viewOfEntry(entry));
+      const isNew = this.newFamilyTracker.observe(key, nowMs, this.newFamilyWindowMs);
       if (!isNew) continue;
       // Occurrence count is 1 at first-seen by definition; the on-demand path
       // recomputes a precise count, but auto-mode triggers exactly here.
@@ -104,13 +132,18 @@ export class DiagnosisCoordinator {
    */
   async diagnose(entry: Entry, occurrenceCount: number, force = false): Promise<DiagnoseResult> {
     const familyHash = entry.familyHash;
-    if (!force && familyHash !== null) {
-      const cached = this.cache.get(familyHash);
+    const view = activeTenantView();
+    if (view !== null && !view.accept(entry)) {
+      throw new Error('The exception is outside the organization this view shows.');
+    }
+    const key = familyHash === null ? null : cacheKey(familyHash, view);
+    if (!force && key !== null) {
+      const cached = this.cache.get(key);
       if (cached !== null) return { markdown: cached, cached: true };
     }
-    const context = await buildDiagnoseContext(this.storage, entry, occurrenceCount);
+    const context = await buildDiagnoseContext(this.storage, entry, occurrenceCount, view);
     const markdown = await this.diagnoser.diagnose(context);
-    if (familyHash !== null) this.cache.set(familyHash, markdown);
+    if (familyHash !== null) this.store(familyHash, view, markdown);
     return { markdown, cached: false };
   }
 
@@ -126,7 +159,9 @@ export class DiagnosisCoordinator {
   peekCached(entry: Entry): string | null {
     const familyHash = entry.familyHash;
     if (familyHash === null) return null;
-    return this.cache.get(familyHash);
+    const view = activeTenantView();
+    if (view !== null && !view.accept(entry)) return null;
+    return this.cache.get(cacheKey(familyHash, view));
   }
 
   /**
@@ -141,24 +176,35 @@ export class DiagnosisCoordinator {
   onNewFamily(entry: Entry, occurrenceCount: number): Promise<string | null> {
     const familyHash = entry.familyHash;
     if (familyHash === null) return Promise.resolve(null);
-    if (this.cache.has(familyHash)) return Promise.resolve(this.cache.get(familyHash));
-    const existing = this.inFlight.get(familyHash);
+    const view = this.viewOfEntry(entry);
+    const key = cacheKey(familyHash, view);
+    const cached = this.cache.get(key);
+    if (cached !== null) return Promise.resolve(cached);
+    const existing = this.inFlight.get(key);
     if (existing !== undefined) return existing;
 
-    const task = this.runDiagnosis(entry, occurrenceCount, familyHash);
-    this.inFlight.set(familyHash, task);
+    const task = this.runDiagnosis(entry, occurrenceCount, familyHash, view);
+    this.inFlight.set(key, task);
     return task;
   }
 
   /**
-   * Briefly await an in-flight (or cached) diagnosis for `familyHash`, for the
-   * alert path to attach it. Returns the markdown if ready within the grace cap,
-   * else `null` (the alert dispatches without it). Never throws.
+   * Briefly await an in-flight (or cached) diagnosis for an exception (or a bare family hash:
+   * the unscoped slot), for the alert path to attach it. Returns the markdown if ready within
+   * the grace cap, else `null` (the alert dispatches without it). Never throws.
    */
-  async awaitForAlert(familyHash: string, graceMs = this.alertGraceMs): Promise<string | null> {
-    const cached = this.cache.get(familyHash);
+  async awaitForAlert(target: Entry | string, graceMs = this.alertGraceMs): Promise<string | null> {
+    let key: string;
+    if (typeof target === 'string') {
+      key = target;
+    } else if (target.familyHash === null) {
+      return null;
+    } else {
+      key = cacheKey(target.familyHash, this.viewOfEntry(target));
+    }
+    const cached = this.cache.get(key);
     if (cached !== null) return cached;
-    const pending = this.inFlight.get(familyHash);
+    const pending = this.inFlight.get(key);
     if (pending === undefined) return null;
     // Race the in-flight diagnosis against a short timer; whichever wins, the
     // alert proceeds. A timeout here does NOT cancel the diagnosis — it keeps
@@ -177,16 +223,38 @@ export class DiagnosisCoordinator {
     return this.mode === 'auto';
   }
 
+  /** The organization view an entry was recorded for (`null`: none, or tenancy off). */
+  private viewOfEntry(entry: Entry): TenantView | null {
+    try {
+      return this.tenancy?.viewOfEntry(entry) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Caches a diagnosis built inside `view`: in that organization's slot, and in the unscoped
+   * slot a viewer of every organization reads (they may see every organization's entries).
+   */
+  private store(familyHash: string, view: TenantView | null, markdown: string): void {
+    this.cache.set(cacheKey(familyHash, view), markdown);
+    if (view !== null) this.cache.set(familyHash, markdown);
+  }
+
   /** Run + cache one diagnosis, swallowing every failure. Clears the in-flight slot. */
   private async runDiagnosis(
     entry: Entry,
     occurrenceCount: number,
     familyHash: string,
+    view: TenantView | null,
   ): Promise<string | null> {
     try {
-      const context = await buildDiagnoseContext(this.storage, entry, occurrenceCount);
+      // Read the batch inside the entry's organization view: only its entries reach the model.
+      const context = await withTenantView(view, () =>
+        buildDiagnoseContext(this.storage, entry, occurrenceCount, view),
+      );
       const markdown = await this.diagnoser.diagnose(context);
-      this.cache.set(familyHash, markdown);
+      this.store(familyHash, view, markdown);
       return markdown;
     } catch (error: unknown) {
       // Auto-mode must never break flush/alerting — log once and move on.
@@ -195,9 +263,14 @@ export class DiagnosisCoordinator {
       );
       return null;
     } finally {
-      this.inFlight.delete(familyHash);
+      this.inFlight.delete(cacheKey(familyHash, view));
     }
   }
+}
+
+/** The cache key of a family seen from `view`: the bare hash with no view (tenancy off). */
+function cacheKey(familyHash: string, view: TenantView | null): string {
+  return view === null ? familyHash : `${view.key}\u0000${familyHash}`;
 }
 
 export { DEFAULT_ALERT_GRACE_MS };

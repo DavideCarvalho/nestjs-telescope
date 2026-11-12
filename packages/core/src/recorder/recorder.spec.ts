@@ -942,6 +942,75 @@ describe('Recorder', () => {
     });
   });
 
+  // ── tenancy (organizations as tenants) ───────────────────────────────────────
+
+  describe('tenancy', () => {
+    type Filter =
+      | { mode: 'system' | 'all' | 'tenantless' }
+      | { mode: 'tenant'; tenant: { id: string; kind: string; source: string } };
+
+    function tenancyAccessor(enabled: boolean, filter: Filter, tenantId?: string) {
+      const seenKinds: (string[] | undefined)[] = [];
+      return {
+        seenKinds,
+        accessor: {
+          traceId: () => undefined,
+          tenantId: () => tenantId,
+          userRef: () => undefined,
+          get: () => undefined,
+          tenancy: () => ({ enabled }),
+          tenantFilter: (options?: { kinds?: string[] }) => {
+            seenKinds.push(options?.kinds);
+            return filter;
+          },
+        },
+      };
+    }
+
+    async function tagsOf(options: Parameters<typeof makeRecorder>[0]): Promise<string[]> {
+      const { recorder, storage } = makeRecorder(options);
+      recorder.record({ type: 'request', content: {} });
+      await recorder.flush();
+      return (await storage.get({})).data[0]!.tags;
+    }
+
+    const org = { mode: 'tenant', tenant: { id: 'org_1', kind: 'organization', source: 'app' } };
+
+    it('on: tags the context tenant from the tenant filter', async () => {
+      const { accessor } = tenancyAccessor(true, org as Filter, 'legacy');
+      expect(await tagsOf({ contextAccessor: accessor })).toEqual(['tenant:org_1']);
+    });
+
+    it('on: `tenant:*` inside allTenants, no tag without a tenant', async () => {
+      expect(
+        await tagsOf({ contextAccessor: tenancyAccessor(true, { mode: 'all' }).accessor }),
+      ).toEqual(['tenant:*']);
+      expect(
+        await tagsOf({
+          contextAccessor: tenancyAccessor(true, { mode: 'tenantless' }, 'stale').accessor,
+        }),
+      ).toEqual([]);
+    });
+
+    it('on: `tag` renames the prefix and `kinds` reaches the filter', async () => {
+      const { accessor, seenKinds } = tenancyAccessor(true, org as Filter);
+      expect(
+        await tagsOf({
+          contextAccessor: accessor,
+          tenancy: { kinds: ['organization'], tag: 'org' },
+        }),
+      ).toEqual(['org:org_1']);
+      expect(seenKinds[0]).toEqual(['organization']);
+    });
+
+    it('off (context or `tenancy: false`): the plain tenantId tag, as before', async () => {
+      const off = tenancyAccessor(false, org as Filter, 'acme').accessor;
+      expect(await tagsOf({ contextAccessor: off })).toEqual(['tenant:acme']);
+      const on = tenancyAccessor(true, org as Filter, 'acme').accessor;
+      expect(await tagsOf({ contextAccessor: on, tenancy: false })).toEqual(['tenant:acme']);
+    });
+  });
+
   // ── onRecorded hook ────────────────────────────────────────────────────────
 
   describe('onRecorded hook', () => {
