@@ -262,7 +262,7 @@ function sortAndPage<T extends object>(
     if (needle) result = result.filter((row) => String(row[key]).toLowerCase().includes(needle));
   }
   const sort = text(query, 'sort');
-  if (sort !== undefined && rows.length > 0 && sort in (rows[0] as object)) {
+  if (sort !== undefined && rows.length > 0 && Object.hasOwn(rows[0] as object, sort)) {
     const dir = text(query, 'dir') === 'desc' ? -1 : 1;
     const key = sort as keyof T;
     result = [...result].sort((a, b) => {

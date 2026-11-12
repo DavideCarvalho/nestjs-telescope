@@ -165,7 +165,7 @@ console's `authorize`:
 | Tool | Kind | What it does |
 | --- | --- | --- |
 | `resilience_circuits` | read | The circuits (live state merged with recorded transitions), open ones first, and the bulkheads' load. Filters: `status`, `limit` (default 20, max 100). |
-| `resilience_reset_circuit` | action | Resets the circuit `name` of this process. Writes the same audit line and entry as the page, with the MCP caller. |
+| `resilience_reset_circuit` | action | Resets the circuit `name` of this process. Served only with `mutations: true`. Writes the same audit line and entry as the page, with the MCP caller. |
 
 ## `@nestjs/ai` usage
 

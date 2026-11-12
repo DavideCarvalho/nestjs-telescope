@@ -148,6 +148,11 @@ describe('resilienceTelescopeExtension (real @nestjs/resilience)', () => {
     ]);
   });
 
+  it('sorts only by a row field', async () => {
+    const sorted = await data('resilience.circuits', '?sort=constructor&dir=desc');
+    expect(sorted.rows.map((row: { name: string }) => row.name)).toEqual(['payments']);
+  });
+
   it('filters every provider by the drilled-down policy', async () => {
     expect((await data('resilience.circuits', '?policy=reports')).total).toBe(0);
     expect((await data('resilience.stats', '?metric=opened&policy=reports')).value).toBe(0);

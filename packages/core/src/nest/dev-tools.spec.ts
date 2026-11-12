@@ -317,7 +317,11 @@ describe('extension dev tools', () => {
 
   it('serves extension tools with telescope’s, and audits each action run', async () => {
     const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    await boot({ authorize: authorizeByToken({ token: TOKEN }), extensions: [extension] });
+    await boot({
+      authorize: authorizeByToken({ token: TOKEN }),
+      extensions: [extension],
+      mutations: true,
+    });
     const names = telescope()?.tools.map((t) => t.name) ?? [];
     expect(names).toContain('telescope_list_entries');
     expect(names.slice(-2)).toEqual(['demo_list', 'demo_reset']);
@@ -334,11 +338,19 @@ describe('extension dev tools', () => {
     ]);
   });
 
+  it('leaves action tools out while mutations are off', async () => {
+    await boot({ authorize: authorizeByToken({ token: TOKEN }), extensions: [extension] });
+    const names = telescope()?.tools.map((t) => t.name) ?? [];
+    expect(names).toContain('demo_list');
+    expect(names).not.toContain('demo_reset');
+  });
+
   it('refuses a caller limited to some organizations', async () => {
     const tools = extensionDevTools(
       extension.devTools(),
       () => 'demo',
       () => ({ empty: true, key: '', accept: () => false }),
+      true,
     );
     await expect(tools[0]!.run({}, call)).rejects.toThrow(/every organization/);
     expect(runs).toHaveLength(0);

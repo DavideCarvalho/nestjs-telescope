@@ -248,33 +248,37 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
 
 /**
  * The dev tools extensions contribute. Their data spans every organization, so with tenancy on a
- * caller limited to some organizations gets an error instead of a run. Every run of an `action`
- * tool writes the same audit line as the console's extension actions.
+ * caller limited to some organizations gets an error instead of a run. `action` tools are console
+ * mutations: they are served only with `mutations: true`, and every run writes the same audit line
+ * as the console's extension actions.
  */
 export function extensionDevTools(
   tools: TelescopeDevTool[],
   ownerOf: (tool: TelescopeDevTool) => string | undefined,
   viewFor?: (call?: DevToolCall) => TenantView | null,
+  mutations = false,
 ): TelescopeDevTool[] {
-  return tools.map((tool) => ({
-    ...tool,
-    run: async (input, call) => {
-      if (viewFor !== undefined && viewFor(call) !== null) {
-        throw new Error(`${tool.name} needs a caller who may see every organization.`);
-      }
-      if (tool.kind !== 'action') return tool.run(input, call);
-      const caller = { id: call?.caller.id ?? 'unknown', via: 'dev-tools' as const };
-      const ext = ownerOf(tool) ?? 'extension';
-      try {
-        const result = await tool.run(input, call);
-        auditExtensionAction(ext, tool.name, caller, input, 'ok');
-        return result;
-      } catch (error) {
-        auditExtensionAction(ext, tool.name, caller, input, 'failed');
-        throw error;
-      }
-    },
-  }));
+  return tools
+    .filter((tool) => mutations || tool.kind !== 'action')
+    .map((tool) => ({
+      ...tool,
+      run: async (input, call) => {
+        if (viewFor !== undefined && viewFor(call) !== null) {
+          throw new Error(`${tool.name} needs a caller who may see every organization.`);
+        }
+        if (tool.kind !== 'action') return tool.run(input, call);
+        const caller = { id: call?.caller.id ?? 'unknown', via: 'dev-tools' as const };
+        const ext = ownerOf(tool) ?? 'extension';
+        try {
+          const result = await tool.run(input, call);
+          auditExtensionAction(ext, tool.name, caller, input, 'ok');
+          return result;
+        } catch (error) {
+          auditExtensionAction(ext, tool.name, caller, input, 'failed');
+          throw error;
+        }
+      },
+    }));
 }
 
 /** A resolved console gate as a dev-tools gate. Never throws: a throw is `forbidden`. */
@@ -343,6 +347,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
             this.extensions?.devTools() ?? [],
             (tool) => this.extensions?.devToolOwner(tool),
             (call) => this.viewFor(call),
+            this.options.mutations === true,
           ),
         ],
       });

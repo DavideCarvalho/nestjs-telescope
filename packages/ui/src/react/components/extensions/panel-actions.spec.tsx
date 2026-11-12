@@ -14,6 +14,7 @@ const columns: TableColumnSpec[] = [
   {
     key: 'status',
     label: 'Status',
+    link: { href: '#/circuits/{name}' },
     action: {
       name: 'reset-circuit',
       input: { name: '{name}' },
@@ -62,6 +63,10 @@ describe('row actions', () => {
     renderTable(mockTelescopeClient({ meta: async () => meta(true), extAction }));
     const buttons = await screen.findAllByRole('button', { name: 'Reset' });
     expect(buttons).toHaveLength(1);
+    // A column with both keeps its link next to the button.
+    expect(screen.getByRole('link', { name: 'open' }).getAttribute('href')).toBe(
+      '#/circuits/stripe',
+    );
     fireEvent.click(buttons[0]!);
     expect(await screen.findByText('Reset circuit stripe?')).toBeTruthy();
     expect(extAction).not.toHaveBeenCalled();

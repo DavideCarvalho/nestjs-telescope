@@ -26,16 +26,7 @@ export function fillTemplate(href: string, row: PanelRow): string {
  *  instance around it. */
 function CellContent({ spec, row }: { spec: TableColumnSpec; row: PanelRow }): JSX.Element {
   const text = String(row[spec.key] ?? '');
-  if (spec.action) {
-    return (
-      <>
-        {text}
-        <RowActionButton action={spec.action} row={row} />
-      </>
-    );
-  }
-  if (!spec.link) return <>{text}</>;
-  return (
+  const value = spec.link ? (
     <a
       className="text-sky-400 hover:underline"
       href={fillTemplate(spec.link.href, row)}
@@ -43,6 +34,15 @@ function CellContent({ spec, row }: { spec: TableColumnSpec; row: PanelRow }): J
     >
       {text}
     </a>
+  ) : (
+    text
+  );
+  if (!spec.action) return <>{value}</>;
+  return (
+    <>
+      {value}
+      <RowActionButton action={spec.action} row={row} />
+    </>
   );
 }
 
