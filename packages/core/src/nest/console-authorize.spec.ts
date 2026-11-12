@@ -81,6 +81,21 @@ describe('resolveConsoleAuthorize', () => {
     expect(ClassAuthorizer.instances).toBe(1);
   });
 
+  it('class: an arrow-function authorize property is still a class', async () => {
+    @Injectable()
+    class ArrowAuthorizer {
+      constructor(@Inject(Dependency) readonly dependency: Dependency) {}
+      authorize = () => this.dependency?.value === 'injected';
+    }
+    const check = await resolveConsoleAuthorize(ArrowAuthorizer, await moduleRefWith([Dependency]));
+    expect(await check(ctx)).toEqual({ allowed: true });
+    const lazy = await resolveConsoleAuthorize(
+      async () => ({ default: ArrowAuthorizer }),
+      await moduleRefWith([Dependency]),
+    );
+    expect(await lazy(ctx)).toEqual({ allowed: true });
+  });
+
   it('class: uses the registered provider when there is one', async () => {
     ClassAuthorizer.instances = 0;
     const moduleRef = await moduleRefWith([Dependency, ClassAuthorizer]);
