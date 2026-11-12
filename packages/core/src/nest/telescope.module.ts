@@ -35,7 +35,7 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { UseConsoleAuthorize } from './console-authorize.guard.js';
-import { CONSOLE_AUTHORIZE_MISSING_WARNING } from './console-authorize.js';
+import { consoleAuthorizeMissingWarning } from './console-authorize.js';
 import { dynamicController } from './dynamic-controller.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeCrashCapture } from './telescope-crash-capture.service.js';
@@ -57,17 +57,21 @@ import { TelescopeService } from './telescope.service.js';
 
 /** Logs the "no `authorize`" warning once at boot, mounted routes or not (`routes: false`). */
 const CONSOLE_AUTHORIZE_WARNING = Symbol('TELESCOPE_CONSOLE_AUTHORIZE_WARNING');
+/** Which registration the app used (`TelescopeModule.forRoot()` / `.forRootAsync()`), named by the warning. */
+const TELESCOPE_REGISTRATION = Symbol('TELESCOPE_REGISTRATION');
 
 const SHARED_PROVIDERS: Provider[] = [
   {
     provide: CONSOLE_AUTHORIZE_WARNING,
-    useFactory: (options: TelescopeModuleOptions): true => {
+    useFactory: (options: TelescopeModuleOptions, registration: string): true => {
       if (options.authorize === undefined) {
-        new Logger('TelescopeModule').warn(CONSOLE_AUTHORIZE_MISSING_WARNING);
+        new Logger('TelescopeModule').warn(
+          consoleAuthorizeMissingWarning('@dudousxd/nestjs-telescope', registration),
+        );
       }
       return true;
     },
-    inject: [TELESCOPE_OPTIONS],
+    inject: [TELESCOPE_OPTIONS, TELESCOPE_REGISTRATION],
   },
   {
     provide: TELESCOPE_CONFIG,
@@ -180,10 +184,11 @@ export class TelescopeModule implements NestModule {
   }
 
   static forRoot(options: TelescopeModuleOptions = {}): DynamicModule {
-    return TelescopeModule.build(options, {
-      provide: TELESCOPE_OPTIONS,
-      useValue: options,
-    });
+    return TelescopeModule.build(
+      options,
+      { provide: TELESCOPE_OPTIONS, useValue: options },
+      'TelescopeModule.forRoot()',
+    );
   }
 
   static forRootAsync(config: {
@@ -220,12 +225,16 @@ export class TelescopeModule implements NestModule {
     // `config` carries the build-time fields under the same names. The
     // resolved options get the static `path` (so capture and the UI agree with
     // the mount), and build-time fields the factory returned are logged.
-    return TelescopeModule.build(config, {
-      provide: TELESCOPE_OPTIONS,
-      useFactory: async (...args: unknown[]) =>
-        withStaticOptions(await config.useFactory(...args), config),
-      inject: config.inject ?? [],
-    });
+    return TelescopeModule.build(
+      config,
+      {
+        provide: TELESCOPE_OPTIONS,
+        useFactory: async (...args: unknown[]) =>
+          withStaticOptions(await config.useFactory(...args), config),
+        inject: config.inject ?? [],
+      },
+      'TelescopeModule.forRootAsync()',
+    );
   }
 
   /**
@@ -238,12 +247,17 @@ export class TelescopeModule implements NestModule {
       'path' | 'decorators' | 'mcpDecorators' | 'routes' | 'imports'
     >,
     optionsProvider: Provider,
+    registration: string,
   ): DynamicModule {
     return {
       module: TelescopeModule,
       imports: [DiscoveryModule, ...(staticOptions.imports ?? [])],
       controllers: staticOptions.routes === false ? [] : TelescopeModule.controllers(staticOptions),
-      providers: [optionsProvider, ...SHARED_PROVIDERS],
+      providers: [
+        optionsProvider,
+        { provide: TELESCOPE_REGISTRATION, useValue: registration },
+        ...SHARED_PROVIDERS,
+      ],
       exports: TELESCOPE_EXPORTS,
     };
   }

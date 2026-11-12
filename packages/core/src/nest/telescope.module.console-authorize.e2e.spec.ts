@@ -275,6 +275,18 @@ describe('TelescopeModule without authorize', () => {
     await request(target.getHttpServer()).get(META).expect(403);
   });
 
+  it('names forRootAsync() in the warning when that registration is used', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    await boot([TelescopeModule.forRootAsync({ useFactory: () => ({}) })]);
+    const warnings = warn.mock.calls.filter(([message]) =>
+      String(message).includes('console has no `authorize` configured'),
+    );
+    expect(warnings).toHaveLength(1);
+    expect(String(warnings[0]?.[0])).toContain(
+      'Set `authorize` in TelescopeModule.forRootAsync().',
+    );
+  });
+
   it('routes: false boots in production, mounts nothing, and still warns once', async () => {
     process.env.NODE_ENV = 'production';
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
