@@ -34,9 +34,10 @@ new NodeSDK({
 ```
 
 Each span becomes a `span` entry in its trace. Spans a watcher already records (incoming
-requests, SQL while a query watcher is on, redis while the redis watcher is on, `fetch` calls
-through the http-client watcher) are skipped with the driver spans under them; so are Telescope's
-own spans, its storage work and requests to the dashboard. Options: `ignore(span)`,
+requests, SQL while a query watcher is on, redis while the redis watcher is on, `fetch` and axios
+calls through the http-client watcher) are skipped with the driver spans under them; so are
+Telescope's own spans, its storage work and requests to the dashboard. When sampling drops a
+watcher's entry, the call's span comes through in its place. Options: `ignore(span)`,
 `maxSpansPerTrace` (200), `maxAttributes` (64), `maxAttributeLength` (2048).
 
 ## Usage

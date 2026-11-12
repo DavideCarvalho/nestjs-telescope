@@ -1,7 +1,7 @@
 // packages/core/src/config/sampling.spec.ts
 import { describe, expect, it } from 'vitest';
 import { EntryType, type RecordInput } from '../entry/entry.js';
-import { isErrorEntry, passesSampling } from './sampling.js';
+import { isErrorEntry, passesSampling, samplingCanDrop } from './sampling.js';
 
 function logEntry(level: string): RecordInput {
   return {
@@ -52,5 +52,16 @@ describe('passesSampling with level-aware keepErrors', () => {
   it('samples non-error logs by the base rate', () => {
     const sampling = { log: { rate: 0, keepErrors: true } };
     expect(passesSampling(sampling, logEntry('log'), () => 0.5)).toBe(false);
+  });
+});
+
+describe('samplingCanDrop', () => {
+  it('is true only when the type (or the default) keeps less than everything', () => {
+    expect(samplingCanDrop({}, 'query')).toBe(false);
+    expect(samplingCanDrop({ query: 1 }, 'query')).toBe(false);
+    expect(samplingCanDrop({ query: 0.05 }, 'query')).toBe(true);
+    expect(samplingCanDrop({ query: { rate: 0.5, keepErrors: true } }, 'query')).toBe(true);
+    expect(samplingCanDrop({ default: 0.5 }, 'redis')).toBe(true);
+    expect(samplingCanDrop({ default: 0.5, redis: 1 }, 'redis')).toBe(false);
   });
 });

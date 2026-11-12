@@ -1,4 +1,6 @@
 // packages/core/src/http/http-client.watcher.ts
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import type { HttpClientContent } from '../entry/content.js';
 import { EntryType } from '../entry/entry.js';
@@ -48,6 +50,47 @@ const PATCHED = Symbol.for('@dudousxd/nestjs-telescope:httpClientPatched');
  *  idempotency of the cache watcher's `Symbol.for` marker, but as a `WeakSet`
  *  so we don't mutate the host's object. */
 const INSTRUMENTED_AXIOS = new WeakSet<AxiosInterceptorLike>();
+
+type AxiosAdapter = (config: unknown) => unknown;
+type GetAdapter = (adapter: unknown, config?: unknown) => unknown;
+
+/** `axios.getAdapter`, read from the instance (the default export has it) or from the app's
+ *  axios. `null` once looked up and not found. */
+let appGetAdapter: GetAdapter | null | undefined;
+
+function loadAppGetAdapter(): GetAdapter | null {
+  if (appGetAdapter !== undefined) return appGetAdapter;
+  appGetAdapter = null;
+  try {
+    const axios = createRequire(join(process.cwd(), 'package.json'))('axios') as {
+      getAdapter?: unknown;
+      default?: { getAdapter?: unknown };
+    };
+    const getAdapter = axios.getAdapter ?? axios.default?.getAdapter;
+    if (typeof getAdapter === 'function') appGetAdapter = getAdapter as GetAdapter;
+  } catch {
+    // No resolvable axios: string adapters stay unwrapped.
+  }
+  return appGetAdapter;
+}
+
+/** The function axios would call for `config.adapter`, or `undefined` when it can't be resolved. */
+function resolveAxiosAdapter(
+  instance: AxiosInterceptorLike,
+  config: AxiosRequestConfigLike,
+): AxiosAdapter | undefined {
+  const adapter = config.adapter;
+  if (typeof adapter === 'function') return adapter as AxiosAdapter;
+  const own = (instance as { getAdapter?: unknown }).getAdapter;
+  const getAdapter = typeof own === 'function' ? (own as GetAdapter) : loadAppGetAdapter();
+  if (getAdapter === null) return undefined;
+  try {
+    const resolved = getAdapter(adapter, config);
+    return typeof resolved === 'function' ? (resolved as AxiosAdapter) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 type FetchInput = Parameters<typeof globalThis.fetch>[0];
 type FetchInit = Parameters<typeof globalThis.fetch>[1];
@@ -175,6 +218,28 @@ function asAxiosError(error: unknown): AxiosErrorLike {
     result.response = { status: response.status };
   }
   return result;
+}
+
+/** Brand on an adapter wrapper, so a config passing through twice is wrapped once. */
+const COVERING_ADAPTER = Symbol.for('@dudousxd/nestjs-telescope:coveringAdapter');
+
+/**
+ * Swap the request's adapter for one that runs it as a covered call, so the span processor
+ * skips the OpenTelemetry client span of this request (its http_client entry has it). Left
+ * as-is when the adapter can't be resolved.
+ */
+function coverAxiosAdapter(instance: AxiosInterceptorLike, config: AxiosRequestConfigLike): void {
+  try {
+    if ((config.adapter as { [COVERING_ADAPTER]?: true } | undefined)?.[COVERING_ADAPTER]) return;
+    const original = resolveAxiosAdapter(instance, config);
+    if (original === undefined) return;
+    const covering = (adapterConfig: unknown) =>
+      runCoveredByTelescope(() => original(adapterConfig));
+    (covering as { [COVERING_ADAPTER]?: true })[COVERING_ADAPTER] = true;
+    config.adapter = covering;
+  } catch {
+    // Never break the request: it just isn't marked as covered.
+  }
 }
 
 /**
@@ -314,6 +379,7 @@ export class HttpClientWatcher implements Watcher {
 
     instance.interceptors.request.use((config) => {
       this.axiosStartedAt.set(config, this.clock.now());
+      coverAxiosAdapter(instance, config);
       return config;
     });
 

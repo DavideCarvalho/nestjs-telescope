@@ -4,11 +4,12 @@ import {
   type SpanContent,
   isTelescopeSpanProcessorActive,
   markCoveredByTelescope,
+  reportCoveredOutcome,
   runAsTelescopeWork,
   runCoveredByTelescope,
   telescopeRuntime,
 } from '@dudousxd/nestjs-telescope';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type ReadableSpanLike,
   type TelescopeSpanProcessorOptions,
@@ -60,6 +61,7 @@ function boot(): void {
   runtime.record = (input) => recorded.push(input as RecordInput<SpanContent>);
   runtime.isPaused = () => false;
   runtime.selfPath = '/telescope';
+  runtime.isSampled = () => false;
 }
 
 function cover(...operations: Array<'request' | 'query' | 'redis'>): void {
@@ -240,6 +242,91 @@ describe('telescopeSpanProcessor', () => {
       span({ name: 'GET plain', kind: CLIENT, scope: '@opentelemetry/instrumentation-undici' }),
     );
     expect(names()).toEqual(['GET plain']);
+  });
+
+  it('skips the http span of an axios call the watcher records, not other http calls', () => {
+    const processor = make();
+    const http = '@opentelemetry/instrumentation-http';
+    const axiosCall = span({ name: 'GET axios', kind: CLIENT, scope: http });
+    const socket = span({ name: 'tcp.connect', parent: axiosCall, scope: 'net' });
+    runCoveredByTelescope(() => {
+      processor.onStart(axiosCall, undefined);
+      processor.onStart(socket, undefined);
+    });
+    processor.onEnd(socket);
+    processor.onEnd(axiosCall);
+    // e.g. the AWS SDK: http.request outside the watcher.
+    run(processor, span({ name: 'PUT s3', kind: CLIENT, scope: http }));
+    expect(names()).toEqual(['PUT s3']);
+  });
+
+  describe('when sampling can drop the watcher entries', () => {
+    const pg = '@opentelemetry/instrumentation-pg';
+
+    beforeEach(() => {
+      telescopeRuntime().isSampled = () => true;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shows a covered span only when its entry was sampled out', () => {
+      const processor = make();
+      cover('query');
+      const kept = span({ name: 'SELECT kept', scope: pg });
+      const socket = span({ name: 'tcp.connect', parent: kept, scope: 'net' });
+      run(processor, kept, socket);
+      reportCoveredOutcome('query', true);
+      const dropped = span({ name: 'SELECT dropped', scope: pg });
+      run(processor, dropped);
+      reportCoveredOutcome('query', false);
+      expect(names()).toEqual(['SELECT dropped']);
+    });
+
+    it('pairs a decision that arrives before the span ends (TypeORM logs first)', () => {
+      const processor = make();
+      cover('query');
+      reportCoveredOutcome('query', false);
+      reportCoveredOutcome('query', true);
+      run(processor, span({ name: 'SELECT 1', scope: pg }));
+      run(processor, span({ name: 'SELECT 2', scope: pg }));
+      expect(names()).toEqual(['SELECT 1']);
+    });
+
+    it('pairs per operation, and ignores types no watcher covers', () => {
+      const processor = make();
+      cover('query', 'redis');
+      run(processor, span({ name: 'get', scope: '@opentelemetry/instrumentation-ioredis' }));
+      run(processor, span({ name: 'SELECT', scope: pg }));
+      reportCoveredOutcome('log', false);
+      reportCoveredOutcome('query', true);
+      reportCoveredOutcome('redis', false);
+      expect(names()).toEqual(['get']);
+    });
+
+    it('shows a held span the watcher never records (a call it does not see)', () => {
+      vi.useFakeTimers();
+      const processor = make();
+      cover('query');
+      run(processor, span({ name: 'raw SELECT', scope: pg }));
+      expect(names()).toEqual([]);
+      vi.advanceTimersByTime(3_000);
+      expect(names()).toEqual(['raw SELECT']);
+    });
+
+    it('holds covered http client spans the same way', () => {
+      const processor = make();
+      const call = span({
+        name: 'GET',
+        kind: CLIENT,
+        scope: '@opentelemetry/instrumentation-undici',
+      });
+      runCoveredByTelescope(() => processor.onStart(call, undefined));
+      processor.onEnd(call);
+      reportCoveredOutcome('http_client', false);
+      expect(names()).toEqual(['GET']);
+    });
   });
 
   it("skips Telescope's own spans and work", () => {

@@ -81,11 +81,20 @@ the OpenTelemetry span is skipped, together with the driver spans under it.
 | HTTP server (`@opentelemetry/instrumentation-http`, server kind) | the request middleware records requests (the default) |
 | SQL drivers (`pg`, `mysql`, `mysql2`, `tedious`, `oracledb`, `knex`, Prisma) | the TypeORM logger, the MikroORM logger or the Prisma watcher records queries |
 | `ioredis` / `redis` | the redis watcher is registered |
-| `fetch` (`@opentelemetry/instrumentation-undici`) | that `fetch` call went through the http-client watcher |
+| HTTP client (`@opentelemetry/instrumentation-undici`, `@opentelemetry/instrumentation-http` client kind) | that call went through the http-client watcher: `fetch`, or the axios instance passed as `axios` |
 
-Turn the watcher off and the span comes through instead, so nothing goes missing. Outgoing calls
-through axios are recorded by the http-client watcher and also arrive as HTTP client spans; drop
-one side with `ignore` if you don't want both.
+Turn the watcher off and the span comes through instead, so nothing goes missing. HTTP client spans
+are matched per call: an SDK that calls `http.request` itself (the AWS SDK, for example) still
+shows up as spans.
+
+With [`sampling`](/docs/reference/configuration#capture--correlation) on a covered type (`query: 0.05`, say), a span stands in
+for each entry sampling drops: the processor holds the call's span until the watcher records the
+call, skips it when the entry was kept and records it when the entry was dropped. Every call
+shows up once, as an entry or as a span. Calls of the same kind in one trace are paired in the
+order they finish, so with concurrent queries the span shown can belong to a sibling query. A held
+span the watcher never records (a query sent without the ORM) comes through after two seconds.
+The HTTP server span is the exception: it is skipped whenever the request middleware is on, even
+for requests sampling drops.
 
 Telescope's own work never shows up: the processor skips spans Telescope emits and every span of a
 request to the dashboard, and Telescope's storage reads and writes run with tracing suppressed, so

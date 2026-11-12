@@ -49,7 +49,12 @@ new MikroOrmStorageProvider({
 How it works:
 
 - **Dedicated, scoped connection.** The provider opens its own MikroORM that knows *only* `TelescopeEntry`. The schema diff can therefore only ever touch `telescope_entries` (it can't alter your other tables), and it avoids a self-capture loop where every `INSERT INTO telescope_entries` would be recorded as a query.
-- **Self-healing schema at boot.** `init()` runs `ensureDatabase()` + `schema.update({ safe: true })` — additive only: creates the table if missing, adds missing columns, **never drops** anything. `ensureSchema: false` disables it.
+- **Self-healing schema at boot.** `init()` runs `ensureDatabase()` + `schema.update({ safe: true })`: creates the table if missing, adds missing columns, widens changed column types, and **never drops** anything. `ensureSchema: false` disables it.
+- **Millisecond timestamps.** `created_at` is `datetime(3)` on MySQL/MariaDB, so the trace waterfall can order and nest entries within a second. Existing tables are altered on the next boot. With `ensureSchema: false`, run it yourself (on a large table this rebuilds it, so pick a quiet moment):
+
+  ```sql
+  ALTER TABLE telescope_entries MODIFY created_at DATETIME(3) NOT NULL;
+  ```
 - **Lifecycle.** `init()` is awaited by `TelescopeModule` at startup; `close()` closes the owned connection at shutdown. You call neither.
 - **Keyset pagination** is newest-first; the cursor encodes a `(createdAt, id)` position, so paging resumes even after older entries are pruned.
 - **Flushes are plain multi-row `INSERT`s.** A flush is written with `em.insertMany`, not through the unit of work: no managed entities, no change sets. Each statement holds at most the ORM's `batchSize` rows (MikroORM's default is 300), which keeps a large `recorder.flushBatchSize` under PostgreSQL's 65,535 bound-parameter limit and SQLite's variable limit. A flush that needs several statements runs them in one transaction, so it is stored whole or not at all and the recorder's retry never meets rows from the failed attempt.

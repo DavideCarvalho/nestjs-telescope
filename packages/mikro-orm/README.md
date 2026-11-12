@@ -150,10 +150,13 @@ How it works:
   `loggerFactory` wired), every `INSERT INTO telescope_entries` would be captured
   as a query entry, recorded, flushed, and re-captured.
 - **Self-healing schema at boot.** On `init()` the provider runs
-  `schema.ensureDatabase()` + `schema.update({ safe: true })` — additive only:
-  it creates `telescope_entries` if missing and adds any missing columns, and
-  **never drops** a table or column. Set `ensureSchema: false` to disable (e.g.
-  when you provision the table via your own migration).
+  `schema.ensureDatabase()` + `schema.update({ safe: true })`: it creates
+  `telescope_entries` if missing, adds any missing columns, widens changed
+  column types, and **never drops** a table or column. Set `ensureSchema: false`
+  to disable (e.g. when you provision the table via your own migration).
+- **Millisecond timestamps.** `created_at` is `datetime(3)` on MySQL/MariaDB.
+  Existing tables are altered on the next boot; with `ensureSchema: false`, run
+  `ALTER TABLE telescope_entries MODIFY created_at DATETIME(3) NOT NULL;`.
 - **Lifecycle.** `init()` is awaited by `TelescopeModule` at startup; `close()`
   closes the owned connection at shutdown. You don't call either yourself.
 - **Keyset pagination** is newest-first (`createdAt DESC, id DESC`); the cursor

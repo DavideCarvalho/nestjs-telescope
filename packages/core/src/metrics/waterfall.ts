@@ -28,7 +28,7 @@ export interface Waterfall {
   traceStartMs: number;
   /** Wall-clock span of the whole trace (latest end − earliest start), >= 0. */
   totalDurationMs: number;
-  /** Root spans (those not contained by any other), ordered by start then sequence. */
+  /** Root spans (no parent in the trace), ordered by start then sequence. */
   spans: WaterfallSpan[];
 }
 
@@ -69,17 +69,20 @@ function labelFor(entry: Entry): string {
   return entry.type;
 }
 
+/** The parent span id an entry names (span entries carry `content.parentSpanId`), or null. */
+function parentSpanIdOf(entry: Entry): string | null {
+  const parent = asRecord(entry.content)?.parentSpanId;
+  return typeof parent === 'string' && parent.length > 0 ? parent : null;
+}
+
 /**
  * Reconstruct a nested span waterfall from a batch/trace's entries.
  *
- * DESIGN: the entry model carries `traceId`/`spanId` but NOT a parent-span
- * pointer, so we cannot rebuild the exact OTel span tree from explicit links.
- * Instead — exactly as Sentry/Tempo do when parent links are missing — we infer
- * nesting from **time-interval containment**: a span is a child of the tightest
- * enclosing span whose `[start, end]` strictly contains it. `sequence` provides a
- * stable tie-break for spans that start at the same instant. This yields the
- * familiar request → query/http_client → nested-op nesting from data we already
- * capture, with zero new watcher overhead.
+ * An entry that names its parent span (`content.parentSpanId`, as the OpenTelemetry span
+ * processor's `span` entries do) nests under the entry with that `spanId` when it is in the
+ * trace. Every other entry nests by **time-interval containment**, as Sentry/Tempo do when
+ * parent links are missing: under the tightest enclosing span whose `[start, end]` strictly
+ * contains it, with `sequence` as a stable tie-break for spans that start at the same instant.
  *
  * Returns `null` for an empty input. Pure.
  */
@@ -104,41 +107,104 @@ export function buildWaterfall(entries: Entry[]): Waterfall | null {
       a.startMs - b.startMs || b.durationMs - a.durationMs || a.entry.sequence - b.entry.sequence,
   );
 
-  const nodeById = new Map<string, WaterfallSpan>();
-  const roots: WaterfallSpan[] = [];
-  // A stack of currently-open ancestors, innermost last. We pop ancestors whose
-  // interval does not contain the current span, then attach to the top of stack.
-  const openStack: { interval: Interval; node: WaterfallSpan }[] = [];
-
+  const nodes = new Map<Interval, WaterfallSpan>();
   for (const interval of ordered) {
-    while (openStack.length > 0) {
-      const top = openStack[openStack.length - 1];
-      if (top !== undefined && contains(top.interval, interval)) break;
-      openStack.pop();
-    }
-    const parent = openStack[openStack.length - 1];
-    const depth = parent === undefined ? 0 : parent.node.depth + 1;
-    const node: WaterfallSpan = {
+    nodes.set(interval, {
       id: interval.entry.id,
       type: interval.entry.type,
       label: labelFor(interval.entry),
       offsetMs: interval.startMs - traceStartMs,
       durationMs: interval.durationMs,
-      depth,
+      depth: 0,
       sequence: interval.entry.sequence,
       children: [],
-    };
-    nodeById.set(node.id, node);
-    if (parent === undefined) roots.push(node);
-    else parent.node.children.push(node);
-    openStack.push({ interval, node });
+    });
   }
 
-  // Order children (and roots) by start offset, then sequence.
+  // Explicit links first: span id -> the entry carrying it.
+  const bySpanId = new Map<string, Interval>();
+  for (const interval of ordered) {
+    const spanId = interval.entry.spanId;
+    if (spanId !== null && spanId !== undefined && !bySpanId.has(spanId)) {
+      bySpanId.set(spanId, interval);
+    }
+  }
+  const parentOf = new Map<Interval, Interval>();
+  for (const interval of ordered) {
+    const parentSpanId = parentSpanIdOf(interval.entry);
+    const parent = parentSpanId === null ? undefined : bySpanId.get(parentSpanId);
+    if (parent !== undefined && parent !== interval) parentOf.set(interval, parent);
+  }
+  // A cycle of explicit links (corrupt data) is broken by dropping the link that closes it.
+  for (const interval of ordered) {
+    const seen = new Set<Interval>([interval]);
+    let cursor = parentOf.get(interval);
+    while (cursor !== undefined) {
+      if (seen.has(cursor)) {
+        parentOf.delete(interval);
+        break;
+      }
+      seen.add(cursor);
+      cursor = parentOf.get(cursor);
+    }
+  }
+
+  /** Whether `candidate` is `interval` or below it through the links set so far. */
+  const isWithin = (candidate: Interval, interval: Interval): boolean => {
+    let cursor: Interval | undefined = candidate;
+    while (cursor !== undefined) {
+      if (cursor === interval) return true;
+      cursor = parentOf.get(cursor);
+    }
+    return false;
+  };
+
+  // Containment for the rest. A stack of currently-open ancestors, innermost last: pop those
+  // that don't contain the current span, then take the innermost one that isn't the span's
+  // own descendant through an explicit link.
+  const openStack: Interval[] = [];
+  for (const interval of ordered) {
+    while (openStack.length > 0) {
+      const top = openStack[openStack.length - 1];
+      if (top !== undefined && contains(top, interval)) break;
+      openStack.pop();
+    }
+    if (!parentOf.has(interval)) {
+      for (let i = openStack.length - 1; i >= 0; i--) {
+        const candidate = openStack[i];
+        if (candidate !== undefined && !isWithin(candidate, interval)) {
+          parentOf.set(interval, candidate);
+          break;
+        }
+      }
+    }
+    openStack.push(interval);
+  }
+
+  const roots: WaterfallSpan[] = [];
+  for (const interval of ordered) {
+    const node = nodes.get(interval);
+    if (node === undefined) continue;
+    const parent = parentOf.get(interval);
+    const parentNode = parent === undefined ? undefined : nodes.get(parent);
+    if (parentNode === undefined) roots.push(node);
+    else parentNode.children.push(node);
+  }
+
+  // Order children (and roots) by start offset, then sequence, and set depths.
   const byOffset = (a: WaterfallSpan, b: WaterfallSpan): number =>
     a.offsetMs - b.offsetMs || a.sequence - b.sequence;
-  for (const node of nodeById.values()) node.children.sort(byOffset);
   roots.sort(byOffset);
+  const stack: WaterfallSpan[] = [...roots];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === undefined) continue;
+    node.children.sort(byOffset);
+    for (const child of node.children) {
+      child.depth = node.depth + 1;
+      stack.push(child);
+    }
+  }
 
   return { traceStartMs, totalDurationMs, spans: roots };
 }

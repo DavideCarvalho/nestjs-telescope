@@ -52,7 +52,9 @@ export const TelescopeEntry = new EntitySchema<TelescopeEntryRow>({
     // MySQL and the #/traces/:id lookup then matched nothing.
     traceId: { type: 'string', nullable: true, length: 64, index: true },
     spanId: { type: 'string', nullable: true, length: 16 },
-    createdAt: { type: 'datetime', index: true },
+    // Millisecond precision (`datetime(3)` on MySQL): whole seconds would collapse a trace's
+    // entries onto the same instant and flatten the waterfall.
+    createdAt: { type: 'datetime', length: 3, index: true },
   },
   // The pruner's per-type read: `type = ? AND created_at < ? ORDER BY created_at, id LIMIT n`.
   indexes: [{ properties: ['type', 'createdAt', 'id'] }],

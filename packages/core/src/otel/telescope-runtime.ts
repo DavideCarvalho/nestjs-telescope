@@ -25,8 +25,41 @@ export const TELESCOPE_SPAN_PROCESSOR_KEY = Symbol.for('@dudousxd/nestjs-telesco
  * - `request`: incoming HTTP (the request middleware).
  * - `query`: SQL (the TypeORM logger, the MikroORM and Prisma watchers).
  * - `redis`: redis commands (the redis watcher).
+ * - `http-client`: outgoing `fetch` and axios calls through the http-client watcher. Matched per
+ *   call (see {@link runCoveredByTelescope}), so calls the watcher doesn't see still come through.
  */
-export type CoveredOperation = 'request' | 'query' | 'redis';
+export type CoveredOperation = 'request' | 'query' | 'redis' | 'http-client';
+
+/** Entry type each covered operation's watcher records. */
+const ENTRY_TYPE_BY_OPERATION: Readonly<Record<CoveredOperation, string>> = {
+  request: 'request',
+  query: 'query',
+  redis: 'redis',
+  'http-client': 'http_client',
+};
+
+const OPERATION_BY_ENTRY_TYPE = new Map<string, CoveredOperation>(
+  Object.entries(ENTRY_TYPE_BY_OPERATION).map(([operation, type]) => [
+    type,
+    operation as CoveredOperation,
+  ]),
+);
+
+/**
+ * Told, for each entry a covering watcher hands to the recorder, whether sampling kept it.
+ * `traceKey` is the OpenTelemetry trace id active when the watcher recorded, or `''` outside
+ * any span. Installed by the span processor under {@link TELESCOPE_COVERED_OUTCOME_KEY}.
+ */
+export type CoveredOutcomeListener = (
+  operation: CoveredOperation,
+  traceKey: string,
+  kept: boolean,
+) => void;
+
+/** Global slot holding the {@link CoveredOutcomeListener}. */
+export const TELESCOPE_COVERED_OUTCOME_KEY = Symbol.for(
+  '@dudousxd/nestjs-telescope:covered-outcome',
+);
 
 /** @internal State shared through {@link TELESCOPE_RUNTIME_KEY}. */
 export interface TelescopeRuntime {
@@ -40,8 +73,14 @@ export interface TelescopeRuntime {
   readonly covered: Map<CoveredOperation, number>;
   /** Whether the caller is inside {@link runAsTelescopeWork}. */
   isTelescopeWork(): boolean;
-  /** Whether the caller is inside {@link runCoveredByTelescope} (an instrumented `fetch`). */
+  /** Whether the caller is inside {@link runCoveredByTelescope} (an outgoing call the watcher records). */
   isCoveredCall(): boolean;
+  /**
+   * Whether sampling can drop entries the watcher for `operation` records. When it can, the
+   * span processor holds that operation's spans until the watcher's entry is kept or dropped
+   * (see {@link reportCoveredOutcome}). Absent on a runtime created by an older core.
+   */
+  isSampled?(operation: CoveredOperation): boolean;
 }
 
 const globalSlot = globalThis as Record<symbol, unknown>;
@@ -71,6 +110,7 @@ export function telescopeRuntime(): TelescopeRuntime {
     covered: new Map(),
     isTelescopeWork: () => selfScope.getStore() === true,
     isCoveredCall: () => coveredCall.getStore() === true,
+    isSampled: () => false,
   };
   globalSlot[TELESCOPE_RUNTIME_KEY] = created;
   return created;
@@ -112,7 +152,11 @@ const SUPPRESS_TRACING_KEY = Symbol.for('OpenTelemetry SDK Context Key SUPPRESS_
 
 interface ContextLike {
   setValue(key: symbol, value: unknown): ContextLike;
+  getValue?(key: symbol): unknown;
 }
+
+/** The context key `@opentelemetry/api` stores the active span under (`trace.setSpan`). */
+const ACTIVE_SPAN_KEY = Symbol.for('OpenTelemetry Context Key SPAN');
 interface ContextManagerLike {
   active(): ContextLike;
   with<T>(context: ContextLike, fn: () => T): T;
@@ -147,6 +191,38 @@ function globalContextManager(): ContextManagerLike | undefined {
   return found;
 }
 
+/** Trace id of the active OpenTelemetry span, or `null` without an SDK or outside any span. */
+function activeTraceId(): string | null {
+  try {
+    const span = globalContextManager()?.active().getValue?.(ACTIVE_SPAN_KEY) as
+      | { spanContext?: () => { traceId?: unknown } }
+      | undefined;
+    const traceId = span?.spanContext?.().traceId;
+    return typeof traceId === 'string' ? traceId : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tell the span processor whether sampling kept an entry a covering watcher recorded, so it
+ * shows the matching OpenTelemetry span only when the entry was dropped. Called by the
+ * recorder for every sampled entry; a no-op without a span processor or for other types.
+ */
+export function reportCoveredOutcome(type: string, kept: boolean): void {
+  if (!isTelescopeSpanProcessorActive()) return;
+  const operation = OPERATION_BY_ENTRY_TYPE.get(type);
+  if (operation === undefined) return;
+  const listener = globalSlot[TELESCOPE_COVERED_OUTCOME_KEY];
+  if (typeof listener !== 'function') return;
+  (listener as CoveredOutcomeListener)(operation, activeTraceId() ?? '', kept);
+}
+
+/** Entry type the watcher for `operation` records. */
+export function coveredEntryType(operation: CoveredOperation): string {
+  return ENTRY_TYPE_BY_OPERATION[operation];
+}
+
 /**
  * Run `fn` as Telescope's own work (storage reads, writes, prunes): no OpenTelemetry spans are
  * made for it and the span processor records nothing from it.
@@ -160,7 +236,7 @@ export function isTelescopeWork(): boolean {
   return selfScope.getStore() === true;
 }
 
-/** Run `fn` as an operation a watcher records itself (an instrumented outgoing `fetch`). */
+/** Run `fn` as an outgoing call a watcher records itself (an instrumented `fetch` or axios request). */
 export function runCoveredByTelescope<T>(fn: () => T): T {
   return coveredCall.run(true, fn);
 }

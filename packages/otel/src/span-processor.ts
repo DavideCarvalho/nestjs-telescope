@@ -19,9 +19,10 @@ import type {
  * before Nest and the instrumented libraries load.
  *
  * - Where a Telescope watcher records the same operation (incoming requests, SQL, redis
- *   commands, `fetch` calls through the http-client watcher), the watcher stays the source and
- *   the OTel span is skipped, together with the driver spans under it. With that watcher off,
- *   the span comes through.
+ *   commands, `fetch` and axios calls through the http-client watcher), the watcher stays the
+ *   source and the OTel span is skipped, together with the driver spans under it. With that
+ *   watcher off, the span comes through. When sampling can drop the watcher's entries, the span
+ *   is held until the watcher records the call and comes through only if the entry was dropped.
  * - Spans Telescope emits itself, its own storage work and requests to the dashboard are
  *   skipped.
  * - Ingestion goes through the recorder like any watcher: redaction, sampling and the overload
@@ -80,6 +81,7 @@ export interface TelescopeSpanProcessorOptions {
 
 const RUNTIME_KEY = Symbol.for('@dudousxd/nestjs-telescope:runtime');
 const SPAN_PROCESSOR_KEY = Symbol.for('@dudousxd/nestjs-telescope:span-processor');
+const COVERED_OUTCOME_KEY = Symbol.for('@dudousxd/nestjs-telescope:covered-outcome');
 const SPAN_ENTRY_TYPE = 'span';
 
 const KIND_NAMES: readonly SpanKindName[] = [
@@ -90,6 +92,7 @@ const KIND_NAMES: readonly SpanKindName[] = [
   'consumer',
 ];
 const SPAN_KIND_SERVER = 1;
+const SPAN_KIND_CLIENT = 2;
 const STATUS_NAMES = ['unset', 'ok', 'error'] as const;
 
 /** Scopes Telescope emits its own spans under (`TelescopeOtelExporter`). */
@@ -99,7 +102,7 @@ const TELESCOPE_SCOPES = new Set(['telescope', '@dudousxd/nestjs-telescope-otel'
  * Instrumentations a Telescope watcher already covers, by scope name. `kind` narrows the match
  * (the http instrumentation makes server and client spans; only the server side is the request
  * middleware's). `leaf` marks operations whose child spans are driver internals: those are
- * skipped with them. Outgoing `fetch` is matched per call instead (see `isCoveredCall`).
+ * skipped with them. Outgoing http is matched per call instead (see `isCoveredCall`).
  */
 const COVERED: ReadonlyArray<{
   scope: string;
@@ -129,10 +132,23 @@ const COVERED: ReadonlyArray<{
   ].map((scope) => ({ scope, operation: 'redis' as const, leaf: true })),
 ];
 
+const HTTP_SCOPE = '@opentelemetry/instrumentation-http';
 const UNDICI_SCOPE = '@opentelemetry/instrumentation-undici';
+
+/** An outgoing http span: `fetch` (undici) or `http.request` (axios and most SDKs). */
+function isHttpClientSpan(span: StartedSpanLike): boolean {
+  const scope = scopeOf(span);
+  return scope === UNDICI_SCOPE || (scope === HTTP_SCOPE && span.kind === SPAN_KIND_CLIENT);
+}
+
 const MAX_EVENTS = 16;
 /** How many traces / span ids the processor remembers at once (oldest forgotten first). */
 const MAX_TRACKED = 4096;
+/** How long a held span waits for its watcher's sampling decision before it is shown. */
+const HOLD_MS = 2_000;
+/** How long a watcher's sampling decision waits for its span (a `fetch` body can outlive it). */
+const OUTCOME_MS = 60_000;
+const SWEEP_MS = 500;
 
 /** A `Set` that forgets its oldest member past `limit`. */
 class BoundedSet<T> {
@@ -230,6 +246,8 @@ export function telescopeSpanProcessor(
   const skippedSpans = new BoundedSet<string>(MAX_TRACKED);
   /** Traces of requests to the dashboard. */
   const dashboardTraces = new BoundedSet<string>(MAX_TRACKED);
+  /** Spans held at start, by the operation whose watcher decides on them. */
+  const heldSpans = new Map<string, CoveredOperation>();
   /** Spans ingested so far, per trace. */
   const perTrace = new Map<string, number>();
 
@@ -273,6 +291,125 @@ export function telescopeSpanProcessor(
     return true;
   }
 
+  function ingest(rt: TelescopeRuntime, span: ReadableSpanLike): void {
+    if (rt.record === null || rt.isPaused()) return;
+    if (dashboardTraces.has(span.spanContext().traceId)) return;
+    if (options.ignore?.(span) === true) return;
+    if (!countAgainstTrace(span.spanContext().traceId)) return;
+    rt.record(toInput(span));
+  }
+
+  // ── Sampled coverage ─────────────────────────────────────────────────────
+  // When sampling can drop a covering watcher's entries, its spans are held instead of skipped,
+  // and paired with the watcher's sampling decision for the same operation in the same trace:
+  // a kept entry drops the span, a dropped entry lets it through. Calls within one trace pair
+  // in the order they finish. A span whose decision never arrives (a call the watcher doesn't
+  // see) comes through after `HOLD_MS`.
+
+  type Pending =
+    | { kind: 'span'; span: ReadableSpanLike; at: number }
+    | { kind: 'outcome'; kept: boolean; at: number };
+  /** Held spans or unmatched decisions, per `operation + trace`. One kind at a time per key. */
+  const pending = new Map<string, Pending[]>();
+  let pendingCount = 0;
+  let sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+  const pendingKey = (operation: CoveredOperation, traceKey: string) => `${operation}|${traceKey}`;
+
+  function hold(operation: CoveredOperation, span: ReadableSpanLike): void {
+    // The watcher records in the caller's context: the trace of the span's parent, if any.
+    const traceKey = span.parentSpanContext === undefined ? '' : span.spanContext().traceId;
+    const key = pendingKey(operation, traceKey);
+    const queue = pending.get(key);
+    const head = queue?.[0];
+    if (head?.kind === 'outcome') {
+      shift(key);
+      if (!head.kept) release(span);
+      return;
+    }
+    push(key, { kind: 'span', span, at: Date.now() });
+  }
+
+  const settle = (operation: CoveredOperation, traceKey: string, kept: boolean): void => {
+    try {
+      const key = pendingKey(operation, traceKey);
+      const head = pending.get(key)?.[0];
+      if (head?.kind === 'span') {
+        shift(key);
+        if (!kept) release(head.span);
+        return;
+      }
+      push(key, { kind: 'outcome', kept, at: Date.now() });
+    } catch {
+      // Observability never breaks the instrumented code.
+    }
+  };
+
+  function release(span: ReadableSpanLike): void {
+    const rt = runtime();
+    if (rt !== undefined) ingest(rt, span);
+  }
+
+  function push(key: string, item: Pending): void {
+    const queue = pending.get(key);
+    if (queue === undefined) pending.set(key, [item]);
+    else queue.push(item);
+    pendingCount++;
+    if (pendingCount > MAX_TRACKED) evictOldest();
+    startSweep();
+  }
+
+  function shift(key: string): Pending | undefined {
+    const queue = pending.get(key);
+    const item = queue?.shift();
+    if (item !== undefined) pendingCount--;
+    if (queue !== undefined && queue.length === 0) pending.delete(key);
+    return item;
+  }
+
+  function evictOldest(): void {
+    const first = pending.keys().next();
+    if (first.done === true) return;
+    const item = shift(first.value);
+    if (item?.kind === 'span') release(item.span);
+  }
+
+  function sweep(): void {
+    const now = Date.now();
+    for (const key of [...pending.keys()]) {
+      for (;;) {
+        const head = pending.get(key)?.[0];
+        if (head === undefined) break;
+        const ttl = head.kind === 'span' ? HOLD_MS : OUTCOME_MS;
+        if (now - head.at < ttl) break;
+        shift(key);
+        if (head.kind === 'span') release(head.span);
+      }
+    }
+    if (pendingCount === 0) stopSweep();
+  }
+
+  function startSweep(): void {
+    if (sweepTimer !== null) return;
+    sweepTimer = setInterval(() => {
+      try {
+        sweep();
+      } catch {
+        // Observability never breaks the instrumented code.
+      }
+    }, SWEEP_MS);
+    sweepTimer.unref?.();
+  }
+
+  function stopSweep(): void {
+    if (sweepTimer === null) return;
+    clearInterval(sweepTimer);
+    sweepTimer = null;
+  }
+
+  const outcomeSlot = globalThis as Record<symbol, unknown>;
+  outcomeSlot[COVERED_OUTCOME_KEY] = settle;
+
   function toInput(span: ReadableSpanLike): RecordInput<SpanContent> {
     const { traceId, spanId } = span.spanContext();
     const scope = scopeOf(span);
@@ -312,7 +449,7 @@ export function telescopeSpanProcessor(
         if (rt === undefined) return;
         const { traceId, spanId } = span.spanContext();
         const parentId = span.parentSpanContext?.spanId;
-        if (parentId !== undefined && skippedSpans.has(parentId)) {
+        if (parentId !== undefined && (skippedSpans.has(parentId) || heldSpans.has(parentId))) {
           skippedSpans.add(spanId);
           return;
         }
@@ -320,13 +457,22 @@ export function telescopeSpanProcessor(
           skippedSpans.add(spanId);
           return;
         }
-        if (coveredBy(rt, span)?.leaf === true) {
-          skippedSpans.add(spanId);
-          return;
-        }
-        // A `fetch` the http-client watcher records: its http_client entry has it.
-        if (scopeOf(span) === UNDICI_SCOPE && rt.isCoveredCall()) {
-          skippedSpans.add(spanId);
+        const covered = coveredBy(rt, span);
+        let operation: CoveredOperation | undefined;
+        if (covered?.leaf === true) operation = covered.operation;
+        // An outgoing call the http-client watcher records: its http_client entry has it.
+        else if (isHttpClientSpan(span) && rt.isCoveredCall()) operation = 'http-client';
+        if (operation !== undefined) {
+          // Sampling may drop the watcher's entry: hold the span until the watcher decides.
+          if (rt.isSampled?.(operation) === true) {
+            heldSpans.set(spanId, operation);
+            if (heldSpans.size > MAX_TRACKED) {
+              const oldest = heldSpans.keys().next();
+              if (oldest.done !== true) heldSpans.delete(oldest.value);
+            }
+          } else {
+            skippedSpans.add(spanId);
+          }
           return;
         }
         if (span.kind === SPAN_KIND_SERVER && rt.selfPath !== null) {
@@ -341,16 +487,28 @@ export function telescopeSpanProcessor(
     onEnd(span) {
       try {
         const rt = runtime();
-        if (rt === undefined || rt.record === null || rt.isPaused()) return;
+        if (rt === undefined || rt.record === null) return;
+        const operation = heldSpans.get(span.spanContext().spanId);
+        if (operation !== undefined) {
+          heldSpans.delete(span.spanContext().spanId);
+          hold(operation, span);
+          return;
+        }
+        if (rt.isPaused()) return;
         if (shouldSkip(rt, span)) return;
-        if (!countAgainstTrace(span.spanContext().traceId)) return;
-        rt.record(toInput(span));
+        ingest(rt, span);
       } catch {
         // Observability never breaks the instrumented code.
       }
     },
 
     forceFlush: () => Promise.resolve(),
-    shutdown: () => Promise.resolve(),
+    shutdown() {
+      if (outcomeSlot[COVERED_OUTCOME_KEY] === settle) delete outcomeSlot[COVERED_OUTCOME_KEY];
+      pending.clear();
+      pendingCount = 0;
+      stopSweep();
+      return Promise.resolve();
+    },
   };
 }

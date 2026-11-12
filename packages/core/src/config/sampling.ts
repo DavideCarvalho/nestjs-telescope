@@ -65,6 +65,12 @@ export function samplingRates(sampling: SamplingConfig): Record<string, number> 
   return rates;
 }
 
+/** Whether sampling can drop entries of `type` (its keep-rate is below 1). */
+export function samplingCanDrop(sampling: SamplingConfig, type: string): boolean {
+  const rule = sampling[type] ?? sampling.default;
+  return rule !== undefined && ruleRate(rule) < 1;
+}
+
 /**
  * Tail-sampling decision for one input. Plain-number per-type config behaves
  * exactly as a uniform keep-rate. A {@link SamplingRule} additionally always
