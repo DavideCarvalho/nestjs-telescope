@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ConsolePage, normalizeTelescopePath } from '@dudousxd/nestjs-telescope';
+import {
+  ConsolePage,
+  TELESCOPE_CONSOLE_ID,
+  consoleSwitcherConfig,
+  normalizeTelescopePath,
+} from '@dudousxd/nestjs-telescope';
 import {
   Controller,
   Get,
@@ -35,13 +40,29 @@ const CONTENT_TYPES: Record<string, string> = {
  * `'telescope'` the source and target strings are identical, so this is a no-op.
  */
 function rewriteAssetBase(html: string, path: string): string {
-  const injectedBase = `<script>window.__TELESCOPE_BASE__ = ${JSON.stringify(`/${path}`)};</script>`;
+  const injectedBase = `<script>window.__TELESCOPE_BASE__ = ${JSON.stringify(`/${path}`)};</script>${configBlock(path)}`;
   const rebased = html.split('/telescope/').join(`/${path}/`);
   // Expose the runtime base before the bundle so the client can derive API URLs.
   if (rebased.includes('</head>')) {
     return rebased.replace('</head>', `${injectedBase}</head>`);
   }
   return `${injectedBase}${rebased}`;
+}
+
+/** The id of the page's JSON config block. */
+export const TELESCOPE_DASHBOARD_CONFIG_ID = 'telescope-dashboard-config';
+
+/**
+ * The page's JSON config block (`telescope-dashboard-config`, CSP-safe: data, not script). It
+ * carries `switcher` only when another Aviary console is registered.
+ */
+function configBlock(path: string): string {
+  const switcher = consoleSwitcherConfig(TELESCOPE_CONSOLE_ID, `/${path}/api/consoles`);
+  const json = JSON.stringify({
+    base: `/${path}`,
+    ...(switcher !== undefined ? { switcher } : {}),
+  }).replaceAll('<', '\\u003c');
+  return `<script type="application/json" id="${TELESCOPE_DASHBOARD_CONFIG_ID}">${json}</script>`;
 }
 
 // A denied browser navigation gets a page (or a redirect), not JSON.

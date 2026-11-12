@@ -121,6 +121,23 @@ TelescopeOtelMetricsModule.forExporter(exporter, {
 
 It allows a request with `Authorization: Bearer <token>` and answers 401 otherwise. Only that header counts (no `?token=` query string). An empty or missing token throws when the module is configured, so a missing env var never opens the console. `authorizeByToken` and the types are also exported by `@dudousxd/nestjs-telescope-ui` and `@dudousxd/nestjs-telescope-otel`.
 
+### A token or a session: `anyAuthorize`
+
+To let either kind of caller in, combine the forms with `anyAuthorize`. A request is allowed when any form allows it. When none does, the answer is 401 if any form said `unauthenticated` (keeping the first `redirectTo`), else 403:
+
+```ts
+import { anyAuthorize, authorizeByToken } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  authorize: anyAuthorize(
+    authorizeByToken({ token: process.env.TELESCOPE_TOKEN }),
+    { policy: ConsolePolicy, ability: 'view' },
+  ),
+});
+```
+
+Each form can be any `authorize` value: a function, a class, a lazy import, `{ policy, ability }` or a gate name.
+
 ## Without `authorize`
 
 - Outside production (`NODE_ENV !== 'production'`) the console is open, so local work needs no setup.

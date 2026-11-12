@@ -159,3 +159,27 @@ The agent gets five tools, all reading the same data the dashboard does:
 | `diagnose_exception` | Run [AI diagnosis](/docs/packages/ai) on an exception entry by `id` (probable cause, where to look, suggested fix). Only available when `ai` is configured — otherwise it returns a "not configured" message. |
 
 A typical agent flow: `get_stats` to find the slowest route, `list_entries` to find a representative request, then `get_entry` to pull its batch waterfall and spot the N+1.
+
+## On the Aviary dev MCP endpoint
+
+When the app also runs the agent's MCP server (`@dudousxd/nestjs-agent-mcp-server`) with its dev endpoint, Telescope serves its tools there too, prefixed `telescope_`, next to the other Aviary consoles' tools. This needs neither `mcp: true` nor `mcpAuthorize`: the tools are gated by the console's `authorize`.
+
+| Tool | What it does |
+|---|---|
+| `telescope_list_entries` | Recent entries, newest first, as summaries. Filters: `type`, `search`, `tag`, `sinceMinutes`; `limit` (default 20, max 100). Returns `{ items, next }`: pass `next` as `cursor` for the next page. |
+| `telescope_get_entry` | One entry by `id` with the summaries of its batch. |
+| `telescope_get_trace` | Every entry recorded under one `traceId`. |
+| `telescope_get_waterfall` | The span waterfall of one `traceId`. |
+| `telescope_get_health` | Pulse health over the last `sinceMinutes` (default 60). |
+| `telescope_diagnose_exception` | AI diagnosis of an exception entry by `id`. Listed only when [AI diagnosis](/docs/packages/ai) is configured. It spends AI tokens. |
+
+An unknown or pruned id is a tool error ("… not found").
+
+The tools are registered while the console's routes are mounted. Set `devTools: true` to keep them with `routes: false`, or `devTools: false` to turn them off:
+
+```ts
+TelescopeModule.forRoot({
+  authorize: { policy: ConsolePolicy, ability: 'view' },
+  devTools: false,
+});
+```

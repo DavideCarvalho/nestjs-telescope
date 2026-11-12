@@ -12,6 +12,7 @@ import {
   type OptionalFactoryDependency,
   type Type,
 } from '@nestjs/common';
+import { TelescopeConsoleRegistration } from './console-registration.js';
 import { TelescopeUiController } from './telescope-ui.controller.js';
 import { TELESCOPE_UI_OPTIONS, type TelescopeUiModuleOptions } from './telescope-ui.options.js';
 
@@ -38,6 +39,11 @@ function uiControllers(
   return [dynamicController(TelescopeUiController, path, [...(options.decorators ?? []), access])];
 }
 
+/** The console switcher lists telescope only where this module serves the page. */
+function switcherRegistration(options: Pick<TelescopeUiModuleOptions, 'routes'>): Type[] {
+  return options.routes === false ? [] : [TelescopeConsoleRegistration];
+}
+
 @Module({})
 export class TelescopeUiModule {
   static forRoot(options: TelescopeUiModuleOptions = {}): DynamicModule {
@@ -45,7 +51,10 @@ export class TelescopeUiModule {
       module: TelescopeUiModule,
       imports: options.imports ?? [],
       controllers: uiControllers(options),
-      providers: [{ provide: TELESCOPE_UI_OPTIONS, useValue: options }],
+      providers: [
+        { provide: TELESCOPE_UI_OPTIONS, useValue: options },
+        ...switcherRegistration(options),
+      ],
       exports: [TELESCOPE_UI_OPTIONS],
     };
   }
@@ -97,6 +106,7 @@ export class TelescopeUiModule {
           }),
           inject: config.inject ?? [],
         },
+        ...switcherRegistration(config),
       ],
       exports: [TELESCOPE_UI_OPTIONS],
     };

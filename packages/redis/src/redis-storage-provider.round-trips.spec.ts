@@ -89,7 +89,9 @@ describe('RedisStorageProvider round trips', () => {
       { count: 1, sum: 2, max: 2 },
     );
     expect(counter.trips).toBe(2);
-  });
+    // 180 rollup writes against the test Redis: well under a second locally, but past the 5 s
+    // default on a busy CI runner. The assertion is the round-trip count, not the time.
+  }, 20_000);
 
   it('serves content-less pages without reading the full entry blobs', async () => {
     await store.store([

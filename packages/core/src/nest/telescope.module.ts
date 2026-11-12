@@ -37,11 +37,14 @@ import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { UseConsoleAuthorize } from './console-authorize.guard.js';
 import { consoleAuthorizeMissingWarning } from './console-authorize.js';
+import { TelescopeConsolesController } from './console-switcher.js';
+import { TELESCOPE_ROUTES_MOUNTED, TelescopeDevToolsRegistration } from './dev-tools.js';
 import { dynamicController } from './dynamic-controller.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeCrashCapture } from './telescope-crash-capture.service.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
 import { TelescopeMcpController } from './telescope-mcp.controller.js';
+import { TelescopeMcpServer } from './telescope-mcp.server.js';
 import { TelescopeOverloadGuard } from './telescope-overload-guard.service.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
@@ -116,6 +119,14 @@ const SHARED_PROVIDERS: Provider[] = [
   },
   ServerStatsService,
   {
+    // The MCP tools, shared by `POST <path>/api/mcp` and the Aviary dev-tools endpoint.
+    provide: TelescopeMcpServer,
+    useFactory: (storage: StorageProvider, service: TelescopeService, pulse: PulseService) =>
+      new TelescopeMcpServer(storage, service, pulse),
+    inject: [TELESCOPE_STORAGE, TelescopeService, PulseService],
+  },
+  TelescopeDevToolsRegistration,
+  {
     // Factory so the resolved profiling config + the TelescopeService record sink
     // reach the service. Constructed unconditionally (cheap); it NEVER builds a
     // profiler or loads `node:inspector` while `profiling.enabled` is false.
@@ -161,6 +172,7 @@ const TELESCOPE_EXPORTS = [
   ProfilerService,
   QueueManagerRegistry,
   ScheduleManagerRegistry,
+  TelescopeMcpServer,
 ];
 
 @Module({})
@@ -259,6 +271,7 @@ export class TelescopeModule implements NestModule {
       providers: [
         optionsProvider,
         { provide: TELESCOPE_REGISTRATION, useValue: registration },
+        { provide: TELESCOPE_ROUTES_MOUNTED, useValue: staticOptions.routes !== false },
         ...SHARED_PROVIDERS,
       ],
       exports: TELESCOPE_EXPORTS,
@@ -294,6 +307,7 @@ export class TelescopeModule implements NestModule {
       // `clientErrors.enabled` is off. Mounts before the catch-all controller.
       dynamicController(ClientErrorController, `${path}/api/client-errors`),
       dynamicController(TelescopeMcpController, `${path}/api/mcp`, [...mcpDecorators, mcpAccess]),
+      dynamicController(TelescopeConsolesController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(TelescopeController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(StreamController, `${path}/api`, [...decorators, consoleAccess]),
     ];

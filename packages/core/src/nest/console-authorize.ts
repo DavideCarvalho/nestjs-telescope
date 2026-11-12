@@ -3,9 +3,10 @@
 // The console access contract every Aviary console declares locally with
 // identical names and shapes (no cross-lib import): the `authorize` option,
 // its resolver and `authorizeByToken`.
+import 'reflect-metadata';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { type ExecutionContext, Logger, type Type } from '@nestjs/common';
-import type { ModuleRef } from '@nestjs/core';
+import { ModuleRef } from '@nestjs/core';
 
 export type ConsoleAuthorizeResult =
   | boolean
@@ -301,4 +302,48 @@ export function authorizeByToken(options: { token: string | undefined }): (
     if (match?.[1] && timingSafeEqual(sha256(match[1]), expected)) return true;
     return { allowed: false, reason: 'unauthenticated' };
   };
+}
+
+/**
+ * One `authorize` from several: allowed when any form allows (checked in order, stopping at the
+ * first that does); otherwise `unauthenticated` when any form said so (keeping the first
+ * `redirectTo`), else `forbidden`. Each form is any `authorize` value: a function, a class, a lazy
+ * import, `{ policy, ability }` or a gate name.
+ *
+ * ```ts
+ * authorize: anyAuthorize(authorizeByToken({ token: process.env.CONSOLE_TOKEN }), AdminSessionAuthorizer)
+ * ```
+ */
+export function anyAuthorize(...forms: ConsoleAuthorize[]): ConsoleAuthorizerClass {
+  if (forms.length === 0) throw new Error('anyAuthorize: pass at least one authorize form.');
+  class AnyConsoleAuthorizer implements ConsoleAuthorizer {
+    #decides: Promise<ConsoleDecide[]> | undefined;
+
+    constructor(private readonly moduleRef: ModuleRef) {}
+
+    async authorize(context: ExecutionContext): Promise<ConsoleAuthorizeResult> {
+      this.#decides ??= Promise.all(
+        forms.map((form) =>
+          resolveConsoleAuthorize(form, this.moduleRef, { warnIfMissing: false }),
+        ),
+      );
+      // A failed resolution is retried on the next request, not cached as a permanent denial.
+      this.#decides.catch(() => {
+        this.#decides = undefined;
+      });
+      let unauthenticated: ConsoleDecision | undefined;
+      for (const decide of await this.#decides) {
+        const decision = await decide(context);
+        if (decision.allowed) return decision;
+        if (decision.reason === 'unauthenticated') unauthenticated ??= decision;
+      }
+      if (unauthenticated === undefined) return { allowed: false, reason: 'forbidden' };
+      return 'redirectTo' in unauthenticated && unauthenticated.redirectTo !== undefined
+        ? { redirectTo: unauthenticated.redirectTo }
+        : { allowed: false, reason: 'unauthenticated' };
+    }
+  }
+  // `ModuleRef` by explicit metadata: the class is created with DI whatever the build emits.
+  Reflect.defineMetadata('design:paramtypes', [ModuleRef], AnyConsoleAuthorizer);
+  return AnyConsoleAuthorizer;
 }

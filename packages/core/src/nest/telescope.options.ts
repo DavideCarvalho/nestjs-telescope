@@ -540,6 +540,15 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   routes?: boolean;
   /**
+   * Serve telescope's tools (`telescope_list_entries`, `telescope_get_entry`,
+   * `telescope_get_trace`, `telescope_get_waterfall`, `telescope_get_health`,
+   * and `telescope_diagnose_exception` when AI diagnosis is configured) on the
+   * Aviary dev MCP endpoint of `@dudousxd/nestjs-agent-mcp-server`, gated by
+   * {@link authorize}. Default: on while the routes are mounted; `true` keeps
+   * them with `routes: false`, `false` turns them off.
+   */
+  devTools?: boolean;
+  /**
    * Extra `imports` merged into `TelescopeModule`'s own dynamic module — the DI
    * resolution path for whatever the {@link decorators} need (e.g. the module
    * providing a guard passed through `UseGuards(...)`).
