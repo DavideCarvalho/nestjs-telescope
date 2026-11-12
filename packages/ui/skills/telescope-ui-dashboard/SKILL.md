@@ -7,7 +7,7 @@ description: >-
   async form, as are decorators and routes; the path must match
   TelescopeModule); without authorize the page answers 403 in production.
   call the headless API from any frontend with createTelescopeClient({ baseUrl?,
-  fetch? }) from the /client subpath; build a custom console with the React
+  fetch?, onAccessDenied? }) from the /client subpath; build a custom console with the React
   components, hooks (TelescopeProvider, useTelescopeClient, useEntries, usePulse,
   useTimeseries) from the /react subpath. Use for "show the Telescope dashboard",
   "custom path", "call the Telescope API from React", "embed Telescope components".
@@ -88,7 +88,9 @@ Source: `packages/ui/src/server/telescope-ui.module.ts`,
 
 `createTelescopeClient` (from the `/client` subpath) is a typed wrapper over the
 JSON API, usable in any frontend. `baseUrl` defaults to
-`window.__TELESCOPE_BASE__ + '/api'`, else `/telescope/api`.
+`window.__TELESCOPE_BASE__ + '/api'`, else `/telescope/api`. `onAccessDenied`
+runs when `authorize` refuses a call (default: follow `redirectTo`, else show
+the access-denied screen).
 
 ```ts
 import { createTelescopeClient } from '@dudousxd/nestjs-telescope-ui/client';
