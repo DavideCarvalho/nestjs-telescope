@@ -48,7 +48,7 @@ interface WatcherContext {
 }
 ```
 
-`RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt? }`.
+`RecordInput` is `{ type, content, familyHash?, tags?, durationMs?, startedAt?, traceId?, spanId? }`.
 Everything else (id, batchId, sequence, traceId, …) is enriched by the recorder.
 `unregister()` runs once on application shutdown for every watcher whose
 `register()` succeeded (a throw is logged and swallowed), so a watcher that
