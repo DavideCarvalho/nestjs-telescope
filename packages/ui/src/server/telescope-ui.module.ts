@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import {
-  CONSOLE_DECORATORS_EXAMPLE,
-  assertConsoleProtected,
+  UseConsoleAuthorize,
   dynamicController,
   normalizeTelescopePath,
 } from '@dudousxd/nestjs-telescope';
@@ -21,12 +20,18 @@ function uiControllers(
 ): Type[] {
   if (options.routes === false) return [];
   const path = normalizeTelescopePath(options.path);
-  assertConsoleProtected(options.decorators, {
-    module: 'TelescopeUiModule',
-    decoratorsExample: `TelescopeUiModule.forRoot({ ${CONSOLE_DECORATORS_EXAMPLE} })`,
-    selfMountExample: `TelescopeUiModule.forRoot({ routes: false }) + @Controller('${path}') @Can(ConsolePolicy, 'view') class ConsolePage extends TelescopeUiController {}`,
+  // `authorize` is read from the resolved options at init (it may come from an
+  // async factory); the guard runs after the host's `decorators`.
+  const access = UseConsoleAuthorize({
+    from: {
+      token: TELESCOPE_UI_OPTIONS,
+      select: (resolved) => (resolved as TelescopeUiModuleOptions).authorize,
+    },
+    pages: true,
+    packageName: '@dudousxd/nestjs-telescope-ui',
+    moduleName: 'TelescopeUiModule',
   });
-  return [dynamicController(TelescopeUiController, path, options.decorators)];
+  return [dynamicController(TelescopeUiController, path, [...(options.decorators ?? []), access])];
 }
 
 @Module({})

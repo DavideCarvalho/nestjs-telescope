@@ -68,10 +68,8 @@ serves the bundled React dashboard at `/telescope`.
 
 ### Protecting it
 
-The demo runs outside production, so the console mounts open. With
-`NODE_ENV=production` the boot fails until you protect the routes with the
-official NestJS tools (`@nestjs/authentication`, `@nestjs/authorization`):
-pass `decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`
-to both `TelescopeModule.forRoot` and `TelescopeUiModule.forRoot`, or set
-`routes: false` and mount the routes from your own controllers. See
-"Protecting the routes" in the main README.
+The demo runs outside production, so the console is open. With
+`NODE_ENV=production` every console request answers 403 until you pass
+`authorize` to both `TelescopeModule.forRoot` and `TelescopeUiModule.forRoot`,
+e.g. `authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true`.
+See "Protecting the routes" in the main README.

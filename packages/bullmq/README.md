@@ -109,12 +109,12 @@ These surface as **POST** endpoints on the core controller:
 
 Mutations are **off by default**: every mutation endpoint returns `403` until
 you set `mutations: true` on `TelescopeModule.forRoot`. Who may call them is
-decided by the same protection as the rest of the console (your `decorators`,
-or your own controllers):
+decided by the same `authorize` as the rest of the console (or your own
+controllers):
 
 ```ts
 TelescopeModule.forRoot({
-  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  authorize: { policy: ConsolePolicy, ability: 'view' },
   mutations: true, // retry / remove / promote / retry-all
   queueManagers: [new BullMqQueueManager()],
 });

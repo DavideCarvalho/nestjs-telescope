@@ -201,34 +201,18 @@ describe('TelescopeModule mcpDecorators at module build', () => {
     }
   });
 
-  describe('production rule', () => {
+  describe('production', () => {
     const previous = process.env.NODE_ENV;
     afterEach(() => {
       process.env.NODE_ENV = previous;
     });
 
-    it('fails the boot on mcpDecorators: [] instead of mounting MCP open', () => {
+    it('boots whatever decorators and mcpDecorators are: authorize decides access', () => {
       process.env.NODE_ENV = 'production';
       expect(() =>
         TelescopeModule.forRoot({ decorators: [marker('console')], mcpDecorators: [] }),
-      ).toThrow(/mcpDecorators/);
-    });
-
-    it('still requires decorators for the rest of the console when only mcpDecorators is set', () => {
-      process.env.NODE_ENV = 'production';
-      expect(() => TelescopeModule.forRoot({ mcpDecorators: [marker('mcp')] })).toThrow(
-        /refusing to mount/,
-      );
-    });
-
-    it('boots with both set, and with routes: false whatever mcpDecorators is', () => {
-      process.env.NODE_ENV = 'production';
-      expect(() =>
-        TelescopeModule.forRoot({
-          decorators: [marker('console')],
-          mcpDecorators: [marker('mcp')],
-        }),
       ).not.toThrow();
+      expect(() => TelescopeModule.forRoot({ mcpDecorators: [marker('mcp')] })).not.toThrow();
       expect(() => TelescopeModule.forRoot({ routes: false, mcpDecorators: [] })).not.toThrow();
     });
   });

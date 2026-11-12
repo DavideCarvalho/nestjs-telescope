@@ -4,10 +4,17 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
-import { Controller, type DynamicModule, type INestApplication, type Type } from '@nestjs/common';
+import {
+  Controller,
+  type DynamicModule,
+  type ExecutionContext,
+  type INestApplication,
+  Logger,
+  type Type,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TelescopeUiController } from './telescope-ui.controller.js';
 import { TelescopeUiModule } from './telescope-ui.module.js';
 
@@ -43,7 +50,7 @@ async function boot(imports: DynamicModule[], controllers: Type[] = []): Promise
     controllers,
     providers: [ConsolePolicy],
   }).compile();
-  app = moduleRef.createNestApplication();
+  app = moduleRef.createNestApplication({ logger: false });
   app.use(
     (req: { headers: Record<string, string>; user?: unknown }, _res: unknown, next: () => void) => {
       const raw = req.headers['x-user'];
@@ -137,39 +144,86 @@ describe('TelescopeUiModule under @nestjs/authorization', () => {
   });
 });
 
-describe('TelescopeUiModule production rule', () => {
+describe('TelescopeUiModule authorize', () => {
   const previous = process.env.NODE_ENV;
   afterEach(() => {
     process.env.NODE_ENV = previous;
+    vi.restoreAllMocks();
   });
 
-  it('fails the boot when the page mounts with no decorators (an empty array counts as none)', () => {
+  const isAdmin = (ctx: ExecutionContext) =>
+    (ctx.switchToHttp().getRequest() as { user?: User }).user?.admin === true;
+
+  it('omitted: boots in production, denies the page and assets, and warns once', async () => {
     process.env.NODE_ENV = 'production';
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     for (const register of [
       () => TelescopeUiModule.forRoot({ assetsDir: dir }),
       () => TelescopeUiModule.forRoot({ assetsDir: dir, decorators: [] }),
       () => TelescopeUiModule.forRootAsync({ useFactory: () => ({ assetsDir: dir }) }),
     ]) {
-      expect(register).toThrow(
-        /TelescopeUiModule: refusing to mount undecorated routes with NODE_ENV=production/,
-      );
+      expect(register).not.toThrow();
     }
-    expect(() => TelescopeUiModule.forRoot({ assetsDir: dir })).toThrow(
-      /TelescopeUiModule\.forRoot\(\{ routes: false \}\).*extends TelescopeUiController/,
+    const target = await boot([TelescopeUiModule.forRoot({ assetsDir: dir })]);
+    const page = await get(target, '/telescope').set('Accept', 'text/html').expect(403);
+    expect(page.text).toContain('Access denied');
+    await get(target, '/telescope/assets/app.js').expect(403, { error: 'forbidden' });
+    const warnings = warn.mock.calls.filter(([message]) =>
+      String(message).includes('console has no `authorize` configured'),
     );
+    expect(warnings.map(([message]) => message)).toEqual([
+      '[@dudousxd/nestjs-telescope-ui] console has no `authorize` configured: it is open outside production and denies every request in production. Set `authorize` in TelescopeUiModule.forRoot().',
+    ]);
   });
 
-  it('boots with decorators, and with routes: false', async () => {
-    process.env.NODE_ENV = 'production';
-    const decorated = await boot([
-      AuthorizationModule.forRoot(),
-      TelescopeUiModule.forRoot({ assetsDir: dir, decorators: [Can(ConsolePolicy, 'view')] }),
-    ]);
-    await get(decorated, '/telescope').expect(401);
-    await get(decorated, '/telescope', { id: 'a', admin: true }).expect(200);
-    await decorated.close();
-    app = undefined;
+  it('omitted: open outside production', async () => {
+    process.env.NODE_ENV = 'development';
+    const target = await boot([TelescopeUiModule.forRoot({ assetsDir: dir })]);
+    await get(target, '/telescope').expect(200);
+  });
 
+  it('allows, renders the access-denied page, and redirects page navigations', async () => {
+    process.env.NODE_ENV = 'production';
+    const target = await boot([
+      TelescopeUiModule.forRoot({
+        assetsDir: dir,
+        authorize: (ctx) =>
+          isAdmin(ctx)
+            ? true
+            : (ctx.switchToHttp().getRequest() as { user?: User }).user
+              ? false
+              : { redirectTo: '/login' },
+      }),
+    ]);
+    await get(target, '/telescope', { id: 'a', admin: true }).expect(200);
+    await get(target, '/telescope', { id: 'u', admin: false })
+      .set('Accept', 'text/html')
+      .expect(403);
+    await get(target, '/telescope')
+      .set('Accept', 'text/html')
+      .expect(302)
+      .expect('Location', '/login');
+    await get(target, '/telescope/assets/app.js').expect(401, {
+      error: 'unauthenticated',
+      redirectTo: '/login',
+    });
+  });
+
+  it('forRootAsync takes authorize from the factory; decorators run first', async () => {
+    process.env.NODE_ENV = 'production';
+    const target = await boot([
+      AuthorizationModule.forRoot(),
+      TelescopeUiModule.forRootAsync({
+        decorators: [Can(ConsolePolicy, 'view')],
+        useFactory: () => ({ assetsDir: dir, authorize: () => true }),
+      }),
+    ]);
+    await get(target, '/telescope').expect(401);
+    await get(target, '/telescope', { id: 'a', admin: true }).expect(200);
+  });
+
+  it('routes: false boots in production and mounts nothing', async () => {
+    process.env.NODE_ENV = 'production';
     const selfMounted = await boot([TelescopeUiModule.forRoot({ assetsDir: dir, routes: false })]);
     await get(selfMounted, '/telescope').expect(404);
   });

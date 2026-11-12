@@ -3,10 +3,9 @@ name: telescope-ui-dashboard
 description: >-
   Serve and embed the nestjs-telescope dashboard with @dudousxd/nestjs-telescope-ui.
   Mount the bundled React SPA via TelescopeUiModule.forRoot({ path?, assetsDir?,
-  decorators?, routes? }) / forRootAsync (the path is static in the async form,
-  as are decorators and routes; the path must match TelescopeModule); with
-  NODE_ENV=production mounting the page with no decorators fails the boot
-  (routes:false always boots).
+  authorize?, decorators?, routes? }) / forRootAsync (the path is static in the
+  async form, as are decorators and routes; the path must match
+  TelescopeModule); without authorize the page answers 403 in production.
   call the headless API from any frontend with createTelescopeClient({ baseUrl?,
   fetch? }) from the /client subpath; build a custom console with the React
   components, hooks (TelescopeProvider, useTelescopeClient, useEntries, usePulse,
@@ -16,7 +15,7 @@ license: MIT
 metadata:
   type: core
   library: "@dudousxd/nestjs-telescope-ui"
-  library_version: "1.12.0"
+  library_version: "3.0.0"
   framework: nestjs
 ---
 
@@ -33,27 +32,28 @@ Import the UI module alongside the core module. The `path` must match
 `TelescopeModule` (default `telescope`):
 
 ```ts
-import { Module, UseGuards } from '@nestjs/common';
-import { AuthenticationGuard } from '@nestjs/authentication';
-import { Can } from '@nestjs/authorization';
+import { type ExecutionContext, Module } from '@nestjs/common';
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 
-const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+const authorize = (ctx: ExecutionContext) =>
+  ctx.switchToHttp().getRequest().user?.isAdmin === true;
 
 @Module({
   imports: [
-    TelescopeModule.forRoot({ enabled: true, decorators: protect }),
-    TelescopeUiModule.forRoot({ decorators: protect }), // dashboard at /telescope
+    TelescopeModule.forRoot({ enabled: true, authorize }),
+    TelescopeUiModule.forRoot({ authorize }), // dashboard at /telescope
   ],
 })
 export class AppModule {}
 ```
 
-With `NODE_ENV=production`, mounting the page with no `decorators` (an empty
-array counts as none) fails the boot; `routes: false` always boots (serve the
-page from your own subclass of the exported `TelescopeUiController`). Outside
-production an undecorated page mounts open.
+Without `authorize` the page is open outside production; with
+`NODE_ENV=production` it answers 403 and the boot logs a warning. A denied
+navigation gets an "Access denied" page, or a 302 for `{ redirectTo }`; inside
+the SPA a 401 with `redirectTo` is followed and a 403 shows an access-denied
+screen. `routes: false` mounts nothing (serve the page from your own subclass
+of `TelescopeUiController` with `UseConsoleAuthorize({ authorize, pages: true })`).
 
 Source: `packages/ui/src/server/telescope-ui.module.ts`,
 `packages/ui/src/server/telescope-ui.options.ts` (`TelescopeUiModuleOptions`).
@@ -78,8 +78,8 @@ TelescopeUiModule.forRootAsync({
 });
 ```
 
-In production both modules still need `decorators` (or `routes: false`); the
-Setup section shows the protection.
+In production both modules still need `authorize` (or `routes: false`); the
+Setup section shows it.
 
 Source: `packages/ui/src/server/telescope-ui.module.ts`,
 `packages/ui/src/server/telescope-ui.options.ts`.

@@ -16,3 +16,18 @@ export {
   type TelescopeAiMetricsExporterOptions,
   type OtelMetricsSdk,
 } from './ai-metrics-exporter.js';
+// The console access contract, re-exported from core so `/metrics`'s
+// `authorize` can be written from this entry point.
+export {
+  ConsoleAuthorizeGuard,
+  ConsoleDeniedFilter,
+  UseConsoleAuthorize,
+  authorizeByToken,
+  resolveConsoleAuthorize,
+  type ConsoleAuthorize,
+  type ConsoleAuthorizeResult,
+  type ConsoleAuthorizer,
+  type ConsoleAuthorizerClass,
+  type ConsoleDecision,
+  type ConsolePolicyCheck,
+} from '@dudousxd/nestjs-telescope';

@@ -24,30 +24,31 @@ request and everything it caused.
 
 ### Protecting the page
 
-The page is protected with NestJS's own tools, like the API. Two ways:
+`authorize` decides who may open the page, the same option (and usually the
+same value) as on `TelescopeModule`:
 
 ```ts
-// 1. decorators on the mounted controller (forRootAsync: a static top-level option)
 TelescopeUiModule.forRoot({
-  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true,
 });
 
-// 2. mount it yourself: routes: false + your own subclass (it carries no guard of its own)
+// or mount it yourself: routes: false + your own subclass
 @Controller('ops/telescope')
-@UseGuards(AuthenticationGuard)
-@Can(ConsolePolicy, 'view')
+@UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' }, pages: true })
 class ConsolePage extends TelescopeUiController {}
 // imports: [TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false })]
 ```
 
-A full-page navigation carries your cookies, not an `Authorization` header, so
-the authentication strategy here must read a cookie session. Set `path` to the
-mount: the page rebases its asset URLs on it. Give `TelescopeModule` the same
-protection for the API.
+A denied navigation gets an "Access denied" page (403), or a 302 when the check
+returns `{ redirectTo: '/login' }`. A full-page navigation carries your cookies,
+not an `Authorization` header, so check a session here. In the running
+dashboard, a 401 with `redirectTo` from the API is followed and a 403 shows an
+access-denied screen. Set `path` to the mount: the page rebases its asset URLs
+on it.
 
-With `NODE_ENV === 'production'`, mounting the page with no `decorators` (an
-empty array counts as none) fails the boot; `routes: false` always boots.
-Outside production an undecorated page mounts open. See
+Without `authorize` the page is open outside production; with
+`NODE_ENV === 'production'` it answers 403 and one warning is logged at boot.
+`decorators` (e.g. `[UseGuards(AuthenticationGuard)]`) still run first. See
 [Protecting the routes](../../README.md#protecting-the-routes).
 
 To link to the console from your app, `telescopeConsoleUrl(basePath)` (from

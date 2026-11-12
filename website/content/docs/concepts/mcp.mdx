@@ -25,7 +25,7 @@ TelescopeModule.forRoot({
 
 Once enabled it answers at `POST <path>/api/mcp` — for the default mount path that's `POST /telescope/api/mcp`.
 
-The route is mounted either way, and `mcp` is checked in the handler. Your decorators run first, so while MCP is off a caller they refuse still gets their 401 or 403; only a caller they let through sees the 404.
+The route is mounted either way, and `mcp` is checked in the handler. Access is checked first, so while MCP is off a refused caller still gets 401 or 403; only a caller let through sees the 404.
 
 <Callout type="info">
   The transport is stateless: `POST` carries every JSON-RPC call, `GET` returns `405` (there is no server→client notification stream to open), and `DELETE` is a `200` no-op (there is no session to terminate).
@@ -33,16 +33,21 @@ The route is mounted either way, and `mcp` is checked in the handler. Your decor
 
 ## Protecting it
 
-The MCP controller is a console route like the API: it receives the module's `decorators` and falls under the [production rule](/docs/dashboard/auth#the-production-rule), or you mount it yourself by extending `TelescopeMcpController` with `routes: false`.
+The MCP controller is a console route like the API: it follows the module's `authorize` (open outside production and 403 in production when omitted, see [Protecting the routes](/docs/dashboard/auth)), or you mount it yourself by extending `TelescopeMcpController` with `routes: false`.
+
+The dashboard is a browser sending your app's session cookie; an agent client sends `Authorization: Bearer <key>`. `mcpAuthorize` gives the MCP route its own check **in place of** `authorize`, and the API and live stream keep `authorize`. The simplest is one shared token:
 
 ```ts
+import { authorizeByToken } from '@dudousxd/nestjs-telescope';
+
 TelescopeModule.forRoot({
   mcp: true,
-  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  authorize: { policy: ConsolePolicy, ability: 'view' },
+  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
 });
 ```
 
-That works when one credential serves both people and agents. Usually it doesn't: the dashboard is a browser sending your app's session cookie, and an agent client sends `Authorization: Bearer <key>`. For that, `mcpDecorators` puts its own decorators on the MCP route **in place of** `decorators`, and the API and live stream keep `decorators`.
+`authorizeByToken` compares the Bearer token in constant time, answers 401 otherwise, and throws at boot when the token is empty. For a key per developer, revocable on its own, use the recipe below.
 
 ### Recipe: an API key for the agent
 
@@ -73,22 +78,22 @@ export class TelescopeAgentKey extends ApiKeyProvider<User> {
 
 List it in a module's `providers` like any other. Register the prefix with your secret scanner (GitHub push protection, for one) so a leaked key is caught.
 
-**2. Keep each credential to its routes.** `Authenticate({ providers })` restricts which providers may sign a route in, so the key opens MCP and nothing else, and the session cookie keeps the dashboard:
+**2. Keep each credential to its routes.** `Authenticate({ providers })` restricts which providers may sign a route in, so the key opens MCP and nothing else, and the session cookie keeps the dashboard. `mcpDecorators` puts its decorators on the MCP route in place of `decorators`; `authorize` then decides for both:
 
 ```ts
 import { Authenticate, SessionCookieProvider } from '@nestjs/authentication';
-import { Can } from '@nestjs/authorization';
 
 TelescopeModule.forRoot({
   mcp: true,
-  decorators: [Authenticate({ providers: [SessionCookieProvider] }), Can(ConsolePolicy, 'view')],
-  mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')],
+  decorators: [Authenticate({ providers: [SessionCookieProvider] })],
+  mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] })],
+  authorize: { policy: ConsolePolicy, ability: 'view' },
 });
 ```
 
 `AuthenticationModule.forRoot()` registers `AuthenticationGuard` globally (its `globalGuard` default), so `Authenticate(...)` is enough here. With `globalGuard: false`, add `UseGuards(AuthenticationGuard)` to both lists. With `forRootAsync`, `mcpDecorators` is a static top-level option, like `decorators`, while `mcp: true` stays in the factory's options. Returned from the factory, `mcpDecorators` has no effect (MCP keeps `decorators`), and the boot logs a warning.
 
-The key signs in **the user it belongs to**, and `Can(ConsolePolicy, 'view')` still decides: a key for a user the policy denies gets 403. Give the agent its own user, or bind keys to the developers who use them. For a rule per key, the policy can read the key id from the session (`ApiKeySession.keyId`).
+The key signs in **the user it belongs to**, and `authorize` (here `ConsolePolicy.view`) still decides: a key for a user the policy denies gets 403. Give the agent its own user, or bind keys to the developers who use them. For a rule per key, the policy can read the key id from the session (`ApiKeySession.keyId`).
 
 **3. Issue a key.** `generate()` returns the whole key once; store only its `id` and `hash`:
 
@@ -109,9 +114,6 @@ Two things in the host app decide what an agent sees when its key is refused:
 - **A global 401 filter.** Apps that render a sign-in page often have an exception filter turning every `UnauthorizedException` into a 302 to the login page. An agent then follows a redirect to HTML instead of reading a 401. Throw your own `HttpException` subclass from the MCP guard (status 401) so the filter doesn't match it, or exclude `<path>/api/mcp` from the filter.
 - **The `WWW-Authenticate` header.** `ApiKeyProvider` sends `WWW-Authenticate: Bearer realm="…"` with its 401, so a client knows a key is expected. A hand-written guard usually sends none, and some MCP clients answer a bare 401 by starting OAuth discovery against your app. Set the header in your guard's response (`Bearer realm="telescope"`) to keep them on the key.
 
-<Callout type="warn">
-  `mcpDecorators: []` fails the boot with `NODE_ENV=production`, like an empty `decorators`: it would otherwise mount the MCP route open. Leave `mcpDecorators` out to give MCP the same `decorators` as the rest of the console.
-</Callout>
 
 ## Connect an agent
 

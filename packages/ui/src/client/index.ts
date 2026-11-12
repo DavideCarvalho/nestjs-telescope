@@ -2,11 +2,16 @@
 // this file — see the package's `exports` map.
 export { telescopeConsoleUrl } from './console-url.js';
 
-export { createTelescopeClient } from './telescope-client.js';
+export {
+  TELESCOPE_ACCESS_DENIED_EVENT,
+  createTelescopeClient,
+  readAccessDenial,
+} from './telescope-client.js';
 export type {
   BulkActionName,
   JobActionName,
   TagPageOptions,
+  TelescopeAccessDenial,
   TelescopeClient,
   TelescopeClientOptions,
 } from './telescope-client.js';

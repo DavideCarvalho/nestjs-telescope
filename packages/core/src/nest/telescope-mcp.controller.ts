@@ -114,11 +114,11 @@ interface ToolArgs {
  * every query. Hand-rolled JSON-RPC (no SDK dependency), backed by the same
  * storage / pulse / diagnosis APIs as the dashboard.
  *
- * 404 unless `mcp` is enabled. It carries no guard of its own: protect it like
- * every other console route, with the module's `decorators`, with
- * `mcpDecorators` (which replace them on this route, e.g. an `ApiKeyProvider`
- * from `@nestjs/authentication`, since agent clients send a Bearer header), or
- * by extending this class with `routes: false`.
+ * 404 unless `mcp` is enabled. It carries no guard of its own: the module
+ * protects it like every other console route, with `authorize`, or with
+ * `mcpAuthorize` in its place (agent clients send a Bearer header:
+ * `authorizeByToken({ token })`). Mounted yourself (`routes: false`), put
+ * `UseConsoleAuthorize(...)` on your subclass.
  */
 @Controller()
 export class TelescopeMcpController {

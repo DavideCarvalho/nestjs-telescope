@@ -49,6 +49,52 @@ export interface TelescopeClientOptions {
   baseUrl?: string;
   /** Fetch implementation (injectable for tests). Default global fetch. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Called when the console's `authorize` refuses a call (a 401/403 whose body
+   * is `{ error: 'unauthenticated' | 'forbidden' }`). Default: follow
+   * `redirectTo` with a full navigation, otherwise dispatch
+   * {@link TELESCOPE_ACCESS_DENIED_EVENT} on `window` (the dashboard shows its
+   * access-denied screen).
+   */
+  onAccessDenied?: (denial: TelescopeAccessDenial) => void;
+}
+
+/** A refusal from the console's `authorize`. */
+export interface TelescopeAccessDenial {
+  status: 401 | 403;
+  reason: 'unauthenticated' | 'forbidden';
+  redirectTo?: string;
+}
+
+/** The `window` event the default {@link TelescopeClientOptions.onAccessDenied} dispatches. */
+export const TELESCOPE_ACCESS_DENIED_EVENT = 'telescope:access-denied';
+
+/** Reads the guard's denial body (`{ error, redirectTo? }`) from a 401/403, if it is one. */
+export async function readAccessDenial(response: Response): Promise<TelescopeAccessDenial | null> {
+  if (response.status !== 401 && response.status !== 403) return null;
+  // Read a copy so the caller can still read the body.
+  const copy = typeof response.clone === 'function' ? response.clone() : response;
+  const body: unknown = await Promise.resolve()
+    .then(() => copy.json())
+    .catch(() => null);
+  if (body === null || typeof body !== 'object' || !('error' in body)) return null;
+  const { error } = body as { error: unknown; redirectTo?: unknown };
+  if (error !== 'unauthenticated' && error !== 'forbidden') return null;
+  const redirectTo = (body as { redirectTo?: unknown }).redirectTo;
+  return {
+    status: response.status,
+    reason: error,
+    ...(typeof redirectTo === 'string' ? { redirectTo } : {}),
+  };
+}
+
+function defaultOnAccessDenied(denial: TelescopeAccessDenial): void {
+  if (typeof window === 'undefined') return;
+  if (denial.redirectTo !== undefined) {
+    window.location.assign(denial.redirectTo);
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(TELESCOPE_ACCESS_DENIED_EVENT, { detail: denial }));
 }
 
 /** Derives the API base from the server-injected mount base, falling back to the default. */
@@ -170,7 +216,16 @@ export interface TelescopeClient {
 
 export function createTelescopeClient(options: TelescopeClientOptions = {}): TelescopeClient {
   const baseUrl = (options.baseUrl ?? defaultBaseUrl()).replace(/\/$/, '');
-  const doFetch = options.fetch ?? globalThis.fetch;
+  const rawFetch = options.fetch ?? globalThis.fetch;
+  const onAccessDenied = options.onAccessDenied ?? defaultOnAccessDenied;
+  // Every call goes through here, so a refusal from the console's `authorize`
+  // reaches `onAccessDenied` whichever endpoint hit it.
+  const doFetch: typeof globalThis.fetch = async (input, init) => {
+    const response = await rawFetch(input, init);
+    const denial = await readAccessDenial(response);
+    if (denial) onAccessDenied(denial);
+    return response;
+  };
 
   async function get<T>(
     path: string,

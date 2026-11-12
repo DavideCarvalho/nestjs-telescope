@@ -25,6 +25,8 @@ export * from './storage/safe-json.js';
 export * from './storage/sqlite-storage-provider.js';
 export * from './nest/watcher.js';
 export * from './nest/dynamic-controller.js';
+export * from './nest/console-authorize.js';
+export * from './nest/console-authorize.guard.js';
 export * from './nest/telescope.options.js';
 export * from './nest/telescope.service.js';
 export * from './nest/telescope.controller.js';

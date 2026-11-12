@@ -201,11 +201,11 @@ When you register a [queue manager](/docs/packages/queue-managers), the dashboar
 
 ### Mutations (`mutations: true`)
 
-The console can also *act* on jobs — retry, remove, promote, retry-all (BullMQ), and redrive (SQS DLQ). These are **off by default**: every mutation endpoint returns `403` until you set `mutations: true`. Who may call them is decided by the console's protection (your `decorators`, or your own controllers). The action buttons appear only when enabled; queues advertise an `actions` capability hint so, for example, the Redrive button shows only for SQS queues that actually have a DLQ.
+The console can also *act* on jobs — retry, remove, promote, retry-all (BullMQ), and redrive (SQS DLQ). These are **off by default**: every mutation endpoint returns `403` until you set `mutations: true`. Who may call them is decided by the console's `authorize` (or your own controllers). The action buttons appear only when enabled; queues advertise an `actions` capability hint so, for example, the Redrive button shows only for SQS queues that actually have a DLQ.
 
 ```ts
 TelescopeModule.forRoot({
-  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  authorize: { policy: ConsolePolicy, ability: 'view' },
   mutations: true,
   queueManagers: [/* BullMqQueueManager / SqsQueueManager */],
 });
@@ -249,4 +249,4 @@ See the [`-ui` package](/docs/packages/ui) for the full exports map and peer dep
 
 ## Protecting the dashboard
 
-The page and the API are protected with NestJS's own tools, `@nestjs/authentication` and `@nestjs/authorization`: pass the same `decorators` to `TelescopeModule` and `TelescopeUiModule`, or set `routes: false` and mount the routes from your own controllers. With `NODE_ENV=production` an undecorated console fails the boot. See [Protecting the routes](/docs/dashboard/auth).
+Pass the same `authorize` to `TelescopeModule` and `TelescopeUiModule`, or set `routes: false` and mount the routes from your own controllers. Without `authorize` the console is open outside production and answers 403 in production. A denied viewer sees an access-denied screen, and a 401 with `redirectTo` sends the browser to your sign-in page. See [Protecting the routes](/docs/dashboard/auth).

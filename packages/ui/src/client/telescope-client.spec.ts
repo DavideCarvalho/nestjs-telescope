@@ -288,3 +288,68 @@ describe('createTelescopeClient', () => {
     expect(result).toEqual({ id: '7' });
   });
 });
+
+describe('createTelescopeClient access denials', () => {
+  function deniedResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  it('reports a 403 { error: forbidden } to onAccessDenied', async () => {
+    const onAccessDenied = vi.fn();
+    const client = createTelescopeClient({
+      fetch: vi.fn(async () => deniedResponse(403, { error: 'forbidden' })),
+      onAccessDenied,
+    });
+    await expect(client.meta()).rejects.toThrow(/403/);
+    expect(onAccessDenied).toHaveBeenCalledWith({ status: 403, reason: 'forbidden' });
+  });
+
+  it('passes redirectTo from a 401', async () => {
+    const onAccessDenied = vi.fn();
+    const client = createTelescopeClient({
+      fetch: vi.fn(async () =>
+        deniedResponse(401, { error: 'unauthenticated', redirectTo: '/login' }),
+      ),
+      onAccessDenied,
+    });
+    await expect(client.meta()).rejects.toThrow(/401/);
+    expect(onAccessDenied).toHaveBeenCalledWith({
+      status: 401,
+      reason: 'unauthenticated',
+      redirectTo: '/login',
+    });
+  });
+
+  it('ignores other 403s (e.g. mutations disabled)', async () => {
+    const onAccessDenied = vi.fn();
+    const client = createTelescopeClient({
+      fetch: vi.fn(async () => deniedResponse(403, { message: 'Forbidden', statusCode: 403 })),
+      onAccessDenied,
+    });
+    await expect(client.meta()).rejects.toThrow(/403/);
+    expect(onAccessDenied).not.toHaveBeenCalled();
+  });
+
+  it('by default follows redirectTo with a full navigation', async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...original, assign },
+      configurable: true,
+    });
+    try {
+      const client = createTelescopeClient({
+        fetch: vi.fn(async () =>
+          deniedResponse(401, { error: 'unauthenticated', redirectTo: '/login' }),
+        ),
+      });
+      await expect(client.meta()).rejects.toThrow();
+      expect(assign).toHaveBeenCalledWith('/login');
+    } finally {
+      Object.defineProperty(window, 'location', { value: original, configurable: true });
+    }
+  });
+});

@@ -52,10 +52,10 @@ import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
   imports: [
     TelescopeModule.forRoot({
       prune: { after: '24h' },
-      // In production, protect the routes or the boot fails (see the callout):
-      // decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+      // Required in production, where the console otherwise answers 403 (see the callout):
+      // authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true,
     }),
-    TelescopeUiModule.forRoot(),
+    TelescopeUiModule.forRoot(/* { authorize } too */),
   ],
 })
 export class AppModule {}
@@ -63,8 +63,8 @@ export class AppModule {}
 
 **Done.** Boot the app and open [http://localhost:3000/telescope](http://localhost:3000/telescope). The dashboard polls `/telescope/api/*` and shows captured entries — type tabs plus live polling — and, on an entry, the correlated batch: the request and everything it caused.
 
-<Callout type="warn" title="Production rule">
-  The console is protected with NestJS's own tools, `@nestjs/authentication` and `@nestjs/authorization`. With `NODE_ENV=production`, mounting it with no `decorators` **fails the boot**: pass `decorators` to `TelescopeModule` and `TelescopeUiModule`, or set `routes: false` and mount the routes from your own controllers. Outside production it mounts open. See [Protecting the routes](/docs/dashboard/auth).
+<Callout type="warn" title="Access in production">
+  Who may open the console is decided by `authorize`, on `TelescopeModule` and `TelescopeUiModule` (for example `authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true`). Without it the console is open outside production and answers **403 in production**, with a warning at boot. See [Protecting the routes](/docs/dashboard/auth).
 </Callout>
 
 ---
@@ -158,7 +158,7 @@ Browse the [Packages](/docs/packages) section for every watcher, storage, and qu
 - [Storage](/docs/concepts/storage) — the `StorageProvider` SPI, self-healing schema, and the adapter table
 - [Performance](/docs/concepts/performance) — why capture doesn't slow your app, and the `/health` card that proves it
 - [Dashboard tour](/docs/dashboard) — the full UI: overview, entries, traces, queues console, schedules, and [alerts](/docs/dashboard#alerts)
-- [Protecting the routes](/docs/dashboard/auth) — put `@nestjs/authentication` and `@nestjs/authorization` in front of the console
+- [Protecting the routes](/docs/dashboard/auth) — decide who may open the console with `authorize`
 - [AI exception diagnosis](/docs/recipes/ai-exception-diagnosis) — a Diagnose-with-AI button and alert enrichment
 - [MCP server](/docs/concepts/mcp) — connect Claude Code / Cursor and debug straight from captured data
 - [Configuration reference](/docs/reference/configuration) — every `forRoot()` option in one table

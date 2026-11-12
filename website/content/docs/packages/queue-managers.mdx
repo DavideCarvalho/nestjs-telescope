@@ -6,14 +6,14 @@ icon: ListChecks
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-A **queue manager** is the live read/write side of the dashboard — it browses your queues' *current* state directly through the driver's API (counts, jobs, payloads) and, with `mutations: true`, acts on jobs. Managers are passed via the `queueManagers` option (not `watchers`), and every endpoint they add is protected like the rest of the console (your `decorators`, or your own controllers).
+A **queue manager** is the live read/write side of the dashboard — it browses your queues' *current* state directly through the driver's API (counts, jobs, payloads) and, with `mutations: true`, acts on jobs. Managers are passed via the `queueManagers` option (not `watchers`), and every endpoint they add is protected like the rest of the console (`authorize`, or your own controllers).
 
 <Callout type="warn" title="Mutations are off by default">
-  Every queue mutation endpoint returns `403` until you set `mutations: true`. Who may call them is decided by the console's protection. For a rule on mutations stricter than on reads, mount the routes yourself and override those methods with an extra `@Can(...)` (see [Mutations](/docs/dashboard/auth#mutations)).
+  Every queue mutation endpoint returns `403` until you set `mutations: true`. Who may call them is decided by the console's `authorize`. For a rule on mutations stricter than on reads, mount the routes yourself and override those methods with an extra `@Can(...)` (see [Mutations](/docs/dashboard/auth#mutations)).
 
   ```ts
   TelescopeModule.forRoot({
-    decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+    authorize: { policy: ConsolePolicy, ability: 'view' },
     mutations: true,
     queueManagers: [/* ... */],
   });

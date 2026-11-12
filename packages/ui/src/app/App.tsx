@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { TelescopeProvider } from '../react/index.js';
+import { AccessGate } from './access-denied.js';
 import { DashboardLayout } from './dashboard-layout.js';
 import { OverviewPage } from './pages/OverviewPage.js';
 import { QueueManagerPage } from './pages/QueueManagerPage.js';
@@ -54,7 +55,9 @@ export function App(): JSX.Element {
     <ThemeProvider>
       <TelescopeProvider>
         <QueryClientProvider client={queryClient}>
-          <Dashboard />
+          <AccessGate>
+            <Dashboard />
+          </AccessGate>
         </QueryClientProvider>
       </TelescopeProvider>
     </ThemeProvider>

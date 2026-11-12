@@ -65,18 +65,17 @@ The module (`.`) needs `@nestjs/common` / `@nestjs/core` (>= 11, including 12). 
 
 ## Protecting the page
 
-The page is protected with NestJS's own tools, like the API: pass `decorators` (the same list as on `TelescopeModule`), or set `routes: false` and extend the exported `TelescopeUiController`:
+`authorize` decides who may open the page, the same option (and usually the same value) as on `TelescopeModule`. Or set `routes: false` and extend the exported `TelescopeUiController`:
 
 ```ts
 TelescopeUiModule.forRoot({
-  decorators: [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')],
+  authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true,
 });
 
 // or: routes: false + path: 'ops/telescope', and
 @Controller('ops/telescope')
-@UseGuards(AuthenticationGuard)
-@Can(ConsolePolicy, 'view')
+@UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' }, pages: true })
 class ConsolePage extends TelescopeUiController {}
 ```
 
-A full-page navigation carries your app's cookies, not an `Authorization` header, so the authentication strategy here must read a cookie session. With `NODE_ENV=production`, mounting the page with no `decorators` fails the boot. See [Protecting the routes](/docs/dashboard/auth).
+A denied navigation gets an "Access denied" page (403), or a 302 when the check returns `{ redirectTo: '/login' }`. A full-page navigation carries your app's cookies, not an `Authorization` header, so check a session here. Inside the dashboard, a 401 with `redirectTo` from the API is followed and a 403 shows an access-denied screen. Without `authorize` the page is open outside production and answers 403 in production. See [Protecting the routes](/docs/dashboard/auth).

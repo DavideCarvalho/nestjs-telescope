@@ -2,16 +2,16 @@
 name: telescope-setup
 description: >-
   Mount nestjs-telescope in a NestJS app with TelescopeModule.forRoot / forRootAsync.
-  Covers the enabled flag, the production protection rule (decorators / routes:false), the
+  Covers the enabled flag, access with `authorize` (403 in production when omitted), the
   shared path option (must match TelescopeUiModule), prune retention, swapping the
   default in-memory SQLite StorageProvider, and the setGlobalPrefix /
   registerRequestMiddleware + telescopeRequestCapture caveat. Use for "set up
-  Telescope", "boot fails in production", "forRootAsync config".
+  Telescope", "console answers 403 in production", "forRootAsync config".
 license: MIT
 metadata:
   type: core
   library: "@dudousxd/nestjs-telescope"
-  library_version: "1.12.0"
+  library_version: "3.0.0"
   framework: nestjs
 ---
 
@@ -37,15 +37,16 @@ import { Module } from '@nestjs/common';
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 
-const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
+const authorize = (ctx: ExecutionContext) =>
+  ctx.switchToHttp().getRequest().user?.isAdmin === true;
 
 @Module({
   imports: [
     TelescopeModule.forRoot({
       prune: { after: '24h' },
-      decorators: protect, // required in production (see Pattern 2)
+      authorize, // without it, production answers 403 (see Pattern 2)
     }),
-    TelescopeUiModule.forRoot({ decorators: protect }),
+    TelescopeUiModule.forRoot({ authorize }),
   ],
 })
 export class AppModule {}
@@ -76,32 +77,31 @@ TelescopeModule.forRootAsync({
   imports: [ConfigModule],
   inject: [ConfigService],
   path: 'observability', // static — NOT returned by the factory
-  decorators: protect, // static too
   useFactory: (config: ConfigService) => ({
     enabled: config.get('TELESCOPE_ENABLED') === 'true',
     prune: { after: '7d' },
+    authorize: authorizeByToken({ token: config.get('TELESCOPE_TOKEN') }), // may come from the factory
   }),
 });
 ```
 
 Source: `packages/core/src/nest/telescope.module.ts` (`forRootAsync`).
 
-### Pattern 2 — protecting it (required in production)
+### Pattern 2 — protecting it (`authorize`)
 
-Routes are protected only with `@nestjs/authentication` + `@nestjs/authorization`:
-`decorators` on the mounted controllers, or `routes: false` plus your own
-subclasses of the exported controllers. With `NODE_ENV === 'production'`, a
-module that mounts its routes with no `decorators` (an empty array counts as
-none) fails the boot with an error naming both ways. Outside production an
-undecorated console mounts open.
+`authorize` decides who may use the console: a function, an `@Injectable()`
+`ConsoleAuthorizer` class, a lazy import, `{ policy, ability }`
+(`@nestjs/authorization`) or a gate name (`@dudousxd/nestjs-authz`). Without
+it the console is open outside production; with `NODE_ENV === 'production'`
+every request answers 403 and one warning is logged at boot. `decorators`
+(authentication etc.) run first but don't count on their own.
 
 ```ts
-const protect = [UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')];
-TelescopeModule.forRoot({ decorators: protect });
+TelescopeModule.forRoot({ authorize: { policy: ConsolePolicy, ability: 'view' } });
 ```
 
 Details (self-mounting, MCP, mutations): the `telescope-access-mcp` skill.
-Source: `packages/core/src/nest/dynamic-controller.ts` (`assertConsoleProtected`).
+Source: `packages/core/src/nest/console-authorize.guard.ts`.
 
 ### Pattern 3 — retention with `prune`
 
@@ -124,18 +124,18 @@ Source: `packages/core/src/config/options.ts` (`PruneOptions`).
 ### Mistake 1 — deploying to production with the defaults
 
 ```ts
-// Wrong — with NODE_ENV=production the boot fails: the console is undecorated.
+// Wrong — with NODE_ENV=production every console request answers 403.
 TelescopeModule.forRoot({});
 ```
 
 ```ts
-// Correct — protect it (or use routes: false and mount it yourself).
-TelescopeModule.forRoot({ decorators: protect });
+// Correct — say who may use it (or use routes: false and mount it yourself).
+TelescopeModule.forRoot({ authorize });
 ```
 
-Mechanism: `assertConsoleProtected` throws at module build in production when
-the module mounts its routes with no `decorators`. Capture is gated separately
-by `enabled`. Source: `packages/core/src/nest/dynamic-controller.ts`.
+Mechanism: the console's guard answers 403 in production when `authorize` is
+omitted, and the boot logs a warning. Capture is gated separately by `enabled`.
+Source: `packages/core/src/nest/console-authorize.guard.ts`.
 
 ### Mistake 2 — passing `path` through the async factory
 

@@ -40,23 +40,26 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 
 | Option | Default | Description |
 |---|---|---|
-| `decorators` | none | Class decorators applied to the console controllers the module mounts (API, live stream, MCP), e.g. `[UseGuards(AuthenticationGuard), Can(ConsolePolicy, 'view')]`. **Required in production** unless `routes: false`: with `NODE_ENV=production` and no `decorators` (an empty array counts as none) the boot fails. Each mounted controller is also marked `Can.Anyone()`-open; a `Can()` passed here is still enforced. Static top-level option on `forRootAsync`. Pass the same list to `TelescopeUiModule.forRoot`. See [Protecting the routes](/docs/dashboard/auth). |
-| `mcpDecorators` | `decorators` | Class decorators for the MCP route only, in place of `decorators` (the API and live stream keep `decorators`). For an agent signing in with an API key: `[Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')]`. `[]` fails the production boot. Static top-level option on `forRootAsync`. See the [API-key recipe](/docs/concepts/mcp#recipe-an-api-key-for-the-agent). |
-| `routes` | `true` | `false` mounts no controller; every provider keeps running and the module exports what the controllers need, so your own subclasses of `TelescopeController` / `StreamController` / … serve the routes with your decorators. Always boots. Keep `path` set to the mount. Static top-level option on `forRootAsync`. |
+| `authorize` | none | Who may use the console routes (API, live stream, MCP): a function `(ctx) => result`, an `@Injectable()` class implementing `ConsoleAuthorizer`, a lazy `() => import(...)`, `{ policy, ability }` (`@nestjs/authorization`), a gate name (`@dudousxd/nestjs-authz`) or `authorizeByToken({ token })`. Omitted: open outside production; with `NODE_ENV=production` every request answers 403 and one warning is logged at boot. Can come from the `forRootAsync` factory. Pass the same value to `TelescopeUiModule.forRoot`. See [Protecting the routes](/docs/dashboard/auth). |
+| `mcpAuthorize` | `authorize` | `authorize` for the MCP route only, in place of `authorize`. For coding agents: `authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN })`. |
+| `decorators` | none | Class decorators applied to the console controllers the module mounts (API, live stream, MCP), e.g. `[UseGuards(AuthenticationGuard)]`. They run before `authorize` and don't count as access control on their own. Each mounted controller is also marked `Can.Anyone()`-open; a `Can()` passed here is still enforced. Static top-level option on `forRootAsync`. |
+| `mcpDecorators` | `decorators` | Class decorators for the MCP route only, in place of `decorators` (the API and live stream keep `decorators`). Static top-level option on `forRootAsync`. |
+| `routes` | `true` | `false` mounts no controller; every provider keeps running and the module exports what the controllers need, so your own subclasses of `TelescopeController` / `StreamController` / … serve the routes (protect them with `UseConsoleAuthorize`). Keep `path` set to the mount. Static top-level option on `forRootAsync`. |
 
 With `forRootAsync`, `path`, `decorators`, `mcpDecorators`, `routes` and `imports` are static top-level options, next to `useFactory`: the routes are built before the factory runs. The static `path` also reaches the providers (request capture, the UI's asset URLs), overriding a different `path` from the factory. A build-time option returned by the factory has no effect, and the boot logs a warning naming it.
 | `imports` | `[]` | Extra Nest `imports` merged into the module, for whatever your `decorators` need. |
-| `mutations` | `false` | Turns on the console's mutations: queue actions, **Prune now**, [request replay](/docs/dashboard#replay-a-request), on-demand profiling. Off: they answer `403`. Who may call them is decided by your `decorators`. |
-| `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. Public by design: it takes no `decorators` and is outside the production rule. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
+| `mutations` | `false` | Turns on the console's mutations: queue actions, **Prune now**, [request replay](/docs/dashboard#replay-a-request), on-demand profiling. Off: they answer `403`. Who may call them is decided by `authorize`. |
+| `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. Public by design: it takes neither `decorators` nor `authorize`. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
 
 ### Other modules
 
 | Option | Default | Description |
 |---|---|---|
-| `TelescopeUiModule.forRoot({ decorators })` | none | Class decorators on the dashboard page controller. **Required in production** unless `routes: false`, like `TelescopeModule`'s. |
+| `TelescopeUiModule.forRoot({ authorize })` | none | Who may open the dashboard page and its assets; same forms and default as `TelescopeModule`'s. A denied navigation gets an "Access denied" page, or a 302 for `{ redirectTo }`. |
+| `TelescopeUiModule.forRoot({ decorators })` | none | Class decorators on the dashboard page controller, run before `authorize`. |
 | `TelescopeUiModule.forRoot({ routes })` | `true` | `false` mounts no controller; extend `TelescopeUiController` yourself. |
-| `TelescopeOtelMetricsModule.forExporter(exporter, { decorators })` | none | Class decorators on the `GET /metrics` controller, applied whenever given. **Not required in production** by default: Prometheus usually scrapes unauthenticated inside the cluster. `/metrics` exposes your metrics, so keep it reachable only by the scraper (network policy, or `decorators`). |
-| `TelescopeOtelMetricsModule.forExporter(exporter, { requireProtectionInProduction })` | `false` | `true` puts `/metrics` under the production rule: with `NODE_ENV=production` and no `decorators` the boot fails. Ignored with `routes: false`. |
+| `TelescopeOtelMetricsModule.forExporter(exporter, { authorize })` | none | Who may scrape `GET /metrics`; same forms and default as the console (omitted: 403 in production). For Prometheus: `authorizeByToken({ token: process.env.METRICS_TOKEN })`. |
+| `TelescopeOtelMetricsModule.forExporter(exporter, { decorators })` | none | Class decorators on the `GET /metrics` controller, run before `authorize`. |
 | `TelescopeOtelMetricsModule.forExporter(exporter, { routes })` | `true` | `false` mounts no controller and exports the exporter under `TELESCOPE_OTEL_EXPORTER`; extend `TelescopeOtelMetricsController` yourself. |
 
 ## Health, alerts & AI
@@ -82,7 +85,7 @@ With `forRootAsync`, `path`, `decorators`, `mcpDecorators`, `routes` and `import
 
 | Option | Default | Description |
 |---|---|---|
-| `mcp` | disabled | MCP server for coding agents. `true` enables it; omitted/`false` answers 404. Protected by your `decorators` like every console route. See [MCP server](/docs/concepts/mcp). |
+| `mcp` | disabled | MCP server for coding agents. `true` enables it; omitted/`false` answers 404. Protected by `authorize` (or `mcpAuthorize`) like every console route. See [MCP server](/docs/concepts/mcp). |
 | `overloadProtection` | `true` (200ms) | Pause capture under event-loop pressure. See below. |
 
 ### `overloadProtection`
