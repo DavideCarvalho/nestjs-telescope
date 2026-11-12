@@ -201,7 +201,7 @@ export function isSameOriginPath(path: unknown): path is string {
     path.startsWith('/') &&
     path[1] !== '/' &&
     path[1] !== '\\' &&
-    !/[\u0000-\u001f]/.test(path)
+    !Array.from(path).some((char) => char.charCodeAt(0) < 0x20)
   );
 }
 

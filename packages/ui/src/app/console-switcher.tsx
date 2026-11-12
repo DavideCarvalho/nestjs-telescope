@@ -32,7 +32,7 @@ export function isSafeHref(href: unknown): href is string {
     href.startsWith('/') &&
     href[1] !== '/' &&
     href[1] !== '\\' &&
-    !/[\u0000-\u001f]/.test(href)
+    !Array.from(href).some((char) => char.charCodeAt(0) < 0x20)
   );
 }
 
