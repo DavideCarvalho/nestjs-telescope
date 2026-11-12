@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-official",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "NestJS first-party integrations for @dudousxd/nestjs-telescope: the official diagnostics_channel events (resilience, workflows, authentication, authorization, mail), @nestjs/ai usage, and @nestjs/observe trace ids.",
   "license": "MIT",
   "repository": {

@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-events
 
+## 2.0.2
+
+### Patch Changes
+
+- [#183](https://github.com/DavideCarvalho/nestjs-telescope/pull/183) [`1a1d056`](https://github.com/DavideCarvalho/nestjs-telescope/commit/1a1d0560b680349d4e1ce142a61910ddebcb9ae2) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Works with `@dudousxd/nestjs-telescope` 3: the peer range is now `^2.0.1 || ^3.0.0`. Nothing else changes.
+
 ## 2.0.1
 
 ### Patch Changes
