@@ -2,6 +2,7 @@ import {
   type ConsoleAuthorize,
   UseConsoleAuthorize,
   applyControllerDecorators,
+  consoleAuthorizeMissingWarning,
 } from '@dudousxd/nestjs-telescope';
 import { type DynamicModule, Module, type Type } from '@nestjs/common';
 import { TELESCOPE_OTEL_EXPORTER, TelescopeOtelMetricsController } from './metrics.controller.js';
@@ -39,8 +40,8 @@ export interface TelescopeOtelMetricsModuleOptions {
    * `false` mounts no controller; the module only provides the exporter under
    * `TELESCOPE_OTEL_EXPORTER` (exported), so a controller of your own can serve
    * the scrape: extend the exported `TelescopeOtelMetricsController` and put
-   * `UseConsoleAuthorize({ authorize })` (or your own decorators) on it, or call
-   * `exporter.prometheus()` yourself.
+   * `@UseConsoleAuthorize({ authorize })` on it (above any authentication guard
+   * of yours, so that guard runs first), or call `exporter.prometheus()` yourself.
    * Named `routes` like core's and the UI's option (there `path` keeps a job
    * without routes; one name across the library). `decorators` is ignored
    * here, and so is `authorize`. Default `true`.
@@ -78,9 +79,14 @@ export class TelescopeOtelMetricsModule {
       ...(options.decorators ?? []),
       UseConsoleAuthorize({
         authorize: options.authorize,
-        packageName: '@dudousxd/nestjs-telescope-otel',
-        moduleName: 'TelescopeOtelMetricsModule',
-        registration: 'TelescopeOtelMetricsModule.forExporter()',
+        // `/metrics` has its own `authorize`: never the console's.
+        inherit: false,
+        warn: true,
+        missingWarning: consoleAuthorizeMissingWarning(
+          '@dudousxd/nestjs-telescope-otel',
+          'TelescopeOtelMetricsModule.forExporter()',
+        ),
+        loggerContext: 'TelescopeOtelMetricsModule',
       }),
     ]);
     return {

@@ -73,7 +73,7 @@ A registered provider is used as is; otherwise Telescope builds one instance wit
 |---|---|---|
 | `true` or `{ allowed: true }` | allowed | allowed |
 | `false` or `{ allowed: false }` | 403 `{ "error": "forbidden" }` | 403 "Access denied" page |
-| `{ allowed: false, reason: 'unauthenticated' }` | 401 `{ "error": "unauthenticated" }` | 401 |
+| `{ allowed: false, reason: 'unauthenticated' }` | 401 `{ "error": "unauthenticated" }` | 401 "Sign in required" page |
 | `{ redirectTo: '/login' }` | 401 `{ "error": "unauthenticated", "redirectTo": "/login" }` | 302 to `/login` |
 | throws | 403 | 403 |
 
@@ -125,7 +125,7 @@ It allows a request with `Authorization: Bearer <token>` and answers 401 otherwi
 
 - Outside production (`NODE_ENV !== 'production'`) the console is open, so local work needs no setup.
 - In production every request (page, API, live feed, MCP, `/metrics`) answers 403 `{ "error": "forbidden" }`.
-- One warning is logged at boot per module:
+- One warning is logged at boot per module, with `routes: false` too:
 
 ```txt
 [@dudousxd/nestjs-telescope] console has no `authorize` configured: it is open outside production and denies every request in production. Set `authorize` in TelescopeModule.forRoot().
@@ -152,10 +152,10 @@ With `forRootAsync`, `decorators` and `mcpDecorators` are static top-level optio
 
 ## Mount the routes yourself (`routes: false`)
 
-`TelescopeModule.forRoot({ routes: false })`, `TelescopeUiModule.forRoot({ routes: false })` and `TelescopeOtelMetricsModule.forExporter(exporter, { routes: false })` mount no controller. Every provider keeps running: request capture, watchers, storage, pruning, alerts and the services. Extend the exported controllers and protect them with `UseConsoleAuthorize`, which applies the same `authorize` contract and denial responses:
+`TelescopeModule.forRoot({ routes: false })`, `TelescopeUiModule.forRoot({ routes: false })` and `TelescopeOtelMetricsModule.forExporter(exporter, { routes: false })` mount no controller. Every provider keeps running: request capture, watchers, storage, pruning, alerts and the services. Extend the exported controllers and protect them with `@UseConsoleAuthorize()`, which applies the same `authorize` contract and denial responses. With no argument it runs `TelescopeModule.forRoot({ authorize })`:
 
 ```ts
-import { Controller, Module } from '@nestjs/common';
+import { Controller, Module, UseGuards } from '@nestjs/common';
 import {
   StreamController,
   TelescopeController,
@@ -164,25 +164,30 @@ import {
 } from '@dudousxd/nestjs-telescope';
 import { TelescopeUiController, TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 
-const authorize = { policy: ConsolePolicy, ability: 'view' };
-
 @Controller('ops/telescope/api')
-@UseConsoleAuthorize({ authorize })
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsoleApi extends TelescopeController {}
 
 @Controller('ops/telescope/api')
-@UseConsoleAuthorize({ authorize })
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsoleStream extends StreamController {}
 
 @Controller('ops/telescope')
-@UseConsoleAuthorize({ authorize, pages: true }) // pages: redirect / "Access denied" page for navigations
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsolePage extends TelescopeUiController {}
 
 @Module({
   imports: [
     // `path` is still where the console lives: the request-capture self-skip
     // and the page's asset URLs use it.
-    TelescopeModule.forRoot({ path: 'ops/telescope', routes: false }),
+    TelescopeModule.forRoot({
+      path: 'ops/telescope',
+      routes: false,
+      authorize: { policy: ConsolePolicy, ability: 'view' },
+    }),
     TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false }),
   ],
   controllers: [ConsoleApi, ConsoleStream, ConsolePage],
@@ -190,7 +195,11 @@ class ConsolePage extends TelescopeUiController {}
 export class OpsModule {}
 ```
 
-`UseConsoleAuthorize` follows the same default when `authorize` is omitted. `ConsoleAuthorizeGuard.for({ authorize })` returns just the guard, for `@UseGuards(...)` (pair it with `@UseFilters(ConsoleDeniedFilter)` for the redirect and the HTML page). Mount only what you use:
+<Callout type="warn">
+  Put `@UseConsoleAuthorize()` **above** your authentication guard. Nest applies class decorators bottom-up, so the guard listed lower runs first: your authentication sets `request.user`, then `authorize` checks it.
+</Callout>
+
+`@UseConsoleAuthorize({ authorize })` runs its own check instead of the module's. Without `authorize` anywhere, it follows the [default](#without-authorize). A subclass of `TelescopeUiController` answers denied page navigations with a redirect or an HTML page; mark a page controller of your own with `@ConsolePage()` for the same. `ConsoleAuthorizeGuard` (or `ConsoleAuthorizeGuard.for({ authorize })`) is just the guard, for `@UseGuards(...)`; pair it with `@UseFilters(ConsoleAuthorizeFilter)` for the redirect and the HTML pages. Mount only what you use:
 
 | Controller to extend | Mount at | Serves |
 |---|---|---|

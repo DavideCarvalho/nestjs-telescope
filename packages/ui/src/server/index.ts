@@ -4,15 +4,20 @@ export { TELESCOPE_UI_OPTIONS, type TelescopeUiModuleOptions } from './telescope
 // The console access contract, re-exported from core so the UI's `authorize`
 // can be written from this entry point.
 export {
+  ConsoleAccessDenied,
+  ConsoleAuthorizeFilter,
   ConsoleAuthorizeGuard,
-  ConsoleDeniedFilter,
+  ConsolePage,
   UseConsoleAuthorize,
   authorizeByToken,
+  normalizeConsoleResult,
   resolveConsoleAuthorize,
   type ConsoleAuthorize,
   type ConsoleAuthorizeResult,
   type ConsoleAuthorizer,
   type ConsoleAuthorizerClass,
+  type ConsoleDecide,
   type ConsoleDecision,
   type ConsolePolicyCheck,
+  type UseConsoleAuthorizeOptions,
 } from '@dudousxd/nestjs-telescope';

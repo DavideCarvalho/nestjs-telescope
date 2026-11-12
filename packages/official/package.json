@@ -45,7 +45,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.spec.json --noEmit"
   },
   "peerDependencies": {
-    "@dudousxd/nestjs-telescope": "^2.0.0",
+    "@dudousxd/nestjs-telescope": "^2.0.0 || ^3.0.0",
     "@nestjs/ai": ">=0.0.2 <1",
     "@nestjs/authentication": ">=0.1.5 <1",
     "@nestjs/authorization": ">=0.1.3 <1",

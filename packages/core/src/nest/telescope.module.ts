@@ -4,6 +4,7 @@ import {
   type DynamicModule,
   Inject,
   type InjectionToken,
+  Logger,
   type MiddlewareConsumer,
   Module,
   type NestModule,
@@ -34,6 +35,7 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { UseConsoleAuthorize } from './console-authorize.guard.js';
+import { CONSOLE_AUTHORIZE_MISSING_WARNING } from './console-authorize.js';
 import { dynamicController } from './dynamic-controller.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeCrashCapture } from './telescope-crash-capture.service.js';
@@ -53,7 +55,20 @@ import {
 } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
+/** Logs the "no `authorize`" warning once at boot, mounted routes or not (`routes: false`). */
+const CONSOLE_AUTHORIZE_WARNING = Symbol('TELESCOPE_CONSOLE_AUTHORIZE_WARNING');
+
 const SHARED_PROVIDERS: Provider[] = [
+  {
+    provide: CONSOLE_AUTHORIZE_WARNING,
+    useFactory: (options: TelescopeModuleOptions): true => {
+      if (options.authorize === undefined) {
+        new Logger('TelescopeModule').warn(CONSOLE_AUTHORIZE_MISSING_WARNING);
+      }
+      return true;
+    },
+    inject: [TELESCOPE_OPTIONS],
+  },
   {
     provide: TELESCOPE_CONFIG,
     useFactory: (options: TelescopeModuleOptions) => resolveConfig(options),
@@ -243,8 +258,10 @@ export class TelescopeModule implements NestModule {
     // `authorize` is read once the options resolve (it may come from an async
     // factory), so the guards look it up from TELESCOPE_OPTIONS at init. They
     // run after the host's `decorators`, so its authentication sets the user first.
+    // The module logs the "no `authorize`" warning itself, so the guards stay quiet.
     const consoleAccess = UseConsoleAuthorize({
       from: { token: TELESCOPE_OPTIONS, select: (o) => (o as TelescopeModuleOptions).authorize },
+      warn: false,
     });
     const mcpAccess = UseConsoleAuthorize({
       from: {
@@ -252,7 +269,6 @@ export class TelescopeModule implements NestModule {
         select: (o) =>
           (o as TelescopeModuleOptions).mcpAuthorize ?? (o as TelescopeModuleOptions).authorize,
       },
-      // The console's guard already warns when `authorize` is omitted.
       warn: false,
     });
     return [

@@ -3,7 +3,7 @@ import { Controller, Get } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterEach, describe, expect, it } from 'vitest';
-import { UseConsoleAuthorize } from './console-authorize.guard.js';
+import { ConsolePage, UseConsoleAuthorize } from './console-authorize.guard.js';
 import { TelescopeModule } from './telescope.module.js';
 import { TelescopeService } from './telescope.service.js';
 
@@ -38,7 +38,8 @@ describe('console authorize on Fastify', () => {
   });
 
   @Controller('ops/page')
-  @UseConsoleAuthorize({ authorize: () => ({ redirectTo: '/login' }), pages: true })
+  @ConsolePage()
+  @UseConsoleAuthorize({ authorize: () => ({ redirectTo: '/login' }) })
   class Page {
     @Get()
     index() {

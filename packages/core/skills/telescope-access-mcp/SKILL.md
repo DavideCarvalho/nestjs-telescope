@@ -62,20 +62,33 @@ check must read a cookie session. `decorators` (e.g.
 ```ts
 import { UseConsoleAuthorize } from '@dudousxd/nestjs-telescope';
 
+// ABOVE the auth guard: Nest applies class decorators bottom-up, so the auth
+// guard runs first and sets request.user before `authorize` runs.
 @Controller('ops/telescope/api')
-@UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' } })
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsoleApi extends TelescopeController {}
 
 @Module({
-  imports: [TelescopeModule.forRoot({ path: 'ops/telescope', routes: false })],
+  imports: [
+    TelescopeModule.forRoot({
+      path: 'ops/telescope',
+      routes: false,
+      authorize: { policy: ConsolePolicy, ability: 'view' },
+    }),
+  ],
   controllers: [ConsoleApi],
 })
 export class OpsModule {}
 ```
 
+`@UseConsoleAuthorize()` runs `TelescopeModule.forRoot({ authorize })`;
+`@UseConsoleAuthorize({ authorize })` runs its own check. With `routes: false`
+the module still logs the "no `authorize`" boot warning when it is omitted.
 `StreamController`, `TelescopeMcpController`, `ClientErrorController` and
-`TelescopeUiController` (from the UI package; add `pages: true`) extend the
-same way. The base classes carry no guard. Keep `path` set to the mount.
+`TelescopeUiController` (from the UI package; it answers denied page
+navigations with a page or a redirect) extend the same way. The base classes
+carry no guard. Keep `path` set to the mount.
 
 ### Pattern 3 — queue mutations
 

@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { UseConsoleAuthorize } from '@dudousxd/nestjs-telescope';
 import { AuthorizationModule, Can, Policy } from '@nestjs/authorization';
 import {
   Controller,
@@ -207,6 +208,33 @@ describe('TelescopeUiModule authorize', () => {
       error: 'unauthenticated',
       redirectTo: '/login',
     });
+  });
+
+  it('an unauthenticated page navigation gets a 401 "Sign in required" page', async () => {
+    process.env.NODE_ENV = 'production';
+    const target = await boot([
+      TelescopeUiModule.forRoot({
+        assetsDir: dir,
+        authorize: () => ({ allowed: false as const, reason: 'unauthenticated' as const }),
+      }),
+    ]);
+    const page = await get(target, '/telescope').set('Accept', 'text/html').expect(401);
+    expect(page.headers['content-type']).toContain('text/html');
+    expect(page.text).toContain('Sign in required');
+    await get(target, '/telescope/assets/app.js').expect(401, { error: 'unauthenticated' });
+  });
+
+  it('a subclass mounted with routes: false keeps the page answers', async () => {
+    process.env.NODE_ENV = 'production';
+    @Controller('ops/telescope')
+    @UseConsoleAuthorize({ authorize: () => false })
+    class OwnPage extends TelescopeUiController {}
+    const target = await boot(
+      [TelescopeUiModule.forRoot({ assetsDir: dir, path: 'ops/telescope', routes: false })],
+      [OwnPage],
+    );
+    const page = await get(target, '/ops/telescope').set('Accept', 'text/html').expect(403);
+    expect(page.text).toContain('Access denied');
   });
 
   it('forRootAsync takes authorize from the factory; decorators run first', async () => {

@@ -72,10 +72,11 @@ TelescopeUiModule.forRoot({
   authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true,
 });
 
-// or: routes: false + path: 'ops/telescope', and
+// or: routes: false + path: 'ops/telescope', and (ABOVE your auth guard, so it runs first)
 @Controller('ops/telescope')
-@UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' }, pages: true })
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsolePage extends TelescopeUiController {}
 ```
 
-A denied navigation gets an "Access denied" page (403), or a 302 when the check returns `{ redirectTo: '/login' }`. A full-page navigation carries your app's cookies, not an `Authorization` header, so check a session here. Inside the dashboard, a 401 with `redirectTo` from the API is followed and a 403 shows an access-denied screen. Without `authorize` the page is open outside production and answers 403 in production. See [Protecting the routes](/docs/dashboard/auth).
+A denied navigation gets an "Access denied" page (403), a "Sign in required" page (401), or a 302 when the check returns `{ redirectTo: '/login' }`. A full-page navigation carries your app's cookies, not an `Authorization` header, so check a session here. Inside the dashboard, a 401 with `redirectTo` from the API is followed and a 403 shows an access-denied screen. Without `authorize` the page is open outside production and answers 403 in production. See [Protecting the routes](/docs/dashboard/auth).

@@ -1,14 +1,15 @@
 // packages/core/src/nest/console-authorize.spec.ts
 import 'reflect-metadata';
-import { type ExecutionContext, Inject, Injectable, Module } from '@nestjs/common';
+import { type ExecutionContext, Inject, Injectable, type Logger, Module } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CONSOLE_AUTHORIZE_MISSING_WARNING,
   CONSOLE_GATE,
   type ConsoleAuthorizer,
   authorizeByToken,
-  normalizeConsoleAuthorizeResult,
+  normalizeConsoleResult,
   resolveConsoleAuthorize,
 } from './console-authorize.js';
 
@@ -42,7 +43,7 @@ class ClassAuthorizer implements ConsoleAuthorizer {
   }
 }
 
-describe('normalizeConsoleAuthorizeResult', () => {
+describe('normalizeConsoleResult', () => {
   it.each([
     [true, { allowed: true }],
     [{ allowed: true }, { allowed: true }],
@@ -60,21 +61,21 @@ describe('normalizeConsoleAuthorizeResult', () => {
     [undefined, { allowed: false, reason: 'forbidden' }],
     ['yes', { allowed: false, reason: 'forbidden' }],
   ])('%j → %j', (result, decision) => {
-    expect(normalizeConsoleAuthorizeResult(result)).toEqual(decision);
+    expect(normalizeConsoleResult(result)).toEqual(decision);
   });
 });
 
 describe('resolveConsoleAuthorize', () => {
   it('inline function: called with the context', async () => {
     const fn = vi.fn(async () => ({ allowed: false as const, reason: 'unauthenticated' as const }));
-    const check = resolveConsoleAuthorize(fn, await moduleRefWith());
+    const check = await resolveConsoleAuthorize(fn, await moduleRefWith());
     expect(await check(ctx)).toEqual({ allowed: false, reason: 'unauthenticated' });
     expect(fn).toHaveBeenCalledWith(ctx);
   });
 
   it('class: built through DI once per registration', async () => {
     ClassAuthorizer.instances = 0;
-    const check = resolveConsoleAuthorize(ClassAuthorizer, await moduleRefWith([Dependency]));
+    const check = await resolveConsoleAuthorize(ClassAuthorizer, await moduleRefWith([Dependency]));
     expect(await check(ctx)).toEqual({ allowed: true });
     expect(await check(ctx)).toEqual({ allowed: true });
     expect(ClassAuthorizer.instances).toBe(1);
@@ -84,7 +85,7 @@ describe('resolveConsoleAuthorize', () => {
     ClassAuthorizer.instances = 0;
     const moduleRef = await moduleRefWith([Dependency, ClassAuthorizer]);
     const before = ClassAuthorizer.instances;
-    const check = resolveConsoleAuthorize(ClassAuthorizer, moduleRef);
+    const check = await resolveConsoleAuthorize(ClassAuthorizer, moduleRef);
     expect(await check(ctx)).toEqual({ allowed: true });
     expect(ClassAuthorizer.instances).toBe(before);
   });
@@ -92,7 +93,7 @@ describe('resolveConsoleAuthorize', () => {
   it('lazy import: imported once, then built through DI', async () => {
     ClassAuthorizer.instances = 0;
     const load = vi.fn(async () => ({ default: ClassAuthorizer }));
-    const check = resolveConsoleAuthorize(load, await moduleRefWith([Dependency]));
+    const check = await resolveConsoleAuthorize(load, await moduleRefWith([Dependency]));
     expect(await check(ctx)).toEqual({ allowed: true });
     expect(await check(ctx)).toEqual({ allowed: true });
     expect(load).toHaveBeenCalledTimes(1);
@@ -111,11 +112,10 @@ describe('resolveConsoleAuthorize', () => {
     class AppModule {}
     const testing = await Test.createTestingModule({ imports: [AppModule] }).compile();
     await testing.init();
-    const check = resolveConsoleAuthorize(
+    const check = await resolveConsoleAuthorize(
       { policy: ConsolePolicy, ability: 'view' },
       testing.get(ModuleRef),
     );
-    await check.ready;
     expect(await check(contextFor({ user: { admin: true } }))).toEqual({ allowed: true });
     expect(await check(contextFor({ user: { admin: false } }))).toEqual({
       allowed: false,
@@ -124,19 +124,90 @@ describe('resolveConsoleAuthorize', () => {
     expect(await check(contextFor({}))).toEqual({ allowed: false, reason: 'unauthenticated' });
   });
 
-  it('policy check: ready rejects without AuthorizationModule', async () => {
-    class ConsolePolicy {}
-    const check = resolveConsoleAuthorize(
+  it('policy check: a getUser answer of null or false is a guest, not request.user', async () => {
+    const { AuthorizationModule, Policy } = await import('@nestjs/authorization');
+    @Policy()
+    class ConsolePolicy {
+      view(user: { admin: boolean } | null) {
+        return user?.admin === true;
+      }
+    }
+    const fromHeader = (context: ExecutionContext) =>
+      (context.switchToHttp().getRequest() as { answer?: unknown }).answer;
+    @Module({
+      imports: [AuthorizationModule.forRoot({ getUser: fromHeader })],
+      providers: [ConsolePolicy],
+    })
+    class AppModule {}
+    const testing = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    await testing.init();
+    const check = await resolveConsoleAuthorize(
       { policy: ConsolePolicy, ability: 'view' },
-      await moduleRefWith(),
+      testing.get(ModuleRef),
     );
-    await expect(check.ready).rejects.toThrow(/AuthorizationModule\.forRoot\(\)/);
-    expect(await check(ctx)).toEqual({ allowed: false, reason: 'forbidden' });
+    const admin = { admin: true };
+    // `null` and `false` are answers (a guest), never promoted to `request.user`.
+    expect(await check(contextFor({ answer: null, user: admin } as never))).toEqual({
+      allowed: false,
+      reason: 'unauthenticated',
+    });
+    expect(await check(contextFor({ answer: false, user: admin } as never))).toEqual({
+      allowed: false,
+      reason: 'unauthenticated',
+    });
+    expect(await check(contextFor({ answer: admin } as never))).toEqual({ allowed: true });
+    expect(await check(contextFor({ answer: { admin: false } } as never))).toEqual({
+      allowed: false,
+      reason: 'forbidden',
+    });
+  });
+
+  it('policy check: rejects at resolution without AuthorizationModule', async () => {
+    class ConsolePolicy {}
+    await expect(
+      resolveConsoleAuthorize({ policy: ConsolePolicy, ability: 'view' }, await moduleRefWith()),
+    ).rejects.toThrow(
+      '`authorize: { policy, ability }` needs AuthorizationModule.forRoot() from @nestjs/authorization imported in the app.',
+    );
+  });
+
+  it('every denial is a fresh object', async () => {
+    const check = await resolveConsoleAuthorize(() => false, await moduleRefWith());
+    const first = await check(ctx);
+    const second = await check(ctx);
+    expect(first).toEqual(second);
+    expect(first).not.toBe(second);
+    expect(normalizeConsoleResult(false)).not.toBe(normalizeConsoleResult(false));
+    expect(normalizeConsoleResult({ allowed: false, reason: 'unauthenticated' })).not.toBe(
+      normalizeConsoleResult({ allowed: false, reason: 'unauthenticated' }),
+    );
+    const fallback = await resolveConsoleAuthorize(undefined, await moduleRefWith(), {
+      warnIfMissing: false,
+    });
+    expect(await fallback(ctx)).not.toBe(await fallback(ctx));
+  });
+
+  it('omitted: open outside production, forbidden in production, warns once', async () => {
+    const previous = process.env.NODE_ENV;
+    const warn = vi.fn();
+    const logger = { warn } as unknown as Logger;
+    try {
+      process.env.NODE_ENV = 'test';
+      const open = await resolveConsoleAuthorize(undefined, await moduleRefWith(), { logger });
+      expect(await open(ctx)).toEqual({ allowed: true });
+      process.env.NODE_ENV = 'production';
+      const closed = await resolveConsoleAuthorize(undefined, await moduleRefWith(), { logger });
+      expect(await closed(ctx)).toEqual({ allowed: false, reason: 'forbidden' });
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith(CONSOLE_AUTHORIZE_MISSING_WARNING);
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
   });
 
   it('gate name: asks the console-gate provider', async () => {
     const allows = vi.fn(async () => true);
-    const check = resolveConsoleAuthorize(
+    const check = await resolveConsoleAuthorize(
       'console.telescope',
       await moduleRefWith([{ provide: CONSOLE_GATE, useValue: { allows } }]),
     );
@@ -146,13 +217,13 @@ describe('resolveConsoleAuthorize', () => {
 
   it('gate name: throws at resolution without the provider', async () => {
     const moduleRef = await moduleRefWith();
-    expect(() => resolveConsoleAuthorize('console.telescope', moduleRef)).toThrow(
+    await expect(resolveConsoleAuthorize('console.telescope', moduleRef)).rejects.toThrow(
       "`authorize: 'console.telescope'` needs @dudousxd/nestjs-authz's AuthzModule (it resolves gate names); or pass a function, a class, or { policy, ability }.",
     );
   });
 
   it('a throw is a forbidden denial, never an allow', async () => {
-    const check = resolveConsoleAuthorize(
+    const check = await resolveConsoleAuthorize(
       () => {
         throw new Error('boom');
       },
@@ -165,7 +236,7 @@ describe('resolveConsoleAuthorize', () => {
         throw new Error('boom');
       }
     }
-    const classCheck = resolveConsoleAuthorize(Throws, await moduleRefWith());
+    const classCheck = await resolveConsoleAuthorize(Throws, await moduleRefWith());
     expect(await classCheck(ctx)).toEqual({ allowed: false, reason: 'forbidden' });
   });
 });
@@ -174,9 +245,7 @@ describe('authorizeByToken', () => {
   const check = authorizeByToken({ token: 's3cret' });
 
   it('allows a matching Bearer header', () => {
-    expect(check(contextFor({ headers: { authorization: 'Bearer s3cret' } }))).toEqual({
-      allowed: true,
-    });
+    expect(check(contextFor({ headers: { authorization: 'Bearer s3cret' } }))).toBe(true);
   });
 
   it('answers unauthenticated on a mismatch or a missing header', () => {

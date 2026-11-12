@@ -58,8 +58,9 @@ Everything lives in [`src/app.module.ts`](./src/app.module.ts):
 ```ts
 TelescopeModule.forRoot({
   watchers: [new CacheWatcher(cacheHolder.source())],
+  authorize: consoleAccess,
 }),
-TelescopeUiModule.forRoot(),
+TelescopeUiModule.forRoot({ authorize: consoleAccess }),
 ```
 
 `TelescopeModule.forRoot({})` is zero-config — it defaults to an in-memory SQLite
@@ -68,8 +69,8 @@ serves the bundled React dashboard at `/telescope`.
 
 ### Protecting it
 
-The demo runs outside production, so the console is open. With
-`NODE_ENV=production` every console request answers 403 until you pass
-`authorize` to both `TelescopeModule.forRoot` and `TelescopeUiModule.forRoot`,
-e.g. `authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true`.
+The demo passes `authorize` to both `TelescopeModule.forRoot` and
+`TelescopeUiModule.forRoot`. It has no sign-in, so its check opens the console
+outside production only. In your app, check the signed-in user instead, e.g.
+`authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true`.
 See "Protecting the routes" in the main README.

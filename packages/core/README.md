@@ -51,20 +51,28 @@ don't count as access control on their own. The same rule covers the otel
 **Mount the routes yourself.** `routes: false` mounts no controller (capture,
 storage, watchers and every service keep running) and the module exports what
 the controllers need. Extend the exported controllers and protect them with
-`UseConsoleAuthorize`, the same contract:
+`@UseConsoleAuthorize()`, the same contract. With no argument it runs the
+module's `authorize`; list it ABOVE your auth guard (Nest applies class
+decorators bottom-up, so the auth guard runs first and sets `request.user`):
 
 ```ts
 @Controller('ops/telescope/api')
-@UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' } })
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsoleApi extends TelescopeController {}
 
 @Controller('ops/telescope')
-@UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' }, pages: true })
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsolePage extends TelescopeUiController {}
 
 @Module({
   imports: [
-    TelescopeModule.forRoot({ path: 'ops/telescope', routes: false }),
+    TelescopeModule.forRoot({
+      path: 'ops/telescope',
+      routes: false,
+      authorize: { policy: ConsolePolicy, ability: 'view' },
+    }),
     TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false }),
   ],
   controllers: [ConsoleApi, ConsolePage],

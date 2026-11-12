@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTelescopePath } from '@dudousxd/nestjs-telescope';
+import { ConsolePage, normalizeTelescopePath } from '@dudousxd/nestjs-telescope';
 import {
   Controller,
   Get,
@@ -44,6 +44,8 @@ function rewriteAssetBase(html: string, path: string): string {
   return `${injectedBase}${rebased}`;
 }
 
+// A denied browser navigation gets a page (or a redirect), not JSON.
+@ConsolePage()
 @Controller()
 export class TelescopeUiController {
   private readonly assetsDir: string;

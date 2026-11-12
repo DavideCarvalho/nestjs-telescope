@@ -50,10 +50,13 @@ export class AppModule {}
 
 Without `authorize` the page is open outside production; with
 `NODE_ENV=production` it answers 403 and the boot logs a warning. A denied
-navigation gets an "Access denied" page, or a 302 for `{ redirectTo }`; inside
-the SPA a 401 with `redirectTo` is followed and a 403 shows an access-denied
-screen. `routes: false` mounts nothing (serve the page from your own subclass
-of `TelescopeUiController` with `UseConsoleAuthorize({ authorize, pages: true })`).
+navigation gets an "Access denied" page (403), a "Sign in required" page (401),
+or a 302 for `{ redirectTo }`; inside the SPA a 401 with `redirectTo` is
+followed and a 403 shows an access-denied screen. `routes: false` mounts
+nothing: serve the page from your own subclass of `TelescopeUiController` with
+`@UseConsoleAuthorize()` listed ABOVE your auth guard (Nest applies class
+decorators bottom-up, so the auth guard runs first). With no argument it runs
+`TelescopeModule.forRoot({ authorize })`; `{ authorize }` overrides it.
 
 Source: `packages/ui/src/server/telescope-ui.module.ts`,
 `packages/ui/src/server/telescope-ui.options.ts` (`TelescopeUiModuleOptions`).

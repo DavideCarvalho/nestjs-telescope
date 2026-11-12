@@ -7,6 +7,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { AuthorizationModule, Policy } from '@nestjs/authorization';
 import {
+  type CanActivate,
   Controller,
   type DynamicModule,
   type ExecutionContext,
@@ -15,11 +16,12 @@ import {
   Inject,
   Injectable,
   Logger,
+  UseGuards,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UseConsoleAuthorize } from './console-authorize.guard.js';
+import { ConsolePage, UseConsoleAuthorize } from './console-authorize.guard.js';
 import { authorizeByToken } from './console-authorize.js';
 import { TelescopeModule } from './telescope.module.js';
 
@@ -94,6 +96,32 @@ async function streamStatus(target: INestApplication, headers: Record<string, st
 
 const isAdmin = (ctx: ExecutionContext) =>
   (ctx.switchToHttp().getRequest() as { user?: User }).user?.admin === true;
+
+/** The app's authentication: sets `request.user` from `x-auth`. */
+@Injectable()
+class AuthGuard implements CanActivate {
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest() as {
+      headers: Record<string, string>;
+      user?: User;
+    };
+    const who = req.headers['x-auth'];
+    if (who) req.user = { id: who, admin: who === 'admin' };
+    return true;
+  }
+}
+
+// Listed ABOVE the auth guard: Nest applies class decorators bottom-up, so the
+// auth guard runs first and `request.user` is set when `authorize` runs.
+@Controller('ops/api')
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
+class SelfMountedApi {
+  @Get()
+  index() {
+    return 'api';
+  }
+}
 
 describe('TelescopeModule authorize', () => {
   it('allows, then 403 { error: forbidden } on API, SSE and MCP', async () => {
@@ -247,10 +275,19 @@ describe('TelescopeModule without authorize', () => {
     await request(target.getHttpServer()).get(META).expect(403);
   });
 
-  it('routes: false boots in production and mounts nothing', async () => {
+  it('routes: false boots in production, mounts nothing, and still warns once', async () => {
     process.env.NODE_ENV = 'production';
-    const target = await boot([TelescopeModule.forRoot({ routes: false })]);
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const target = await boot([TelescopeModule.forRoot({ routes: false })], {
+      controllers: [SelfMountedApi],
+    });
     await request(target.getHttpServer()).get(META).expect(404);
+    // The exported guard still applies the production 403.
+    await request(target.getHttpServer()).get('/ops/api').expect(403, { error: 'forbidden' });
+    const warnings = warn.mock.calls.filter(([message]) =>
+      String(message).includes('console has no `authorize` configured'),
+    );
+    expect(warnings).toHaveLength(1);
   });
 });
 
@@ -270,7 +307,8 @@ class ConsoleAccess {
 
 describe('UseConsoleAuthorize on a self-mounted controller', () => {
   @Controller('ops/page')
-  @UseConsoleAuthorize({ authorize: ConsoleAccess, pages: true })
+  @ConsolePage()
+  @UseConsoleAuthorize({ authorize: ConsoleAccess })
   class Page {
     @Get()
     index() {
@@ -279,7 +317,8 @@ describe('UseConsoleAuthorize on a self-mounted controller', () => {
   }
 
   @Controller('ops/forbidden')
-  @UseConsoleAuthorize({ authorize: () => false, pages: true })
+  @ConsolePage()
+  @UseConsoleAuthorize({ authorize: () => false })
   class ForbiddenPage {
     @Get()
     index() {
@@ -287,8 +326,20 @@ describe('UseConsoleAuthorize on a self-mounted controller', () => {
     }
   }
 
+  @Controller('ops/sign-in')
+  @ConsolePage()
+  @UseConsoleAuthorize({
+    authorize: () => ({ allowed: false as const, reason: 'unauthenticated' as const }),
+  })
+  class SignInPage {
+    @Get()
+    index() {
+      return 'page';
+    }
+  }
+
   it('injects the class form, redirects page navigations and 401s API calls', async () => {
-    const target = await boot([TelescopeModule.forRoot({ routes: false })], {
+    const target = await boot([TelescopeModule.forRoot({ routes: false, authorize: isAdmin })], {
       providers: [AuditLog],
       controllers: [Page, ForbiddenPage],
     });
@@ -309,5 +360,30 @@ describe('UseConsoleAuthorize on a self-mounted controller', () => {
     expect(html.headers['content-type']).toContain('text/html');
     expect(html.text).toContain('Access denied');
     await request(server).get('/ops/forbidden').expect(403, { error: 'forbidden' });
+  });
+
+  it('an unauthenticated page navigation gets a 401 "Sign in required" page; API calls JSON', async () => {
+    const target = await boot([TelescopeModule.forRoot({ routes: false, authorize: isAdmin })], {
+      controllers: [SignInPage],
+    });
+    const server = target.getHttpServer();
+    const html = await request(server).get('/ops/sign-in').set('Accept', 'text/html').expect(401);
+    expect(html.headers['content-type']).toContain('text/html');
+    expect(html.text).toContain('Sign in required');
+    await request(server)
+      .get('/ops/sign-in')
+      .set('Accept', 'application/json')
+      .expect(401, { error: 'unauthenticated' });
+  });
+
+  it("@UseConsoleAuthorize() above the app's auth guard runs TelescopeModule's authorize after it", async () => {
+    const target = await boot([TelescopeModule.forRoot({ routes: false, authorize: isAdmin })], {
+      controllers: [SelfMountedApi],
+    });
+    const server = target.getHttpServer();
+    // The auth guard reads `x-auth`, not the middleware's `x-user`: only it sets `request.user`.
+    await request(server).get('/ops/api').set('x-auth', 'admin').expect(200, 'api');
+    await request(server).get('/ops/api').set('x-auth', 'user').expect(403, { error: 'forbidden' });
+    await request(server).get('/ops/api').expect(403, { error: 'forbidden' });
   });
 });

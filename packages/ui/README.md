@@ -32,15 +32,18 @@ TelescopeUiModule.forRoot({
   authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true,
 });
 
-// or mount it yourself: routes: false + your own subclass
+// or mount it yourself: routes: false + your own subclass. List
+// @UseConsoleAuthorize() ABOVE your auth guard so the guard runs first;
+// with no argument it runs TelescopeModule.forRoot({ authorize }).
 @Controller('ops/telescope')
-@UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' }, pages: true })
+@UseConsoleAuthorize()
+@UseGuards(AuthGuard)
 class ConsolePage extends TelescopeUiController {}
 // imports: [TelescopeUiModule.forRoot({ path: 'ops/telescope', routes: false })]
 ```
 
-A denied navigation gets an "Access denied" page (403), or a 302 when the check
-returns `{ redirectTo: '/login' }`. A full-page navigation carries your cookies,
+A denied navigation gets an "Access denied" page (403), a "Sign in required"
+page (401), or a 302 when the check returns `{ redirectTo: '/login' }`. A full-page navigation carries your cookies,
 not an `Authorization` header, so check a session here. In the running
 dashboard, a 401 with `redirectTo` from the API is followed and a 403 shows an
 access-denied screen. Set `path` to the mount: the page rebases its asset URLs

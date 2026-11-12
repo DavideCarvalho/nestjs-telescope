@@ -19,8 +19,9 @@ export interface TelescopeUiModuleOptions {
    * lazy `() => import(...)`, `{ policy, ability }` for `@nestjs/authorization`,
    * a gate name from `@dudousxd/nestjs-authz`, or `authorizeByToken(...)`.
    *
-   * A denied browser navigation gets an "Access denied" page (403), or a 302
-   * to `redirectTo` when the check returns `{ redirectTo: '/login' }`. Page
+   * A denied browser navigation gets an "Access denied" page (403), a "Sign in
+   * required" page (401), or a 302 to `redirectTo` when the check returns
+   * `{ redirectTo: '/login' }`. Page
    * navigations carry cookies, not an `Authorization` header, so check a
    * session here rather than a token.
    *
@@ -48,12 +49,15 @@ export interface TelescopeUiModuleOptions {
    * `false` mounts NO controller; serve the page from a controller of your own
    * by extending the exported `TelescopeUiController` (its `TELESCOPE_UI_OPTIONS`
    * dependency is exported by the module), protected with
-   * `UseConsoleAuthorize` (the same `authorize` contract) or ordinary Nest
-   * decorators. The base class carries no guard, so yours are the whole gate:
+   * `@UseConsoleAuthorize()`. With no argument it runs
+   * `TelescopeModule.forRoot({ authorize })`; pass `{ authorize }` for a
+   * different check. List it ABOVE your authentication guard, so that guard
+   * runs first and sets `request.user`:
    *
    * ```ts
    * @Controller('ops/telescope')
-   * @UseConsoleAuthorize({ authorize: { policy: ConsolePolicy, ability: 'view' }, pages: true })
+   * @UseConsoleAuthorize()
+   * @UseGuards(AuthGuard)
    * class ConsolePage extends TelescopeUiController {}
    * ```
    *

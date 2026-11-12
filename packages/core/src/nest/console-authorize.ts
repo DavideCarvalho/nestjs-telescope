@@ -1,7 +1,8 @@
 // packages/core/src/nest/console-authorize.ts
 //
-// The console access contract shared (structurally, by copy) by every Aviary
-// console: the `authorize` option, its resolver and `authorizeByToken`.
+// The console access contract every Aviary console declares locally with
+// identical names and shapes (no cross-lib import): the `authorize` option,
+// its resolver and `authorizeByToken`.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { type ExecutionContext, Logger, type Type } from '@nestjs/common';
 import type { ModuleRef } from '@nestjs/core';
@@ -12,13 +13,13 @@ export type ConsoleAuthorizeResult =
   | { allowed: false; reason?: 'unauthenticated' | 'forbidden' }
   | { redirectTo: string };
 
-/** Class form: an @Injectable() provider (constructor injection works). */
+/** Class form: an `@Injectable()` provider (constructor injection works). */
 export interface ConsoleAuthorizer {
   authorize(context: ExecutionContext): ConsoleAuthorizeResult | Promise<ConsoleAuthorizeResult>;
 }
 export type ConsoleAuthorizerClass = Type<ConsoleAuthorizer>;
 
-/** @nestjs/authorization policy check: policy[ability](user). */
+/** An `@nestjs/authorization` policy check: `policy[ability](user)`. */
 export interface ConsolePolicyCheck {
   policy: Type<unknown>;
   ability: string;
@@ -35,7 +36,13 @@ export type ConsoleDecision =
   | { allowed: true }
   | { allowed: false; reason: 'unauthenticated' | 'forbidden'; redirectTo?: string };
 
-/** The provider `@dudousxd/nestjs-authz` registers to resolve `authorize: '<name>'`. */
+/** What a resolved `authorize` is: called once per request, never throws. */
+export type ConsoleDecide = (context: ExecutionContext) => Promise<ConsoleDecision>;
+
+/**
+ * The provider `@dudousxd/nestjs-authz` registers to resolve gate names (`authorize: 'console.x'`).
+ * A registry symbol, so it is found without depending on that package.
+ */
 export const CONSOLE_GATE = Symbol.for('@dudousxd/aviary:console-gate');
 
 /** The shape of the {@link CONSOLE_GATE} provider. */
@@ -43,21 +50,25 @@ export interface ConsoleGate {
   allows(name: string, context: ExecutionContext): Promise<ConsoleAuthorizeResult>;
 }
 
-/**
- * The resolved check: never throws, answers a {@link ConsoleDecision}. `ready`
- * settles once whatever the form needs at boot (the `@nestjs/authorization`
- * service for the policy form) is in place, and rejects with a clear message
- * when it is missing.
- */
-export type ResolvedConsoleAuthorize = ((context: ExecutionContext) => Promise<ConsoleDecision>) & {
-  ready: Promise<void>;
-};
+/** The one boot warning for a console with no `authorize`. Same wording in every Aviary console. */
+export function consoleAuthorizeMissingWarning(packageName: string, registration: string): string {
+  return `[${packageName}] console has no \`authorize\` configured: it is open outside production and denies every request in production. Set \`authorize\` in ${registration}.`;
+}
 
-const ALLOW: ConsoleDecision = { allowed: true };
-const FORBIDDEN: ConsoleDecision = { allowed: false, reason: 'forbidden' };
-const UNAUTHENTICATED: ConsoleDecision = { allowed: false, reason: 'unauthenticated' };
+/** {@link consoleAuthorizeMissingWarning} for `TelescopeModule`. */
+export const CONSOLE_AUTHORIZE_MISSING_WARNING = consoleAuthorizeMissingWarning(
+  '@dudousxd/nestjs-telescope',
+  'TelescopeModule.forRoot()',
+);
 
-const logger = new Logger('ConsoleAuthorize');
+// Every decision is a fresh object: callers may keep or change what they get.
+const allow = (): ConsoleDecision => ({ allowed: true });
+const forbidden = (): ConsoleDecision => ({ allowed: false, reason: 'forbidden' });
+const unauthenticated = (): ConsoleDecision => ({ allowed: false, reason: 'unauthenticated' });
+
+function isProduction(): boolean {
+  return (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -74,102 +85,49 @@ function isPolicyCheck(value: unknown): value is ConsolePolicyCheck {
   return isRecord(value) && typeof value.policy === 'function' && typeof value.ability === 'string';
 }
 
+function isLazyModule(value: unknown): value is { default: ConsoleAuthorizerClass } {
+  return isRecord(value) && isAuthorizerClass(value.default);
+}
+
 /** Turns any {@link ConsoleAuthorizeResult} into a {@link ConsoleDecision}. */
-export function normalizeConsoleAuthorizeResult(result: unknown): ConsoleDecision {
-  if (result === true) return ALLOW;
-  if (!isRecord(result)) return FORBIDDEN;
-  if (typeof result.redirectTo === 'string') {
+export function normalizeConsoleResult(result: unknown): ConsoleDecision {
+  if (result === true) return allow();
+  if (!isRecord(result)) return forbidden();
+  if (typeof result.redirectTo === 'string' && result.allowed !== true) {
     return { allowed: false, reason: 'unauthenticated', redirectTo: result.redirectTo };
   }
-  if (result.allowed === true) return ALLOW;
-  return result.reason === 'unauthenticated' ? UNAUTHENTICATED : FORBIDDEN;
+  if (result.allowed === true) return allow();
+  return result.reason === 'unauthenticated' ? unauthenticated() : forbidden();
 }
 
-/** No user, as `@nestjs/authorization` sees it: `null`, `undefined` or `false`. */
-function isGuest(user: unknown): boolean {
-  return user === null || user === undefined || user === false;
+/** `null`, `undefined` and `false` mean "nobody signed in", like `@nestjs/authorization`'s guard. */
+function hasUser(user: unknown): boolean {
+  return user !== null && user !== undefined && user !== false;
 }
 
-function gateMissing(name: string): Error {
-  return new Error(
-    `\`authorize: '${name}'\` needs @dudousxd/nestjs-authz's AuthzModule (it resolves gate names); or pass a function, a class, or { policy, ability }.`,
-  );
-}
-
-/**
- * Resolves an `authorize` option into one check that answers a
- * {@link ConsoleDecision} and never throws: a throw from the app's code is a
- * `forbidden` denial (logged at `warn`), never an allow.
- *
- * A gate name with no `@dudousxd/nestjs-authz` installed throws here. The
- * policy form's boot checks (`@nestjs/authorization` installed, its module
- * imported) surface through `ready`.
- */
-export function resolveConsoleAuthorize(
-  authorize: ConsoleAuthorize,
-  moduleRef: ModuleRef,
-): ResolvedConsoleAuthorize {
-  let check: (context: ExecutionContext) => Promise<unknown>;
-  let ready: Promise<void> = Promise.resolve();
-
-  if (typeof authorize === 'string') {
-    let gate: ConsoleGate;
-    try {
-      gate = moduleRef.get<ConsoleGate>(CONSOLE_GATE, { strict: false });
-    } catch {
-      throw gateMissing(authorize);
-    }
-    if (!gate) throw gateMissing(authorize);
-    check = (context) => gate.allows(authorize, context);
-  } else if (isPolicyCheck(authorize)) {
-    const policy = resolvePolicyCheck(authorize, moduleRef);
-    ready = policy.then(() => undefined);
-    check = async (context) => (await policy)(context);
-  } else if (isAuthorizerClass(authorize)) {
-    const instance = authorizerInstance(authorize, moduleRef);
-    check = async (context) => (await instance()).authorize(context);
-  } else {
-    const fn = authorize as (context: ExecutionContext) => unknown;
-    // A lazy import resolves to a module whose `default` is the class: memoized
-    // per registration, so the import runs once.
-    let lazy: (() => Promise<ConsoleAuthorizer>) | undefined;
-    check = async (context) => {
-      if (lazy) return (await lazy()).authorize(context);
-      const result = await fn(context);
-      if (isRecord(result) && isAuthorizerClass(result.default)) {
-        lazy ??= authorizerInstance(result.default, moduleRef);
-        return (await lazy()).authorize(context);
-      }
-      return result;
-    };
+function gateDecider(name: string, moduleRef: ModuleRef): ConsoleDecide {
+  let gate: ConsoleGate | undefined;
+  try {
+    gate = moduleRef.get<ConsoleGate>(CONSOLE_GATE, { strict: false });
+  } catch {
+    gate = undefined;
   }
-
-  // Mark it handled here; whoever awaits `ready` still sees the rejection.
-  ready.catch(() => undefined);
-
-  const resolved = async (context: ExecutionContext): Promise<ConsoleDecision> => {
-    try {
-      return normalizeConsoleAuthorizeResult(await check(context));
-    } catch (error) {
-      logger.warn(
-        `console \`authorize\` threw, so the request is denied: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return FORBIDDEN;
-    }
-  };
-  return Object.assign(resolved, { ready });
+  if (!gate) {
+    throw new Error(
+      `\`authorize: '${name}'\` needs @dudousxd/nestjs-authz's AuthzModule (it resolves gate names); or pass a function, a class, or { policy, ability }.`,
+    );
+  }
+  const resolved = gate;
+  return async (context) => normalizeConsoleResult(await resolved.allows(name, context));
 }
 
-/** One instance per registration: the registered provider when there is one, else a fresh one. */
-function authorizerInstance(
-  Class: ConsoleAuthorizerClass,
-  moduleRef: ModuleRef,
-): () => Promise<ConsoleAuthorizer> {
-  let instance: Promise<ConsoleAuthorizer> | undefined;
-  return () => {
-    instance ??= (async () => {
+/** One instance per class and registration: the registered provider when there is one, else a fresh one. */
+function classDecider(moduleRef: ModuleRef): (Class: ConsoleAuthorizerClass) => ConsoleDecide {
+  const instances = new Map<ConsoleAuthorizerClass, Promise<ConsoleAuthorizer>>();
+  const instanceOf = (Class: ConsoleAuthorizerClass): Promise<ConsoleAuthorizer> => {
+    const cached = instances.get(Class);
+    if (cached) return cached;
+    const pending = (async (): Promise<ConsoleAuthorizer> => {
       try {
         const registered = moduleRef.get(Class, { strict: false });
         if (registered) return registered;
@@ -179,11 +137,12 @@ function authorizerInstance(
       return moduleRef.create(Class);
     })();
     // A failed construction is retried on the next request rather than cached.
-    instance.catch(() => {
-      instance = undefined;
-    });
-    return instance;
+    pending.catch(() => instances.delete(Class));
+    instances.set(Class, pending);
+    return pending;
   };
+  return (Class) => async (context) =>
+    normalizeConsoleResult(await (await instanceOf(Class)).authorize(context));
 }
 
 interface AuthorizationApi {
@@ -196,26 +155,32 @@ interface AuthorizationApi {
 
 const AUTHORIZATION_PACKAGE = '@nestjs/authorization';
 
-async function resolvePolicyCheck(
+async function policyDecider(
   { policy, ability }: ConsolePolicyCheck,
   moduleRef: ModuleRef,
-): Promise<(context: ExecutionContext) => Promise<ConsoleDecision>> {
+): Promise<ConsoleDecide> {
   let api: AuthorizationApi;
   try {
+    // A variable specifier: an optional peer, never a static import.
     api = (await import(AUTHORIZATION_PACKAGE)) as AuthorizationApi;
   } catch {
     throw new Error(
-      `\`authorize: { policy: ${policy.name}, ability: '${ability}' }\` needs ${AUTHORIZATION_PACKAGE} installed (npm i ${AUTHORIZATION_PACKAGE}); or pass a function, a class, or a gate name.`,
+      `\`authorize: { policy, ability }\` needs ${AUTHORIZATION_PACKAGE} installed (npm i ${AUTHORIZATION_PACKAGE}); or pass a function, a class, or a gate name.`,
     );
   }
-  let service: InstanceType<AuthorizationApi['AuthorizationService']>;
+  let service: InstanceType<AuthorizationApi['AuthorizationService']> | undefined;
   try {
     service = moduleRef.get(api.AuthorizationService, { strict: false });
   } catch {
+    service = undefined;
+  }
+  if (!service) {
     throw new Error(
-      `\`authorize: { policy: ${policy.name}, ability: '${ability}' }\` needs AuthorizationModule.forRoot() from ${AUTHORIZATION_PACKAGE} imported in the app.`,
+      `\`authorize: { policy, ability }\` needs AuthorizationModule.forRoot() from ${AUTHORIZATION_PACKAGE} imported in the app.`,
     );
   }
+  // The user the official `AuthorizationGuard` sees: the module's `getUser`, else the default one
+  // (`request.user`). `null` and `false` are an answer, a guest, never looked up any further.
   let getUser = api.defaultGetUser;
   try {
     const options = moduleRef.get<{ getUser?: (context: ExecutionContext) => unknown }>(
@@ -226,23 +191,93 @@ async function resolvePolicyCheck(
   } catch {
     // No module options: the default `getUser` applies.
   }
+  const authorization = service;
   return async (context) => {
     const user = await getUser(context);
-    if (await service.can(policy, ability, user)) return ALLOW;
-    return isGuest(user) ? UNAUTHENTICATED : FORBIDDEN;
+    const signedIn = hasUser(user);
+    if (await authorization.can(policy, ability, signedIn ? user : null)) return allow();
+    return signedIn ? forbidden() : unauthenticated();
   };
 }
 
-function sha256(value: string): Buffer {
-  return createHash('sha256').update(value).digest();
+/** Options of {@link resolveConsoleAuthorize}. */
+export interface ResolveConsoleAuthorizeOptions {
+  /** Where the "no `authorize`" warning and the "`authorize` threw" warnings go. */
+  logger?: Logger;
+  /** Log {@link CONSOLE_AUTHORIZE_MISSING_WARNING} when `authorize` is omitted. Default `true`. */
+  warnIfMissing?: boolean;
+  /** The text of that warning. Default {@link CONSOLE_AUTHORIZE_MISSING_WARNING}. */
+  missingWarning?: string;
 }
 
 /**
- * A `ConsoleAuthorize` that allows a request carrying
- * `Authorization: Bearer <token>` (compared in constant time) and answers
- * `unauthenticated` otherwise. Only the header counts: no query string, no
- * custom header. Throws when `token` is empty, so a missing env var fails at
- * config time instead of opening the console.
+ * Resolves `authorize` into one function the guard calls per request. Configuration mistakes (a
+ * gate name without nestjs-authz, a policy without `@nestjs/authorization` or its module) reject
+ * here, so call it at boot. The returned function never throws: an error is a `forbidden`, logged
+ * at `warn`, never an allow.
+ *
+ * `authorize` omitted: open outside production, `forbidden` for every request in production, and
+ * one warning logged (unless `warnIfMissing: false`).
+ */
+export async function resolveConsoleAuthorize(
+  authorize: ConsoleAuthorize | undefined,
+  moduleRef: ModuleRef,
+  options: ResolveConsoleAuthorizeOptions = {},
+): Promise<ConsoleDecide> {
+  const logger = options.logger ?? new Logger('TelescopeModule');
+  if (authorize === undefined) {
+    if (options.warnIfMissing !== false) {
+      logger.warn(options.missingWarning ?? CONSOLE_AUTHORIZE_MISSING_WARNING);
+    }
+    const production = isProduction();
+    return async () => (production ? forbidden() : allow());
+  }
+
+  let decide: ConsoleDecide;
+  if (typeof authorize === 'string') {
+    decide = gateDecider(authorize, moduleRef);
+  } else if (isPolicyCheck(authorize)) {
+    decide = await policyDecider(authorize, moduleRef);
+  } else if (isAuthorizerClass(authorize)) {
+    decide = classDecider(moduleRef)(authorize);
+  } else if (typeof authorize === 'function') {
+    const fromClass = classDecider(moduleRef);
+    const fn = authorize as (context: ExecutionContext) => unknown;
+    let lazy: ConsoleDecide | undefined;
+    decide = async (context) => {
+      if (lazy) return lazy(context);
+      const result = await fn(context);
+      if (!isLazyModule(result)) return normalizeConsoleResult(result);
+      // A lazy import: remember the class, so the import runs once per registration.
+      lazy = fromClass(result.default);
+      return lazy(context);
+    };
+  } else {
+    throw new Error(
+      '`authorize` must be a function, a class with authorize(), a lazy import, { policy, ability } or a gate name.',
+    );
+  }
+
+  return async (context) => {
+    try {
+      return await decide(context);
+    } catch (error) {
+      logger.warn(
+        `console \`authorize\` threw, denying the request: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return forbidden();
+    }
+  };
+}
+
+const sha256 = (value: string): Buffer => createHash('sha256').update(value).digest();
+
+/**
+ * Allows a request carrying `Authorization: Bearer <token>` (compared timing-safe); anything else
+ * is `unauthenticated`. Header only: no query string, no custom header. Throws when `token` is
+ * empty, so a missing env var fails at config time instead of opening the console.
  */
 export function authorizeByToken(options: { token: string | undefined }): (
   context: ExecutionContext,
@@ -253,13 +288,10 @@ export function authorizeByToken(options: { token: string | undefined }): (
   }
   const expected = sha256(token);
   return (context) => {
-    const request = context.switchToHttp().getRequest<{ headers?: Record<string, unknown> }>();
-    const header = request?.headers?.authorization;
-    const value = Array.isArray(header) ? header[0] : header;
-    if (typeof value === 'string') {
-      const match = /^Bearer\s+(.+)$/i.exec(value.trim());
-      if (match?.[1] && timingSafeEqual(sha256(match[1]), expected)) return { allowed: true };
-    }
+    const header = context.switchToHttp().getRequest<{ headers?: Record<string, unknown> }>()
+      ?.headers?.authorization;
+    const match = typeof header === 'string' ? /^Bearer\s+(.+)$/i.exec(header.trim()) : null;
+    if (match?.[1] && timingSafeEqual(sha256(match[1]), expected)) return true;
     return { allowed: false, reason: 'unauthenticated' };
   };
 }

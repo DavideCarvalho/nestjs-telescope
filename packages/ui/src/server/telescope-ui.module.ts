@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import {
   UseConsoleAuthorize,
+  consoleAuthorizeMissingWarning,
   dynamicController,
   normalizeTelescopePath,
 } from '@dudousxd/nestjs-telescope';
@@ -27,9 +28,12 @@ function uiControllers(
       token: TELESCOPE_UI_OPTIONS,
       select: (resolved) => (resolved as TelescopeUiModuleOptions).authorize,
     },
-    pages: true,
-    packageName: '@dudousxd/nestjs-telescope-ui',
-    moduleName: 'TelescopeUiModule',
+    warn: true,
+    missingWarning: consoleAuthorizeMissingWarning(
+      '@dudousxd/nestjs-telescope-ui',
+      'TelescopeUiModule.forRoot()',
+    ),
+    loggerContext: 'TelescopeUiModule',
   });
   return [dynamicController(TelescopeUiController, path, [...(options.decorators ?? []), access])];
 }

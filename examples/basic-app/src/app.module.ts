@@ -1,7 +1,7 @@
 // The whole app, wired in one place:
 //  - TelescopeModule.forRoot({}) — zero-config, defaults to an in-memory SQLite
 //    store, the request + exception watchers, and the headless /telescope/api.
-//  - TelescopeUiModule.forRoot() — serves the React dashboard at /telescope.
+//  - TelescopeUiModule.forRoot({ authorize }) — serves the React dashboard at /telescope.
 //  - A CacheWatcher fed by a custom emitter (per-request hit/miss).
 //  - The coffee endpoints + the traffic seeder that fills the dashboard for you.
 
@@ -19,6 +19,9 @@ import { TrafficSeederService } from './traffic-seeder.service.js';
 // TelescopeModule's options factory.
 const cacheHolder = new CacheEmitHolder();
 
+// The demo's console check, shared by the API and the dashboard page.
+const consoleAccess = () => process.env.NODE_ENV !== 'production';
+
 @Module({
   imports: [
     TelescopeModule.forRoot({
@@ -26,12 +29,12 @@ const cacheHolder = new CacheEmitHolder();
       // Just add the one custom watcher this demo drives by hand.
       watchers: [new CacheWatcher(cacheHolder.source())],
 
-      // The console is open here because this demo runs outside production.
-      // With NODE_ENV=production it answers 403 until you set `authorize`, e.g.
-      // authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isAdmin === true
-      // (on TelescopeUiModule.forRoot too).
+      // Who may use the console (API, live stream, MCP). The demo has no sign-in,
+      // so it opens the console outside production only; a real app checks its
+      // user here, e.g. `ctx.switchToHttp().getRequest().user?.isAdmin === true`.
+      authorize: consoleAccess,
     }),
-    TelescopeUiModule.forRoot(),
+    TelescopeUiModule.forRoot({ authorize: consoleAccess }),
   ],
   controllers: [CoffeeController],
   providers: [
