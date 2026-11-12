@@ -53,6 +53,13 @@ Results: `true`/`{ allowed: true }` allow; `false` → 403 `{ error: 'forbidden'
 navigation, 401 `{ error: 'unauthenticated', redirectTo }` for the API (the
 dashboard follows it). A throw denies (403).
 
+With tenancy on (`tenancy` option, default `'inherit'`), `{ allowed: true,
+tenants: '*' | string[] }` scopes the viewer to those organizations (`'*'`
+every organization); with no `tenants` the viewer sees their own
+organization, and with none an empty console. Every API call takes
+`?tenant=<id>`, kept within that scope; a `tenant` outside it answers empty
+and is logged.
+
 The page is a full-page navigation (cookies, no `Authorization` header), so its
 check must read a cookie session. `decorators` (e.g.
 `[UseGuards(AuthenticationGuard)]`) still apply and run before `authorize`.
@@ -83,7 +90,8 @@ export class OpsModule {}
 ```
 
 `@UseConsoleAuthorize()` runs `TelescopeModule.forRoot({ authorize })`;
-`@UseConsoleAuthorize({ authorize })` runs its own check. With `routes: false`
+`@UseConsoleAuthorize({ authorize })` runs its own check. It also applies the
+tenant interceptor (a no-op with tenancy off). With `routes: false`
 the module still logs the "no `authorize`" boot warning when it is omitted.
 `StreamController`, `TelescopeMcpController`, `ClientErrorController` and
 `TelescopeUiController` (from the UI package; it answers denied page
@@ -100,6 +108,11 @@ Retry/remove/promote/redrive/enqueue, prune, replay and profiling-arm answer
 403 until `mutations: true`. For a rule on mutations stricter than on reads,
 use Pattern 2 and override those methods with an extra `@Can(...)`
 (re-declare the route decorators on the override).
+
+With tenancy on, clearing entries and `Prune now` are only for a viewer of
+every organization (403 otherwise); live queues and schedules answer empty,
+per-driver queue routes and extension data answer 404, and the Prometheus
+scrape (`GET <path>/api/metrics`) answers 404.
 
 ### Pattern 4 — the MCP server
 
@@ -120,6 +133,9 @@ MCP route only. Then
 For a key per developer, use an `ApiKeyProvider` from `@nestjs/authentication`
 in `mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] })]` (they
 replace `decorators` on MCP) and keep `authorize` for the policy.
+
+With tenancy on the MCP endpoint and the dev tools follow the same rule:
+each call runs inside the caller's organization view.
 
 ### Pattern 5 — `GET /metrics` (otel)
 
