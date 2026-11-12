@@ -153,7 +153,7 @@ Options:
 ```ts
 resilienceTelescopeExtension({
   window: '6h', // what the counts, charts and transitions cover (default '1h')
-  reset: false, // no Reset button and no resilience_reset_circuit tool (default true)
+  reset: false, // no Reset button and no telescope_resilience_reset_circuit tool (default true)
 });
 ```
 
@@ -164,8 +164,8 @@ console's `authorize`:
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
-| `resilience_circuits` | read | The circuits (live state merged with recorded transitions), open ones first, and the bulkheads' load. Filters: `status`, `limit` (default 20, max 100). |
-| `resilience_reset_circuit` | action | Resets the circuit `name` of this process. Served only with `mutations: true`. Writes the same audit line and entry as the page, with the MCP caller. |
+| `telescope_resilience_circuits` | read | The circuits (live state merged with recorded transitions), open ones first, and the bulkheads' load. Filters: `status`, `limit` (default 20, max 100). |
+| `telescope_resilience_reset_circuit` | action | Resets the circuit `name` of this process. Served only with `mutations: true`. Writes the same audit line and entry as the page, with the MCP caller. |
 
 ## `@nestjs/ai` usage
 

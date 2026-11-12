@@ -97,8 +97,8 @@ describe('resilienceTelescopeExtension (real @nestjs/resilience)', () => {
     expect(meta.actions).toEqual([
       expect.objectContaining({ ext: 'resilience', name: 'reset-circuit', destructive: true }),
     ]);
-    expect(devTool('resilience_circuits').kind).toBe('read');
-    expect(devTool('resilience_reset_circuit').kind).toBe('action');
+    expect(devTool('telescope_resilience_circuits').kind).toBe('read');
+    expect(devTool('telescope_resilience_reset_circuit').kind).toBe('action');
   });
 
   it('shows the open circuit live, with its history', async () => {
@@ -200,7 +200,10 @@ describe('resilienceTelescopeExtension (real @nestjs/resilience)', () => {
       caller: { id: 'token:abc', via: 'token' as const },
       limits: { maxRows: 100, maxBytes: 100_000 },
     };
-    const listed = (await devTool('resilience_circuits').run({ status: 'open' }, call)) as {
+    const listed = (await devTool('telescope_resilience_circuits').run(
+      { status: 'open' },
+      call,
+    )) as {
       items: Array<{ name: string; status: string }>;
       bulkheads: Array<{ name: string }>;
     };
@@ -208,12 +211,12 @@ describe('resilienceTelescopeExtension (real @nestjs/resilience)', () => {
     expect(listed.bulkheads.map((b) => b.name)).toEqual(['reports']);
 
     await expect(
-      devTool('resilience_reset_circuit').run({ name: 'payments' }, call),
+      devTool('telescope_resilience_reset_circuit').run({ name: 'payments' }, call),
     ).resolves.toEqual({ name: 'payments', from: 'open', state: 'closed' });
     expect(
       log.mock.calls.some((c) =>
         String(c[0]).startsWith(
-          'extension action resilience.resilience_reset_circuit ok by token:abc via dev-tools',
+          'extension action resilience.telescope_resilience_reset_circuit ok by token:abc via dev-tools',
         ),
       ),
     ).toBe(true);

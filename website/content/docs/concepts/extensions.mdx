@@ -47,7 +47,7 @@ The hooks are **multi-hooks**: every registered extension runs, and the results 
 - **`dashboards`** — contribute declarative dashboard pages (the panel IR below).
 - **`dataProviders`** — named server-side queries that panels bind to.
 - **`actions`** — write actions a table row button runs, after the viewer confirms. See [Row actions](#row-actions).
-- **`devTools`** — tools served next to telescope's own on the [dev MCP endpoint](/docs/concepts/mcp), behind the console's `authorize`. A tool with `kind: 'action'` is a console mutation: it is served only with `mutations: true`, and each run writes the same audit line as a row action.
+- **`devTools`** — tools served next to telescope's own on the [dev MCP endpoint](/docs/concepts/mcp), behind the console's `authorize`. Each tool is served as `telescope_<name>` (name it `circuits`, `reset_circuit`, ... in snake_case; a name that already starts with `telescope_` is kept). A tool with an invalid name or shape, or a name already served, is left out with a warning instead of failing the boot. A tool with `kind: 'action'` is a console mutation: it is served only with `mutations: true`, and each run writes the same audit line as a row action.
 
 <Callout type="info">
   Resolve host services through `ctx.moduleRef` — e.g. a durable engine, a store token, or `TELESCOPE_STORAGE`. The extension never imports the host app; it asks the Nest container for what it needs (use `{ strict: false }` so it finds providers in any module).
@@ -210,7 +210,7 @@ defineTelescopeExtension({
       confirm: 'Retry invoice {id}?', // `{key}` is filled from the row
       destructive: false,
       async run(input, ctx) {
-        // ctx.caller: { id: 'user:42' | 'token:<hash>' | 'anonymous', via: 'console' | 'dev-tools' }
+        // ctx.caller: { id: 'user:42' | 'token:<hash>' | 'console-session' | 'anonymous', via: 'console' | 'dev-tools' }
         const invoices = ctx.moduleRef.get(InvoiceService, { strict: false });
         return invoices.retry(String(input.id));
       },
@@ -257,8 +257,10 @@ then refetches. Actions are console mutations:
   `status` (`404` for an unknown target). Anything else is a `502` with its message.
 - Each run writes one log line through the `TelescopeAudit` logger, e.g.
   `extension action billing.retry-invoice ok by user:42 via console input={"id":"inv_1"}`. The
-  caller is the signed-in user's id (`request.user.id` or `sub`), else a hash of the bearer token
-  (never the token), else `anonymous`.
+  caller is the signed-in user's id (`request.user.id` or `sub`, the user an
+  `authorize: { policy, ability }` check saw through `getUser`, or the session's `user`, `userId`
+  or passport user), else a hash of the bearer token (never the token), else `console-session`
+  when the console's `authorize` allowed the request without a user id, else `anonymous`.
 
 ## Collisions
 

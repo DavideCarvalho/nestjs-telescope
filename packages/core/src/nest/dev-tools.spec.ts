@@ -324,25 +324,64 @@ describe('extension dev tools', () => {
     });
     const names = telescope()?.tools.map((t) => t.name) ?? [];
     expect(names).toContain('telescope_list_entries');
-    expect(names.slice(-2)).toEqual(['demo_list', 'demo_reset']);
+    expect(names.slice(-2)).toEqual(['telescope_demo_list', 'telescope_demo_reset']);
 
-    await tool('demo_list').run({}, call);
+    await tool('telescope_demo_list').run({}, call);
     expect(log.mock.calls.some((c) => String(c[0]).includes('demo_list'))).toBe(false);
 
-    await expect(tool('demo_reset').run({ name: 'stripe' }, call)).resolves.toEqual({ ok: true });
-    await expect(tool('demo_reset').run({ name: 'boom' }, call)).rejects.toThrow('kaboom');
+    await expect(tool('telescope_demo_reset').run({ name: 'stripe' }, call)).resolves.toEqual({
+      ok: true,
+    });
+    await expect(tool('telescope_demo_reset').run({ name: 'boom' }, call)).rejects.toThrow(
+      'kaboom',
+    );
     const lines = log.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('demo_reset'));
     expect(lines).toEqual([
-      'extension action demo.demo_reset ok by token:abc via dev-tools input={"name":"stripe"}',
-      'extension action demo.demo_reset failed by token:abc via dev-tools input={"name":"boom"}',
+      'extension action demo.telescope_demo_reset ok by token:abc via dev-tools input={"name":"stripe"}',
+      'extension action demo.telescope_demo_reset failed by token:abc via dev-tools input={"name":"boom"}',
     ]);
   });
 
   it('leaves action tools out while mutations are off', async () => {
     await boot({ authorize: authorizeByToken({ token: TOKEN }), extensions: [extension] });
     const names = telescope()?.tools.map((t) => t.name) ?? [];
-    expect(names).toContain('demo_list');
-    expect(names).not.toContain('demo_reset');
+    expect(names).toContain('telescope_demo_list');
+    expect(names).not.toContain('telescope_demo_reset');
+  });
+
+  it('leaves out a tool the dev MCP endpoint would refuse, keeping telescope’s', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const bad = (name: string, extra: Partial<TelescopeDevTool> = {}): TelescopeDevTool => ({
+      ...extension.devTools()[0]!,
+      name,
+      ...extra,
+    });
+    await boot({
+      authorize: authorizeByToken({ token: TOKEN }),
+      extensions: [
+        extension,
+        {
+          name: 'broken',
+          devTools: () => [
+            bad('Bad-Name'),
+            bad('nodescription', { description: '' }),
+            bad('list_entries'), // telescope_list_entries is telescope's own
+            bad('telescope_demo_list'), // already served for "demo"
+            bad('telescope_broken_ok'),
+          ],
+        },
+      ],
+    });
+    const names = telescope()?.tools.map((t) => t.name) ?? [];
+    expect(names.filter((n) => n === 'telescope_list_entries')).toHaveLength(1);
+    expect(names).toContain('telescope_demo_list');
+    expect(names).toContain('telescope_broken_ok');
+    expect(names.every((n) => /^telescope_[a-z0-9]+(_[a-z0-9]+)*$/.test(n))).toBe(true);
+    expect(new Set(names).size).toBe(names.length);
+    const warnings = warn.mock.calls.map((c) => String(c[0]));
+    expect(
+      warnings.filter((m) => m.includes('of the "broken" extension is not served')),
+    ).toHaveLength(4);
   });
 
   it('refuses a caller limited to some organizations', async () => {

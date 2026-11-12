@@ -350,7 +350,7 @@ export interface ResilienceTelescopeOptions {
   /** The window the counts, charts and transitions cover. Default `'1h'`. */
   window?: string;
   /**
-   * The Reset button on open and half-open circuits, and the `resilience_reset_circuit` dev tool.
+   * The Reset button on open and half-open circuits, and the `telescope_resilience_reset_circuit` dev tool.
    * Default `true`. The button also needs `mutations: true` on `TelescopeModule`.
    */
   reset?: boolean;

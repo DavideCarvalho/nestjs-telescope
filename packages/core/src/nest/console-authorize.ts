@@ -8,6 +8,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { type ExecutionContext, Logger, type Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { type ConsoleTenants, consoleTenantsOf } from './console-tenant-scope.js';
+import { rememberConsoleCaller } from './extension-audit.js';
 
 /**
  * `tenants` (with tenancy on) is what the viewer may see: `'*'` every organization and the data
@@ -211,7 +212,13 @@ async function policyDecider(
   return async (context) => {
     const user = await getUser(context);
     const signedIn = hasUser(user);
-    if (await authorization.can(policy, ability, signedIn ? user : null)) return allow();
+    if (await authorization.can(policy, ability, signedIn ? user : null)) {
+      // The audit line names this user even when `getUser` does not read `request.user`.
+      if (signedIn && context.getType() === 'http') {
+        rememberConsoleCaller(context.switchToHttp().getRequest(), user);
+      }
+      return allow();
+    }
     return signedIn ? forbidden() : unauthenticated();
   };
 }

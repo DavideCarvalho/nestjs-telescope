@@ -56,7 +56,7 @@ export interface TelescopeExtension {
 
 /** Who ran an extension action, as the audit line and the action see it. */
 export interface ExtensionActionCaller {
-  /** `user:<id>`, `token:<sha256 prefix>` (never the token) or `anonymous`; the dev-tools caller id over MCP. */
+  /** `user:<id>`, `token:<sha256 prefix>` (never the token), `console-session` (allowed by `authorize`, no user id found) or `anonymous`; the dev-tools caller id over MCP. */
   id: string;
   /** Where the call came from: the console page or the dev MCP endpoint. */
   via: 'console' | 'dev-tools';

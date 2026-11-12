@@ -176,8 +176,10 @@ When the app also runs the agent's MCP server (`@dudousxd/nestjs-agent-mcp-serve
 An unknown or pruned id is a tool error ("… not found").
 
 [Extensions](/docs/concepts/extensions) can add tools to this list (the
-[Resilience page](/docs/packages/official#dev-tools) adds `resilience_circuits` and
-`resilience_reset_circuit`). Their data spans every organization, so with organizations on, a
+[Resilience page](/docs/packages/official#dev-tools) adds `telescope_resilience_circuits` and
+`telescope_resilience_reset_circuit`). Each is served as `telescope_<its name>`; a tool that is
+not valid (not snake_case, no description, or a name already taken) is left out with a warning,
+and telescope's own tools are still served. Their data spans every organization, so with organizations on, a
 caller limited to some organizations gets an error from them.
 
 The tools are registered while the console's routes are mounted. Set `devTools: true` to keep them with `routes: false`, or `devTools: false` to turn them off:

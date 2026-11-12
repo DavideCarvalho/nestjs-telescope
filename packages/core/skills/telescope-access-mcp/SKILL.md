@@ -139,7 +139,7 @@ With tenancy on the MCP endpoint and telescope's own dev tools follow the same r
 each call runs inside the caller's organization view. Extension-contributed dev
 tools instead span every organization, so a caller limited to some organizations
 is refused instead of running. Extension tools of kind `action` (for example
-`resilience_reset_circuit`) are console mutations: they are served only with
+`telescope_resilience_reset_circuit`) are console mutations: they are served only with
 `mutations: true`, and each run writes a `TelescopeAudit` log line.
 
 ### Pattern 5 — `GET /metrics` (otel)
