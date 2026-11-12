@@ -57,6 +57,10 @@ function meta(aiEnabled: boolean): TelescopeMeta {
     explainEnabled: false,
     sampling: {},
     ai: { enabled: aiEnabled, mode: 'on-demand' },
+    tracesEnabled: true,
+    entryTypes: [],
+    dashboards: [],
+    profiling: { enabled: false, sampleRate: 0 },
   };
 }
 

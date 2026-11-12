@@ -100,8 +100,8 @@ export type GeoLookup = (ip: string) => AlertGeoLocation | null | Promise<AlertG
 /**
  * Pluggable alerting (v2). When set, {@link TelescopeAlerter} evaluates `rules`
  * and fans each fired alert out to EVERY configured channel concurrently. A
- * configured `alerts` with no destination (neither `channels` nor the legacy
- * `webhookUrl`) or empty `rules` is a fail-closed boot error.
+ * configured `alerts` with no `channels` or empty `rules` is a fail-closed boot
+ * error.
  */
 export interface AlertsOptions {
   /**
@@ -115,16 +115,9 @@ export interface AlertsOptions {
    * Delivery destinations. Each fired alert is sent to every channel
    * concurrently; one channel failing never blocks the others. Use the factory
    * helpers: `slackChannel(url)`, `webhookChannel(url)`, `customChannel(fn)`.
-   * Optional ONLY for backward compatibility with `webhookUrl` — supply at least
-   * one of `channels` / `webhookUrl`.
+   * Must hold at least one channel.
    */
-  channels?: AlertChannel[];
-  /**
-   * Legacy single raw-JSON webhook (v1). Still accepted: internally rewritten
-   * into a `webhookChannel(webhookUrl)` and appended to `channels`. Prefer
-   * `channels` for new configs.
-   */
-  webhookUrl?: string;
+  channels: AlertChannel[];
   /**
    * The host's EXTERNAL Telescope dashboard URL (e.g.
    * `https://telescope.example.com/telescope/`). When set, channels that support
@@ -147,7 +140,7 @@ export interface AlertsOptions {
 
 /** Boot-resolved, validated alerting config (durations normalized to ms). */
 export interface ResolvedAlerts {
-  /** All destinations, with any legacy `webhookUrl` already folded in. */
+  /** All destinations. */
   channels: AlertChannel[];
   /** External dashboard URL for deep links, or `null` when unset. */
   dashboardUrl: string | null;

@@ -60,6 +60,11 @@ async function renderDetail(entryValue: EntryWithBatch, traceLink: string | null
     pruneEnabled: false,
     explainEnabled: false,
     sampling: {},
+    tracesEnabled: true,
+    ai: { enabled: false, mode: null },
+    entryTypes: [],
+    dashboards: [],
+    profiling: { enabled: false, sampleRate: 0 },
   };
   const result = render(
     <TelescopeProvider client={mockClient(meta)}>
@@ -174,6 +179,11 @@ async function renderDetailWithBatch(entryValue: EntryWithBatch) {
     pruneEnabled: false,
     explainEnabled: false,
     sampling: {},
+    tracesEnabled: true,
+    ai: { enabled: false, mode: null },
+    entryTypes: [],
+    dashboards: [],
+    profiling: { enabled: false, sampleRate: 0 },
   };
   render(
     <TelescopeProvider client={mockClient(meta)}>

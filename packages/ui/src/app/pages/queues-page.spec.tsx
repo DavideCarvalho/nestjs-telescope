@@ -58,6 +58,11 @@ function mockClient(): TelescopeClient {
       pruneEnabled: false,
       explainEnabled: false,
       sampling: {},
+      tracesEnabled: true,
+      ai: { enabled: false, mode: null },
+      entryTypes: [],
+      dashboards: [],
+      profiling: { enabled: false, sampleRate: 0 },
     }),
   });
 }

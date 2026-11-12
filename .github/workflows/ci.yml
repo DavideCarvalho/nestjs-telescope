@@ -11,11 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-test-lint:
-    name: Build · Test · Lint · Typecheck
+  # Lint, typecheck, build and package checks run once, on the Node the release is built with.
+  build-lint:
+    name: Build · Lint · Typecheck · Package checks
     runs-on: ubuntu-latest
-    # The container-backed suites (ClickHouse, MinIO, Redis) can wedge on a runner; fail with a log
-    # instead of holding the check for the platform's 6h default.
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -27,7 +26,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20.20.2
+          node-version: 24.22.2
           cache: pnpm
 
       - name: Install dependencies
@@ -38,6 +37,39 @@ jobs:
 
       - name: Typecheck (turbo)
         run: pnpm typecheck
+
+      - name: Build (turbo)
+        run: pnpm build
+
+      - name: Package checks (publint, attw)
+        run: pnpm check:package
+
+  # Tests run on every Node major the packages support.
+  test:
+    name: Test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    # The container-backed suites (ClickHouse, MinIO, Redis) can wedge on a runner; fail with a log
+    # instead of holding the check for the platform's 6h default.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24.22.2, 26.13.0]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Build (turbo)
         run: pnpm build
