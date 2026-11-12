@@ -125,19 +125,25 @@ export class RedisCommandWatcher implements Watcher {
   }
 
   unregister(): void {
-    this.releaseCovered?.();
-    this.releaseCovered = null;
+    this.release();
   }
 
   /** Restore the original `sendCommand` if we wrapped it. Safe to call when
    *  never registered. */
   cleanup(): void {
+    // No longer capturing, so the span processor must stop skipping redis spans.
+    this.release();
     if (this.patched && this.original) {
       this.patched.sendCommand = this.original;
       this.patched[PATCHED] = false;
     }
     this.patched = null;
     this.original = null;
+  }
+
+  private release(): void {
+    this.releaseCovered?.();
+    this.releaseCovered = null;
   }
 
   /** Monkey-patch `client.sendCommand` to time + record each command. No-op when

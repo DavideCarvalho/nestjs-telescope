@@ -204,7 +204,9 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
   ) {
     this.captureConfig = resolveRequestCapture(moduleOptions?.requestCapture);
     // Incoming requests are recorded here, so the span processor skips the HTTP server spans.
-    markCoveredByTelescope('request');
+    // With `registerRequestMiddleware: false` the module never applies this instance, so it
+    // must not claim coverage (the manual `telescopeRequestCapture` path builds its own).
+    if (moduleOptions?.registerRequestMiddleware !== false) markCoveredByTelescope('request');
   }
 
   use(req: unknown, res: unknown, next: (error?: unknown) => void): void {
@@ -295,6 +297,12 @@ export function telescopeRequestCapture(
   // so the capture gates are passed here — same shape as the module option:
   // `telescopeRequestCapture(service, { requestCapture: { skipBody: ... } })`.
   // Omitted → the safe defaults (128 KiB cap + binary content-type list).
-  const middleware = new TelescopeRequestMiddleware(service, undefined, options);
+  // Only `requestCapture` is forwarded, so this instance always marks requests as covered.
+  const capture = options?.requestCapture;
+  const middleware = new TelescopeRequestMiddleware(
+    service,
+    undefined,
+    capture === undefined ? undefined : { requestCapture: capture },
+  );
   return (req, res, next) => middleware.use(req, res, next);
 }

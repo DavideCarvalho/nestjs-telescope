@@ -2,8 +2,12 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../config/resolve-config.js';
+import { telescopeRuntime } from '../otel/telescope-runtime.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
-import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
+import {
+  TelescopeRequestMiddleware,
+  telescopeRequestCapture,
+} from './telescope-request.middleware.js';
 import type { TelescopeHttpRequest, TelescopeModuleOptions } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
 
@@ -32,6 +36,30 @@ async function captureRequestEntry(
 }
 
 describe('TelescopeRequestMiddleware', () => {
+  describe('span processor coverage', () => {
+    const covered = telescopeRuntime().covered;
+    const service = new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {});
+
+    it('covers requests when the module applies the middleware', () => {
+      covered.delete('request');
+      new TelescopeRequestMiddleware(service, undefined, {});
+      expect(covered.has('request')).toBe(true);
+    });
+
+    it('does not cover requests with registerRequestMiddleware: false', () => {
+      covered.delete('request');
+      new TelescopeRequestMiddleware(service, undefined, { registerRequestMiddleware: false });
+      expect(covered.has('request')).toBe(false);
+    });
+
+    it('covers requests through the manual telescopeRequestCapture', () => {
+      covered.delete('request');
+      telescopeRequestCapture(service, { requestCapture: { skipBody: () => true } });
+      expect(covered.has('request')).toBe(true);
+      covered.delete('request');
+    });
+  });
+
   it('opens a batch and records a request entry on response finish', async () => {
     const storage = new InMemoryStorageProvider();
     const service = new TelescopeService(resolveConfig({}), storage, {});

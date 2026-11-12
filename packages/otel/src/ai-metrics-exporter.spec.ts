@@ -133,4 +133,14 @@ describe('TelescopeAiMetricsExporter', () => {
       );
     },
   );
+
+  it('accepts a removed option set to undefined (e.g. an unset env var)', () => {
+    expect(
+      () =>
+        new TelescopeAiMetricsExporter({
+          endpoint: undefined,
+          serviceName: undefined,
+        } as never),
+    ).not.toThrow();
+  });
 });

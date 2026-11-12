@@ -64,4 +64,39 @@ describe('telescope runtime', () => {
     expect(store).toBeInstanceOf(Store);
     expect(store.store).toBe(store.store);
   });
+
+  it.each([1, 2])(
+    'suppresses tracing through the context manager of @opentelemetry/api %i.x',
+    (major) => {
+      const key = Symbol.for(`opentelemetry.js.api.${major}`);
+      const suppressKey = Symbol.for('OpenTelemetry SDK Context Key SUPPRESS_TRACING');
+      const seen: unknown[] = [];
+      const makeContext = (values: Map<symbol, unknown>) => ({
+        values,
+        setValue(k: symbol, v: unknown) {
+          return makeContext(new Map(values).set(k, v));
+        },
+      });
+      const slot = globalThis as Record<symbol, unknown>;
+      slot[key] = {
+        context: {
+          active: () => makeContext(new Map()),
+          with: <T>(ctx: { values: Map<symbol, unknown> }, fn: () => T): T => {
+            seen.push(ctx.values.get(suppressKey));
+            return fn();
+          },
+        },
+      };
+      try {
+        expect(runAsTelescopeWork(() => 'ok')).toBe('ok');
+        expect(seen).toEqual([true]);
+      } finally {
+        delete slot[key];
+      }
+    },
+  );
+
+  it('just runs the function when no OpenTelemetry api is registered', () => {
+    expect(runAsTelescopeWork(() => 42)).toBe(42);
+  });
 });

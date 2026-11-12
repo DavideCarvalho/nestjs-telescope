@@ -98,8 +98,11 @@ export function isTelescopeSpanProcessorActive(): boolean {
   return globalSlot[TELESCOPE_SPAN_PROCESSOR_KEY] === true;
 }
 
-/** `Symbol.for` slot `@opentelemetry/api` 1.x registers its globals in. */
-const OTEL_API_KEY = Symbol.for('opentelemetry.js.api.1');
+/**
+ * `@opentelemetry/api` registers its globals under `Symbol.for('opentelemetry.js.api.<major>')`.
+ * Telescope has no `@opentelemetry/api` dependency, so the app may run any major: match them all.
+ */
+const OTEL_API_KEY_PATTERN = /^opentelemetry\.js\.api\.(\d+)$/;
 /**
  * The context key OpenTelemetry instrumentations read to skip tracing (`suppressTracing` in
  * `@opentelemetry/core`). `createContextKey` is `Symbol.for(description)`, so this is the same
@@ -121,10 +124,27 @@ interface ContextManagerLike {
  * it just runs `fn`.
  */
 function withoutTracing<T>(fn: () => T): T {
-  const api = globalSlot[OTEL_API_KEY] as { context?: ContextManagerLike } | undefined;
-  const manager = api?.context;
-  if (manager === undefined || typeof manager.with !== 'function') return fn();
+  const manager = globalContextManager();
+  if (manager === undefined) return fn();
   return manager.with(manager.active().setValue(SUPPRESS_TRACING_KEY, true), fn);
+}
+
+/** The context manager of the highest `@opentelemetry/api` major registered in this process. */
+function globalContextManager(): ContextManagerLike | undefined {
+  let found: ContextManagerLike | undefined;
+  let foundMajor = -1;
+  for (const key of Object.getOwnPropertySymbols(globalSlot)) {
+    const match = OTEL_API_KEY_PATTERN.exec(key.description ?? '');
+    if (match === null || Symbol.for(key.description ?? '') !== key) continue;
+    const major = Number(match[1]);
+    if (major <= foundMajor) continue;
+    const manager = (globalSlot[key] as { context?: Partial<ContextManagerLike> } | undefined)
+      ?.context;
+    if (typeof manager?.with !== 'function' || typeof manager.active !== 'function') continue;
+    found = manager as ContextManagerLike;
+    foundMajor = major;
+  }
+  return found;
 }
 
 /**

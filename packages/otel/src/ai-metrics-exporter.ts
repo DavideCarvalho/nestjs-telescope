@@ -50,7 +50,9 @@ export class TelescopeAiMetricsExporter implements TelescopeExtension {
   private readonly instruments = new Map<AgentMetricKey, Counter | Histogram>();
 
   constructor(private readonly options: TelescopeAiMetricsExporterOptions = {}) {
-    const removed = REMOVED_OPTIONS.filter((key) => key in (options as Record<string, unknown>));
+    // `{ endpoint: process.env.X }` with the env unset passes `undefined`: treat it as omitted.
+    const given = options as Record<string, unknown>;
+    const removed = REMOVED_OPTIONS.filter((key) => given[key] !== undefined);
     if (removed.length > 0) {
       const keys = removed.map((key) => `\`${key}\``).join(', ');
       const verb = removed.length === 1 ? 'is' : 'are';

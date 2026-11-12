@@ -195,6 +195,13 @@ describe('telescopeSpanProcessor', () => {
     expect(names()).toEqual(['checkout']);
   });
 
+  it("skips Prisma's spans (tracer `prisma`) while the Prisma watcher is on", () => {
+    const processor = make();
+    cover('query');
+    run(processor, span({ name: 'prisma:engine:db_query', scope: 'prisma' }));
+    expect(names()).toEqual([]);
+  });
+
   it('records DB driver spans when no query watcher is on', () => {
     const processor = make();
     const pg = span({ name: 'pg.query:SELECT', scope: '@opentelemetry/instrumentation-pg' });

@@ -120,7 +120,6 @@ const COVERED: ReadonlyArray<{
     '@opentelemetry/instrumentation-tedious',
     '@opentelemetry/instrumentation-oracledb',
     '@opentelemetry/instrumentation-knex',
-    '@prisma/instrumentation',
     'prisma',
   ].map((scope) => ({ scope, operation: 'query' as const, leaf: true })),
   ...[
