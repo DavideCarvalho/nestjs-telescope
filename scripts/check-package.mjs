@@ -35,6 +35,7 @@ for (const dir of dirs) {
     execFileSync(bin('publint'), ['run', '--strict', dir], { stdio: 'inherit' });
     execFileSync('pnpm', ['pack', '--pack-destination', out], { cwd: dir, stdio: 'ignore' });
     const tarball = readdirSync(out).find((f) => f.endsWith('.tgz'));
+    if (tarball === undefined) throw new Error(`pnpm pack wrote no .tgz to ${out}`);
     // Every package here is ESM-only, so the CommonJS resolution modes are not expected to work.
     execFileSync(bin('attw'), [join(out, tarball), '--profile', 'esm-only', '--format', 'table'], {
       stdio: 'inherit',
