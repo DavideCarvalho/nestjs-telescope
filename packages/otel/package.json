@@ -1,7 +1,7 @@
 {
   "name": "@dudousxd/nestjs-telescope-otel",
   "version": "3.0.0",
-  "description": "OpenTelemetry for @dudousxd/nestjs-telescope — trace-context provider, Prometheus/OTLP export of recorded entries, and AI-usage and agent-run metrics over OTLP.",
+  "description": "OpenTelemetry for @dudousxd/nestjs-telescope \u2014 trace-context provider, a span processor that brings your app's OTel spans into the trace waterfall, Prometheus/OTLP export of recorded entries, and AI-usage and agent-run metrics on the global meter.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -35,6 +35,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./span-processor": {
+      "types": "./dist/span-processor.d.ts",
+      "import": "./dist/span-processor.js",
+      "default": "./dist/span-processor.js"
     }
   },
   "files": ["dist/", "grafana/", "README.md", "CHANGELOG.md"],
@@ -48,10 +53,7 @@
     "@dudousxd/nestjs-telescope": "workspace:^",
     "@nestjs/common": ">=10.0.0",
     "@nestjs/core": ">=10.0.0",
-    "@opentelemetry/api": ">=1.0.0",
-    "@opentelemetry/sdk-metrics": "^2.0.0 || ^3.0.0",
-    "@opentelemetry/exporter-metrics-otlp-http": ">=0.200.0 <1.0.0",
-    "@opentelemetry/resources": "^2.0.0 || ^3.0.0"
+    "@opentelemetry/api": ">=1.0.0"
   },
   "peerDependenciesMeta": {
     "@nestjs/common": {
@@ -61,15 +63,6 @@
       "optional": true
     },
     "@opentelemetry/api": {
-      "optional": true
-    },
-    "@opentelemetry/sdk-metrics": {
-      "optional": true
-    },
-    "@opentelemetry/exporter-metrics-otlp-http": {
-      "optional": true
-    },
-    "@opentelemetry/resources": {
       "optional": true
     }
   },
@@ -81,10 +74,11 @@
     "@nestjs/platform-express": "12.0.3",
     "@nestjs/testing": "12.0.3",
     "@opentelemetry/api": "1.9.1",
-    "@opentelemetry/exporter-metrics-otlp-http": "0.223.0",
-    "@opentelemetry/resources": "2.12.0",
+    "@opentelemetry/context-async-hooks": "2.11.0",
+    "@opentelemetry/instrumentation-http": "0.222.0",
     "@opentelemetry/sdk-metrics": "2.12.0",
     "@opentelemetry/sdk-trace-base": "2.11.0",
+    "@opentelemetry/sdk-trace-node": "2.11.0",
     "@types/node": "20.19.43",
     "@types/supertest": "6.0.3",
     "reflect-metadata": "0.2.2",

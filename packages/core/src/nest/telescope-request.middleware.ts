@@ -1,6 +1,7 @@
-// packages/core/src/nest/telescope-request.middleware.ts
 import { Inject, Injectable, type NestMiddleware, Optional } from '@nestjs/common';
 import { EntryType } from '../entry/entry.js';
+// packages/core/src/nest/telescope-request.middleware.ts
+import { markCoveredByTelescope } from '../otel/telescope-runtime.js';
 import type { ProfileHandle } from '../profiling/profiler.service.js';
 import { ProfilerService } from '../profiling/profiler.service.js';
 import { normalizeRoute } from '../query/normalize-route.js';
@@ -202,6 +203,8 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     moduleOptions: TelescopeModuleOptions | undefined = undefined,
   ) {
     this.captureConfig = resolveRequestCapture(moduleOptions?.requestCapture);
+    // Incoming requests are recorded here, so the span processor skips the HTTP server spans.
+    markCoveredByTelescope('request');
   }
 
   use(req: unknown, res: unknown, next: (error?: unknown) => void): void {

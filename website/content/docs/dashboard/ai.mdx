@@ -53,9 +53,9 @@ stored entries), so sampling and retention never change a count. Two ways out, u
 - **Prometheus scrape** — `TelescopeModule.forRoot({ aiMetrics: { prometheus: true } })` serves
   `GET <path>/api/metrics` (default `/telescope/api/metrics`) in text exposition format, protected
   like the rest of the API (your `decorators`, or your own controller). Off by default (404).
-- **OTLP push** — `TelescopeAiMetricsExporter` from
-  [`@dudousxd/nestjs-telescope-otel`](/docs/packages/otel#ai-usage-and-agent-run-metrics), with its
-  own endpoint, independent of where your traces and logs go.
+- **OpenTelemetry** — `TelescopeAiMetricsExporter` from
+  [`@dudousxd/nestjs-telescope-otel`](/docs/packages/otel#ai-usage-and-agent-run-metrics) records
+  them on the global meter; your OpenTelemetry SDK's metric reader sends them out.
 
 | Metric (Prometheus name) | Type | Attributes | Unit |
 |---|---|---|---|
@@ -98,17 +98,29 @@ docker run --rm -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
 ```
 
 ```ts
+// src/instrumentation.ts, loaded with `node --import` before the app
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+
+new NodeSDK({
+  serviceName: 'my-app',
+  metricReaders: [
+    new PeriodicExportingMetricReader({
+      // the container's OTLP/HTTP port
+      exporter: new OTLPMetricExporter({ url: 'http://localhost:4318/v1/metrics' }),
+      exportIntervalMillis: 15_000,
+    }),
+  ],
+}).start();
+```
+
+```ts
 import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 import { TelescopeAiMetricsExporter } from '@dudousxd/nestjs-telescope-otel';
 
 TelescopeModule.forRoot({
-  extensions: [
-    new TelescopeAiMetricsExporter({
-      endpoint: 'http://localhost:4318', // the container's OTLP/HTTP port
-      exportIntervalMs: 15_000,
-      serviceName: 'my-app',
-    }),
-  ],
+  extensions: [new TelescopeAiMetricsExporter()],
   aiMetrics: { prometheus: true }, // optional: also serve /telescope/api/metrics
 });
 ```

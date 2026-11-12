@@ -21,6 +21,7 @@ import { type BatchOrigin, EntryType, type RecordInput } from '../entry/entry.js
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
 import type { DashboardSection, Panel } from '../extension/types.js';
+import { isTelescopeSpanProcessorActive, telescopeRuntime } from '../otel/telescope-runtime.js';
 import { setTelescopeRecordSink } from '../record/telescope-record.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
@@ -215,6 +216,14 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     // at `MikroORM.init()` before Nest DI has this service) without
     // injecting it. Cleared on shutdown.
     setTelescopeRecordSink((input) => this.record(input));
+    // Hand the same sink to code outside DI that reads the global runtime (the OpenTelemetry
+    // span processor). Cleared on shutdown.
+    if (this.config.enabled) {
+      const runtime = telescopeRuntime();
+      runtime.record = (input) => this.record(input);
+      runtime.isPaused = () => this.recorder.isPaused;
+      runtime.selfPath = `/${this.config.path}`;
+    }
   }
 
   /**
@@ -282,6 +291,10 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     setTelescopeDump(null);
     // Detach the global record sink so stray post-shutdown calls become no-ops.
     setTelescopeRecordSink(null);
+    const runtime = telescopeRuntime();
+    runtime.record = null;
+    runtime.isPaused = () => false;
+    runtime.selfPath = null;
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
@@ -376,7 +389,11 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     return {
       enabled: this.config.enabled,
       droppedCount: this.recorder.droppedCount,
-      watchers: [...this.watcherTypes],
+      // `span` entries come from the OpenTelemetry span processor, which is not a watcher.
+      watchers:
+        isTelescopeSpanProcessorActive() && !this.watcherTypes.includes(EntryType.Span)
+          ? [...this.watcherTypes, EntryType.Span]
+          : [...this.watcherTypes],
       traceLink: this.config.traceLink ?? null,
       tracesEnabled: this.config.traceContext !== undefined,
       retention: this.config.prune

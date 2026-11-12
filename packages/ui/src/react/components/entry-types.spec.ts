@@ -101,3 +101,11 @@ describe('visibleEntryTypes', () => {
     expect(disabled.map((type) => type.id)).not.toContain('inertia');
   });
 });
+
+describe('ENTRY_TYPES span', () => {
+  it('lists OpenTelemetry spans only when the span processor is on', () => {
+    expect(ENTRY_TYPES.find((type) => type.id === 'span')?.label).toBe('Spans');
+    expect(visibleEntryTypes(ENTRY_TYPES, ['request', 'span']).map((t) => t.id)).toContain('span');
+    expect(visibleEntryTypes(ENTRY_TYPES, ['request']).map((t) => t.id)).not.toContain('span');
+  });
+});

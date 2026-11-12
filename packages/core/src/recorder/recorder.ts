@@ -594,7 +594,7 @@ export class Recorder {
       origin: batch?.origin ?? 'manual',
       instanceId: this.options.instanceId,
       traceId,
-      spanId: trace?.spanId ?? null,
+      spanId: input.spanId ?? trace?.spanId ?? null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
     // Swap in the tagger-enriched tags IN PLACE rather than cloning the whole

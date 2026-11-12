@@ -1,14 +1,12 @@
 # @dudousxd/nestjs-telescope-otel
 
-OpenTelemetry trace-context provider for
-[`@dudousxd/nestjs-telescope`](../../README.md). Implements core's
-`TraceContextProvider` SPI by reading the **active** OpenTelemetry span via
-[`@opentelemetry/api`](https://www.npmjs.com/package/@opentelemetry/api), so each
-recorded Telescope entry is stamped with the ambient `traceId`/`spanId`.
+OpenTelemetry for [`@dudousxd/nestjs-telescope`](../../README.md). It works with the
+OpenTelemetry SDK your app already runs and never exports anything itself:
 
-This package is **read-only**: it reads whatever span is already active in the
-caller's context. It does **not** create, sample, or export spans — your
-existing OpenTelemetry SDK / instrumentation owns that.
+- `telescopeSpanProcessor()` brings your app's spans into Telescope's trace waterfall.
+- `OtelTraceContextProvider` stamps every entry with the active `traceId`/`spanId`.
+- `TelescopeOtelExporter` sends Telescope's entries out as metrics and spans (plus a Prometheus `/metrics`).
+- `TelescopeAiMetricsExporter` records the AI-usage and agent-run metrics on the global meter.
 
 ## Install
 
@@ -19,6 +17,27 @@ pnpm add @dudousxd/nestjs-telescope-otel
 `@opentelemetry/api` is an optional peer. When it (or an active span) is absent,
 the provider returns `null` and recording proceeds without a trace link — it
 never throws.
+
+## Your spans in the waterfall
+
+Add `telescopeSpanProcessor()` to the SDK, in the file you load before the app:
+
+```ts
+// src/instrumentation.ts  (node --import ./dist/instrumentation.js dist/main.js)
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { telescopeSpanProcessor } from '@dudousxd/nestjs-telescope-otel/span-processor';
+
+new NodeSDK({
+  spanProcessors: [new BatchSpanProcessor(exporter), telescopeSpanProcessor()],
+}).start();
+```
+
+Each span becomes a `span` entry in its trace. Spans a watcher already records (incoming
+requests, SQL while a query watcher is on, redis while the redis watcher is on, `fetch` calls
+through the http-client watcher) are skipped with the driver spans under them; so are Telescope's
+own spans, its storage work and requests to the dashboard. Options: `ignore(span)`,
+`maxSpansPerTrace` (200), `maxAttributes` (64), `maxAttributeLength` (2048).
 
 ## Usage
 
@@ -128,35 +147,27 @@ class OpsMetrics extends TelescopeOtelMetricsController {} // GET /ops/metrics
 
 MIT © Davi Carvalho
 
-## AI usage and agent-run metrics (OTLP)
+## AI usage and agent-run metrics
 
-`TelescopeAiMetricsExporter` pushes the `aviary_ai_*` / `aviary_agent_*` metrics — AI cost,
+`TelescopeAiMetricsExporter` records the `aviary_ai_*` / `aviary_agent_*` metrics — AI cost,
 tokens, audio seconds and calls by feature / model / provider / cost source / platform, and agent
-run duration, queue, model and tools time by agent and status, plus tool duration by tool — over
-OTLP/HTTP from a private `MeterProvider` (no global registration). It reads the
+run duration, queue, model and tools time by agent and status, plus tool duration by tool — on the
+global meter (`metrics.getMeter('telescope')`). Your SDK's metric reader exports them. It reads the
 `aviary:agent:*` diagnostics channels of `@dudousxd/nestjs-agent` 1.38.0+ directly, so counts are
-exact regardless of sampling. Its endpoint is independent of your traces and logs.
-
-```sh
-pnpm add @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http @opentelemetry/resources
-```
+exact regardless of sampling.
 
 ```ts
 import { TelescopeAiMetricsExporter } from '@dudousxd/nestjs-telescope-otel';
 
-const aiMetrics = new TelescopeAiMetricsExporter({
-  endpoint: 'http://localhost:4318',
-  exportIntervalMs: 15_000,
-  serviceName: 'my-app',
-});
-
 TelescopeModule.forRoot({
-  extensions: [aiMetrics],
+  extensions: [new TelescopeAiMetricsExporter()],
   aiMetrics: { prometheus: true }, // optional: also serve GET /telescope/api/metrics
 });
 ```
 
+The old `endpoint` / `path` / `headers` / `exportIntervalMs` / `timeoutMs` / `serviceName` options
+throw at boot: set them on the SDK (`NodeSDK({ serviceName, metricReaders: [...] })`).
+
 An importable Grafana dashboard ships in this package at `grafana/aviary-ai-dashboard.json`.
-Locally: `docker run --rm -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm`, then import
-the dashboard in Grafana (admin / admin). Metric names, attributes and units:
+Metric names, attributes and units:
 [AI usage and agent runs](https://davidecarvalho.github.io/aviary/docs/telescope/dashboard/ai).

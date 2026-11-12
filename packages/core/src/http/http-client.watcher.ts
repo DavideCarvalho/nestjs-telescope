@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import type { HttpClientContent } from '../entry/content.js';
 import { EntryType } from '../entry/entry.js';
 import type { Watcher, WatcherContext } from '../nest/watcher.js';
+import { runCoveredByTelescope } from '../otel/telescope-runtime.js';
 import { normalizeHttpTarget } from '../query/normalize-route.js';
 import {
   type AxiosErrorLike,
@@ -256,7 +257,9 @@ export class HttpClientWatcher implements Watcher {
       const startedAt = watcher.clock.now();
       const { method, url, host } = describeRequest(input, init);
       try {
-        const response = await current(input, init);
+        // Marked as covered, so the span processor skips the undici span of this call: the
+        // http_client entry already has it.
+        const response = await runCoveredByTelescope(() => current(input, init));
         watcher.safeRecord(ctx, {
           method,
           url,

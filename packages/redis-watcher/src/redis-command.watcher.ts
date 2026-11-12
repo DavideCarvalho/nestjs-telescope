@@ -5,6 +5,8 @@ import {
   type Watcher,
   type WatcherContext,
 } from '@dudousxd/nestjs-telescope';
+// Namespace import: `markCoveredByTelescope` is new in core 3, so with core 2 the call below is skipped.
+import * as telescope from '@dudousxd/nestjs-telescope';
 
 /** A single ioredis command, structurally. `name` is the command (e.g. `get`);
  *  `args` are its arguments. */
@@ -104,12 +106,15 @@ export class RedisCommandWatcher implements Watcher {
   private readonly source: RedisClientLike | CustomRedisSource;
   private patched: BrandedRedisClient | null = null;
   private original: RedisClientLike['sendCommand'] | null = null;
+  private releaseCovered: (() => void) | null = null;
 
   constructor(source: RedisClientLike | CustomRedisSource) {
     this.source = source;
   }
 
   register(ctx: WatcherContext): void {
+    // Commands are recorded here, so the OpenTelemetry span processor skips the redis spans.
+    this.releaseCovered ??= telescope.markCoveredByTelescope?.('redis') ?? null;
     if (isCustomRedisSource(this.source)) {
       this.source.instrument((client) => {
         this.wrap(ctx, client);
@@ -117,6 +122,11 @@ export class RedisCommandWatcher implements Watcher {
       return;
     }
     this.wrap(ctx, this.source);
+  }
+
+  unregister(): void {
+    this.releaseCovered?.();
+    this.releaseCovered = null;
   }
 
   /** Restore the original `sendCommand` if we wrapped it. Safe to call when

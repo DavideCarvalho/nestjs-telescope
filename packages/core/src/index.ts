@@ -4,6 +4,7 @@ export * from './entry/content.js';
 export * from './entry/exception-family-hash.js';
 export * from './dump/telescope-dump.js';
 export * from './record/telescope-record.js';
+export * from './otel/telescope-runtime.js';
 export * from './trace/trace-context-provider.js';
 export * from './redaction/redact.js';
 export * from './context/batch.js';

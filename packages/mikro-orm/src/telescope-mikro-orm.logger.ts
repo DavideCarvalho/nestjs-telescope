@@ -5,6 +5,8 @@ import {
   queryFamilyHash,
   telescopeRecord,
 } from '@dudousxd/nestjs-telescope';
+// Namespace import: `markCoveredByTelescope` is new in core 3, so with core 2 the call below is skipped.
+import * as telescope from '@dudousxd/nestjs-telescope';
 import { DefaultLogger, type LogContext, type LoggerOptions } from '@mikro-orm/core';
 
 export interface TelescopeLoggerOptions {
@@ -29,6 +31,8 @@ export class TelescopeMikroOrmLogger extends DefaultLogger {
     private readonly slowMs: number,
   ) {
     super(options);
+    // SQL is recorded here, so the OpenTelemetry span processor skips the DB driver spans.
+    telescope.markCoveredByTelescope?.('query');
   }
 
   // Matches DefaultLogger.logQuery's concrete signature exactly.

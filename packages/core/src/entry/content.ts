@@ -186,3 +186,22 @@ export interface RedisContent {
   args: unknown[];
   durationMs: number | null;
 }
+
+/** Kind of an OpenTelemetry span, by name. */
+export type SpanKindName = 'internal' | 'server' | 'client' | 'producer' | 'consumer';
+
+/** Content of a `span` entry: one span from the app's OpenTelemetry instrumentation. */
+export interface SpanContent {
+  name: string;
+  kind: SpanKindName;
+  /** The instrumentation that produced it, e.g. `@opentelemetry/instrumentation-pg`. */
+  scope: string;
+  spanId: string;
+  parentSpanId: string | null;
+  status: 'unset' | 'ok' | 'error';
+  statusMessage: string | null;
+  /** `true` when the span ended with an error status. */
+  failed: boolean;
+  attributes: Record<string, unknown>;
+  events: Array<{ name: string; attributes: Record<string, unknown> }>;
+}
