@@ -1,7 +1,7 @@
 {
   "name": "@dudousxd/nestjs-telescope-otel",
-  "version": "3.0.0",
-  "description": "OpenTelemetry for @dudousxd/nestjs-telescope \u2014 trace-context provider, a span processor that brings your app's OTel spans into the trace waterfall, Prometheus/OTLP export of recorded entries, and AI-usage and agent-run metrics on the global meter.",
+  "version": "4.0.0",
+  "description": "OpenTelemetry for @dudousxd/nestjs-telescope — trace-context provider, a span processor that brings your app's OTel spans into the trace waterfall, Prometheus/OTLP export of recorded entries, and AI-usage and agent-run metrics on the global meter.",
   "license": "MIT",
   "repository": {
     "type": "git",
