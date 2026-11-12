@@ -8,7 +8,7 @@ description: >-
   @nestjs/authorization, or a gate name from @dudousxd/nestjs-authz; or
   routes:false plus your own subclasses with UseConsoleAuthorize. Without
   authorize the console is open outside production and answers 403 in
-  production (one boot warning). Queue mutations need mutations:true. MCP is
+  production (one boot warning). Queue and extension-action mutations need mutations:true. MCP is
   enabled with mcp:true and follows authorize, or its own mcpAuthorize
   (authorizeByToken for agents). Use for "lock down the dashboard", "console
   answers 403 in production", "retry/remove queue jobs are 403", "connect
@@ -98,22 +98,22 @@ the module still logs the "no `authorize`" boot warning when it is omitted.
 navigations with a page or a redirect) extend the same way. The base classes
 carry no guard. Keep `path` set to the mount.
 
-### Pattern 3 — queue mutations
+### Pattern 3 — queue + extension-action mutations
 
 ```ts
 TelescopeModule.forRoot({ authorize, mutations: true });
 ```
 
-Retry/remove/promote/redrive/enqueue, prune, replay and profiling-arm answer
+Retry/remove/promote/redrive/enqueue, prune, replay, profiling-arm and extension row actions (`POST <path>/api/ext/:ext/actions/:action` with `{ confirmed: true, input }`) answer
 403 until `mutations: true`. For a rule on mutations stricter than on reads,
 use Pattern 2 and override those methods with an extra `@Can(...)`
 (re-declare the route decorators on the override).
 
-With tenancy on, clearing entries and `Prune now` are only for a viewer of
+With tenancy on, clearing entries, `Prune now` and extension row actions are only for a viewer of
 every organization (403 otherwise); live queues and schedules answer empty,
 per-driver queue routes and extension data answer 404, and the Prometheus
 scrape (`GET <path>/api/metrics`) answers 404. The SSE live feed only ticks
-for the viewer's organization, and AI diagnoses are per organization.
+for the viewer's organization, and AI diagnoses are per organization. Each extension action run writes a `TelescopeAudit` log line with the caller.
 
 ### Pattern 4 — the MCP server
 
