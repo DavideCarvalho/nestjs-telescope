@@ -2,7 +2,13 @@ import type { SamplingConfig } from '../config/options.js';
 import { passesSampling } from '../config/sampling.js';
 import type { ContextAccessor } from '../context/context-accessor.js';
 import type { TelescopeContext } from '../context/telescope-context.js';
-import { type TelescopeTenancyOption, readTenancy, tenantTagPrefix } from '../context/tenancy.js';
+import {
+  type TelescopeTenancyOption,
+  lenientTenancy,
+  readTenancy,
+  tenantLevels,
+  tenantTagPrefix,
+} from '../context/tenancy.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
 import type { CompiledRedactSpec, RedactOptions } from '../redaction/redact.js';
@@ -641,9 +647,9 @@ export class Recorder {
    */
   private readContextEnrichment(): { traceId: string | null; tags: string[] } {
     const accessor = this.options.contextAccessor;
-    const tenantTag = this.readTenantTag(accessor);
+    const tenantTags = this.readTenantTags(accessor);
     if (accessor === undefined) {
-      return { traceId: null, tags: typeof tenantTag === 'string' ? [tenantTag] : [] };
+      return { traceId: null, tags: tenantTags ?? [] };
     }
     const tags: string[] = [];
     let traceId: string | null = null;
@@ -666,8 +672,8 @@ export class Recorder {
     } catch {
       // Degrade silently.
     }
-    if (tenantTag !== null) {
-      if (tenantTag !== undefined) tags.push(tenantTag);
+    if (tenantTags !== null) {
+      tags.push(...tenantTags);
       return { traceId, tags };
     }
     try {
@@ -682,21 +688,22 @@ export class Recorder {
   }
 
   /**
-   * The tenant tag with tenancy on (`undefined`: this entry has no tenant), or `null` when tenancy
-   * is off and the plain `tenantId` tag applies.
+   * The tenant tags with tenancy on, one per level of the active chain (root first: an entry in
+   * unit U of clinic C gets both, so viewing C shows it), `[]` for an entry with no tenant; or
+   * `null` when tenancy is off and the plain `tenantId` tag applies. Recording is not a read that
+   * needs a tenant, so a `required` tenancy never throws here.
    */
-  private readTenantTag(accessor: ContextAccessor | undefined): string | null | undefined {
+  private readTenantTags(accessor: ContextAccessor | undefined): string[] | null {
     try {
-      const tenancy = readTenancy(this.options.tenancy, accessor);
+      const tenancy = readTenancy(lenientTenancy(this.options.tenancy), accessor);
       if (!tenancy.enabled) return null;
       const filter = tenancy.filter();
       const prefix = tenantTagPrefix(this.options.tenancy);
-      if (filter.mode === 'tenant') return `${prefix}:${filter.tenant.id}`;
-      if (filter.mode === 'all') return `${prefix}:*`;
-      return undefined;
+      if (filter.mode === 'all') return [`${prefix}:*`];
+      return [...new Set(tenantLevels(filter).map((level) => `${prefix}:${level.id}`))];
     } catch {
       // A misbehaving accessor: no tenant tag rather than a throw into record().
-      return undefined;
+      return [];
     }
   }
 

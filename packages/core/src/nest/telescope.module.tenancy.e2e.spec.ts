@@ -5,7 +5,7 @@
 import 'reflect-metadata';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ExecutionContext, INestApplication } from '@nestjs/common';
-import { Logger } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -374,5 +374,117 @@ describe('dev tools', () => {
     tenancyEnabled = false;
     await boot();
     expect(await listed('A')).toEqual(['a1', 'a2', 'b1', 'n1']);
+  });
+});
+
+describe('the full contract (context >= 2.1)', () => {
+  it('an organization sees the entries of every level below it (one tag per level)', async () => {
+    await storage.store([entry('u1', ['tenant:C', 'tenant:U']), entry('c1', ['tenant:C'])]);
+    await boot();
+    const clinic = { 'x-grant': JSON.stringify({ allowed: true, tenants: ['C'] }) };
+    expect(await ids('/telescope/api/entries', clinic)).toEqual(['c1', 'u1']);
+    const unit = { 'x-grant': JSON.stringify({ allowed: true, tenants: ['U'] }) };
+    expect(await ids('/telescope/api/entries', unit)).toEqual(['u1']);
+  });
+
+  it('`required`: a viewer with no tenant and no grant gets the context’s 403; a grant needs none', async () => {
+    const required = {
+      ...accessor,
+      tenancy: () => ({ enabled: true, required: true }),
+      tenantFilter: (options?: { required?: boolean }): TenantFilter => {
+        const filter = accessor.tenantFilter();
+        if (filter.mode === 'tenantless' && options?.required !== false) {
+          throw Object.assign(
+            new ForbiddenException({ code: 'E_TENANT_REQUIRED', message: 'A tenant is required.' }),
+            { code: 'E_TENANT_REQUIRED' },
+          );
+        }
+        return filter;
+      },
+    };
+    holder[SLOT] = { current: required };
+    await boot();
+    await request(app?.getHttpServer()).get('/telescope/api/entries').expect(403);
+    const everyone = { 'x-grant': JSON.stringify({ allowed: true, tenants: '*' }) };
+    expect(await ids('/telescope/api/entries', everyone)).toEqual(['a1', 'a2', 'b1', 'n1']);
+    expect(await ids('/telescope/api/entries', { 'x-tenant': 'A' })).toEqual(['a1', 'a2']);
+  });
+
+  it('labels the organization picker with the context’s tenantLabels', async () => {
+    const seen: unknown[] = [];
+    holder[SLOT] = {
+      current: {
+        ...accessor,
+        tenantLabels: async (tenants: Array<{ id: string; kind: string; slug?: string }>) => {
+          seen.push(tenants);
+          return Object.fromEntries(tenants.map((t) => [t.id, `Org ${t.id}`]));
+        },
+      },
+    };
+    await boot({ tenancy: { kinds: ['clinic'] } });
+    const headers = {
+      'x-tenant': 'A',
+      'x-grant': JSON.stringify({ allowed: true, tenants: ['A', 'B'] }),
+    };
+    const info = await request(app?.getHttpServer())
+      .get('/telescope/api/tenancy?search=org b')
+      .set(headers)
+      .expect(200);
+    expect(info.body.options).toEqual([{ id: 'B', label: 'Org B' }]);
+    expect(seen[0]).toEqual([
+      { id: 'A', kind: 'organization', slug: 'A-slug' },
+      { id: 'B', kind: 'clinic' },
+    ]);
+  });
+
+  it('finds an organization by label deep in a long granted list', async () => {
+    const calls: number[] = [];
+    holder[SLOT] = {
+      current: {
+        ...accessor,
+        tenantLabels: async (tenants: Array<{ id: string }>) => {
+          calls.push(tenants.length);
+          return Object.fromEntries(tenants.map((t) => [t.id, `Clinic number ${t.id.slice(1)}`]));
+        },
+      },
+    };
+    await boot();
+    const ids = Array.from({ length: 450 }, (_, i) => `t${i}`);
+    const headers = { 'x-grant': JSON.stringify({ allowed: true, tenants: ids }) };
+    const info = await request(app?.getHttpServer())
+      .get('/telescope/api/tenancy?search=number 420')
+      .set(headers)
+      .expect(200);
+    expect(info.body.options).toEqual([{ id: 't420', label: 'Clinic number 420' }]);
+    expect(calls).toEqual([200, 200, 50]);
+    const first = await request(app?.getHttpServer())
+      .get('/telescope/api/tenancy')
+      .set(headers)
+      .expect(200);
+    expect(first.body.options).toHaveLength(50);
+  });
+
+  it('a labeler that throws falls back to the slug, then the id', async () => {
+    holder[SLOT] = {
+      current: {
+        ...accessor,
+        tenantLabels: async () => {
+          throw new Error('down');
+        },
+      },
+    };
+    await boot();
+    const headers = {
+      'x-tenant': 'A',
+      'x-grant': JSON.stringify({ allowed: true, tenants: ['A', 'B'] }),
+    };
+    const info = await request(app?.getHttpServer())
+      .get('/telescope/api/tenancy')
+      .set(headers)
+      .expect(200);
+    expect(info.body.options).toEqual([
+      { id: 'A', label: 'A-slug' },
+      { id: 'B', label: 'B' },
+    ]);
   });
 });

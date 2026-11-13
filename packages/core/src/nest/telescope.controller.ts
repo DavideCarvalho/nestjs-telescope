@@ -24,7 +24,8 @@ import { ModuleRef } from '@nestjs/core';
 import { type AiUsageResult, AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { durationToMs } from '../config/parse-duration.js';
-import { tenantTagPrefix } from '../context/tenancy.js';
+import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
+import { tenantLabels, tenantTagPrefix } from '../context/tenancy.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
@@ -191,6 +192,12 @@ function parseWindowMs(window: string | undefined): number {
 /** Organizations the header's picker lists per search. */
 const TENANT_OPTIONS = 50;
 
+/** Organizations labelled per call to the context's label resolver. */
+const LABEL_CHUNK = 200;
+
+/** Organizations of a granted list a picker search labels at most (and so finds by label). */
+const MAX_LABEL_SCAN = 2_000;
+
 /** Tags per request when a caller names no bound — a picker's list, not a listing. */
 const DEFAULT_TAG_PAGE = 50;
 
@@ -228,6 +235,15 @@ export class TelescopeController {
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
   ) {}
+
+  /** The context accessor when `@dudousxd/nestjs-context` provides one (else the global slot is read). */
+  private get contextAccessor(): unknown {
+    try {
+      return this.moduleRef.get(CONTEXT_ACCESSOR, { strict: false });
+    } catch {
+      return undefined;
+    }
+  }
 
   @Get('entries')
   list(@Query() query: ListQuery): Promise<Page<Entry>> {
@@ -579,16 +595,34 @@ export class TelescopeController {
     } else {
       ids = scope.tenants;
     }
-    const label = (id: string): string => (own?.id === id && own.slug ? own.slug : id);
+    const kinds = typeof this.options.tenancy === 'object' ? this.options.tenancy.kinds : undefined;
+    const fallbackKind = kinds?.[0] ?? own?.kind ?? 'tenant';
+    const refOf = (id: string) =>
+      own?.id === id
+        ? { id, kind: own.kind ?? fallbackKind, ...(own.slug ? { slug: own.slug } : {}) }
+        : { id, kind: fallbackKind };
+    // Labelled a chunk at a time until the picker is full, so a search also finds organizations by
+    // label deep in a long granted list (bounded by MAX_LABEL_SCAN).
+    const options: { id: string; label: string }[] = [];
+    for (
+      let start = 0;
+      start < Math.min(ids.length, MAX_LABEL_SCAN) && options.length < TENANT_OPTIONS;
+      start += LABEL_CHUNK
+    ) {
+      const chunk = ids.slice(start, start + LABEL_CHUNK);
+      const labels = await tenantLabels(chunk.map(refOf), this.contextAccessor);
+      for (const id of chunk) {
+        const label = labels[id] ?? id;
+        if (!needle || `${id} ${label}`.toLowerCase().includes(needle)) options.push({ id, label });
+      }
+      if (!needle) break;
+    }
     return {
       enabled: true,
       tenants: scope.tenants,
       // A tenant outside the scope is never echoed back: the view is empty, nothing is selected.
       selected: selection.kind === 'tenant' ? selection.id : null,
-      options: ids
-        .filter((id) => !needle || `${id} ${label(id)}`.toLowerCase().includes(needle))
-        .slice(0, TENANT_OPTIONS)
-        .map((id) => ({ id, label: label(id) })),
+      options: options.slice(0, TENANT_OPTIONS),
     };
   }
 
