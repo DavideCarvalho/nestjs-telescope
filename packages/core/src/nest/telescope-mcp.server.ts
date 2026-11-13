@@ -236,30 +236,29 @@ function clampLimit(limit: number | undefined): number {
   return Math.max(1, Math.min(limit, MAX_LIST_LIMIT));
 }
 
-/** Compact projection for list payloads — agents drill in via get_entry. */
-function slim(entry: Entry): Record<string, unknown> {
+/** One line describing an entry: `GET /x → 200`, the SQL, `Error: message`… */
+export function summarizeEntry(entry: Pick<Entry, 'type' | 'content'>): string {
   const c = (entry.content ?? {}) as Record<string, unknown>;
-  let summary: string;
   switch (entry.type) {
     case EntryType.Request:
-      summary = `${String(c.method)} ${String(c.uri)} → ${String(c.statusCode)}`;
-      break;
+      return `${String(c.method)} ${String(c.uri)} → ${String(c.statusCode)}`;
     case EntryType.Query:
-      summary = String(c.sql ?? '').slice(0, 200);
-      break;
+      return String(c.sql ?? '').slice(0, 200);
     case EntryType.Exception:
     case EntryType.ClientException:
-      summary = `${String(c.class ?? c.name)}: ${String(c.message)}`;
-      break;
+      return `${String(c.class ?? c.name)}: ${String(c.message)}`;
     case EntryType.Log:
-      summary = `${String(c.level)}: ${String(c.message)}`;
-      break;
+      return `${String(c.level)}: ${String(c.message)}`;
     case EntryType.Job:
-      summary = `${String(c.name)} (${String(c.status)})`;
-      break;
+      return `${String(c.name)} (${String(c.status)})`;
     default:
-      summary = safeSummary(c, entry.type);
+      return safeSummary(c, entry.type);
   }
+}
+
+/** Compact projection for list payloads — agents drill in via get_entry. */
+function slim(entry: Entry): Record<string, unknown> {
+  const summary = summarizeEntry(entry);
   return {
     id: entry.id,
     type: entry.type,

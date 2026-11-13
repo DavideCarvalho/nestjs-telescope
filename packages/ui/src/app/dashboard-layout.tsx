@@ -8,6 +8,7 @@ import {
   useMeta,
   visibleEntryTypes,
 } from '../react/index.js';
+import { useTelescopeClient } from '../react/telescope-context.js';
 import {
   Button,
   Tooltip,
@@ -148,6 +149,7 @@ const switcherConfig = readSwitcherConfig('telescope-dashboard-config');
 
 export function DashboardLayout({ children }: { children: React.ReactNode }): JSX.Element {
   const { open, setOpen } = usePalette();
+  const client = useTelescopeClient();
   // Watcher-driven nav: only show a type's link when its watcher is registered.
   // `meta.watchers` is undefined until /api/meta resolves (or on older servers),
   // in which case `visibleEntryTypes` shows everything — no flash-of-hidden-nav.
@@ -160,13 +162,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }): JS
   const topNav = visibleTopNav(NAV, meta.data?.tracesEnabled, meta.data?.profiling?.enabled);
   return (
     <div className="flex min-h-screen bg-background font-mono text-sm text-foreground">
-      <CommandPalette open={open} onClose={() => setOpen(false)} />
+      <CommandPalette
+        open={open}
+        onClose={() => setOpen(false)}
+        searchEndpoint={`${client.baseUrl}/consoles`}
+      />
       <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-line px-3 py-4">
         <div className="px-3">
           <ConsoleSwitcher
             config={switcherConfig}
             current={{ title: 'Telescope', icon: 'telescope' }}
             brand={<span className="text-base font-semibold text-brand">Telescope</span>}
+            onSearch={() => setOpen(true)}
           />
         </div>
         <nav className="flex flex-col gap-1">

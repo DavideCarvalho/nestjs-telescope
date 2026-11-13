@@ -22,9 +22,18 @@ export interface SwitcherConsole {
   href: string;
 }
 
-/** A same-origin absolute path: `/x`, never `//host`, a scheme, or anything else. */
+/**
+ * A same-origin absolute path: `/x`, never `//host`, `/\host` (browsers read `\` as `/`), a
+ * scheme, a control character, or anything else.
+ */
 export function isSafeHref(href: unknown): href is string {
-  return typeof href === 'string' && href.startsWith('/') && !href.startsWith('//');
+  return (
+    typeof href === 'string' &&
+    href.startsWith('/') &&
+    href[1] !== '/' &&
+    href[1] !== '\\' &&
+    !Array.from(href).some((char) => char.charCodeAt(0) < 0x20)
+  );
 }
 
 /** The `switcher` field of the config block `elementId`, or `undefined` when absent or unusable. */
@@ -71,6 +80,73 @@ export function loadConsoles(config: SwitcherConfig): Promise<SwitcherConsole[]>
   return result;
 }
 
+/** One hit of the global search, from any console the viewer may open. */
+export interface ConsoleSearchHit {
+  title: string;
+  subtitle?: string;
+  href: string;
+}
+
+/** One console's hits. */
+export interface ConsoleSearchGroup {
+  id: string;
+  title: string;
+  icon: ConsoleIconKey;
+  hits: ConsoleSearchHit[];
+}
+
+/** The global search's answer: the groups, and whether a console's part is missing (`partial`). */
+export interface ConsoleSearchAnswer {
+  groups: ConsoleSearchGroup[];
+  partial: boolean;
+}
+
+/** The usable groups of a `consoles/search` answer: unsafe `href`s dropped, unknown icons made generic. */
+export function sanitizeSearch(value: unknown): ConsoleSearchAnswer {
+  const body = (typeof value === 'object' && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+  const groups = (Array.isArray(body.results) ? body.results : []).flatMap((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return [];
+    const g = item as Record<string, unknown>;
+    if (typeof g.id !== 'string' || typeof g.title !== 'string' || !Array.isArray(g.hits))
+      return [];
+    const hits = g.hits.flatMap((hit: unknown) => {
+      if (typeof hit !== 'object' || hit === null) return [];
+      const h = hit as Record<string, unknown>;
+      if (typeof h.title !== 'string' || !isSafeHref(h.href)) return [];
+      return [
+        {
+          title: h.title,
+          ...(typeof h.subtitle === 'string' ? { subtitle: h.subtitle } : {}),
+          href: h.href,
+        },
+      ];
+    });
+    return hits.length > 0 ? [{ id: g.id, title: g.title, icon: iconKey(g.icon), hits }] : [];
+  });
+  return { groups, partial: body.partial === true };
+}
+
+/** `GET <consoles endpoint>/search?q=`. Any failure reads as "no hits". */
+export async function searchConsoles(
+  endpoint: string,
+  q: string,
+  signal?: AbortSignal,
+): Promise<ConsoleSearchAnswer> {
+  try {
+    const res = await fetch(`${endpoint}/search?q=${encodeURIComponent(q)}`, {
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+      ...(signal ? { signal } : {}),
+    });
+    return res.ok ? sanitizeSearch(await res.json()) : { groups: [], partial: false };
+  } catch {
+    return { groups: [], partial: false };
+  }
+}
+
 /** Forget the fetched list (tests). */
 export function resetSwitcherCache(): void {
   cached = undefined;
@@ -85,10 +161,13 @@ export function ConsoleSwitcher({
   brand,
   current,
   config,
+  onSearch,
 }: {
   brand: ReactNode;
   current: { title: string; icon: ConsoleIconKey };
   config: SwitcherConfig | undefined;
+  /** Opens the global search (the command palette); adds a "Search all consoles" item. */
+  onSearch?: () => void;
 }) {
   const [consoles, setConsoles] = useState<SwitcherConsole[]>([]);
   const [open, setOpen] = useState(false);
@@ -217,6 +296,34 @@ export function ConsoleSwitcher({
               <path d="m5 12 5 5 9-10" />
             </svg>
           </div>
+          {onSearch && (
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className={`${item} w-full hover:bg-line-soft`}
+              onClick={() => {
+                close(false);
+                onSearch();
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width={16}
+                height={16}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                className="text-muted-foreground"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <span className="truncate">Search all consoles</span>
+              <kbd className="ml-auto text-[10px] text-muted-foreground">⌘K</kbd>
+            </button>
+          )}
           {consoles.map((c) => (
             <a
               key={c.id}

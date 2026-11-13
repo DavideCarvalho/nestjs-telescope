@@ -3,6 +3,7 @@ import {
   normalizeTelescopePath,
   registerAviaryConsole,
   resolveConsoleAuthorize,
+  telescopeConsoleSearch,
 } from '@dudousxd/nestjs-telescope';
 import {
   Inject,
@@ -33,14 +34,16 @@ export class TelescopeConsoleRegistration implements OnModuleInit, OnModuleDestr
     const decide = await resolveConsoleAuthorize(this.options.authorize, this.moduleRef, {
       warnIfMissing: false,
     });
+    const path = `/${normalizeTelescopePath(this.options.path)}`;
     this.#unregister = registerAviaryConsole(
       {
         id: TELESCOPE_CONSOLE_ID,
         title: 'Telescope',
         icon: 'telescope',
         order: 20,
-        path: `/${normalizeTelescopePath(this.options.path)}`,
+        path,
         authorize: decide,
+        search: telescopeConsoleSearch(this.moduleRef, decide, path),
       },
       logger,
     );

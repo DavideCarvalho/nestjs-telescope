@@ -195,6 +195,39 @@ When the app mounts other Aviary consoles too (durable's Workflows, the Agents c
 
 There is nothing to configure. Telescope is listed in the other consoles' menus while `TelescopeUiModule` serves the page, gated by the page's `authorize`. The menu reads the list from `GET <path>/api/consoles`, so mount `TelescopeModule` and `TelescopeUiModule` at the same `path`.
 
+### Searching every console
+
+The command palette (`⌘K` / `Ctrl+K`, or **Search all consoles** in the brand menu) also searches
+every console the viewer may open. Type at least two characters: next to the page shortcuts, the
+palette lists up to five hits per console, grouped by console. A hit opens the page it names, in
+Telescope or in another console. Telescope finds:
+
+- an **entry by its exact id**, which opens that entry;
+- **tags** containing the text (`status:500`, `user:42`…), which open the entries filtered by the tag.
+
+With organizations on, each console searches only what its viewer may see there (Telescope reads the
+organizations its `authorize` grants). Each console gets 300 ms. When one fails or takes longer,
+the palette says some results are missing. The palette reads
+`GET <path>/api/consoles/search?q=`, behind the console's `authorize`.
+
+### Authorizers that audit: the probe marker
+
+To build the menu and the search, Telescope runs the other consoles' `authorize` (and theirs run
+Telescope's) with the viewer's request. These calls only ask; they open nothing. While they run, the
+request carries `aviaryProbe: true`. An `authorize` that writes an audit trail can skip them:
+
+```ts
+import { isConsoleProbe } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  authorize: async (context) => {
+    const allowed = await canSeeTelescope(context);
+    if (!isConsoleProbe(context)) await audit.log('telescope.open', context, allowed);
+    return allowed;
+  },
+});
+```
+
 ## Queues console (Horizon-style)
 
 When you register a [queue manager](/docs/packages/queue-managers), the dashboard gains a live queue console:
