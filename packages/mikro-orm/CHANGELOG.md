@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-mikro-orm
 
+## 3.1.0
+
+### Minor Changes
+
+- [#193](https://github.com/DavideCarvalho/nestjs-telescope/pull/193) [`09fbd24`](https://github.com/DavideCarvalho/nestjs-telescope/commit/09fbd2419e1225dfb001dfebd9822fd2d49f5bc4) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `schema` option: `new MikroOrmStorageProvider(orm, { schema: 'telescope' })` puts Telescope's tables in their own schema. PostgreSQL gets a schema written into every statement (never `search_path`), created at boot when missing and found by name in the catalog first. On MySQL / MariaDB the schema is a database that Telescope's own connection opens. The marker table, rollup upserts, advisory-lock names and the schema fingerprint are all per schema. SQLite refuses a `schema` at `init()`. Without `schema`, nothing changes.
+
 ## 3.0.0
 
 ### Major Changes
