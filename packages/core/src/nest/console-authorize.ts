@@ -319,6 +319,10 @@ export function authorizeByToken(options: { token: string | undefined }): (
   };
 }
 
+function redirects(decision: ConsoleDecision): boolean {
+  return 'redirectTo' in decision && decision.redirectTo !== undefined;
+}
+
 /**
  * One `authorize` from several: allowed when any form allows (checked in order, stopping at the
  * first that does); otherwise `unauthenticated` when any form said so (keeping the first
@@ -350,7 +354,14 @@ export function anyAuthorize(...forms: ConsoleAuthorize[]): ConsoleAuthorizerCla
       for (const decide of await this.#decides) {
         const decision = await decide(context);
         if (decision.allowed) return decision;
-        if (decision.reason === 'unauthenticated') unauthenticated ??= decision;
+        // A redirect beats a bare 401 (a page can send the viewer to sign in): keep the first form
+        // that gave one, even when a form without a redirect (a token check) answered first.
+        if (
+          decision.reason === 'unauthenticated' &&
+          (unauthenticated === undefined || (!redirects(unauthenticated) && redirects(decision)))
+        ) {
+          unauthenticated = decision;
+        }
       }
       if (unauthenticated === undefined) return { allowed: false, reason: 'forbidden' };
       return 'redirectTo' in unauthenticated && unauthenticated.redirectTo !== undefined

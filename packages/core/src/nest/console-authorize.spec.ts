@@ -329,6 +329,21 @@ describe('anyAuthorize', () => {
     });
   });
 
+  it('keeps a later redirectTo when an earlier form was unauthenticated without one', async () => {
+    // e.g. anyAuthorize(authorizeByToken(...), SessionAuthorizer): a guest has no token and no
+    // session; the page should redirect to the sign-in, not answer a bare 401.
+    const decide = await decideWith(
+      () => ({ allowed: false, reason: 'unauthenticated' }) as const,
+      () => ({ redirectTo: '/login' }),
+      () => ({ redirectTo: '/elsewhere' }),
+    );
+    expect(await decide(ctx)).toEqual({
+      allowed: false,
+      reason: 'unauthenticated',
+      redirectTo: '/login',
+    });
+  });
+
   it('is forbidden when every form forbids, and stops at the first allow', async () => {
     const last = vi.fn(() => true);
     const forbidden = await decideWith(
