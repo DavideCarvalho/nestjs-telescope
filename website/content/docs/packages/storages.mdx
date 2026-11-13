@@ -10,7 +10,7 @@ The default store is per-process SQLite. Swap it by passing a `storage` provider
 
 ---
 
-## MikroORM (MySQL / SQLite) — `@dudousxd/nestjs-telescope-mikro-orm`
+## MikroORM (PostgreSQL / MySQL / SQLite) — `@dudousxd/nestjs-telescope-mikro-orm`
 
 Persists entries to your application's own database through MikroORM — so you can use your existing MySQL (or SQLite) for Telescope instead of standing up Redis. **No migration, no manual table setup.** Hand it your existing `MikroORM`:
 
@@ -45,6 +45,22 @@ new MikroOrmStorageProvider({
   // ensureSchema: false,  // opt out of boot-time schema sync (you manage it via migration)
 });
 ```
+
+### Its own schema
+
+To keep Telescope's tables out of your application's schema, pass `schema`:
+
+```ts
+new MikroOrmStorageProvider(orm, { schema: 'telescope' });
+// or with explicit connection options:
+new MikroOrmStorageProvider({ driver: PostgreSqlDriver, clientUrl }, { schema: 'telescope' });
+```
+
+- **PostgreSQL:** every table (`telescope_entries`, `telescope_rollups`, `telescope_leases`, `telescope_schema_meta`) lives in that schema, and every statement names it (`"telescope"."telescope_entries"`). Telescope never sets `search_path`, which would leak to other clients behind a pooler such as PgBouncer in transaction mode. At boot, with `ensureSchema` on, the schema is created when it does not exist. A role that may not create schemas works as long as the schema exists and the role may create tables in it.
+- **MySQL / MariaDB:** the schema is a database on the same server. Telescope's own connection opens it (creating it at boot when `ensureSchema` is on), so your application's connections are not affected.
+- **SQLite** has no schemas: `init()` fails with a clear error when `schema` is set.
+
+`schema` wins over a `schema` in the connection options or in the host ORM's config. Without it, nothing changes.
 
 How it works:
 

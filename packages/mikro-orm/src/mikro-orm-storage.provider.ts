@@ -102,12 +102,9 @@ const SCHEMA_META_ID = 'mikro-orm';
  * the unquoted lowercase identifiers + portable `varchar`/`bigint` types parse
  * on MySQL, PostgreSQL, and SQLite alike. Mirrors `TelescopeSchemaMeta`.
  */
-const CREATE_SCHEMA_META_TABLE_SQL =
-  'create table if not exists telescope_schema_meta (' +
-  'id varchar(32) not null, ' +
-  'fingerprint varchar(64) not null, ' +
-  'applied_at bigint not null, ' +
-  'primary key (id))';
+function createSchemaMetaTableSql(table: string): string {
+  return `create table if not exists ${table} (id varchar(32) not null, fingerprint varchar(64) not null, applied_at bigint not null, primary key (id))`;
+}
 
 /** A shared advisory-lock name/key both lock dialects derive from. */
 const SCHEMA_LOCK_NAME = 'telescope_schema';
@@ -155,6 +152,42 @@ const TELESCOPE_CONTEXT_NAME = 'nestjs-telescope';
  * `entities: [TelescopeEntry, TelescopeRollup]`.
  */
 export type MikroOrmStorageProviderOptions = Partial<Options> & { ensureSchema?: boolean };
+
+/**
+ * The second argument of the provider. `schema` puts telescope's tables in their own database
+ * schema (PostgreSQL) or database (MySQL / MariaDB), written into every statement; it wins over a
+ * `schema` in the connection options or the host ORM's config. SQLite has no schemas: setting one
+ * fails at `init()`.
+ */
+export interface MikroOrmStorageProviderSettings {
+  ensureSchema?: boolean;
+  schema?: string;
+}
+
+type Dialect = 'postgres' | 'mysql' | 'sqlite' | 'other';
+
+function dialectOf(orm: MikroORM): Dialect {
+  const platform = orm.em.getPlatform().constructor.name.toLowerCase();
+  if (platform.includes('postgre')) return 'postgres';
+  if (platform.includes('mysql') || platform.includes('maria')) return 'mysql';
+  if (platform.includes('sqlite') || platform.includes('libsql')) return 'sqlite';
+  return 'other';
+}
+
+/** The configured schema, or `undefined` for the connection's default. */
+function schemaOf(orm: MikroORM): string | undefined {
+  const schema = orm.config.get('schema');
+  return typeof schema === 'string' && schema !== '' ? schema : undefined;
+}
+
+/** `table`, qualified with the configured schema when there is one. */
+function qualifiedTable(orm: MikroORM, table: string): string {
+  const platform = orm.em.getPlatform();
+  const schema = schemaOf(orm);
+  return schema === undefined
+    ? table
+    : `${platform.quoteIdentifier(schema)}.${platform.quoteIdentifier(table)}`;
+}
 
 function padTags(tags: string[]): string {
   return tags.length ? ` ${tags.join(' ')} ` : ' ';
@@ -327,6 +360,7 @@ interface TableFingerprint {
 
 /** The full canonical payload hashed into the fingerprint. */
 interface SchemaFingerprintPayload {
+  schema?: string;
   collate: string | null;
   platform: string;
   revision: number;
@@ -432,6 +466,7 @@ function indexesOf(meta: EntityMetadata): IndexFingerprint[] {
  * escape hatch. Never reads enumeration order — everything is sorted.
  */
 function computeExpectedFingerprint(orm: MikroORM, ownedTableNames: string[]): string {
+  const schema = schemaOf(orm);
   const owned = new Set(ownedTableNames);
   const tables: TableFingerprint[] = [];
   for (const meta of orm.getMetadata()) {
@@ -445,6 +480,8 @@ function computeExpectedFingerprint(orm: MikroORM, ownedTableNames: string[]): s
     collate: collate ?? null,
     platform: orm.em.getPlatform().constructor.name,
     revision: SCHEMA_REVISION,
+    // Only with a schema, so a default-schema install keeps its fingerprint (and skips the heal).
+    ...(schema !== undefined ? { schema } : {}),
     tables,
   };
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
@@ -483,6 +520,10 @@ interface SchemaLock {
 async function acquireSchemaLock(orm: MikroORM): Promise<SchemaLock> {
   const platform = orm.em.getPlatform().constructor.name.toLowerCase();
   const connection = orm.em.getConnection();
+  // One lock per schema: telescope installs in two schemas of one database heal independently.
+  const schema = schemaOf(orm);
+  const lockName =
+    schema === undefined ? SCHEMA_LOCK_NAME : `${SCHEMA_LOCK_NAME}:${schema.replace(/'/g, "''")}`;
   const noop: SchemaLock = {
     release: async () => {
       /* nothing acquired */
@@ -490,11 +531,11 @@ async function acquireSchemaLock(orm: MikroORM): Promise<SchemaLock> {
   };
   try {
     if (platform.includes('mysql') || platform.includes('maria')) {
-      await connection.execute(`select get_lock('${SCHEMA_LOCK_NAME}', 10) as locked`);
+      await connection.execute(`select get_lock('${lockName}', 10) as locked`);
       return {
         release: async () => {
           try {
-            await connection.execute(`select release_lock('${SCHEMA_LOCK_NAME}')`);
+            await connection.execute(`select release_lock('${lockName}')`);
           } catch {
             /* lock auto-releases on connection close */
           }
@@ -502,11 +543,11 @@ async function acquireSchemaLock(orm: MikroORM): Promise<SchemaLock> {
       };
     }
     if (platform.includes('postgre')) {
-      await connection.execute(`select pg_advisory_lock(hashtext('${SCHEMA_LOCK_NAME}'))`);
+      await connection.execute(`select pg_advisory_lock(hashtext('${lockName}'))`);
       return {
         release: async () => {
           try {
-            await connection.execute(`select pg_advisory_unlock(hashtext('${SCHEMA_LOCK_NAME}'))`);
+            await connection.execute(`select pg_advisory_unlock(hashtext('${lockName}'))`);
           } catch {
             /* lock auto-releases on connection close */
           }
@@ -520,6 +561,27 @@ async function acquireSchemaLock(orm: MikroORM): Promise<SchemaLock> {
 }
 
 /**
+ * Creates the configured PostgreSQL schema when it does not exist yet. Looks it up in the catalog
+ * by name first (never `current_schema()`), so a role without CREATE rights on the database works
+ * against a schema that already exists.
+ */
+async function ensureNamespace(orm: MikroORM): Promise<void> {
+  const schema = schemaOf(orm);
+  if (schema === undefined) return;
+  // MySQL / MariaDB: the schema is the connection's database, created by `ensureDatabase()`.
+  if (dialectOf(orm) !== 'postgres') return;
+  const connection = orm.em.getConnection();
+  const found = await connection.execute(
+    'select 1 as found from information_schema.schemata where schema_name = ?',
+    [schema],
+  );
+  if (Array.isArray(found) && found.length > 0) return;
+  await connection.execute(
+    `create schema if not exists ${orm.em.getPlatform().quoteIdentifier(schema)}`,
+  );
+}
+
+/**
  * Declared against {@link BoundedPruneCapable} and {@link LeaseCapableStorage}
  * (both extend `StorageProvider`) so dropping either capability is a compile
  * error rather than a silent fall back to unbounded, unlocked pruning.
@@ -529,13 +591,15 @@ export class MikroOrmStorageProvider
 {
   private readonly source: MikroORM | MikroOrmStorageProviderOptions;
   private readonly ensureSchema: boolean;
+  private readonly schema: string | undefined;
   private orm: MikroORM | null = null;
 
   constructor(
     source: MikroORM | MikroOrmStorageProviderOptions,
-    opts?: { ensureSchema?: boolean },
+    opts?: MikroOrmStorageProviderSettings,
   ) {
     this.source = source;
+    this.schema = opts?.schema;
     if (opts?.ensureSchema !== undefined) {
       this.ensureSchema = opts.ensureSchema;
     } else if (!(source instanceof MikroORM) && source.ensureSchema !== undefined) {
@@ -550,6 +614,7 @@ export class MikroOrmStorageProvider
       const connection = pickHostConnection(this.source.config.getAll());
       return {
         ...connection,
+        ...(this.schema !== undefined ? { schema: this.schema } : {}),
         entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta, TelescopeLease],
         contextName: TELESCOPE_CONTEXT_NAME,
         allowGlobalContext: true,
@@ -559,6 +624,7 @@ export class MikroOrmStorageProvider
     const { ensureSchema: _ensureSchema, entities: _entities, ...rest } = this.source;
     return {
       ...rest,
+      ...(this.schema !== undefined ? { schema: this.schema } : {}),
       entities: [TelescopeEntry, TelescopeRollup, TelescopeSchemaMeta, TelescopeLease],
       contextName: TELESCOPE_CONTEXT_NAME,
       allowGlobalContext: true,
@@ -567,9 +633,28 @@ export class MikroOrmStorageProvider
 
   async init(): Promise<void> {
     if (this.orm) return;
-    this.orm = await MikroORM.init(this.buildOrmOptions());
+    const options = this.buildOrmOptions();
+    let orm = await MikroORM.init(options);
+    const schema = schemaOf(orm);
+    const dialect = dialectOf(orm);
+    if (schema !== undefined && dialect === 'sqlite') {
+      await orm.close(true);
+      throw new Error(
+        `MikroOrmStorageProvider: \`schema\` ("${schema}") is not supported on SQLite, which has no schemas. Remove it, or use PostgreSQL or MySQL.`,
+      );
+    }
+    if (schema !== undefined && dialect === 'mysql') {
+      // On MySQL / MariaDB a schema IS a database, and MikroORM's schema diff only introspects the
+      // connection's own database. The provider's connection is dedicated, so it opens the
+      // telescope database itself: every statement then targets it, and the app's connections
+      // are never touched.
+      await orm.close(true);
+      const { schema: _schema, ...rest } = options;
+      orm = await MikroORM.init({ ...rest, dbName: schema });
+    }
+    this.orm = orm;
     if (this.ensureSchema) {
-      await this.reconcileSchema(this.orm);
+      await this.reconcileSchema(orm);
     }
   }
 
@@ -591,11 +676,14 @@ export class MikroOrmStorageProvider
     // (0) Create the database if the owned connection points at one that does
     //     not exist yet. MUST precede any statement on the connection.
     await orm.schema.ensureDatabase();
+    await ensureNamespace(orm);
 
     const ownedTableNames = collectOwnedTableNames(orm);
 
     // (1) Idempotent, introspection-free marker table (empty-DB safe).
-    await orm.em.getConnection().execute(CREATE_SCHEMA_META_TABLE_SQL);
+    await orm.em
+      .getConnection()
+      .execute(createSchemaMetaTableSql(qualifiedTable(orm, 'telescope_schema_meta')));
 
     // (2) One PK read + (3) in-memory expected fingerprint.
     const stored = await readStoredFingerprint(orm);
@@ -911,13 +999,14 @@ export class MikroOrmStorageProvider
       return;
     }
     const tableName = em.getMetadata().get(TelescopeRollup).tableName;
+    const schema = this.orm ? schemaOf(this.orm) : undefined;
     const quote = (identifier: string): string => platform.quoteIdentifier(identifier);
     const buckets = mergeDeltasByBucket(deltas);
     const connection = em.getConnection();
     for (let offset = 0; offset < buckets.length; offset += ROLLUP_UPSERT_CHUNK) {
       const chunk = buckets.slice(offset, offset + ROLLUP_UPSERT_CHUNK);
       await connection.execute(
-        rollupUpsertSql(dialect, quote, tableName, chunk.length),
+        rollupUpsertSql(dialect, quote, tableName, chunk.length, schema),
         chunk.flatMap((delta) => [
           delta.metric,
           delta.bucketStart,
@@ -1031,8 +1120,9 @@ function rollupUpsertSql(
   quote: (identifier: string) => string,
   tableName: string,
   rows: number,
+  schema?: string,
 ): string {
-  const table = quote(tableName);
+  const table = schema === undefined ? quote(tableName) : `${quote(schema)}.${quote(tableName)}`;
   const columns = ['metric', 'bucket_start', 'count', 'sum', 'max', 'histogram'];
   const values = Array.from({ length: rows }, () => `(${columns.map(() => '?').join(', ')})`);
   const insert = `insert into ${table} (${columns.map(quote).join(', ')}) values ${values.join(', ')}`;
