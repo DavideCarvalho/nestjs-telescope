@@ -1,5 +1,13 @@
 # @dudousxd/nestjs-telescope
 
+## 4.1.0
+
+### Minor Changes
+
+- [#190](https://github.com/DavideCarvalho/nestjs-telescope/pull/190) [`8218731`](https://github.com/DavideCarvalho/nestjs-telescope/commit/82187316a353f170a979d3f0939e77e85f2fb80f) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Extension row actions and dev tools. `TelescopeExtension.actions()` declares write actions and a table column's `action` puts a button on matching rows (`showWhen`, input filled from the row). The dashboard asks for confirmation, then calls `POST <path>/api/ext/:ext/actions/:action` with `{ confirmed: true, input }`. Like every console mutation it needs `mutations: true`, passes the console's `authorize`, is refused from one organization's view, and writes an audit line with the caller through the `TelescopeAudit` logger: the signed-in user (`request.user`, the user an `authorize: { policy, ability }` check got from `getUser`, or the session's user), else a hash of the bearer token, else `console-session` when `authorize` allowed the request, else `anonymous`. `TelescopeExtension.devTools()` adds tools next to telescope's own on the dev MCP endpoint, each served as `telescope_<name>`; a tool with an invalid name or shape, or a name already served, is left out with a warning so telescope's own tools are still served, and `action` tools are audited the same way. `/api/meta` now lists `actions` and `mutations`. The controller also resolves `ModuleRef` explicitly, so `ctx.moduleRef` is set in extension providers whatever the build's decorator metadata.
+
+- [#190](https://github.com/DavideCarvalho/nestjs-telescope/pull/190) [`8218731`](https://github.com/DavideCarvalho/nestjs-telescope/commit/82187316a353f170a979d3f0939e77e85f2fb80f) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - The full tenancy contract of `@dudousxd/nestjs-context` 2.1, read structurally so older context versions keep working. Entries get one tenant tag per level of the active chain (`tenant:C` and `tenant:U` for unit U of clinic C), so a viewer of an organization also sees its sub-organizations' entries. The `tenancy` option takes `family` and `required`. With `required`, a console viewer with no tenant and no organizations granted by `authorize` gets the context's 403. Recording, and the console's own-tenant lookup for viewers who were granted organizations, never require one. The Organization picker labels organizations with the context's `tenancy.label`, else the slug, else the id.
+
 ## 4.0.0
 
 ### Major Changes

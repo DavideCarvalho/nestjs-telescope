@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-official
 
+## 0.4.0
+
+### Minor Changes
+
+- [#190](https://github.com/DavideCarvalho/nestjs-telescope/pull/190) [`8218731`](https://github.com/DavideCarvalho/nestjs-telescope/commit/82187316a353f170a979d3f0939e77e85f2fb80f) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `resilienceTelescopeExtension()`: a **Resilience** page built from the `NestResilienceWatcher` entries and the live `@nestjs/resilience` `ResilienceService`. It shows open and half-open circuits, refusals, retries, timeouts, bulkhead and rate-limit rejections over the window with deltas, a circuits table, events over time, the noisiest policies (click to filter the page), bulkheads, outbound rate limits and recent breaker transitions. Open circuits get a **Reset** button (confirmation, console `authorize`, `mutations: true`, audit line and a `circuit-reset` entry), and the dev MCP endpoint gets `telescope_resilience_circuits` and `telescope_resilience_reset_circuit`. `reset: false` turns the reset off; `window` sets the period.
+
 ## 0.3.0
 
 ### Minor Changes
