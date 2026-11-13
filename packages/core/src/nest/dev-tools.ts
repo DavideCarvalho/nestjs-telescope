@@ -11,6 +11,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
 import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
+import type { ExtensionRegistry } from '../extension/registry.js';
 import { type TenantView, tenantViewOf, withTenantView } from '../storage/tenant-scoped-storage.js';
 import { type ConsoleDecide, resolveConsoleAuthorize } from './console-authorize.js';
 import {
@@ -19,8 +20,15 @@ import {
   resolveConsoleTenantScope,
   selectConsoleTenant,
 } from './console-tenant-scope.js';
+import { auditExtensionAction } from './extension-audit.js';
 import { type McpToolArgs, TelescopeMcpServer, isMcpToolNotice } from './telescope-mcp.server.js';
-import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
+import {
+  TELESCOPE_EXTENSIONS,
+  TELESCOPE_OPTIONS,
+  type TelescopeModuleOptions,
+} from './telescope.options.js';
+
+const logger = new Logger('TelescopeModule');
 
 // ── the dev-tools contract (v1), re-declared: this package never imports the agent's MCP server ──
 
@@ -240,6 +248,89 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
   ];
 }
 
+/** The lib id telescope registers its dev tools under; every tool name starts with `telescope_`. */
+export const TELESCOPE_DEV_TOOLS_LIB = 'telescope';
+
+const TOOL_PREFIX = `${TELESCOPE_DEV_TOOLS_LIB}_`;
+/** The dev MCP endpoint's tool-name rule: snake_case, at least two words. */
+const TOOL_NAME = /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/;
+
+/** The name an extension's tool is served under: its own, prefixed with `telescope_`. */
+export function extensionDevToolName(name: string): string {
+  return name.startsWith(TOOL_PREFIX) ? name : `${TOOL_PREFIX}${name}`;
+}
+
+/**
+ * Why the dev MCP endpoint would refuse this tool, or `null`. The endpoint refuses a whole lib
+ * for one bad tool, so a tool that fails here is left out instead of taking telescope's down.
+ */
+function extensionToolProblem(tool: TelescopeDevTool, name: string): string | null {
+  if (!TOOL_NAME.test(name)) return `its name "${name}" is not snake_case`;
+  if (tool.kind !== 'read' && tool.kind !== 'action') return 'its kind is not "read" or "action"';
+  if (typeof tool.description !== 'string' || tool.description === '')
+    return 'it has no description';
+  if (tool.input?.type !== 'object' || typeof tool.input.properties !== 'object') {
+    return 'its input is not an object schema';
+  }
+  if (typeof tool.run !== 'function') return 'it has no run function';
+  return null;
+}
+
+/**
+ * The dev tools extensions contribute, served as `telescope_<name>` (a name that already starts
+ * with `telescope_` is kept). A tool the dev MCP endpoint would refuse (a bad name or shape, or a
+ * name already taken by `taken` or another extension) is left out with a warning, so one
+ * extension can never take telescope's tools down. Their data spans every organization, so with
+ * tenancy on a caller limited to some organizations gets an error instead of a run. `action` tools
+ * are console mutations: they are served only with `mutations: true`, and every run writes the
+ * same audit line as the console's extension actions.
+ */
+export function extensionDevTools(
+  tools: TelescopeDevTool[],
+  ownerOf: (tool: TelescopeDevTool) => string | undefined,
+  viewFor?: (call?: DevToolCall) => TenantView | null,
+  mutations = false,
+  taken: Iterable<string> = [],
+): TelescopeDevTool[] {
+  const names = new Set(taken);
+  const served: TelescopeDevTool[] = [];
+  for (const tool of tools) {
+    if (!mutations && tool.kind === 'action') continue;
+    const ext = ownerOf(tool) ?? 'extension';
+    const name = extensionDevToolName(String(tool.name));
+    const problem = names.has(name)
+      ? `the name "${name}" is already served`
+      : extensionToolProblem(tool, name);
+    if (problem !== null) {
+      logger.warn(
+        `dev tool "${String(tool.name)}" of the "${ext}" extension is not served: ${problem}.`,
+      );
+      continue;
+    }
+    names.add(name);
+    served.push({
+      ...tool,
+      name,
+      run: async (input, call) => {
+        if (viewFor !== undefined && viewFor(call) !== null) {
+          throw new Error(`${name} needs a caller who may see every organization.`);
+        }
+        if (tool.kind !== 'action') return tool.run(input, call);
+        const caller = { id: call?.caller.id ?? 'unknown', via: 'dev-tools' as const };
+        try {
+          const result = await tool.run(input, call);
+          auditExtensionAction(ext, name, caller, input, 'ok');
+          return result;
+        } catch (error) {
+          auditExtensionAction(ext, name, caller, input, 'failed');
+          throw error;
+        }
+      },
+    });
+  }
+  return served;
+}
+
 /** A resolved console gate as a dev-tools gate. Never throws: a throw is `forbidden`. */
 export function devToolsGate(decide: ConsoleDecide): DevToolsLib['authorize'] {
   return async (context) => {
@@ -258,8 +349,6 @@ export function devToolsGate(decide: ConsoleDecide): DevToolsLib['authorize'] {
 /** Whether the console's routes are mounted (`routes !== false`), set by `TelescopeModule`. */
 export const TELESCOPE_ROUTES_MOUNTED = Symbol('TELESCOPE_ROUTES_MOUNTED');
 
-const logger = new Logger('TelescopeModule');
-
 /**
  * Registers telescope's tools into the Aviary dev-tools slot, gated by the console's `authorize`,
  * when the console's routes are mounted (or `devTools: true`). Removed again on shutdown.
@@ -274,6 +363,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     @Inject(TelescopeMcpServer) private readonly server: TelescopeMcpServer,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
     @Optional() @Inject(CONTEXT_ACCESSOR) private readonly accessor?: unknown,
+    @Optional() @Inject(TELESCOPE_EXTENSIONS) private readonly extensions?: ExtensionRegistry,
   ) {}
 
   /** The organization view of a dev-tools call: as the console's, with no `?tenant=`. */
@@ -294,12 +384,22 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     const decide = await resolveConsoleAuthorize(this.options.authorize, this.moduleRef, {
       warnIfMissing: false,
     });
+    const own = telescopeDevTools(this.server, (call) => this.viewFor(call));
     try {
       this.#unregister = slot.register({
-        lib: 'telescope',
+        lib: TELESCOPE_DEV_TOOLS_LIB,
         title: 'Telescope',
         authorize: devToolsGate(decide),
-        tools: telescopeDevTools(this.server, (call) => this.viewFor(call)),
+        tools: [
+          ...own,
+          ...extensionDevTools(
+            this.extensions?.devTools() ?? [],
+            (tool) => this.extensions?.devToolOwner(tool),
+            (call) => this.viewFor(call),
+            this.options.mutations === true,
+            own.map((tool) => tool.name),
+          ),
+        ],
       });
     } catch (error) {
       // Another application in this process registered telescope's tools: keep the console up.

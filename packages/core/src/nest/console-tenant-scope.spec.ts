@@ -40,11 +40,33 @@ describe('console tenant scope', () => {
   it('no `tenants`: the own tenant, or none', () => {
     expect(resolveConsoleTenantScope(on(own), undefined)).toEqual({
       tenants: ['A'],
-      own: { id: 'A', slug: 'acme' },
+      own: { id: 'A', kind: 'organization', slug: 'acme' },
     });
     const none = resolveConsoleTenantScope(on({ mode: 'tenantless' }), undefined);
     expect(none).toEqual({ tenants: [] });
     expect(selectConsoleTenant(none, undefined)).toEqual({ kind: 'none' });
+  });
+
+  it('`required` and no tenant: the context’s error without a grant, a scope with one', () => {
+    const required: Tenancy = {
+      enabled: true,
+      nullRows: 'tenantless',
+      filter: () => {
+        throw Object.assign(new Error('A tenant is required.'), { code: 'E_TENANT_REQUIRED' });
+      },
+    };
+    expect(() => resolveConsoleTenantScope(required, undefined)).toThrow('A tenant is required.');
+    expect(resolveConsoleTenantScope(required, ['B'])).toEqual({ tenants: ['B'] });
+    expect(resolveConsoleTenantScope(required, '*')).toEqual({ tenants: '*' });
+    // Any other failure is never taken for a missing tenant, granted or not.
+    const broken: Tenancy = {
+      enabled: true,
+      nullRows: 'tenantless',
+      filter: () => {
+        throw new Error('accessor bug');
+      },
+    };
+    expect(() => resolveConsoleTenantScope(broken, ['B'])).toThrow('accessor bug');
   });
 
   it('a list: own tenant first, else the first; outside it is forged', () => {

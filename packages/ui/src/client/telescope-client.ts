@@ -165,6 +165,15 @@ export interface TelescopeClient {
    * `unknown` — the panel renderer (Task 8) narrows it per panel `kind`.
    */
   extData(ext: string, provider: string, query?: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Runs an extension action the viewer has confirmed: `POST ext/:ext/actions/:action` with
+   * `{ confirmed: true, input }`. Rejects with the server's message when it fails.
+   */
+  extAction?(
+    ext: string,
+    action: string,
+    input: Record<string, unknown>,
+  ): Promise<{ ok: true; result: unknown }>;
   serverStats(): Promise<ServerStats>;
   /** CPU/mem history ring buffer for the resource-history card. */
   serverStatsHistory(): Promise<ServerStatsHistory>;
@@ -425,6 +434,20 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
       return get<unknown>(
         `/ext/${encodeURIComponent(ext)}/data/${encodeURIComponent(provider)}${qs}`,
       );
+    },
+    extAction: async (ext, action, input) => {
+      const path = `/ext/${encodeURIComponent(ext)}/actions/${encodeURIComponent(action)}`;
+      const response = await doFetch(`${baseUrl}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: true, input }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
+        const message = typeof body?.message === 'string' ? body.message : `${response.status}`;
+        throw new Error(message);
+      }
+      return (await response.json()) as { ok: true; result: unknown };
     },
     serverStats: () => get<ServerStats>('/server-stats'),
     serverStatsHistory: () => get<ServerStatsHistory>('/server-stats/history'),

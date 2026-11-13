@@ -16,12 +16,12 @@ import { samplingCanDrop, samplingRates } from '../config/sampling.js';
 import { createBatch } from '../context/batch.js';
 import { CONTEXT_ACCESSOR, type ContextAccessor } from '../context/context-accessor.js';
 import { TelescopeContext } from '../context/telescope-context.js';
-import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
+import { lenientTenancy, readTenancy, tenantTagPrefix } from '../context/tenancy.js';
 import { setTelescopeDump } from '../dump/telescope-dump.js';
 import { type BatchOrigin, type Entry, EntryType, type RecordInput } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionContext } from '../extension/types.js';
-import type { DashboardSection, Panel } from '../extension/types.js';
+import type { DashboardSection, ExtensionActionInfo, Panel } from '../extension/types.js';
 import {
   coveredEntryType,
   isTelescopeSpanProcessorActive,
@@ -98,6 +98,10 @@ export interface TelescopeMeta {
     panels: Panel[];
     sections?: DashboardSection[];
   }[];
+  /** Write actions extensions expose to their dashboards (`run` omitted). */
+  actions: ExtensionActionInfo[];
+  /** Whether mutations (queue actions, prune, extension actions…) are on (`mutations: true`). */
+  mutations: boolean;
 }
 
 /**
@@ -453,18 +457,21 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         // those dashboards showed nothing.
         ...(d.sections ? { sections: d.sections } : {}),
       })),
+      actions: this.extensions.actions(),
+      mutations: this.options.mutations === true,
     };
   }
 
   /**
-   * The organization view of an entry (tenancy on): the organization its tenant tag names.
+   * The organization view of an entry (tenancy on): the most specific organization its tenant
+   * tags name (an entry carries one tag per level of its chain, root first).
    * `null` with tenancy off, or for an entry with no organization (or recorded for all of them).
    */
   private tenantViewOfEntry(entry: Entry): TenantView | null {
-    const tenancy = readTenancy(this.options.tenancy, this.contextAccessor);
+    const tenancy = readTenancy(lenientTenancy(this.options.tenancy), this.contextAccessor);
     if (!tenancy.enabled) return null;
     const prefix = `${tenantTagPrefix(this.options.tenancy)}:`;
-    const tag = entry.tags.find((t) => t.startsWith(prefix) && t !== `${prefix}*`);
+    const tag = [...entry.tags].reverse().find((t) => t.startsWith(prefix) && t !== `${prefix}*`);
     if (tag === undefined || tag === prefix) return null;
     return tenantViewOf(
       { kind: 'tenant', id: tag.slice(prefix.length) },

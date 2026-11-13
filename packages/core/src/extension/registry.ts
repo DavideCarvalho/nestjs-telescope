@@ -1,8 +1,11 @@
 import type { Entry, RecordInput } from '../entry/entry.js';
+import type { TelescopeDevTool } from '../nest/dev-tools.js';
 import type { Watcher } from '../nest/watcher.js';
 import type {
   DashboardSpec,
   DataProvider,
+  ExtensionAction,
+  ExtensionActionInfo,
   ExtensionContext,
   ExtensionEntryType,
   TelescopeExtension,
@@ -23,11 +26,17 @@ export class ExtensionRegistry {
   private readonly _providerOwners = new Map<string, string>();
   private readonly _recordObservers: Array<(input: RecordInput) => void> = [];
   private readonly _flushObservers: Array<(entries: Entry[]) => void | Promise<void>> = [];
+  /** `<ext>/<action>` → the action. */
+  private readonly _actions = new Map<string, ExtensionAction>();
+  private readonly _actionInfo: ExtensionActionInfo[] = [];
+  private readonly _devTools: TelescopeDevTool[] = [];
+  private readonly _devToolOwners = new Map<TelescopeDevTool, string>();
 
   constructor(extensions: readonly TelescopeExtension[], ctx: ExtensionContext) {
     const entryOwners = new Map<string, string>();
     const dashOwners = new Map<string, string>();
     const provOwners = this._providerOwners;
+    const toolOwners = new Map<string, string>();
 
     for (const ext of extensions) {
       for (const w of ext.watchers?.(ctx) ?? []) this._watchers.push(w);
@@ -63,6 +72,30 @@ export class ExtensionRegistry {
         }
         provOwners.set(p.name, ext.name);
         this._providers.set(p.name, p);
+      }
+
+      for (const action of ext.actions?.(ctx) ?? []) {
+        const key = `${ext.name}/${action.name}`;
+        if (this._actions.has(key)) {
+          throw new Error(
+            `Telescope extension "${ext.name}" declares the action "${action.name}" twice. Action names must be unique per extension.`,
+          );
+        }
+        this._actions.set(key, action);
+        const { run: _run, ...info } = action;
+        this._actionInfo.push({ ...info, ext: ext.name });
+      }
+
+      for (const tool of ext.devTools?.(ctx) ?? []) {
+        const prev = toolOwners.get(tool.name);
+        if (prev !== undefined) {
+          throw new Error(
+            `Telescope dev tool "${tool.name}" is contributed by both "${prev}" and "${ext.name}". Dev tool names must be unique.`,
+          );
+        }
+        toolOwners.set(tool.name, ext.name);
+        this._devToolOwners.set(tool, ext.name);
+        this._devTools.push(tool);
       }
 
       if (ext.observeRecord) this._recordObservers.push(ext.observeRecord.bind(ext));
@@ -103,6 +136,22 @@ export class ExtensionRegistry {
   }
   findProvider(name: string): DataProvider | undefined {
     return this._providers.get(name);
+  }
+  /** The action `name` of the extension `ext`, or undefined. */
+  findAction(ext: string, name: string): ExtensionAction | undefined {
+    return this._actions.get(`${ext}/${name}`);
+  }
+  /** Every action, without its `run`, for `/api/meta`. */
+  actions(): ExtensionActionInfo[] {
+    return [...this._actionInfo];
+  }
+  /** Developer tools contributed by extensions, for the dev MCP endpoint. */
+  devTools(): TelescopeDevTool[] {
+    return [...this._devTools];
+  }
+  /** The `name` of the extension that contributed a dev tool, or undefined. */
+  devToolOwner(tool: TelescopeDevTool): string | undefined {
+    return this._devToolOwners.get(tool);
   }
   /** The `name` of the extension that contributed the given provider, or undefined. */
   providerOwner(name: string): string | undefined {

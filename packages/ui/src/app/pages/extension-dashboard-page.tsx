@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Panel } from '../../client/types.js';
 import type { ChartSelection } from '../../react/components/charts/chart-selection.js';
+import { PanelActionsProvider } from '../../react/components/extensions/panel-actions.js';
 import { PanelView } from '../../react/components/extensions/panel-renderer.js';
 import {
   type TableFilterState,
@@ -196,49 +197,51 @@ export function ExtensionDashboardPage(): JSX.Element {
   }
 
   return (
-    <div className="p-4">
-      <div className="mb-4 flex items-center gap-3">
-        <h2 className="text-sm font-semibold text-foreground">{dash.label}</h2>
-        <LiveBadge status={status} />
-        {focus && (
-          <span className="tint-brand inline-flex items-center gap-1 rounded border py-0.5 pl-1.5 text-[10px]">
-            {focus.param}: {focus.label}
-            <Button
-              variant="ghost"
-              size="xs"
-              className="px-1 text-inherit"
-              onClick={() => setFocus(null)}
-            >
-              Clear
-            </Button>
-          </span>
-        )}
-      </div>
-      {sections.map((section, i) => (
-        <section key={section.title ?? `s${i}`} className="mb-6">
-          {section.title && (
-            <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-              {section.title}
-            </p>
+    <PanelActionsProvider ext={ext}>
+      <div className="p-4">
+        <div className="mb-4 flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-foreground">{dash.label}</h2>
+          <LiveBadge status={status} />
+          {focus && (
+            <span className="tint-brand inline-flex items-center gap-1 rounded border py-0.5 pl-1.5 text-[10px]">
+              {focus.param}: {focus.label}
+              <Button
+                variant="ghost"
+                size="xs"
+                className="px-1 text-inherit"
+                onClick={() => setFocus(null)}
+              >
+                Clear
+              </Button>
+            </span>
           )}
-          <div className={`grid grid-cols-1 gap-3 ${colClass[section.cols ?? 2]}`}>
-            {section.panels.map((panel) => {
-              const drilldown = drilldownOf(panel);
-              return (
-                <BoundPanel
-                  key={`${panel.kind}-${panel.title}`}
-                  ext={ext}
-                  panel={panel}
-                  focus={focus}
-                  {...(drilldown
-                    ? { onSelect: (s: ChartSelection) => select(drilldown.param, s) }
-                    : {})}
-                />
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </div>
+        </div>
+        {sections.map((section, i) => (
+          <section key={section.title ?? `s${i}`} className="mb-6">
+            {section.title && (
+              <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {section.title}
+              </p>
+            )}
+            <div className={`grid grid-cols-1 gap-3 ${colClass[section.cols ?? 2]}`}>
+              {section.panels.map((panel) => {
+                const drilldown = drilldownOf(panel);
+                return (
+                  <BoundPanel
+                    key={`${panel.kind}-${panel.title}`}
+                    ext={ext}
+                    panel={panel}
+                    focus={focus}
+                    {...(drilldown
+                      ? { onSelect: (s: ChartSelection) => select(drilldown.param, s) }
+                      : {})}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+    </PanelActionsProvider>
   );
 }

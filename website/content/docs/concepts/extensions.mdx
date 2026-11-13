@@ -21,7 +21,7 @@ TelescopeModule.forRoot({
 
 ## The contract
 
-An extension is a plain object — author it with `defineTelescopeExtension` for inference. It has a `name` (used in collision errors) and four **optional** hooks, each handed an `ExtensionContext`:
+An extension is a plain object — author it with `defineTelescopeExtension` for inference. It has a `name` (used in collision errors) and **optional** hooks, each handed an `ExtensionContext`:
 
 ```ts
 interface TelescopeExtension {
@@ -30,6 +30,8 @@ interface TelescopeExtension {
   entryTypes?(ctx: ExtensionContext): { id: string; label: string; dot: string }[];
   dashboards?(ctx: ExtensionContext): DashboardSpec[];
   dataProviders?(ctx: ExtensionContext): DataProvider[];
+  actions?(ctx: ExtensionContext): ExtensionAction[];
+  devTools?(ctx: ExtensionContext): TelescopeDevTool[];
 }
 
 interface ExtensionContext {
@@ -44,6 +46,8 @@ The hooks are **multi-hooks**: every registered extension runs, and the results 
 - **`entryTypes`** — contribute navigable entry types. Each is `{ id, label, dot }`, where `id` is the backend `type` filter (e.g. `'durable'`), `label` is the nav label, and `dot` is a Tailwind `bg-*` class for the nav dot. This is what makes the dashboard nav *dynamic* instead of hard-coded.
 - **`dashboards`** — contribute declarative dashboard pages (the panel IR below).
 - **`dataProviders`** — named server-side queries that panels bind to.
+- **`actions`** — write actions a table row button runs, after the viewer confirms. See [Row actions](#row-actions).
+- **`devTools`** — tools served next to telescope's own on the [dev MCP endpoint](/docs/concepts/mcp), behind the console's `authorize`. Each tool is served as `telescope_<name>` (name it `circuits`, `reset_circuit`, ... in snake_case; a name that already starts with `telescope_` is kept). A tool with an invalid name or shape, or a name already served, is left out with a warning instead of failing the boot. A tool with `kind: 'action'` is a console mutation: it is served only with `mutations: true`, and each run writes the same audit line as a row action.
 
 <Callout type="info">
   Resolve host services through `ctx.moduleRef` — e.g. a durable engine, a store token, or `TELESCOPE_STORAGE`. The extension never imports the host app; it asks the Nest container for what it needs (use `{ strict: false }` so it finds providers in any module).
@@ -191,9 +195,76 @@ The server looks up the provider by name, builds an `ExtensionContext`, and call
   The data endpoint is a route of `TelescopeController`, so it is protected exactly like the rest of the dashboard API (your `decorators`, or your own controllers). Extension data is never a side door: if the dashboard is protected, the panels are too. See [Protecting the routes](/docs/dashboard/auth).
 </Callout>
 
+## Row actions
+
+A table column can carry a button that runs one of the extension's actions on its row. The
+extension declares the action; the column binds it and fills its input from the row:
+
+```ts
+defineTelescopeExtension({
+  name: 'billing',
+  actions: () => [
+    {
+      name: 'retry-invoice',
+      label: 'Retry',
+      confirm: 'Retry invoice {id}?', // `{key}` is filled from the row
+      destructive: false,
+      async run(input, ctx) {
+        // ctx.caller: { id: 'user:42' | 'token:<hash>' | 'console-session' | 'anonymous', via: 'console' | 'dev-tools' }
+        const invoices = ctx.moduleRef.get(InvoiceService, { strict: false });
+        return invoices.retry(String(input.id));
+      },
+    },
+  ],
+  dashboards: () => [
+    {
+      id: 'billing.invoices',
+      label: 'Invoices',
+      panels: [
+        {
+          kind: 'table',
+          title: 'Failed invoices',
+          data: { provider: 'billing.failed' },
+          columns: [
+            { key: 'id', label: 'Invoice' },
+            {
+              key: 'status',
+              label: 'Status',
+              action: {
+                name: 'retry-invoice',
+                input: { id: '{id}' },
+                showWhen: { status: ['failed'] }, // only rows that match get the button
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+```
+
+The viewer clicks the button, confirms in a dialog, and the dashboard calls
+`POST <path>/api/ext/:ext/actions/:action` with `{ "confirmed": true, "input": { … } }`; every panel
+then refetches. Actions are console mutations:
+
+- They need `mutations: true` on `TelescopeModule`. With mutations off the buttons are hidden and the
+  endpoint answers `403`.
+- They pass the console's `authorize`, like every route, and are refused (`403`) from one
+  organization's view.
+- A request without `confirmed: true` is a `400`; an unknown action is a `404`.
+- To answer with a specific status, throw a Nest `HttpException` or any error with a numeric
+  `status` (`404` for an unknown target). Anything else is a `502` with its message.
+- Each run writes one log line through the `TelescopeAudit` logger, e.g.
+  `extension action billing.retry-invoice ok by user:42 via console input={"id":"inv_1"}`. The
+  caller is the signed-in user's id (`request.user.id` or `sub`, the user an
+  `authorize: { policy, ability }` check saw through `getUser`, or the session's `user`, `userId`
+  or passport user), else a hash of the bearer token (never the token), else `console-session`
+  when the console's `authorize` allowed the request without a user id, else `anonymous`.
+
 ## Collisions
 
-Because the hooks accumulate across every extension, the registry guards the shared namespaces. A duplicate **entry-type id**, **dashboard id**, or **provider name** across two extensions **throws at boot**, naming both extensions:
+Because the hooks accumulate across every extension, the registry guards the shared namespaces. A duplicate **entry-type id**, **dashboard id**, **provider name** or **dev tool name** across two extensions (or an action declared twice by one extension) **throws at boot**, naming both extensions:
 
 ```
 Telescope data provider "durable.timeseries" is contributed by both

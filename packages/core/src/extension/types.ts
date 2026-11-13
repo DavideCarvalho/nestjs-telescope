@@ -2,6 +2,7 @@
 import type { ModuleRef } from '@nestjs/core';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import type { Entry, RecordInput } from '../entry/entry.js';
+import type { TelescopeDevTool } from '../nest/dev-tools.js';
 import type { Watcher } from '../nest/watcher.js';
 
 /**
@@ -39,7 +40,52 @@ export interface TelescopeExtension {
    * swallowed and never breaks the flush.
    */
   observeFlush?(entries: Entry[]): void | Promise<void>;
+  /**
+   * Write actions a dashboard can run (a table column's {@link ColumnAction} button), served by
+   * `POST <path>/api/ext/:ext/actions/:action`. Like every console mutation they need
+   * `mutations: true` and pass the console's `authorize`; the viewer confirms first, and each run
+   * is written to the log with who ran it.
+   */
+  actions?(ctx: ExtensionContext): ExtensionAction[];
+  /**
+   * Developer tools served with telescope's own over the Aviary dev MCP endpoint (behind the
+   * console's `authorize`). Names must be unique across telescope and every extension.
+   */
+  devTools?(ctx: ExtensionContext): TelescopeDevTool[];
 }
+
+/** Who ran an extension action, as the audit line and the action see it. */
+export interface ExtensionActionCaller {
+  /** `user:<id>`, `token:<sha256 prefix>` (never the token), `console-session` (allowed by `authorize`, no user id found) or `anonymous`; the dev-tools caller id over MCP. */
+  id: string;
+  /** Where the call came from: the console page or the dev MCP endpoint. */
+  via: 'console' | 'dev-tools';
+}
+
+/** What an action's `run` receives besides its input. */
+export interface ExtensionActionContext extends ExtensionContext {
+  readonly caller: ExtensionActionCaller;
+}
+
+/** A write action an extension exposes to its dashboard. */
+export interface ExtensionAction {
+  /** Unique within the extension, e.g. `'reset-circuit'`. */
+  name: string;
+  /** Button label, e.g. `'Reset'`. Defaults to the name. */
+  label?: string;
+  /** The question the confirmation dialog asks, e.g. `'Reset circuit {name}?'` (`{key}` filled from the row). */
+  confirm?: string;
+  /** Styles the button and the confirmation as dangerous. */
+  destructive?: boolean;
+  /**
+   * Runs the action. To answer with a specific status, throw a Nest `HttpException` or any error
+   * with a numeric `status` (`404` for an unknown target); any other throw is a `502`.
+   */
+  run(input: Record<string, unknown>, ctx: ExtensionActionContext): Promise<unknown>;
+}
+
+/** The {@link ExtensionAction} fields `/api/meta` lists for the dashboards (everything but `run`). */
+export type ExtensionActionInfo = Omit<ExtensionAction, 'run'> & { ext: string };
 
 /** Read-only context handed to every extension hook, resolved at module init. */
 export interface ExtensionContext {
@@ -162,6 +208,28 @@ export interface Column {
    * it did before this flag existed.
    */
   hideable?: boolean;
+  /**
+   * Renders a button in this column's cells that runs one of the extension's
+   * {@link TelescopeExtension.actions} on the row, after the viewer confirms. Hidden when the
+   * console has `mutations` off.
+   */
+  action?: ColumnAction;
+}
+
+/** A row button bound to an extension action. */
+export interface ColumnAction {
+  /** The action's `name` in the same extension. */
+  name: string;
+  /** Button label. Defaults to the action's `label`. */
+  label?: string;
+  /** Confirmation question, `{key}` filled from the row. Defaults to the action's `confirm`. */
+  confirm?: string;
+  /** The action's input, each value a template filled from the row: `{ name: '{name}' }`. */
+  input?: Record<string, string>;
+  /** Only rows whose fields hold one of these values get the button: `{ status: ['open', 'half-open'] }`. */
+  showWhen?: Record<string, Array<string | number | boolean>>;
+  /** Defaults to the action's `destructive`. */
+  destructive?: boolean;
 }
 
 /**

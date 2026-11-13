@@ -8,7 +8,7 @@ description: >-
   @nestjs/authorization, or a gate name from @dudousxd/nestjs-authz; or
   routes:false plus your own subclasses with UseConsoleAuthorize. Without
   authorize the console is open outside production and answers 403 in
-  production (one boot warning). Queue mutations need mutations:true. MCP is
+  production (one boot warning). Queue and extension-action mutations need mutations:true. MCP is
   enabled with mcp:true and follows authorize, or its own mcpAuthorize
   (authorizeByToken for agents). Use for "lock down the dashboard", "console
   answers 403 in production", "retry/remove queue jobs are 403", "connect
@@ -56,7 +56,8 @@ dashboard follows it). A throw denies (403).
 With tenancy on (`tenancy` option, default `'inherit'`), `{ allowed: true,
 tenants: '*' | string[] }` scopes the viewer to those organizations (`'*'`
 every organization); with no `tenants` the viewer sees their own
-organization, and with none an empty console. Every API call takes
+organization, and with none an empty console (with `tenancy: { required: true }`,
+no tenant and no grant instead answers the context's 403). Every API call takes
 `?tenant=<id>`, kept within that scope; a `tenant` outside it answers empty
 and is logged.
 
@@ -98,22 +99,22 @@ the module still logs the "no `authorize`" boot warning when it is omitted.
 navigations with a page or a redirect) extend the same way. The base classes
 carry no guard. Keep `path` set to the mount.
 
-### Pattern 3 — queue mutations
+### Pattern 3 — queue + extension-action mutations
 
 ```ts
 TelescopeModule.forRoot({ authorize, mutations: true });
 ```
 
-Retry/remove/promote/redrive/enqueue, prune, replay and profiling-arm answer
+Retry/remove/promote/redrive/enqueue, prune, replay, profiling-arm and extension row actions (`POST <path>/api/ext/:ext/actions/:action` with `{ confirmed: true, input }`) answer
 403 until `mutations: true`. For a rule on mutations stricter than on reads,
 use Pattern 2 and override those methods with an extra `@Can(...)`
 (re-declare the route decorators on the override).
 
-With tenancy on, clearing entries and `Prune now` are only for a viewer of
+With tenancy on, clearing entries, `Prune now` and extension row actions are only for a viewer of
 every organization (403 otherwise); live queues and schedules answer empty,
 per-driver queue routes and extension data answer 404, and the Prometheus
 scrape (`GET <path>/api/metrics`) answers 404. The SSE live feed only ticks
-for the viewer's organization, and AI diagnoses are per organization.
+for the viewer's organization, and AI diagnoses are per organization. Each extension action run writes a `TelescopeAudit` log line with the caller.
 
 ### Pattern 4 — the MCP server
 
@@ -135,8 +136,12 @@ For a key per developer, use an `ApiKeyProvider` from `@nestjs/authentication`
 in `mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] })]` (they
 replace `decorators` on MCP) and keep `authorize` for the policy.
 
-With tenancy on the MCP endpoint and the dev tools follow the same rule:
-each call runs inside the caller's organization view.
+With tenancy on the MCP endpoint and telescope's own dev tools follow the same rule:
+each call runs inside the caller's organization view. Extension-contributed dev
+tools instead span every organization, so a caller limited to some organizations
+is refused instead of running. Extension tools of kind `action` (for example
+`telescope_resilience_reset_circuit`) are console mutations: they are served only with
+`mutations: true`, and each run writes a `TelescopeAudit` log line.
 
 ### Pattern 5 — `GET /metrics` (otel)
 

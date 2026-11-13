@@ -30,6 +30,11 @@ export function useTelescopeClient(): TelescopeClient {
   return client;
 }
 
+/** The client, or `null` outside a {@link TelescopeProvider}. */
+export function useOptionalTelescopeClient(): TelescopeClient | null {
+  return useContext(TelescopeContext);
+}
+
 export function useLiveTail(): LiveTailValue {
   const liveTail = useContext(LiveTailContext);
   if (!liveTail) throw new Error('useLiveTail must be used within a TelescopeProvider');

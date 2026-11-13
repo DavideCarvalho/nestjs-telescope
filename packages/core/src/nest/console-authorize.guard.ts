@@ -30,6 +30,7 @@ import {
 } from './console-authorize.js';
 import { rememberConsoleTenants } from './console-tenant-scope.js';
 import { ConsoleTenantInterceptor } from './console-tenant.interceptor.js';
+import { rememberConsoleCaller } from './extension-audit.js';
 import { TELESCOPE_OPTIONS } from './telescope.options.js';
 
 /** Options of {@link UseConsoleAuthorize} and {@link ConsoleAuthorizeGuard.for}. */
@@ -157,6 +158,8 @@ export class ConsoleAuthorizeGuard implements CanActivate, OnModuleInit {
   /** This registration's options; none: `TelescopeModule`'s `authorize`. */
   protected readonly config: ConsoleAuthorizeGuardConfig = {};
   private decide?: Promise<ConsoleDecide>;
+  /** Whether an `authorize` is configured (none: the open-outside-production default). */
+  private configured = false;
 
   constructor(@Inject(ModuleRef) private readonly moduleRef: ModuleRef) {}
 
@@ -189,6 +192,7 @@ export class ConsoleAuthorizeGuard implements CanActivate, OnModuleInit {
           authorize = core.authorize;
         }
       }
+      this.configured = authorize !== undefined;
       return resolveConsoleAuthorize(authorize, this.moduleRef, {
         logger: new Logger(config.loggerContext ?? 'TelescopeModule'),
         warnIfMissing: config.warn ?? !moduleBacked,
@@ -202,7 +206,10 @@ export class ConsoleAuthorizeGuard implements CanActivate, OnModuleInit {
     const decision = await (await this.init())(context);
     if (decision.allowed) {
       if (context.getType() === 'http') {
-        rememberConsoleTenants(context.switchToHttp().getRequest(), decision.tenants);
+        const request = context.switchToHttp().getRequest();
+        rememberConsoleTenants(request, decision.tenants);
+        // The audit line names an allowed caller without a user id `console-session`, not `anonymous`.
+        if (this.configured) rememberConsoleCaller(request);
       }
       return true;
     }

@@ -80,6 +80,28 @@ export interface PanelDrilldown {
 }
 
 /**
+ * A table row button bound to an extension action (mirrors core's `ColumnAction`). `input` values
+ * and `confirm` are `{key}` templates filled from the row; `showWhen` limits it to matching rows.
+ */
+export interface ColumnAction {
+  name: string;
+  label?: string;
+  confirm?: string;
+  input?: Record<string, string>;
+  showWhen?: Record<string, Array<string | number | boolean>>;
+  destructive?: boolean;
+}
+
+/** An extension action as `/api/meta` lists it (mirrors core's `ExtensionActionInfo`). */
+export interface ExtensionActionInfo {
+  ext: string;
+  name: string;
+  label?: string;
+  confirm?: string;
+  destructive?: boolean;
+}
+
+/**
  * A group of panels rendered together with its own column count.
  *
  * `cols: 1` is the full-width row: one panel spanning the section, for a panel too wide to share
@@ -151,6 +173,8 @@ export type Panel =
         filterable?: boolean;
         /** Column can be hidden from the table's column menu (client-side only). */
         hideable?: boolean;
+        /** A row button that runs an extension action after a confirmation (mirrors core's `ColumnAction`). */
+        action?: ColumnAction;
       }[];
       /**
        * Paged-table opt-in (mirrors core's `Panel` table variant): when true, the
@@ -231,6 +255,10 @@ export interface TelescopeMeta {
     panels: Panel[];
     sections?: { title?: string; cols?: 1 | 2 | 3 | 4; panels: Panel[] }[];
   }[];
+  /** Extension actions the dashboards' row buttons run. Absent from older servers. */
+  actions?: ExtensionActionInfo[];
+  /** Whether mutations are on; row action buttons only show when they are. Absent from older servers. */
+  mutations?: boolean;
   /**
    * CPU flamegraph profiling state. `enabled` gates the Profiles nav item;
    * `sampleRate` is shown as a read-only badge.
