@@ -1,9 +1,18 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   type SearchGroup,
   fetchConsoleGroups,
   fetchSearchGroups,
+  isEndpointServed,
   searchTargets,
+  subscribeEndpointServed,
 } from '../console-data';
 import { ConsoleTile, SearchIcon, consoleAccent } from '../icons';
 import { cn } from '../lib/utils';
@@ -42,6 +51,21 @@ export function filterCommands(commands: readonly SearchCommand[], q: string): S
   return commands.filter((c) =>
     [c.label, ...(c.keywords ?? [])].some((text) => text.toLowerCase().includes(query)),
   );
+}
+
+/**
+ * aviary: `config` while its endpoint may be served, `undefined` once it answered 404/405/501 (the
+ * app mounted the console with `routes: false` and left `/consoles/search` out). Re-renders when
+ * that is found out, so the shell drops ⌘K for the rest of the page's life.
+ */
+export function useServedSearch(config: SearchConfig | undefined): SearchConfig | undefined {
+  const endpoint = config?.endpoint;
+  const served = useSyncExternalStore(
+    subscribeEndpointServed,
+    useCallback(() => endpoint === undefined || isEndpointServed(endpoint), [endpoint]),
+    () => true,
+  );
+  return served ? config : undefined;
 }
 
 /** Ctrl/Cmd-K toggles `setOpen` while `enabled`. */
@@ -168,6 +192,10 @@ const IDLE: SearchState = {
  * included), skeleton rows until the first answer, the previous hits dimmed during a re-search,
  * and "Nothing found" only once every answer came back empty. A failed request shows a muted line
  * with a retry.
+ *
+ * aviary: an endpoint that answers 404/405/501 isn't served by this app: the dialog says so once
+ * ("Search isn't enabled in this app."), never asks it again, and keeps only the local `commands`.
+ * The shell then hides the trigger and the shortcut (see {@link useServedSearch}).
  */
 export function ConsoleSearch({
   config,
@@ -188,6 +216,8 @@ export function ConsoleSearch({
   const [q, setQ] = useState('');
   const [state, setState] = useState<SearchState>(IDLE);
   const [attempt, setAttempt] = useState(0);
+  const served = useServedSearch(config);
+  const unserved = config !== undefined && served === undefined;
 
   useEffect(() => {
     if (!open) setQ('');
@@ -203,7 +233,7 @@ export function ConsoleSearch({
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-runs the search (Retry)
   useEffect(() => {
     const query = q.trim();
-    if (query === '' || !config) {
+    if (query === '' || !served) {
       setState(IDLE);
       return;
     }
@@ -212,10 +242,10 @@ export function ConsoleSearch({
     // Keep what is on screen (dimmed) until the new answer lands.
     setState((prev) => ({ ...prev, phase: 'loading', fresh: false, failed: 0 }));
     const timer = setTimeout(() => {
-      void searchTargets(config, switcher).then((targets) => {
+      void searchTargets(served, switcher).then((targets) => {
         if (signal.aborted) return;
         if (!targets) {
-          fetchSearchGroups(config, query, signal).then(
+          fetchSearchGroups(served, query, signal).then(
             (found) => {
               if (signal.aborted) return;
               setState({ ...IDLE, phase: 'done', groups: found });
@@ -232,7 +262,7 @@ export function ConsoleSearch({
         let failed = 0;
         setState((prev) => ({ ...prev, remaining: targets.length }));
         for (const id of targets) {
-          fetchConsoleGroups(config, query, id, signal)
+          fetchConsoleGroups(served, query, id, signal)
             .then(
               (found) => {
                 answers.set(id, found);
@@ -268,19 +298,23 @@ export function ConsoleSearch({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [q, config, switcher, attempt]);
+  }, [q, served, switcher, attempt]);
 
   const { phase, groups, fresh, remaining, failed } = state;
   const query = q.trim();
-  const remote = config !== undefined && query !== '';
+  const remote = served !== undefined && query !== '';
   const pending = remote && phase === 'loading';
   const stale = pending && !fresh && groups.length > 0;
   const shown = remote ? groups : [];
   const hitCount = shown.reduce((n, g) => n + g.hits.length, 0) + local.length;
   const nothing =
-    query !== '' && local.length === 0 && shown.length === 0 && (!remote || phase === 'done');
+    query !== '' &&
+    local.length === 0 &&
+    shown.length === 0 &&
+    !unserved &&
+    (!remote || phase === 'done');
 
-  const label = config ? 'Search all consoles' : 'Search';
+  const label = served ? 'Search all consoles' : 'Search';
   const go = (href: string) => {
     onOpenChange(false);
     window.location.assign(href);
@@ -291,7 +325,7 @@ export function ConsoleSearch({
       open={open}
       onOpenChange={onOpenChange}
       title={label}
-      description={config ? 'Search every console you can open' : 'Jump to a page'}
+      description={served ? 'Search every console you can open' : 'Jump to a page'}
       className="sm:max-w-xl"
     >
       <Command shouldFilter={false} label={label}>
@@ -311,8 +345,16 @@ export function ConsoleSearch({
           {pending ? 'Searching…' : query !== '' && phase !== 'error' ? `${hitCount} results` : ''}
         </output>
         <CommandList className="max-h-[60vh]" aria-busy={pending}>
-          {query === '' && local.length === 0 && (
+          {query === '' && local.length === 0 && !unserved && (
             <p className="px-3 py-6 text-center text-[13px] text-dim">Type to search.</p>
+          )}
+          {unserved && local.length === 0 && (
+            <p
+              data-aviary-search-unavailable=""
+              className="px-3 py-6 text-center text-[13px] text-dim"
+            >
+              Search isn't enabled in this app.
+            </p>
           )}
           {nothing && (
             <p data-aviary-search-empty="" className="px-3 py-6 text-center text-[13px] text-dim">
