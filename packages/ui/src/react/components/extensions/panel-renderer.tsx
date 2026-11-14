@@ -64,9 +64,9 @@ function readPagedTable(data: unknown): {
 
 /** Shared empty-state card so a provider that resolves with no rows reads as
  *  "nothing happened in this window" rather than a blank/broken panel. */
-function EmptyPanel({ title }: { title: string }): JSX.Element {
+function EmptyPanel({ title }: { title: string }): React.JSX.Element {
   return (
-    <div className="rounded-lg border border-line bg-panel/40">
+    <div className="aviary-surface rounded-lg border border-border">
       <p className="border-b border-line px-4 py-2 text-xs font-medium text-foreground">{title}</p>
       <p className="px-4 py-8 text-center text-xs text-muted-foreground">No data in this window.</p>
     </div>
@@ -86,7 +86,7 @@ function PagerControls({
   page: number;
   totalPages: number;
   onPageChange?: (page: number) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
       <Button
@@ -164,7 +164,7 @@ export function PanelView({
    * does not declare `drilldown`.
    */
   onSelect?: (selection: ChartSelection) => void;
-}): JSX.Element | null {
+}): React.JSX.Element | null {
   // Spread rather than passed: under `exactOptionalPropertyTypes` an explicit
   // `undefined` is not assignable to the cards' optional handlers.
   const selectProps = onSelect ? { onSelect } : {};
@@ -285,7 +285,7 @@ export function PanelView({
         const { rows, total, page, limit } = readPagedTable(data);
         const totalPages = Math.max(1, Math.ceil(total / (limit || rows.length || 1)));
         return (
-          <div className="rounded-lg border border-line bg-panel/40">
+          <div className="aviary-surface rounded-lg border border-border">
             <div className="flex items-center justify-between border-b border-line px-4 py-2">
               <p className="text-xs font-medium text-foreground">{panel.title}</p>
               <PagerControls
@@ -299,7 +299,7 @@ export function PanelView({
         );
       }
       return (
-        <div className="rounded-lg border border-line bg-panel/40">
+        <div className="aviary-surface rounded-lg border border-border">
           <p className="border-b border-line px-4 py-2 text-xs font-medium text-foreground">
             {panel.title}
           </p>

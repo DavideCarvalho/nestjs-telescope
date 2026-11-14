@@ -24,11 +24,11 @@ export function fillTemplate(href: string, row: PanelRow): string {
  *  when the column declares one. A fragment, not an element, so the markup
  *  inside the `<td>` is exactly what it was before the table grew a table
  *  instance around it. */
-function CellContent({ spec, row }: { spec: TableColumnSpec; row: PanelRow }): JSX.Element {
+function CellContent({ spec, row }: { spec: TableColumnSpec; row: PanelRow }): React.JSX.Element {
   const text = String(row[spec.key] ?? '');
   const value = spec.link ? (
     <a
-      className="text-sky-400 hover:underline"
+      className="text-info hover:underline"
       href={fillTemplate(spec.link.href, row)}
       {...(spec.link.external ? { target: '_blank', rel: 'noreferrer' } : {})}
     >

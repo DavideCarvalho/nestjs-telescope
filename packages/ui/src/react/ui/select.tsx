@@ -86,10 +86,7 @@ export const SelectGroupLabel = forwardRef<
   return (
     <SelectPrimitive.GroupLabel
       ref={ref}
-      className={cn(
-        'px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground',
-        className,
-      )}
+      className={cn('px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-faint', className)}
       {...props}
     />
   );

@@ -8,7 +8,7 @@ function CountBadge({
 }: {
   state: QueueState;
   value: number;
-}): JSX.Element {
+}): React.JSX.Element {
   const emphasize = state === 'failed' && value > 0;
   return (
     <span
@@ -17,9 +17,7 @@ function CountBadge({
       }`}
       title={`${value} ${state}`}
     >
-      <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
-        {state.slice(0, 4)}
-      </span>
+      <span className="text-[9px] uppercase tracking-[0.12em] text-faint">{state.slice(0, 4)}</span>
       <span className={`tabular-nums ${value > 0 ? STATE_ACCENT[state] : 'text-muted-foreground'}`}>
         {value}
       </span>
@@ -35,7 +33,7 @@ function QueueRow({
   summary: QueueSummary;
   active: boolean;
   onSelect: (driver: string, queue: string) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <button
       type="button"
@@ -49,12 +47,12 @@ function QueueRow({
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 truncate font-medium text-foreground">{summary.queue}</span>
         {summary.isPaused && (
-          <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-violet-300">
+          <span className="shrink-0 rounded bg-violet/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-violet">
             paused
           </span>
         )}
       </div>
-      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-faint">
         {summary.driver}
       </div>
       <div className="mt-2 flex flex-wrap gap-1 text-[10px]">
@@ -72,7 +70,7 @@ export function QueueList({
 }: {
   selected?: { driver: string; queue: string };
   onSelect: (driver: string, queue: string) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   const { data, isLoading, isError } = useLiveQueues();
 
   if (isLoading) {

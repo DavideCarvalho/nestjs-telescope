@@ -13,7 +13,7 @@ const LiveTailContext = createContext<LiveTailValue | null>(null);
 export function TelescopeProvider({
   client,
   children,
-}: { client?: TelescopeClient; children: React.ReactNode }): JSX.Element {
+}: { client?: TelescopeClient; children: React.ReactNode }): React.JSX.Element {
   const value = client ?? createTelescopeClient();
   const [paused, setPaused] = useState(false);
   const liveTail = useMemo<LiveTailValue>(() => ({ paused, setPaused }), [paused]);

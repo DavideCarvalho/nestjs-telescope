@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { PageHeader } from '../../aviary-kit/blocks/page-header';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import type { PruneRun, PrunesConfig } from '../../client/index.js';
 import { StatCard } from '../../react/components/extensions/stat-card.js';
 import {
@@ -20,11 +22,11 @@ import {
 } from '../../react/ui/index.js';
 
 const TRIGGER_ACCENT: Record<PruneRun['trigger'], string> = {
-  scheduled: 'text-sky-300 bg-sky-500/10',
+  scheduled: 'text-info bg-info/10',
   manual: 'text-warn tint-warn',
 };
 
-function TriggerBadge({ trigger }: { trigger: PruneRun['trigger'] }): JSX.Element {
+function TriggerBadge({ trigger }: { trigger: PruneRun['trigger'] }): React.JSX.Element {
   return (
     <span
       className={`rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${TRIGGER_ACCENT[trigger]}`}
@@ -34,7 +36,7 @@ function TriggerBadge({ trigger }: { trigger: PruneRun['trigger'] }): JSX.Elemen
   );
 }
 
-function TypeChip({ type, count }: { type: string; count: number }): JSX.Element {
+function TypeChip({ type, count }: { type: string; count: number }): React.JSX.Element {
   return (
     <span className="inline-flex items-center gap-1 rounded bg-panel-2/80 px-1.5 py-0.5 text-[10px] text-foreground">
       <span className="text-muted-foreground">{labelForType(type)}</span>
@@ -77,7 +79,7 @@ function ConfigCards({
   config: PrunesConfig;
   nextRunAt: string | null;
   nowMs: number;
-}): JSX.Element {
+}): React.JSX.Element {
   const perType = Object.entries(config.perType ?? {});
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -90,12 +92,12 @@ function ConfigCards({
       <StatCard
         label="Next prune"
         value={formatCountdown(nextRunAt, nowMs)}
-        accent="text-sky-300"
+        accent="text-info"
         {...(perType.length > 0 ? { hint: `${perType.length} per-type override(s)` } : {})}
       />
       {perType.length > 0 && (
-        <div className="col-span-2 rounded-lg border border-line bg-panel/40 p-3 sm:col-span-4">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        <div className="col-span-2 aviary-surface rounded-lg border border-border p-3 sm:col-span-4">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-faint">
             Per-type overrides
           </span>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -115,7 +117,7 @@ function ConfigCards({
   );
 }
 
-function PruneRow({ run }: { run: PruneRun }): JSX.Element {
+function PruneRow({ run }: { run: PruneRun }): React.JSX.Element {
   const perType = Object.entries(run.deletedByType);
   return (
     <TableRow className="border-t border-line/60 align-top hover:bg-panel/40">
@@ -150,7 +152,7 @@ function PruneRow({ run }: { run: PruneRun }): JSX.Element {
   );
 }
 
-export function PrunesPage(): JSX.Element {
+export function PrunesPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePrunes();
   const meta = useMeta();
   const prune = usePrune();
@@ -175,23 +177,24 @@ export function PrunesPage(): JSX.Element {
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between px-1">
-        <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Prune activity
-        </h3>
-        <Button
-          onClick={onPrune}
-          disabled={!pruneEnabled || prune.isPending}
-          title={
-            pruneEnabled
-              ? 'Run a prune cycle now'
-              : 'Mutations are disabled (set `mutations: true` to enable on-demand pruning).'
-          }
-        >
-          {prune.isPending ? 'Pruning…' : 'Prune now'}
-        </Button>
-      </div>
+    <PageBody>
+      <PageHeader
+        title="Prunes"
+        description="Retention prune runs on this pod: when they ran, what they removed, and the config."
+        actions={
+          <Button
+            onClick={onPrune}
+            disabled={!pruneEnabled || prune.isPending}
+            title={
+              pruneEnabled
+                ? 'Run a prune cycle now'
+                : 'Mutations are disabled (set `mutations: true` to enable on-demand pruning).'
+            }
+          >
+            {prune.isPending ? 'Pruning…' : 'Prune now'}
+          </Button>
+        }
+      />
 
       {config ? (
         <ConfigCards config={config} nextRunAt={data?.nextRunAt ?? null} nowMs={nowMs} />
@@ -214,7 +217,7 @@ export function PrunesPage(): JSX.Element {
         <div className="rounded-lg border border-line">
           <Table className="min-w-[760px] text-left text-sm">
             <TableHeader>
-              <TableRow className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              <TableRow className="text-[10px] uppercase tracking-[0.12em] text-faint">
                 <TableHead>Time</TableHead>
                 <TableHead>Trigger</TableHead>
                 <TableHead>Duration</TableHead>
@@ -232,6 +235,6 @@ export function PrunesPage(): JSX.Element {
           </Table>
         </div>
       )}
-    </div>
+    </PageBody>
   );
 }

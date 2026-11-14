@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import { downloadJson } from '../../react/components/export-json.js';
 import { WaterfallView } from '../../react/components/waterfall-view.js';
 import { EntriesTable, useEntries, useWaterfall } from '../../react/index.js';
 
 type View = 'waterfall' | 'entries';
 
-export function TracePage(): JSX.Element {
+export function TracePage(): React.JSX.Element {
   const { traceId = '' } = useParams();
   const navigate = useNavigate();
   const [view, setView] = useState<View>('waterfall');
@@ -16,7 +17,7 @@ export function TracePage(): JSX.Element {
   const { data: waterfall, isLoading: waterfallLoading } = useWaterfall(traceId);
 
   return (
-    <div className="p-4">
+    <PageBody>
       <button
         type="button"
         onClick={() => navigate('/entries')}
@@ -25,7 +26,7 @@ export function TracePage(): JSX.Element {
         ← entries
       </button>
       <div className="mb-4 flex flex-wrap items-baseline gap-3 border-b border-line pb-3">
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Trace</h2>
+        <h2 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">Trace</h2>
         <span className="max-w-md truncate font-mono text-xs text-foreground" title={traceId}>
           {traceId}
         </span>
@@ -83,6 +84,6 @@ export function TracePage(): JSX.Element {
       ) : (
         <EntriesTable entries={entries} onSelect={(id) => navigate(`/entries/view/${id}`)} />
       )}
-    </div>
+    </PageBody>
   );
 }

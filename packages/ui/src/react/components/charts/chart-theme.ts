@@ -36,7 +36,7 @@ const FALLBACK_PALETTE = ['#71717a', '#a1a1aa', '#22d3ee', '#c084fc', '#fb923c',
 const SEGMENT_PALETTE = ['#34d399', '#fbbf24', '#f87171', '#38bdf8', '#a78bfa'];
 
 /** Primary throughput accent — the console `--accent`, not a status hue. */
-export const ACCENT_HEX = 'var(--accent)';
+export const ACCENT_HEX = 'var(--aviary-accent-ink, var(--accent))';
 
 export function hexForType(type: string, fallbackIndex = 0): string {
   const fallback = FALLBACK_PALETTE[fallbackIndex % FALLBACK_PALETTE.length];

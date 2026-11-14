@@ -22,7 +22,24 @@ import { TelescopeUiModule } from '@dudousxd/nestjs-telescope-ui';
 export class AppModule {}
 ```
 
-Open `/telescope`. The dashboard polls `/telescope/api/*` and renders the views below. It ships a dark theme by default, with a theme toggle in the shell, a window selector (1h / 24h / …) for the aggregate views, and a live / pause toggle for polling.
+Open `/telescope`. The dashboard polls `/telescope/api/*` and renders the views below. It is built on the shared Aviary console kit, like the durable, agent and media consoles: a sidebar with the console switcher, the pages grouped as **Monitor** (Overview, Pulse, Exceptions), **Explore** (Entries, Traces, AI, Profiles), **Operations** (Queues, Schedules), **Dashboards** (contributed ones), **Watchers** (one entry per recorded type, folded) and **Data** (Exports, Prunes), and the signed-in user, a light / dark toggle and a sign-out at the bottom. The topbar holds the page title, the organization, the retention, a live / pause toggle for polling and `⌘K`. Aggregate views have a window selector (1h / 24h / …). Below 768px the sidebar becomes a drawer. Dark is the default; the choice is remembered per browser (`aviary-telescope-theme`).
+
+### Who is signed in, and signing out
+
+The sidebar footer shows who is signed in and a sign-out. Both come from `TelescopeUiModule` options and are optional:
+
+```ts
+TelescopeUiModule.forRoot({
+  authorize: consoleAccess,
+  // Default: `request.user`, read structurally (fullName → name → email, and role or roles[0]).
+  viewer: (request) => ({ label: request.user.name, email: request.user.email, role: 'admin' }),
+  // '/logout' (a POST form, with `_csrf` when the request has `req.csrfToken()`), { href },
+  // { action, csrfToken: (request) => token }, or false.
+  signOut: { action: '/logout', csrfToken: (request) => request.csrfToken() },
+});
+```
+
+`viewer` may be async; a throw or an empty answer shows no user row, and reading `request.user` never triggers an authentication (whatever your guards in `decorators` set is what it sees). Without `signOut`, Telescope uses the sign-out an account console announced on the Aviary consoles registry (`account.signOut`), else none. Only same-origin paths (`/x`) ever reach the page. With `forRootAsync`, both can come from the factory.
 
 ## Overview & Pulse
 
@@ -197,9 +214,10 @@ There is nothing to configure. Telescope is listed in the other consoles' menus 
 
 ### Searching every console
 
-The command palette (`⌘K` / `Ctrl+K`, or **Search all consoles** in the brand menu) also searches
-every console the viewer may open. Type at least two characters: next to the page shortcuts, the
-palette lists up to five hits per console, grouped by console. A hit opens the page it names, in
+The command palette (`⌘K` / `Ctrl+K`, the topbar's **Search**, or **Search all consoles** in the
+brand menu) lists Telescope's pages and entry types first, then searches every console the viewer
+may open: up to five hits per console, grouped by console. Each console is asked on its own, so its
+group appears as soon as it answers. A hit opens the page it names, in
 Telescope or in another console. Telescope finds:
 
 - an **entry by its exact id**, which opens that entry;
@@ -207,8 +225,9 @@ Telescope or in another console. Telescope finds:
 
 With organizations on, each console searches only what its viewer may see there (Telescope reads the
 organizations its `authorize` grants). Each console gets 300 ms. When one fails or takes longer,
-the palette says some results are missing. The palette reads
-`GET <path>/api/consoles/search?q=`, behind the console's `authorize`.
+the palette names it under the results, with a retry. The palette reads
+`GET <path>/api/consoles/search?q=&console=<id>` (one console) — without `console`, every console
+at once — behind the console's `authorize`.
 
 ### Authorizers that audit: the probe marker
 

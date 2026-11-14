@@ -18,14 +18,14 @@ export function useAccessDenied(): TelescopeAccessDenial | null {
 }
 
 /** Shown in place of the dashboard when the console refuses the viewer. */
-export function AccessDenied({ denial }: { denial: TelescopeAccessDenial }): JSX.Element {
+export function AccessDenied({ denial }: { denial: TelescopeAccessDenial }): React.JSX.Element {
   const signIn = denial.reason === 'unauthenticated';
   return (
     <main
       role="alert"
       className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground"
     >
-      <div className="max-w-md rounded-lg border border-line bg-panel/40 p-6 text-center">
+      <div className="max-w-md aviary-surface rounded-lg border border-border p-6 text-center">
         <h1 className="text-lg font-semibold">{signIn ? 'Sign in required' : 'Access denied'}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {signIn
@@ -38,7 +38,7 @@ export function AccessDenied({ denial }: { denial: TelescopeAccessDenial }): JSX
 }
 
 /** Renders the dashboard, or {@link AccessDenied} once the console refuses the viewer. */
-export function AccessGate({ children }: { children: React.ReactNode }): JSX.Element {
+export function AccessGate({ children }: { children: React.ReactNode }): React.JSX.Element {
   const denial = useAccessDenied();
   if (denial) return <AccessDenied denial={denial} />;
   return <>{children}</>;

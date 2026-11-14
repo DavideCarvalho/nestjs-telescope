@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { PageHeader } from '../../aviary-kit/blocks/page-header';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import { StatCard } from '../../react/components/extensions/stat-card.js';
 import {
   AreaChartCard,
@@ -44,10 +46,10 @@ function formatUptime(seconds: number): string {
   return `${minutes}m ${total % 60}s`;
 }
 
-function ServerStatsCard({ stats }: { stats: ServerStats | undefined }): JSX.Element {
+function ServerStatsCard({ stats }: { stats: ServerStats | undefined }): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
         Server
       </h3>
       {stats ? (
@@ -58,15 +60,11 @@ function ServerStatsCard({ stats }: { stats: ServerStats | undefined }): JSX.Ele
             value={`${stats.memory.rssMb} MB`}
             hint={`heap ${stats.memory.heapUsedMb}/${stats.memory.heapTotalMb} MB`}
           />
-          <StatCard
-            label="Heap used"
-            value={`${stats.memory.heapUsedMb} MB`}
-            accent="text-sky-400"
-          />
+          <StatCard label="Heap used" value={`${stats.memory.heapUsedMb} MB`} accent="text-info" />
           <StatCard
             label="CPU"
             value={`${Math.round(stats.cpu.userMs)} ms`}
-            accent="text-violet-400"
+            accent="text-violet"
             hint={`sys ${Math.round(stats.cpu.systemMs)} ms`}
           />
           <StatCard
@@ -96,13 +94,13 @@ function formatFlushMs(ms: number | null): string {
   return ms === null ? 'n/a' : `${ms.toFixed(1)} ms`;
 }
 
-function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }): JSX.Element {
+function TelescopeHealthCard({
+  health,
+}: { health: TelescopeHealth | undefined }): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Telescope health
-        </h3>
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <div className="-mx-4 -mt-4 mb-3 flex items-baseline justify-between gap-3 border-b border-border px-4 py-3">
+        <h3 className="text-[12.5px] font-semibold tracking-[0.02em] text-fg">Telescope health</h3>
         <span className="text-[10px] text-muted-foreground">
           Captures run off the response path — your requests don&apos;t wait on Telescope.
         </span>
@@ -118,7 +116,7 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
           <StatCard
             label="Buffer"
             value={`${health.bufferUsed} / ${health.bufferSize}`}
-            accent="text-sky-400"
+            accent="text-info"
             hint={`high-water ${health.bufferHighWater}`}
           />
           <StatCard
@@ -129,7 +127,7 @@ function TelescopeHealthCard({ health }: { health: TelescopeHealth | undefined }
           <StatCard
             label="Flushes"
             value={health.flushes.toLocaleString()}
-            accent="text-violet-400"
+            accent="text-violet"
             hint={`${health.flushedEntries.toLocaleString()} entries`}
           />
           <StatCard
@@ -164,7 +162,7 @@ function RetentionCard({
 }: {
   retention: RetentionInfo | undefined;
   pruneEnabled: boolean;
-}): JSX.Element {
+}): React.JSX.Element {
   const prune = usePrune();
   const window = retention?.retention;
 
@@ -183,11 +181,9 @@ function RetentionCard({
   }
 
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Retention
-        </h3>
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <div className="-mx-4 -mt-4 mb-3 flex items-baseline justify-between gap-3 border-b border-border px-4 py-3">
+        <h3 className="text-[12.5px] font-semibold tracking-[0.02em] text-fg">Retention</h3>
         {pruneEnabled ? (
           <button
             type="button"
@@ -304,7 +300,7 @@ function StatCards({
 }: {
   pulse: PulseReport | undefined;
   queues: QueueMetricsReport | undefined;
-}): JSX.Element {
+}): React.JSX.Element {
   const counts = pulse?.counts ?? {};
   const totalEntries = sumCounts(counts);
   const requests = counts.request ?? 0;
@@ -354,15 +350,15 @@ function ListCard({
   title: string;
   emptyLabel: string;
   children: React.ReactNode;
-}): JSX.Element {
+}): React.JSX.Element {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
         {title}
       </h3>
       {hasChildren ? (
-        <ul className="space-y-1 text-xs">{children}</ul>
+        <ul className="mono space-y-1.5 text-xs">{children}</ul>
       ) : (
         <p className="text-xs text-muted-foreground">{emptyLabel}</p>
       )}
@@ -382,14 +378,14 @@ function NPlusOneCard({
 }: {
   hotspots: NPlusOneHotspot[];
   onSelectFamily: (familyHash: string) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
         N+1 query hotspots
       </h3>
       {hotspots.length > 0 ? (
-        <ul className="space-y-1 text-xs">
+        <ul className="mono space-y-1.5 text-xs">
           {hotspots.map((hotspot) => (
             <li key={hotspot.familyHash}>
               <button
@@ -428,11 +424,11 @@ function QueuesAttentionCard({
 }: {
   queues: QueueMetrics[];
   onOpenQueues: () => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <div className="-mx-4 -mt-4 mb-3 flex items-baseline justify-between gap-3 border-b border-border px-4 py-3">
+        <h3 className="text-[12.5px] font-semibold tracking-[0.02em] text-fg">
           Queues needing attention
         </h3>
         <button
@@ -444,7 +440,7 @@ function QueuesAttentionCard({
         </button>
       </div>
       {queues.length > 0 ? (
-        <ul className="space-y-1 text-xs">
+        <ul className="mono space-y-1.5 text-xs">
           {queues.map((queue) => {
             const pending = Math.max(0, queue.total - queue.completed - queue.failed);
             return (
@@ -479,14 +475,14 @@ function QueuesAttentionCard({
 }
 
 /** Slowest job families by p99 — the queue analogue of the slow-route hotspots. */
-function SlowJobsCard({ hotspots }: { hotspots: SlowRouteHotspot[] }): JSX.Element {
+function SlowJobsCard({ hotspots }: { hotspots: SlowRouteHotspot[] }): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
         Slowest jobs
       </h3>
       {hotspots.length > 0 ? (
-        <ul className="space-y-1 text-xs">
+        <ul className="mono space-y-1.5 text-xs">
           {hotspots.map((hotspot) => (
             <li
               key={hotspot.route}
@@ -514,14 +510,14 @@ function LoadByUserCard({
 }: {
   users: UserLoad[];
   onSelectUser: (user: string) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
         Load by user
       </h3>
       {users.length > 0 ? (
-        <ul className="space-y-1 text-xs">
+        <ul className="mono space-y-1.5 text-xs">
           {users.map((load) => (
             <li key={load.user}>
               <button
@@ -547,15 +543,15 @@ function LoadByUserCard({
 /** CPU and memory history sparklines from the server-stats ring buffer. */
 function ResourceHistoryCard({
   history,
-}: { history: ServerStatsHistory | undefined }): JSX.Element {
+}: { history: ServerStatsHistory | undefined }): React.JSX.Element {
   const samples = history?.samples ?? [];
   const cpu = samples.map((s) => s.cpuPercent);
   const rss = samples.map((s) => s.rssMb);
   const heap = samples.map((s) => s.heapUsedMb);
   const last = samples[samples.length - 1];
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
         Resource history
       </h3>
       {samples.length > 1 ? (
@@ -586,7 +582,7 @@ function ResourceHistoryCard({
   );
 }
 
-export function OverviewPage(): JSX.Element {
+export function OverviewPage(): React.JSX.Element {
   const [window, setWindow] = useState('1h');
   const navigate = useNavigate();
   const pulse = usePulse(window);
@@ -604,11 +600,12 @@ export function OverviewPage(): JSX.Element {
   const attentionQueues = queuesNeedingAttention(queues.data);
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm text-brand">Overview</h2>
-        <WindowSelect value={window} onChange={setWindow} />
-      </div>
+    <PageBody>
+      <PageHeader
+        title="Overview"
+        description="What needs attention right now, then the trends and Telescope's own health."
+        actions={<WindowSelect value={window} onChange={setWindow} />}
+      />
 
       {/*
         TOP — "what's wrong right now": the criticality stat row, then recent
@@ -694,6 +691,6 @@ export function OverviewPage(): JSX.Element {
       <TelescopeHealthCard health={health.data} />
 
       <RetentionCard retention={retention.data} pruneEnabled={meta.data?.pruneEnabled ?? false} />
-    </div>
+    </PageBody>
   );
 }

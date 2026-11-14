@@ -1,5 +1,6 @@
 import type { ConsoleAuthorize } from '@dudousxd/nestjs-telescope';
 import type { DynamicModule } from '@nestjs/common';
+import type { ConsoleSignOutOption, ConsoleViewerResolver } from './console-shell.js';
 
 export const TELESCOPE_UI_OPTIONS = Symbol('TELESCOPE_UI_OPTIONS');
 
@@ -73,4 +74,28 @@ export interface TelescopeUiModuleOptions {
    * DI resolution path for whatever the {@link decorators} need.
    */
   imports?: DynamicModule['imports'];
+  /**
+   * Who the console's sidebar footer says is signed in: `(request) => ({ label, email?, role? })`,
+   * sync or async. `null`/`undefined` or a throw shows no user row.
+   *
+   * Omitted: `request.user` is read structurally — whatever your guards ({@link decorators})
+   * already put there: `fullName` → `name` → `email` for the label, and `role` or the first of
+   * `roles` (a string or `{ name }`). Reading it never triggers an authentication. With
+   * `forRootAsync` it can come from the factory.
+   */
+  viewer?: ConsoleViewerResolver;
+  /**
+   * The sidebar footer's sign-out. One of:
+   *
+   * - `'/logout'`: a POST form to that path (with `_csrf` when the request exposes
+   *   `req.csrfToken()`);
+   * - `{ href: '/logout' }`: a plain link;
+   * - `{ action: '/logout', csrfToken: (request) => token }`: a POST form with your token as `_csrf`;
+   * - `false`: none, even when an account console announced one.
+   *
+   * Omitted: the sign-out an account console announced on the Aviary consoles registry
+   * (`account.signOut`), else none. Only same-origin paths (`/x`) are ever sent to the page. With
+   * `forRootAsync` it can come from the factory.
+   */
+  signOut?: ConsoleSignOutOption;
 }

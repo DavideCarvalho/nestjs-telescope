@@ -50,7 +50,7 @@ export function StackedAreaChartCard({
   onSelect?: (selection: ChartSelection) => void;
   /** Explicit series colours; series not listed fall back to the entry-type palette. */
   colors?: Record<string, string>;
-}): JSX.Element {
+}): React.JSX.Element {
   const bodyHeight = height - 64;
   const config = useMemo(
     () => chartConfig(series, (key, index) => colors?.[key] ?? hexForType(key, index)),
@@ -84,7 +84,7 @@ export function StackedAreaChartCard({
           >
             <CartesianGrid vertical={false} />
             <XAxis dataKey="label" tickLine={false} minTickGap={24} />
-            <YAxis tickLine={false} width={40} allowDecimals={false} />
+            <YAxis tickLine={false} width={52} allowDecimals={false} />
             <ChartTooltip cursor={{ stroke: 'var(--line)' }} content={<ChartTooltipContent />} />
             <ChartLegend content={<ChartLegendContent hidden={hidden} onToggle={toggle} />} />
             {series.map((key) => (

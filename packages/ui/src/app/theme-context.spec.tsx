@@ -1,8 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ThemeProvider, useTheme } from './theme-context.js';
-
-const STORAGE_KEY = 'telescope-theme';
+import {
+  LEGACY_THEME_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  ThemeProvider,
+  useTheme,
+} from './theme-context.js';
 
 // jsdom here doesn't ship a fully-functional localStorage; install a tiny
 // in-memory stub so persistence/restore is exercised deterministically.
@@ -25,10 +28,10 @@ function installMemoryStorage(): void {
   Object.defineProperty(window, 'localStorage', { value: storage, configurable: true });
 }
 
-function ToggleHarness(): JSX.Element {
-  const { theme, toggleTheme } = useTheme();
+function ToggleHarness(): React.JSX.Element {
+  const { theme, toggle } = useTheme();
   return (
-    <button type="button" onClick={toggleTheme}>
+    <button type="button" onClick={toggle}>
       {theme}
     </button>
   );
@@ -42,38 +45,46 @@ function renderProvider() {
   );
 }
 
+const html = () => document.documentElement;
+
 describe('ThemeProvider', () => {
   beforeEach(() => {
     installMemoryStorage();
   });
   afterEach(() => {
     window.localStorage.clear();
+    html().className = '';
   });
 
-  it('defaults to dark and applies the dark root class', () => {
+  it('defaults to dark, on <html> (so portalled overlays theme too), with the accent', () => {
     renderProvider();
-    const root = screen.getByTestId('telescope-root');
-    expect(root.className).toBe('dark');
-    expect(root.getAttribute('data-theme')).toBe('dark');
+    expect(html().classList.contains('dark')).toBe(true);
+    expect(html().dataset.theme).toBe('dark');
+    expect(html().style.getPropertyValue('--aviary-accent')).toBe('#e879f9');
     expect(screen.getByRole('button').textContent).toBe('dark');
   });
 
   it('toggle flips the root class and persists to localStorage', () => {
     renderProvider();
     fireEvent.click(screen.getByRole('button'));
-    const root = screen.getByTestId('telescope-root');
-    expect(root.className).toBe('light');
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('light');
+    expect(html().classList.contains('light')).toBe(true);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
 
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByTestId('telescope-root').className).toBe('dark');
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('dark');
+    expect(html().classList.contains('dark')).toBe(true);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
   });
 
   it('restores the persisted theme from localStorage on mount', () => {
-    window.localStorage.setItem(STORAGE_KEY, 'light');
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
     renderProvider();
-    expect(screen.getByTestId('telescope-root').className).toBe('light');
+    expect(html().classList.contains('light')).toBe(true);
+    expect(screen.getByRole('button').textContent).toBe('light');
+  });
+
+  it('keeps a theme chosen before the kit (`telescope-theme`) as the default', () => {
+    window.localStorage.setItem(LEGACY_THEME_STORAGE_KEY, 'light');
+    renderProvider();
     expect(screen.getByRole('button').textContent).toBe('light');
   });
 });

@@ -1,10 +1,15 @@
 import type { PulseReport } from '../../client/index.js';
 
-function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function Section({
+  title,
+  children,
+}: { title: string; children: React.ReactNode }): React.JSX.Element {
   return (
-    <section className="mb-6">
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">{title}</h3>
-      {children}
+    <section className="aviary-surface mb-4 rounded-lg border border-border">
+      <h3 className="border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
+        {title}
+      </h3>
+      <div className="px-4 pt-3 pb-4 text-xs">{children}</div>
     </section>
   );
 }
@@ -21,7 +26,7 @@ export function PulsePanel({
   onSelectFamily?: (familyHash: string) => void;
   onSelectRoute?: (route: string) => void;
   onSelectOutgoing?: (route: string) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <div className="text-xs">
       {report.truncated && (

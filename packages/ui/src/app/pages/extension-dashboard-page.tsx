@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import type { Panel } from '../../client/types.js';
 import type { ChartSelection } from '../../react/components/charts/chart-selection.js';
 import { PanelActionsProvider } from '../../react/components/extensions/panel-actions.js';
@@ -56,7 +57,7 @@ function drilldownOf(panel: Panel): { param: string } | undefined {
  * Small status badge driven by the SSE stream status. Green pulsing dot + "LIVE"
  * when connected; amber text when polling or reconnecting.
  */
-function LiveBadge({ status }: { status: StreamStatus }): JSX.Element {
+function LiveBadge({ status }: { status: StreamStatus }): React.JSX.Element {
   const isLive = status === 'live';
   return (
     <span
@@ -112,7 +113,7 @@ function BoundPanel({
   focus: DashboardFocus | null;
   /** Passed only for panels that declare `drilldown`; see {@link drilldownOf}. */
   onSelect?: (selection: ChartSelection) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   const isPagedTable = panel.kind === 'table' && panel.paged === true;
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<TableSortState | undefined>(undefined);
@@ -174,7 +175,7 @@ function BoundPanel({
  * is the same gesture that got you in — plus the chip's Clear button, because a
  * filtered dashboard that does not say so reads as missing data.
  */
-export function ExtensionDashboardPage(): JSX.Element {
+export function ExtensionDashboardPage(): React.JSX.Element {
   const { dashboardId } = useParams();
   const meta = useMeta();
   const { status } = useTelescopeStream();
@@ -198,9 +199,9 @@ export function ExtensionDashboardPage(): JSX.Element {
 
   return (
     <PanelActionsProvider ext={ext}>
-      <div className="p-4">
-        <div className="mb-4 flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-foreground">{dash.label}</h2>
+      <PageBody>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-lg font-bold tracking-[0.01em] text-fg">{dash.label}</h1>
           <LiveBadge status={status} />
           {focus && (
             <span className="tint-brand inline-flex items-center gap-1 rounded border py-0.5 pl-1.5 text-[10px]">
@@ -219,7 +220,7 @@ export function ExtensionDashboardPage(): JSX.Element {
         {sections.map((section, i) => (
           <section key={section.title ?? `s${i}`} className="mb-6">
             {section.title && (
-              <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <p className="mb-2 text-[10px] uppercase tracking-[0.12em] text-faint">
                 {section.title}
               </p>
             )}
@@ -241,7 +242,7 @@ export function ExtensionDashboardPage(): JSX.Element {
             </div>
           </section>
         ))}
-      </div>
+      </PageBody>
     </PanelActionsProvider>
   );
 }

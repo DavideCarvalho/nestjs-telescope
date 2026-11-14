@@ -86,7 +86,7 @@ export function OfficialEventBody({
 }: {
   type: string;
   content: unknown;
-}): JSX.Element {
+}): React.JSX.Element {
   const record = asRecord(content);
   const event = s(record.event) ?? type;
   const bad = BAD_EVENTS.has(event);
@@ -127,7 +127,9 @@ export function OfficialEventBody({
       ) : null}
       {error !== undefined && error !== null ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Error</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            Error
+          </h3>
           <pre className="overflow-auto rounded bg-panel p-3 text-xs text-bad">
             {JSON.stringify(error, null, 2)}
           </pre>
@@ -135,7 +137,9 @@ export function OfficialEventBody({
       ) : null}
       {extra.map(([key, value]) => (
         <div key={key} className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">{key}</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            {key}
+          </h3>
           <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
             {JSON.stringify(value, null, 2)}
           </pre>

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { PageHeader, Toolbar } from '../../aviary-kit/blocks/page-header';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import {
   EntriesTable,
   EntryInsights,
@@ -14,6 +16,7 @@ import {
   userTagId,
 } from '../../react/index.js';
 import { Button, Input } from '../../react/ui/index.js';
+import { PageEmpty, RowsSkeleton } from '../page-chrome.js';
 
 function emptyMessage(type: string | undefined, tag: string): string {
   if (tag.trim() !== '') return `No entries match tag '${tag.trim()}'`;
@@ -21,7 +24,7 @@ function emptyMessage(type: string | undefined, tag: string): string {
   return 'No entries';
 }
 
-export function EntriesPage(): JSX.Element {
+export function EntriesPage(): React.JSX.Element {
   const { type: routeType } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -91,9 +94,17 @@ export function EntriesPage(): JSX.Element {
   }
 
   return (
-    <div className="p-4">
+    <PageBody>
+      <PageHeader
+        title={activeType ? labelForType(activeType) : 'Entries'}
+        description={
+          activeType
+            ? 'Recorded entries of this type, newest first, with their insights.'
+            : 'Everything the watchers recorded, newest first. Filter by type, tag, user or content.'
+        }
+      />
       {activeType ? <EntryInsights type={activeType} /> : null}
-      <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-line pb-3">
+      <Toolbar label="Entry filters" className="gap-2">
         {activeType ? (
           <Button
             variant="ghost"
@@ -107,7 +118,7 @@ export function EntriesPage(): JSX.Element {
             </span>
           </Button>
         ) : (
-          <span className="rounded bg-panel px-2 py-1 text-xs text-muted-foreground">
+          <span className="rounded-md border border-border bg-panel-2 px-2 py-1 text-xs text-dim">
             All types
           </span>
         )}
@@ -186,20 +197,25 @@ export function EntriesPage(): JSX.Element {
             Clear filters
           </Button>
         ) : null}
-      </div>
+      </Toolbar>
       {data?.partial ? (
-        <output className="tint-warn mb-4 block rounded-lg border px-4 py-3 text-sm">
+        <output className="tint-warn block rounded-lg border px-4 py-3 text-sm">
           Older entries are unavailable right now — the store could only read part of its data, so
           this list may be missing them.
         </output>
       ) : null}
       {isLoading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <RowsSkeleton rows={10} />
       ) : entries.length === 0 ? (
-        <p className="text-muted-foreground">{emptyMessage(activeType, tag)}</p>
+        <PageEmpty
+          title={emptyMessage(activeType, tag)}
+          description="New entries show up here as the watchers record them."
+        />
       ) : (
-        <EntriesTable entries={entries} onSelect={(id) => navigate(`/entries/view/${id}`)} />
+        <div className="aviary-surface overflow-hidden rounded-lg border border-border">
+          <EntriesTable entries={entries} onSelect={(id) => navigate(`/entries/view/${id}`)} />
+        </div>
       )}
-    </div>
+    </PageBody>
   );
 }

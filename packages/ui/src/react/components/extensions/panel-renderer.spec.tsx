@@ -4,10 +4,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('recharts', async () => {
   const actual = await vi.importActual<typeof import('recharts')>('recharts');
-  function Mock({ children }: { children: React.ReactNode }): JSX.Element {
+  function Mock({ children }: { children: React.ReactNode }): React.JSX.Element {
     return (
       <div>
-        {isValidElement(children) ? cloneElement(children, { width: 600, height: 300 }) : children}
+        {isValidElement(children)
+          ? cloneElement(children as React.ReactElement<{ width?: number; height?: number }>, {
+              width: 600,
+              height: 300,
+            })
+          : children}
       </div>
     );
   }

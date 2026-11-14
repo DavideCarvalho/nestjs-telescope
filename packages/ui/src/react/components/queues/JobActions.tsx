@@ -60,7 +60,7 @@ function JobActionButton({
   id: string;
   action: JobActionName;
   onDone: (() => void) | undefined;
-}): JSX.Element {
+}): React.JSX.Element {
   const mutation = useQueueJobAction();
   const [confirming, setConfirming] = useState(false);
   const pending = mutation.isPending;
@@ -119,7 +119,7 @@ export function JobActions({
   id: string;
   state: QueueState;
   onDone?: () => void;
-}): JSX.Element | null {
+}): React.JSX.Element | null {
   const actions: JobActionName[] = (['retry', 'promote', 'remove'] as const).filter(
     (action) =>
       supportsAction(capabilities, driver, action) && jobActionAllowedForState(action, state),
@@ -150,7 +150,7 @@ export function RetryAllFailedButton({
   capabilities: QueueCapabilities | undefined;
   driver: string;
   queue: string;
-}): JSX.Element | null {
+}): React.JSX.Element | null {
   const mutation = useQueueAction();
   if (!supportsAction(capabilities, driver, 'retry-all')) return null;
   const forbidden = isForbidden(mutation.error);
@@ -188,7 +188,7 @@ export function RedriveDlqButton({
   capabilities: QueueCapabilities | undefined;
   driver: string;
   queue: string;
-}): JSX.Element | null {
+}): React.JSX.Element | null {
   const mutation = useQueueAction();
   const [confirming, setConfirming] = useState(false);
   if (!supportsAction(capabilities, driver, 'redrive')) return null;

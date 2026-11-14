@@ -36,20 +36,20 @@ function StatCard({
   label: string;
   value: string | number;
   accent?: string;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
-    <div className="rounded-lg border border-line bg-panel/40 px-4 py-3">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div className="aviary-surface rounded-lg border border-border px-4 py-3">
+      <p className="text-[10px] uppercase tracking-[0.12em] text-faint">{label}</p>
       <p className={`mt-1 text-2xl font-semibold tabular-nums ${accent}`}>{value}</p>
     </div>
   );
 }
 
-function StatRow({ children }: { children: React.ReactNode }): JSX.Element {
+function StatRow({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{children}</div>;
 }
 
-function ChartRow({ children }: { children: React.ReactNode }): JSX.Element {
+function ChartRow({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{children}</div>;
 }
 
@@ -67,7 +67,7 @@ function statusBars(status: StatusBreakdown): BarChartDatum[] {
     { label: '3xx', value: status['3xx'], color: '#38bdf8' },
     { label: '4xx', value: status['4xx'], color: 'var(--warn)' },
     { label: '5xx', value: status['5xx'], color: 'var(--bad)' },
-    { label: 'other', value: status.other, color: 'var(--muted)' },
+    { label: 'other', value: status.other, color: 'var(--aviary-muted, var(--muted))' },
   ];
 }
 
@@ -75,7 +75,7 @@ function cacheKeyBars(cache: CacheStats): BarChartDatum[] {
   return cache.topKeys.map((entry) => ({ label: entry.key, value: entry.count }));
 }
 
-function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
+function QueryInsights({ stats }: { stats: StatsResult }): React.JSX.Element {
   const latency = stats.latency;
   const navigate = useNavigate();
   return (
@@ -86,7 +86,7 @@ function QueryInsights({ stats }: { stats: StatsResult }): JSX.Element {
         <StatCard
           label="p99 ms"
           value={latency ? latency.p99.toLocaleString() : '—'}
-          accent="text-sky-400"
+          accent="text-info"
         />
         <StatCard
           label="Slow"
@@ -126,7 +126,7 @@ function tierHitBars(byTier: Record<string, { hits: number; misses: number }>): 
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
+function CacheInsights({ stats }: { stats: StatsResult }): React.JSX.Element {
   const cache = stats.cache;
   // `byTier`/`staleHits`/`deletes` are optional (older servers omit them); guard.
   const byTier = cache?.byTier ?? {};
@@ -178,7 +178,7 @@ function CacheInsights({ stats }: { stats: StatsResult }): JSX.Element {
   );
 }
 
-function RequestInsights({ stats }: { stats: StatsResult }): JSX.Element {
+function RequestInsights({ stats }: { stats: StatsResult }): React.JSX.Element {
   const latency = stats.latency;
   const status = stats.status;
   const errors = status ? status['4xx'] + status['5xx'] : 0;
@@ -190,7 +190,7 @@ function RequestInsights({ stats }: { stats: StatsResult }): JSX.Element {
         <StatCard
           label="p99 ms"
           value={latency ? latency.p99.toLocaleString() : '—'}
-          accent="text-sky-400"
+          accent="text-info"
         />
         <StatCard
           label="Error %"
@@ -213,7 +213,7 @@ function RequestInsights({ stats }: { stats: StatsResult }): JSX.Element {
 }
 
 /** A tiny inline bar chart of per-bucket counts — no axes, no recharts. */
-function Sparkline({ values }: { values: number[] }): JSX.Element | null {
+function Sparkline({ values }: { values: number[] }): React.JSX.Element | null {
   if (values.length === 0) return null;
   const max = Math.max(1, ...values);
   return (
@@ -231,12 +231,12 @@ function Sparkline({ values }: { values: number[] }): JSX.Element | null {
   );
 }
 
-function ExceptionGroupRow({ group }: { group: StatsExceptionGroup }): JSX.Element {
+function ExceptionGroupRow({ group }: { group: StatsExceptionGroup }): React.JSX.Element {
   const lastAtMs = new Date(group.lastAt).getTime();
   return (
     <Link
       to={`/entries/exception?familyHash=${encodeURIComponent(group.key)}`}
-      className="flex items-center gap-3 rounded-lg border border-line bg-panel/40 px-4 py-3 transition hover:border-line hover:bg-panel/70"
+      className="flex items-center gap-3 aviary-surface rounded-lg border border-border px-4 py-3 transition hover:border-line hover:bg-panel/70"
     >
       <div className="min-w-0 flex-1">
         <p className="truncate font-mono text-sm font-semibold text-bad">{group.class}</p>
@@ -255,7 +255,7 @@ function ExceptionGroupRow({ group }: { group: StatsExceptionGroup }): JSX.Eleme
   );
 }
 
-function ExceptionInsights({ stats }: { stats: StatsResult }): JSX.Element {
+function ExceptionInsights({ stats }: { stats: StatsResult }): React.JSX.Element {
   const groups = stats.exceptions ?? [];
   return (
     <>
@@ -269,9 +269,7 @@ function ExceptionInsights({ stats }: { stats: StatsResult }): JSX.Element {
       </StatRow>
       {groups.length > 0 ? (
         <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            Exception groups
-          </p>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-faint">Exception groups</p>
           {groups.map((group) => (
             <ExceptionGroupRow key={group.key} group={group} />
           ))}
@@ -286,7 +284,7 @@ function ExceptionInsights({ stats }: { stats: StatsResult }): JSX.Element {
   );
 }
 
-function GenericInsights({ stats }: { stats: StatsResult }): JSX.Element {
+function GenericInsights({ stats }: { stats: StatsResult }): React.JSX.Element {
   return (
     <>
       <StatRow>
@@ -297,7 +295,7 @@ function GenericInsights({ stats }: { stats: StatsResult }): JSX.Element {
   );
 }
 
-function InsightsBody({ stats }: { stats: StatsResult }): JSX.Element {
+function InsightsBody({ stats }: { stats: StatsResult }): React.JSX.Element {
   if (stats.type === 'query') return <QueryInsights stats={stats} />;
   if (stats.type === 'cache') return <CacheInsights stats={stats} />;
   if (stats.type === 'request') return <RequestInsights stats={stats} />;
@@ -306,7 +304,7 @@ function InsightsBody({ stats }: { stats: StatsResult }): JSX.Element {
 }
 
 /** Per-type analytics header (stat cards + charts) rendered above the entries table. */
-export function EntryInsights({ type }: { type: string }): JSX.Element | null {
+export function EntryInsights({ type }: { type: string }): React.JSX.Element | null {
   const { data } = useStats(type, DEFAULT_WINDOW);
   if (!data) {
     return <div className="mb-4 h-24 animate-pulse rounded-lg border border-line bg-panel/20" />;

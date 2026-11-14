@@ -60,6 +60,8 @@ With `forRootAsync`, `path`, `decorators`, `mcpDecorators`, `routes` and `import
 | `TelescopeUiModule.forRoot({ authorize })` | none | Who may open the dashboard page and its assets; same forms and default as `TelescopeModule`'s. A denied navigation gets an "Access denied" page, or a 302 for `{ redirectTo }`. |
 | `TelescopeUiModule.forRoot({ decorators })` | none | Class decorators on the dashboard page controller, run before `authorize`. |
 | `TelescopeUiModule.forRoot({ routes })` | `true` | `false` mounts no controller; extend `TelescopeUiController` yourself. |
+| `TelescopeUiModule.forRoot({ viewer })` | `request.user` | Who the sidebar footer says is signed in: `(request) => ({ label, email?, role? })`, sync or async. Omitted: `request.user` read structurally. |
+| `TelescopeUiModule.forRoot({ signOut })` | registry's `account.signOut` | The footer's sign-out: `'/logout'` (POST, with `_csrf`), `{ href }`, `{ action, csrfToken? }` or `false`. Same-origin paths only. |
 | `TelescopeOtelMetricsModule.forExporter(exporter, { authorize })` | none | Who may scrape `GET /metrics`; same forms and default as the console (omitted: 403 in production). For Prometheus: `authorizeByToken({ token: process.env.METRICS_TOKEN })`. |
 | `TelescopeOtelMetricsModule.forExporter(exporter, { decorators })` | none | Class decorators on the `GET /metrics` controller, run before `authorize`. |
 | `TelescopeOtelMetricsModule.forExporter(exporter, { routes })` | `true` | `false` mounts no controller and exports the exporter under `TELESCOPE_OTEL_EXPORTER`; extend `TelescopeOtelMetricsController` yourself. |

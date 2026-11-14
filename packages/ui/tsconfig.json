@@ -8,5 +8,13 @@
     "types": ["vite/client", "node"],
     "noEmit": true
   },
-  "include": ["src", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src/app",
+    "src/aviary-kit",
+    "src/client",
+    "src/react",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["**/*.spec.ts", "**/*.spec.tsx"]
 }

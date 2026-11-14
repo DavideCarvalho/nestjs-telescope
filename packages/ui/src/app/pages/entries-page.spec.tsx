@@ -89,9 +89,10 @@ describe('EntriesPage', () => {
     await waitFor(() => {
       expect(entries).toHaveBeenCalledWith({ type: 'cache' });
     });
-    // row summary derived from content + the active-type chip label
+    // row summary derived from content, the page title and the active-type chip label
     expect(await screen.findByText('hit user:1')).toBeTruthy();
-    expect(screen.getByText('Cache')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Cache' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Cache/ })).toBeTruthy();
   });
 
   it('resolves the schedule route to the tagged-job query', async () => {

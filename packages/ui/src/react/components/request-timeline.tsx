@@ -20,7 +20,7 @@ export function RequestTimeline({
   batch: Entry[];
   requestId: string;
   onSelect?: ((id: string) => void) | undefined;
-}): JSX.Element {
+}): React.JSX.Element {
   const ordered = [...batch].sort((a, b) => a.sequence - b.sequence);
   const maxDuration = ordered.reduce(
     (max, entry) => (entry.durationMs != null && entry.durationMs > max ? entry.durationMs : max),
@@ -60,7 +60,7 @@ function TimelineRow({
   maxDuration: number;
   isRequest: boolean;
   onSelect?: ((id: string) => void) | undefined;
-}): JSX.Element {
+}): React.JSX.Element {
   // Width is the entry's share of the slowest entry in the batch. Null and
   // zero-duration entries collapse to a minimal sliver so the row still reads.
   const fraction = maxDuration > 0 && entry.durationMs != null ? entry.durationMs / maxDuration : 0;

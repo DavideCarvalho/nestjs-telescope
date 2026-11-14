@@ -9,7 +9,7 @@ export function BatchTimeline({
   batch: Entry[];
   currentId: string;
   onSelect?: ((id: string) => void) | undefined;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <ol className="space-y-1">
       {[...batch]

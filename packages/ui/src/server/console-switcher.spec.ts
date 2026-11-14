@@ -9,7 +9,7 @@ import {
   readAviaryConsoles,
   registerAviaryConsole,
 } from '@dudousxd/nestjs-telescope';
-import type { ExecutionContext, INestApplication } from '@nestjs/common';
+import { type ExecutionContext, type INestApplication, UseGuards } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -102,10 +102,20 @@ describe('the telescope console in the switcher', () => {
 });
 
 describe('the shell’s config block', () => {
-  it('has no switcher while telescope is alone', async () => {
+  it('has no switcher while telescope is alone, but ⌘K searches it per console', async () => {
     const server = await boot({ authorize: () => true });
     const res = await request(server).get('/telescope').expect(200);
-    expect(configOf(res.text)).toEqual({ base: '/telescope' });
+    expect(configOf(res.text)).toEqual({
+      base: '/telescope',
+      search: { endpoint: '/telescope/api/consoles/search', self: 'telescope' },
+    });
+  });
+
+  it('has no search with routes: false (telescope is not in the registry)', async () => {
+    await boot({ routes: false });
+    const { TelescopeUiController } = await import('./telescope-ui.controller.js');
+    const page = new TelescopeUiController({ assetsDir: dir });
+    expect(configOf(await page.index({}))).toEqual({ base: '/telescope' });
   });
 
   it('carries the endpoint and how many others are registered, as data (CSP-safe)', async () => {
@@ -116,8 +126,86 @@ describe('the shell’s config block', () => {
     expect(configOf(res.text)).toEqual({
       base: '/ops/telescope',
       switcher: { endpoint: '/ops/telescope/api/consoles', others: 2 },
+      search: { endpoint: '/ops/telescope/api/consoles/search', self: 'telescope' },
     });
     expect(res.text).toContain('<script type="application/json" id="telescope-dashboard-config">');
     expect(res.text).toContain('src="/ops/telescope/assets/app.js"');
+  });
+});
+
+describe('the sidebar footer (viewer, signOut)', () => {
+  it('reads request.user structurally by default, and emits no sign-out', async () => {
+    const server = await boot({
+      authorize: () => true,
+      // A guard stand-in: what an authentication guard would leave on the request.
+      decorators: [
+        UseGuards({
+          canActivate: (c: ExecutionContext) => {
+            const req = c.switchToHttp().getRequest<Record<string, unknown>>();
+            req.user = { fullName: 'Ann Lee', email: 'ann@x.test', roles: ['admin'] };
+            return true;
+          },
+        }),
+      ],
+    });
+    const config = configOf((await request(server).get('/telescope').expect(200)).text);
+    expect(config.viewer).toEqual({ label: 'Ann Lee', email: 'ann@x.test', role: 'admin' });
+    expect(config.signOut).toBeUndefined();
+  });
+
+  it('uses the viewer and signOut options, keeping same-origin paths only', async () => {
+    const server = await boot({
+      authorize: () => true,
+      viewer: async () => ({ label: 'Ops <team>', role: 'admin' }),
+      signOut: { action: '/logout', csrfToken: () => 'tok' },
+    });
+    const res = await request(server).get('/telescope').expect(200);
+    const config = configOf(res.text);
+    expect(config.viewer).toEqual({ label: 'Ops <team>', role: 'admin' });
+    expect(config.signOut).toEqual({ action: '/logout', csrfToken: 'tok' });
+    // `<` never reaches the HTML raw.
+    expect(res.text).not.toContain('Ops <team>');
+  });
+
+  it('falls back to the sign-out an account console announced; `false` turns it off', async () => {
+    registerAviaryConsole(other('account'));
+    (readAviaryConsoles() as unknown as Record<string, unknown>).account = {
+      signOut: { href: '/account/logout' },
+    };
+    let server = await boot({ authorize: () => true });
+    expect(configOf((await request(server).get('/telescope').expect(200)).text).signOut).toEqual({
+      href: '/account/logout',
+    });
+    await app?.close();
+    server = await boot({ authorize: () => true, signOut: false });
+    expect(
+      configOf((await request(server).get('/telescope').expect(200)).text).signOut,
+    ).toBeUndefined();
+    server = await boot({ authorize: () => true, signOut: 'https://evil.example/out' });
+    expect(
+      configOf((await request(server).get('/telescope').expect(200)).text).signOut,
+    ).toBeUndefined();
+  });
+
+  it('takes viewer and signOut from forRootAsync’s factory', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        TelescopeUiModule.forRootAsync({
+          useFactory: () => ({
+            assetsDir: dir,
+            authorize: () => true,
+            viewer: () => ({ label: 'Bo' }),
+            signOut: '/out',
+          }),
+        }),
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication({ logger: false });
+    await app.init();
+    const config = configOf(
+      (await request(app.getHttpServer()).get('/telescope').expect(200)).text,
+    );
+    expect(config.viewer).toEqual({ label: 'Bo' });
+    expect(config.signOut).toEqual({ action: '/out' });
   });
 });

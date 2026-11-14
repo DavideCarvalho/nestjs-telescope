@@ -62,7 +62,7 @@ export function StackedBars({
   buckets,
   width = 640,
   height = 48,
-}: { buckets: TimeseriesBucket[]; width?: number; height?: number }): JSX.Element {
+}: { buckets: TimeseriesBucket[]; width?: number; height?: number }): React.JSX.Element {
   const types = deriveTypes(buckets);
   const segments = stackedBarLayout(buckets, types, width, height);
   return (

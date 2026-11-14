@@ -78,7 +78,7 @@ export function inertiaBadges(content: unknown): InertiaBadgeInfo[] {
 }
 
 /** Inertia status pills; renders nothing for non-inertia content. */
-export function InertiaBadge({ content }: { content: unknown }): JSX.Element | null {
+export function InertiaBadge({ content }: { content: unknown }): React.JSX.Element | null {
   const badges = inertiaBadges(content);
   if (badges.length === 0) return null;
   return (

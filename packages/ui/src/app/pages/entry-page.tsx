@@ -1,24 +1,26 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import { EntryDetail, useEntry } from '../../react/index.js';
+import { BlockSkeleton } from '../page-chrome.js';
 
-export function EntryPage(): JSX.Element {
+export function EntryPage(): React.JSX.Element {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { data, isLoading } = useEntry(id);
   return (
-    <div className="p-4">
+    <PageBody>
       <button
         type="button"
         onClick={() => navigate('/entries')}
-        className="mb-4 text-xs text-muted-foreground hover:text-foreground"
+        className="self-start text-xs text-dim hover:text-fg"
       >
-        ← entries
+        ← Entries
       </button>
       {isLoading || !data ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <BlockSkeleton height={360} />
       ) : (
         <EntryDetail entry={data} onSelect={(entryId) => navigate(`/entries/view/${entryId}`)} />
       )}
-    </div>
+    </PageBody>
   );
 }

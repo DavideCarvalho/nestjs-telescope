@@ -292,7 +292,8 @@ export async function listVisibleConsoles(
  * included: the viewer is already in it), in parallel with the probe marker set,
  * `timeoutMs` each, at most {@link CONSOLE_SEARCH_HITS} same-origin hits per console. Consoles with
  * no hit are left out; one whose `authorize` or `search` failed or timed out makes the answer
- * `partial`.
+ * `partial`. `only` (a console id) limits the search to that one console, still behind its own
+ * `authorize` (the console's ⌘K asks each console on its own and streams the groups in).
  */
 export async function searchVisibleConsoles(
   registry: AviaryConsoleRegistry | undefined,
@@ -300,14 +301,19 @@ export async function searchVisibleConsoles(
   context: ExecutionContext,
   q: string,
   timeoutMs = CONSOLE_PROBE_TIMEOUT_MS,
+  only?: unknown,
 ): Promise<ConsoleSearchResults> {
   const query = q.trim().slice(0, MAX_QUERY);
   if (registry === undefined || query === '') {
     return { version: 1, q: query, partial: false, results: [] };
   }
+  const one = typeof only === 'string' && only !== '' ? only : undefined;
   const searchable = sorted(
     registry.entries.filter(
-      (entry) => typeof entry.search === 'function' && isSameOriginPath(entry.path),
+      (entry) =>
+        typeof entry.search === 'function' &&
+        isSameOriginPath(entry.path) &&
+        (one === undefined || entry.id === one),
     ),
   );
   const others = searchable.filter((entry) => entry.id !== selfId);
@@ -381,18 +387,25 @@ export class TelescopeConsolesController {
     return listVisibleConsoles(readAviaryConsoles(), TELESCOPE_CONSOLE_ID, current.context);
   }
 
-  /** `GET <path>/api/consoles/search?q=`: global search across the consoles this viewer may open. */
+  /**
+   * `GET <path>/api/consoles/search?q=`: global search across the consoles this viewer may open.
+   * `&console=<id>` answers for that one console only, so the page can stream each console's group
+   * in as it arrives.
+   */
   @Get('consoles/search')
   @Header('Cache-Control', 'private, no-store')
   search(
     @CurrentExecutionContext() current: CurrentContext,
     @Query('q') q?: string,
+    @Query('console') only?: unknown,
   ): Promise<ConsoleSearchResults> {
     return searchVisibleConsoles(
       readAviaryConsoles(),
       TELESCOPE_CONSOLE_ID,
       current.context,
       typeof q === 'string' ? q : '',
+      CONSOLE_PROBE_TIMEOUT_MS,
+      only,
     );
   }
 }

@@ -14,7 +14,7 @@ import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
 export function EntryDetail({
   entry,
   onSelect,
-}: { entry: EntryWithBatch; onSelect?: (id: string) => void }): JSX.Element {
+}: { entry: EntryWithBatch; onSelect?: (id: string) => void }): React.JSX.Element {
   const { data: meta } = useMeta();
   const showTimeline = entry.type === 'request' && entry.batch.length > 1;
   const userTag = findUserTag(entry.tags);
@@ -31,7 +31,9 @@ export function EntryDetail({
         </div>
         {showTimeline ? (
           <div className="mb-4">
-            <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Timeline</h3>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+              Timeline
+            </h3>
             <RequestTimeline batch={entry.batch} requestId={entry.id} onSelect={onSelect} />
           </div>
         ) : null}
@@ -78,7 +80,9 @@ export function EntryDetail({
       <aside>
         {userTag !== null ? (
           <div className="mb-4">
-            <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">User</h3>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+              User
+            </h3>
             <div className="font-mono text-[11px] text-foreground">{userTagId(userTag)}</div>
             <a
               href={buildUserActivityHref(userTag)}
@@ -90,7 +94,9 @@ export function EntryDetail({
         ) : null}
         {entry.traceId ? (
           <div className="mb-4">
-            <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Trace</h3>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+              Trace
+            </h3>
             <TraceRow
               traceId={entry.traceId}
               spanId={entry.spanId}
@@ -99,7 +105,7 @@ export function EntryDetail({
           </div>
         ) : null}
         <RelatedLinks entry={entry} />
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
           Batch ({entry.batch.length})
         </h3>
         <BatchTimeline batch={entry.batch} currentId={entry.id} onSelect={onSelect} />
@@ -118,7 +124,7 @@ export function EntryDetail({
  *    batch (an exception/query/log/cache during a request), jump to that request.
  *  - `Open queue console` — jobs are managed on the Queues page.
  */
-function RelatedLinks({ entry }: { entry: EntryWithBatch }): JSX.Element | null {
+function RelatedLinks({ entry }: { entry: EntryWithBatch }): React.JSX.Element | null {
   const links: { label: string; href: string }[] = [];
   if (entry.familyHash) {
     links.push({
@@ -140,7 +146,9 @@ function RelatedLinks({ entry }: { entry: EntryWithBatch }): JSX.Element | null 
   if (links.length === 0) return null;
   return (
     <div className="mb-4">
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Related</h3>
+      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+        Related
+      </h3>
       <div className="flex flex-col gap-1">
         {links.map((link) => (
           <a
@@ -165,13 +173,13 @@ export function prettyJson(value: unknown): string {
   }
 }
 
-function DumpBody({ content }: { content: unknown }): JSX.Element {
+function DumpBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const label = typeof record.label === 'string' ? record.label : null;
   return (
     <div>
-      {label ? <h3 className="mb-2 font-mono text-sm text-fuchsia-400">{label}</h3> : null}
+      {label ? <h3 className="mb-2 font-mono text-sm text-brand">{label}</h3> : null}
       <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
         {prettyJson(record.value)}
       </pre>
@@ -194,14 +202,14 @@ function logLevelColor(level: string): string {
   }
 }
 
-function EventBody({ content }: { content: unknown }): JSX.Element {
+function EventBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const name = typeof record.name === 'string' ? record.name : String(record.name ?? '');
   const listenerCount = typeof record.listenerCount === 'number' ? record.listenerCount : null;
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-indigo-400">
+      <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-violet">
         {name}
         {listenerCount !== null ? (
           <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -230,7 +238,7 @@ function modelActionColor(action: string): string {
   }
 }
 
-function ModelBody({ content }: { content: unknown }): JSX.Element {
+function ModelBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const action = typeof record.action === 'string' ? record.action : 'update';
@@ -238,7 +246,7 @@ function ModelBody({ content }: { content: unknown }): JSX.Element {
   const id = record.id === null || record.id === undefined ? null : String(record.id);
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-lime-400">
+      <h3 className="mb-2 flex items-center gap-2 font-mono text-sm text-good">
         <span
           className={`rounded bg-panel px-1.5 py-0.5 text-[10px] uppercase ${modelActionColor(action)}`}
         >
@@ -254,7 +262,7 @@ function ModelBody({ content }: { content: unknown }): JSX.Element {
   );
 }
 
-function RedisBody({ content }: { content: unknown }): JSX.Element {
+function RedisBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const command =
@@ -282,10 +290,12 @@ function RedisBody({ content }: { content: unknown }): JSX.Element {
  * when there's something to show, so an error without a stack doesn't leave an
  * empty fence. The orange accent matches the `client_exception` type dot.
  */
-function StackBlock({ label, value }: { label: string; value: string }): JSX.Element {
+function StackBlock({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="mb-4">
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">{label}</h3>
+      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+        {label}
+      </h3>
       <pre className="overflow-auto rounded bg-panel p-3 text-xs leading-relaxed text-foreground">
         {value}
       </pre>
@@ -300,7 +310,7 @@ function StackBlock({ label, value }: { label: string; value: string }): JSX.Ele
  * Reads every field defensively — the content originated from an UNTRUSTED
  * browser, so nothing is assumed beyond `message`.
  */
-function ClientExceptionBody({ content }: { content: unknown }): JSX.Element {
+function ClientExceptionBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const name = typeof record.name === 'string' ? record.name : null;
@@ -313,7 +323,7 @@ function ClientExceptionBody({ content }: { content: unknown }): JSX.Element {
   const componentStack = typeof record.componentStack === 'string' ? record.componentStack : null;
   return (
     <div>
-      <h3 className="mb-3 flex flex-wrap items-center gap-2 font-mono text-sm text-orange-400">
+      <h3 className="mb-3 flex flex-wrap items-center gap-2 font-mono text-sm text-warn">
         {name ? (
           <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] uppercase">{name}</span>
         ) : null}
@@ -322,13 +332,17 @@ function ClientExceptionBody({ content }: { content: unknown }): JSX.Element {
       </h3>
       {url ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">URL</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            URL
+          </h3>
           <div className="break-all font-mono text-xs text-foreground">{url}</div>
         </div>
       ) : null}
       {userAgent ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">User agent</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            User agent
+          </h3>
           <div className="break-all font-mono text-[11px] text-muted-foreground">{userAgent}</div>
         </div>
       ) : null}
@@ -336,7 +350,9 @@ function ClientExceptionBody({ content }: { content: unknown }): JSX.Element {
       {componentStack ? <StackBlock label="Component stack" value={componentStack} /> : null}
       {hasContent(record.extra) ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Extra</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            Extra
+          </h3>
           <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
             {prettyJson(record.extra)}
           </pre>
@@ -354,11 +370,11 @@ function hasContent(value: unknown): boolean {
   return true;
 }
 
-function RequestHeaders({ headers }: { headers: Record<string, unknown> }): JSX.Element {
+function RequestHeaders({ headers }: { headers: Record<string, unknown> }): React.JSX.Element {
   const entries = Object.entries(headers);
   return (
     <details className="mb-4">
-      <summary className="cursor-pointer text-xs uppercase tracking-wide text-muted-foreground">
+      <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
         Headers ({entries.length})
       </summary>
       <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded bg-panel p-3 text-xs">
@@ -375,7 +391,7 @@ function RequestHeaders({ headers }: { headers: Record<string, unknown> }): JSX.
   );
 }
 
-function RequestBody({ content }: { content: unknown }): JSX.Element {
+function RequestBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const headers =
@@ -400,7 +416,9 @@ function RequestBody({ content }: { content: unknown }): JSX.Element {
         {ip ? <span className="text-[10px] text-muted-foreground">{ip}</span> : null}
       </h3>
       <RequestHeaders headers={headers} />
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Payload</h3>
+      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+        Payload
+      </h3>
       {hasContent(record.payload) ? (
         <pre className="mb-4 overflow-auto rounded bg-panel p-3 text-xs text-foreground">
           {prettyJson(record.payload)}
@@ -408,7 +426,9 @@ function RequestBody({ content }: { content: unknown }): JSX.Element {
       ) : (
         <p className="mb-4 text-xs text-muted-foreground">No payload</p>
       )}
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">User</h3>
+      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+        User
+      </h3>
       {hasUser ? (
         <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
           {prettyJson(record.user)}
@@ -424,7 +444,7 @@ function QueryBody({
   entryId,
   content,
   explainEnabled,
-}: { entryId: string; content: unknown; explainEnabled: boolean }): JSX.Element {
+}: { entryId: string; content: unknown; explainEnabled: boolean }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const sql = typeof record.sql === 'string' ? record.sql : String(record.sql ?? '');
@@ -444,7 +464,7 @@ function QueryBody({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 font-mono text-sm text-sky-400">
+        <h3 className="flex items-center gap-2 font-mono text-sm text-info">
           query
           {slow ? (
             <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-warn">slow</span>
@@ -464,7 +484,7 @@ function QueryBody({
       <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">{sql}</pre>
       {Array.isArray(record.bindings) && record.bindings.length > 0 ? (
         <>
-          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+          <h3 className="mt-3 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
             Bindings
           </h3>
           <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
@@ -476,7 +496,7 @@ function QueryBody({
         <p className="mt-3 text-xs text-muted-foreground">Running EXPLAIN…</p>
       ) : result === undefined ? null : result.ok ? (
         <>
-          <h3 className="mt-3 mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+          <h3 className="mt-3 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
             Query plan
           </h3>
           <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
@@ -490,7 +510,7 @@ function QueryBody({
   );
 }
 
-function LogBody({ content }: { content: unknown }): JSX.Element {
+function LogBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
   const level = typeof record.level === 'string' ? record.level : 'log';
@@ -518,7 +538,7 @@ function TraceRow({
   traceId,
   spanId,
   traceLink,
-}: { traceId: string; spanId: string | null; traceLink: string | null }): JSX.Element {
+}: { traceId: string; spanId: string | null; traceLink: string | null }): React.JSX.Element {
   const href = buildTraceHref(traceLink, traceId, spanId ?? '');
   return (
     <div>
@@ -568,7 +588,7 @@ function TraceRow({
 function DiagnosePanel({
   entryId,
   aiEnabled,
-}: { entryId: string; aiEnabled: boolean }): JSX.Element | null {
+}: { entryId: string; aiEnabled: boolean }): React.JSX.Element | null {
   const diagnose = useDiagnose();
   // Gated on `aiEnabled`: when AI is off we never fetch (the panel also returns
   // null below, but the hook must be called unconditionally to respect the
@@ -601,7 +621,7 @@ function DiagnosePanel({
   return (
     <div className="mt-4 rounded border border-line p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+        <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
           AI diagnosis
           {isCached ? (
             <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] normal-case text-warn">
@@ -707,7 +727,7 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
   return blocks;
 }
 
-function Markdown({ source }: { source: string }): JSX.Element {
+function Markdown({ source }: { source: string }): React.JSX.Element {
   const blocks = parseMarkdownBlocks(source);
   return (
     <div className="rounded bg-panel p-3">

@@ -342,6 +342,34 @@ describe('searchVisibleConsoles', () => {
     expect(searched).not.toHaveBeenCalled();
     expect((await searchVisibleConsoles(undefined, 's', context, 'x')).results).toEqual([]);
   });
+
+  it('answers for one console only (`only`), still behind that console’s authorize', async () => {
+    const asked: string[] = [];
+    const searching = (id: string) => async () => {
+      asked.push(id);
+      return [hit(id)];
+    };
+    const reg = registry(
+      entry({ id: 'telescope', authorize: deny, search: searching('telescope') }),
+      entry({ id: 'agent', search: searching('agent') }),
+      entry({ id: 'durable', authorize: deny, search: searching('durable') }),
+    );
+    const ms = 300;
+    const agent = await searchVisibleConsoles(reg, 'telescope', context, 'x', ms, 'agent');
+    expect(agent.results.map((group) => group.id)).toEqual(['agent']);
+    expect(asked).toEqual(['agent']);
+    const self = await searchVisibleConsoles(reg, 'telescope', context, 'x', ms, 'telescope');
+    expect(self.results.map((group) => group.id)).toEqual(['telescope']);
+    expect(
+      (await searchVisibleConsoles(reg, 'telescope', context, 'x', ms, 'durable')).results,
+    ).toEqual([]);
+    expect(
+      (await searchVisibleConsoles(reg, 'telescope', context, 'x', ms, 'nope')).results,
+    ).toEqual([]);
+    // Anything but a non-empty string searches every console.
+    const all = await searchVisibleConsoles(reg, 'telescope', context, 'x', ms, ['agent']);
+    expect(all.results.map((group) => group.id)).toEqual(['agent', 'telescope']);
+  });
 });
 
 // ── HTTP ───────────────────────────────────────────────────────────────────
@@ -458,5 +486,27 @@ describe('GET <path>/api/consoles/search', () => {
         },
       ],
     });
+  });
+  it('answers for one console with `console=<id>` (per-console streaming)', async () => {
+    registerAviaryConsole(
+      entry({ id: 'durable', search: async (_c, q) => [{ title: `run ${q}`, href: '/durable' }] }),
+    );
+    registerAviaryConsole(
+      entry({ id: 'media', search: async (_c, q) => [{ title: `file ${q}`, href: '/media' }] }),
+    );
+    const server = await boot({ authorize: authorizeByToken({ token: TOKEN }) });
+    const one = await request(server)
+      .get('/telescope/api/consoles/search?q=42&console=media')
+      .set(bearer)
+      .expect(200);
+    expect(one.body.results.map((group: { id: string }) => group.id)).toEqual(['media']);
+    const every = await request(server)
+      .get('/telescope/api/consoles/search?q=42')
+      .set(bearer)
+      .expect(200);
+    expect(every.body.results.map((group: { id: string }) => group.id)).toEqual([
+      'durable',
+      'media',
+    ]);
   });
 });

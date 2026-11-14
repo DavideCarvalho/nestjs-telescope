@@ -22,7 +22,7 @@ export function GaugeCard({
   label?: string;
   color?: string;
   height?: number;
-}): JSX.Element {
+}): React.JSX.Element {
   const range = max - min;
   const pct = range === 0 ? 0 : Math.max(0, Math.min(1, (value - min) / range));
   const displayLabel = label ?? `${Math.round(pct * 100)}%`;

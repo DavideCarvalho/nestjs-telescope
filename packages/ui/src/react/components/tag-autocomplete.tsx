@@ -51,7 +51,7 @@ export function TagAutocomplete({
   prefix = '',
   placeholder = 'Filter by tag…',
   ariaLabel = 'Filter by tag',
-}: TagAutocompleteProps): JSX.Element {
+}: TagAutocompleteProps): React.JSX.Element {
   const [input, setInput] = useState('');
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);

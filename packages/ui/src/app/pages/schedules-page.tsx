@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../react/ui/index.js';
+import { PageEmpty, RowsSkeleton, TelescopePage } from '../page-chrome.js';
 
 const KIND_ACCENT: Record<ScheduledTask['kind'], string> = {
   cron: 'tint-brand',
@@ -15,7 +16,7 @@ const KIND_ACCENT: Record<ScheduledTask['kind'], string> = {
   timeout: 'text-warn tint-warn',
 };
 
-function KindBadge({ kind }: { kind: ScheduledTask['kind'] }): JSX.Element {
+function KindBadge({ kind }: { kind: ScheduledTask['kind'] }): React.JSX.Element {
   return (
     <span
       className={`rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${KIND_ACCENT[kind]}`}
@@ -30,10 +31,10 @@ function KindBadge({ kind }: { kind: ScheduledTask['kind'] }): JSX.Element {
  * schedule); `false` = registered but STOPPED (won't fire — the thing a dev needs
  * to spot); `null` = unknowable (intervals/timeouts expose no state).
  */
-function ActiveBadge({ running }: { running: ScheduledTask['running'] }): JSX.Element {
+function ActiveBadge({ running }: { running: ScheduledTask['running'] }): React.JSX.Element {
   if (running === null || running === undefined) {
     return (
-      <span className="rounded bg-panel-2 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+      <span className="rounded bg-panel-2 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-faint">
         unknown
       </span>
     );
@@ -50,7 +51,7 @@ function ActiveBadge({ running }: { running: ScheduledTask['running'] }): JSX.El
   );
 }
 
-function StatusBadge({ status }: { status: ScheduledTask['lastStatus'] }): JSX.Element {
+function StatusBadge({ status }: { status: ScheduledTask['lastStatus'] }): React.JSX.Element {
   if (status === null) return <span className="text-muted-foreground">—</span>;
   const accent = status === 'completed' ? 'tint-good' : 'tint-bad';
   return (
@@ -75,17 +76,17 @@ function formatNextRun(iso: string | null): string {
   return date.toLocaleString();
 }
 
-function ScheduleRow({ task }: { task: ScheduledTask }): JSX.Element {
+function ScheduleRow({ task }: { task: ScheduledTask }): React.JSX.Element {
   return (
     <TableRow className="border-t border-line/60 hover:bg-panel/40">
-      <TableCell className="font-medium text-foreground">{task.name}</TableCell>
+      <TableCell className="mono font-medium text-fg">{task.name}</TableCell>
       <TableCell>
         <KindBadge kind={task.kind} />
       </TableCell>
       <TableCell>
         <ActiveBadge running={task.running} />
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">{task.schedule}</TableCell>
+      <TableCell className="mono text-xs text-dim">{task.schedule}</TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {formatNextRun(task.nextRunAt)}
       </TableCell>
@@ -108,42 +109,41 @@ function asMs(iso: string | null): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-export function SchedulesPage(): JSX.Element {
+export function SchedulesPage(): React.JSX.Element {
   const { data, isLoading, isError } = useSchedulesLive();
   const tasks = data?.tasks ?? [];
   const activeCount = tasks.filter((t) => t.running === true).length;
   const stoppedCount = tasks.filter((t) => t.running === false).length;
 
   return (
-    <div className="space-y-3 p-4">
-      <div className="flex items-center justify-between px-1">
-        <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Scheduled tasks
-        </h3>
-        {tasks.length > 0 && (
-          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wide">
+    <TelescopePage
+      title="Schedules"
+      description="Cron jobs, intervals and timeouts registered with @nestjs/schedule, live."
+      actions={
+        tasks.length > 0 && (
+          <div className="mono flex items-center gap-3 text-[11px]">
             <span className="text-good">{activeCount} active</span>
             {stoppedCount > 0 && <span className="text-bad">{stoppedCount} stopped</span>}
-            <span className="text-muted-foreground">{tasks.length} total</span>
+            <span className="text-faint">{tasks.length} total</span>
           </div>
-        )}
-      </div>
-
-      {isLoading && <p className="px-1 py-2 text-xs text-muted-foreground">Loading schedules…</p>}
+        )
+      }
+    >
+      {isLoading && <RowsSkeleton rows={5} />}
       {isError && <p className="px-1 py-2 text-xs text-bad">Failed to load schedules.</p>}
 
       {!isLoading && !isError && tasks.length === 0 && (
-        <div className="rounded-lg border border-dashed border-line px-4 py-12 text-center text-xs text-muted-foreground">
-          No scheduled tasks detected. Register a ScheduleManager (the @nestjs/schedule watcher) to
-          populate this console.
-        </div>
+        <PageEmpty
+          title="No scheduled tasks"
+          description="No scheduled tasks detected. Register a ScheduleManager (the @nestjs/schedule watcher) to populate this console."
+        />
       )}
 
       {tasks.length > 0 && (
-        <div className="rounded-lg border border-line">
+        <div className="aviary-surface overflow-x-auto rounded-lg border border-border">
           <Table className="min-w-[760px] text-left text-sm">
             <TableHeader>
-              <TableRow className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              <TableRow className="text-[10px] uppercase tracking-[0.12em] text-faint">
                 <TableHead>Name</TableHead>
                 <TableHead>Kind</TableHead>
                 <TableHead>Active</TableHead>
@@ -162,6 +162,6 @@ export function SchedulesPage(): JSX.Element {
           </Table>
         </div>
       )}
-    </div>
+    </TelescopePage>
   );
 }

@@ -35,6 +35,10 @@
           "suspicious": { "noExplicitAny": "off" }
         }
       }
+    },
+    {
+      "include": ["**/aviary-kit/ui/**", "**/aviary-kit/hooks/**"],
+      "linter": { "enabled": false }
     }
   ]
 }

@@ -20,7 +20,7 @@ const ACCENT: Record<'ok' | 'warn' | 'bad', string> = {
   bad: 'var(--bad)',
 };
 
-function Sparkline({ points }: { points: number[] }): JSX.Element | null {
+function Sparkline({ points }: { points: number[] }): React.JSX.Element | null {
   if (points.length < 2) return null;
   const max = Math.max(...points);
   const min = Math.min(...points);
@@ -35,7 +35,7 @@ function Sparkline({ points }: { points: number[] }): JSX.Element | null {
   return (
     <svg className="mt-2" width="100%" height="22" viewBox="0 0 100 22" preserveAspectRatio="none">
       <title>Trend sparkline</title>
-      <path d={d} fill="none" stroke="var(--muted)" strokeWidth="1.5" />
+      <path d={d} fill="none" stroke="var(--aviary-muted, var(--muted))" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -60,7 +60,7 @@ export function StatCard({
   currentValue?: number;
   accent?: string;
   hint?: string;
-}): JSX.Element {
+}): React.JSX.Element {
   const h = health(currentValue, thresholds);
   // A positive delta is "good" unless higher is bad.
   const deltaGood =
@@ -74,11 +74,15 @@ export function StatCard({
   return (
     <div
       data-health={h ?? undefined}
-      className="rounded-lg border border-line bg-panel/40 px-4 py-3 overflow-hidden"
+      className="aviary-surface overflow-hidden rounded-lg border border-border px-[18px] pt-4 pb-3.5"
     >
-      {h && <div style={{ height: 3, background: ACCENT[h], margin: '-12px -16px 9px' }} />}
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold tabular-nums ${accent} flex items-baseline gap-2`}>
+      {h && <div style={{ height: 3, background: ACCENT[h], margin: '-16px -18px 13px' }} />}
+      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+        {label}
+      </p>
+      <p
+        className={`flex items-baseline gap-2 font-mono text-[26px] font-semibold leading-none tracking-[-0.02em] tabular-nums ${accent}`}
+      >
         {value}
         {delta !== undefined && (
           <span className="text-xs font-semibold" style={{ color: deltaColor }}>
@@ -87,7 +91,7 @@ export function StatCard({
         )}
       </p>
       {spark && <Sparkline points={spark} />}
-      {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-2 truncate font-mono text-[10.5px] text-faint">{hint}</p>}
     </div>
   );
 }

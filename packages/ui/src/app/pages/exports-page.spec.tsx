@@ -64,7 +64,7 @@ function renderPage() {
 describe('ExportsPage', () => {
   it('renders the export form with type, window, format and an export button', () => {
     renderPage();
-    expect(screen.getByText('Export workbench')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Exports' })).toBeTruthy();
     expect(screen.getByText('Type')).toBeTruthy();
     expect(screen.getByText('Window')).toBeTruthy();
     expect(screen.getByText('Format')).toBeTruthy();

@@ -34,7 +34,7 @@ export function EnqueueJobForm({
   capabilities: QueueCapabilities | undefined;
   driver: string;
   queue: string;
-}): JSX.Element | null {
+}): React.JSX.Element | null {
   const mutation = useQueueEnqueue();
   const [name, setName] = useState('');
   const [payload, setPayload] = useState('');
@@ -69,7 +69,7 @@ export function EnqueueJobForm({
 
   return (
     <form onSubmit={submit} className="space-y-2 rounded-lg border border-line p-3">
-      <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">Send message</h3>
+      <h3 className="text-[10px] uppercase tracking-[0.12em] text-faint">Send message</h3>
       <input
         type="text"
         value={name}

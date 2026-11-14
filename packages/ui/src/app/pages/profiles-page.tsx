@@ -10,6 +10,7 @@ import {
   useProfilerStatus,
   useProfiles,
 } from '../../react/index.js';
+import { RowsSkeleton, TelescopePage } from '../page-chrome.js';
 
 /** Sidebar row for one captured profile. */
 function ProfileRow({
@@ -20,7 +21,7 @@ function ProfileRow({
   profile: Entry;
   selected: boolean;
   onSelect: () => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <button
       type="button"
@@ -38,7 +39,7 @@ function ProfileRow({
       <span className="flex items-center gap-2 text-[10px] text-muted-foreground">
         <span>{profile.durationMs !== null ? formatProfileMs(profile.durationMs) : '—'}</span>
         {profile.tags.includes('manual') && <span className="text-warn">manual</span>}
-        {profile.tags.includes('sampled') && <span className="text-sky-400">sampled</span>}
+        {profile.tags.includes('sampled') && <span className="text-info">sampled</span>}
         <span className="ml-auto">{relativeTime(new Date(profile.createdAt).getTime())}</span>
       </span>
     </button>
@@ -46,11 +47,11 @@ function ProfileRow({
 }
 
 /** "Hot functions" table (by self time), mirroring Sentry/Clinic profile views. */
-function HotFunctions({ hot }: { hot: HotFrame[] }): JSX.Element {
+function HotFunctions({ hot }: { hot: HotFrame[] }): React.JSX.Element {
   if (hot.length === 0) return <p className="text-xs text-muted-foreground">No hot frames.</p>;
   return (
-    <div className="rounded-lg border border-line bg-panel/40">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+    <div className="aviary-surface rounded-lg border border-border">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-faint">
         <span className="flex-1">Function</span>
         <span className="w-16 text-right">Self</span>
         <span className="w-12 text-right">%</span>
@@ -78,7 +79,7 @@ function HotFunctions({ hot }: { hot: HotFrame[] }): JSX.Element {
 }
 
 /** The flamegraph + hot-functions detail for one selected profile. */
-function ProfileDetail({ id }: { id: string }): JSX.Element {
+function ProfileDetail({ id }: { id: string }): React.JSX.Element {
   const { data, isLoading } = useProfile(id);
   if (isLoading) return <p className="text-muted-foreground">Loading profile…</p>;
   if (!data) return <p className="text-muted-foreground">Profile not found.</p>;
@@ -98,15 +99,13 @@ function ProfileDetail({ id }: { id: string }): JSX.Element {
 }
 
 /** A small control to arm an on-demand capture of the next N requests. */
-function ArmControl({ pendingManual }: { pendingManual: number }): JSX.Element {
+function ArmControl({ pendingManual }: { pendingManual: number }): React.JSX.Element {
   const [count, setCount] = useState(1);
   const [label, setLabel] = useState('');
   const arm = useArmProfile();
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/40 px-3 py-2">
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        Capture next
-      </span>
+    <div className="flex flex-wrap items-center gap-2 aviary-surface rounded-lg border border-border px-3 py-2">
+      <span className="text-[10px] uppercase tracking-[0.12em] text-faint">Capture next</span>
       <input
         type="number"
         min={1}
@@ -140,7 +139,7 @@ function ArmControl({ pendingManual }: { pendingManual: number }): JSX.Element {
   );
 }
 
-export function ProfilesPage(): JSX.Element {
+export function ProfilesPage(): React.JSX.Element {
   const meta = useMeta();
   const status = useProfilerStatus();
   const { data, isLoading } = useProfiles(100);
@@ -152,9 +151,11 @@ export function ProfilesPage(): JSX.Element {
 
   if (!enabled) {
     return (
-      <div className="space-y-3 p-4">
-        <h2 className="text-sm text-brand">CPU Profiles</h2>
-        <div className="rounded-lg border border-line bg-panel/40 p-6 text-xs text-muted-foreground">
+      <TelescopePage
+        title="CPU profiles"
+        description="Sampled V8 CPU profiles of requests and jobs, as flamegraphs."
+      >
+        <div className="aviary-surface rounded-lg border border-border p-6 text-xs text-muted-foreground">
           <p className="mb-2 text-foreground">CPU profiling is disabled.</p>
           <p>
             Enable it with{' '}
@@ -166,25 +167,27 @@ export function ProfilesPage(): JSX.Element {
             request path.
           </p>
         </div>
-      </div>
+      </TelescopePage>
     );
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm text-brand">CPU Profiles</h2>
-        {status.data && (
-          <span className="text-[10px] text-muted-foreground">
+    <TelescopePage
+      title="CPU profiles"
+      description="Sampled V8 CPU profiles of requests and jobs, as flamegraphs."
+      actions={
+        status.data && (
+          <span className="mono text-[11px] text-faint">
             sampling {(status.data.sampleRate * 100).toFixed(0)}% · {status.data.active} active
           </span>
-        )}
-      </div>
+        )
+      }
+    >
       <ArmControl pendingManual={status.data?.pendingManual ?? 0} />
-      <div className="flex gap-4">
-        <div className="w-64 shrink-0 rounded-lg border border-line">
+      <div className="flex flex-col gap-4 md:flex-row">
+        <div className="aviary-surface w-full shrink-0 overflow-hidden rounded-lg border border-border md:w-64">
           {isLoading ? (
-            <p className="p-3 text-xs text-muted-foreground">Loading…</p>
+            <RowsSkeleton rows={5} className="border-0" />
           ) : profiles.length === 0 ? (
             <p className="p-3 text-xs text-muted-foreground">No profiles captured yet.</p>
           ) : (
@@ -208,6 +211,6 @@ export function ProfilesPage(): JSX.Element {
           )}
         </div>
       </div>
-    </div>
+    </TelescopePage>
   );
 }

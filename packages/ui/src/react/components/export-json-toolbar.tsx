@@ -12,7 +12,7 @@ const BUTTON_CLASS =
 export function ExportJsonToolbar({
   value,
   filename,
-}: { value: unknown; filename: string }): JSX.Element {
+}: { value: unknown; filename: string }): React.JSX.Element {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy(): Promise<void> {
