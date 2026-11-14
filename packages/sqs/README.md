@@ -88,7 +88,7 @@ of the console):
 |---------------|---------|
 | `GET /telescope/api/queues/live` | `QueueSummary[]` including each SQS queue — counts derived from `GetQueueAttributes` (main visible → `waiting`, main in-flight → `active`, main delayed → `delayed`, and **DLQ visible → `failed` only when a `dlqUrl` is configured, else `0`**); `completed`/`paused` are always `0` and `isPaused` is `false`. Each summary carries an `actions` hint (`['redrive']` with a DLQ, else `[]`). |
 | `GET /telescope/api/queues/live/sqs/:queue/counts` | `QueueCounts` for one queue. |
-| `GET /telescope/api/queues/live/sqs/:queue/jobs?state=failed` | A best-effort DLQ snapshot (see limits below) when the queue has a `dlqUrl`. Without a `dlqUrl`, or for any non-`failed` `state`, returns an empty page. |
+| `GET /telescope/api/queues/live/sqs/:queue/jobs?filter[state]=failed` | A best-effort DLQ snapshot (see limits below), as a cursor list `{ data, meta }`, when the queue has a `dlqUrl`. Without a `dlqUrl`, or for any non-`failed` state, returns an empty page. |
 | `GET /telescope/api/queues/live/sqs/:queue/jobs/:id` | A `QueueJobDetail` for a snapshotted DLQ message (redacted `data`). |
 
 DLQ message bodies pass through core redaction before they leave the server, so
@@ -114,7 +114,7 @@ main queue, but message *enumeration* is only possible against a DLQ:
 - **`listJobs('failed')` is a snapshot, not a drain.** It `ReceiveMessage`s up to
   10 DLQ messages with a short visibility timeout and **never deletes them** —
   they reappear for real consumers once the timeout elapses. There is no real
-  pagination (`nextCursor` is always `null`); SQS returns an arbitrary batch.
+  pagination (`meta.nextCursor` is always `null`); SQS returns an arbitrary batch.
 - **`getJob` reads a short-lived cache.** Received SQS messages aren't refetchable
   by id, so the snapshot caches each message body so `getJob(id)` can return it.
   An id that wasn't in the most recent snapshot returns `null`.

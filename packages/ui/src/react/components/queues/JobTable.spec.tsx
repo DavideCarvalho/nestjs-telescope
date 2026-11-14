@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import type { JobPage, QueueJob, TelescopeClient } from '../../../client/index.js';
-import { mockTelescopeClient } from '../../../testing/mock-telescope-client.js';
+import type { CursorPage, QueueJob, TelescopeClient } from '../../../client/index.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../../telescope-context.js';
 import { JobTable } from './JobTable.js';
 
@@ -33,11 +33,11 @@ const jobs: QueueJob[] = [
   },
 ];
 
-const page: JobPage = { jobs, nextCursor: null, total: 2 };
+const page: CursorPage<QueueJob> = { data: jobs, meta: LAST_PAGE_META };
 
 function mockClient(): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     meta: async () => ({
       enabled: true,
       droppedCount: 0,

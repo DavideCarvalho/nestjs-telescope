@@ -28,7 +28,7 @@ const colClass: Record<1 | 2 | 3 | 4, string> = {
 /** Default page size a paged table panel requests when it hasn't fetched yet —
  *  matches the `DEFAULT_LIMIT` convention used by the core's own paged reads
  *  (traces, storage providers). */
-const DEFAULT_PAGE_LIMIT = 50;
+const DEFAULT_PAGE_SIZE = 50;
 
 /**
  * The dashboard's current drill-down, set by clicking a chart on a panel that
@@ -82,7 +82,7 @@ function LiveBadge({ status }: { status: StreamStatus }): React.JSX.Element {
  * than blanking the whole dashboard.
  *
  * Paged tables (`panel.paged`, see the core `Panel` table variant) additionally
- * own the requested page here: `page` state merges `query.page`/`query.limit`
+ * own the requested page here: `page` state merges `page`/`size`
  * onto the panel's static `data.query`, so clicking prev/next re-resolves the
  * provider with a distinct query (a distinct React Query cache key) instead of
  * mutating the panel's declared query in place.
@@ -125,7 +125,7 @@ function BoundPanel({
   const focusQuery = focus ? { [focus.param]: focus.value } : undefined;
   const baseQuery = focusQuery ? { ...panel.data.query, ...focusQuery } : panel.data.query;
   const query = buildTableQuery(baseQuery, {
-    ...(isPagedTable ? { paging: { page, limit: DEFAULT_PAGE_LIMIT } } : {}),
+    ...(isPagedTable ? { paging: { page, size: DEFAULT_PAGE_SIZE } } : {}),
     ...(sort ? { sort } : {}),
     filters,
   });

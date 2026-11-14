@@ -1,7 +1,7 @@
 // packages/core/src/nest/telescope.module.console-authorize.e2e.spec.ts
 //
 // The console's `authorize` over HTTP: every mounted console controller (API,
-// SSE stream, MCP) runs it; the public client-error beacon does not.
+// SSE stream) runs it; the public client-error beacon does not.
 import 'reflect-metadata';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -35,8 +35,6 @@ class ConsolePolicy {
 }
 
 const META = '/telescope/api/meta';
-const MCP = '/telescope/api/mcp';
-const MCP_BODY = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
 const STREAM = '/telescope/api/stream';
 const BEACON = '/telescope/api/client-errors';
 
@@ -124,16 +122,14 @@ class SelfMountedApi {
 }
 
 describe('TelescopeModule authorize', () => {
-  it('allows, then 403 { error: forbidden } on API, SSE and MCP', async () => {
+  it('allows, then 403 { error: forbidden } on API and SSE', async () => {
     const target = await boot([
-      TelescopeModule.forRoot({ authorize: isAdmin, mcp: true, clientErrors: { enabled: true } }),
+      TelescopeModule.forRoot({ authorize: isAdmin, clientErrors: { enabled: true } }),
     ]);
     const server = target.getHttpServer();
     await request(server).get(META).set('x-user', adminHeader(true)).expect(200);
     const denied = await request(server).get(META).set('x-user', adminHeader(false)).expect(403);
     expect(denied.body).toEqual({ error: 'forbidden' });
-    await request(server).post(MCP).send(MCP_BODY).expect(403, { error: 'forbidden' });
-    await request(server).post(MCP).set('x-user', adminHeader(true)).send(MCP_BODY).expect(200);
     expect(await streamStatus(target)).toBe(403);
     expect(await streamStatus(target, { 'x-user': adminHeader(true) })).toBe(200);
     // The public beacon takes no authorize.
@@ -169,25 +165,6 @@ describe('TelescopeModule authorize', () => {
       }),
     ]);
     await request(target.getHttpServer()).get(META).expect(403, { error: 'forbidden' });
-  });
-
-  it('mcpAuthorize replaces authorize on the MCP route only', async () => {
-    const target = await boot([
-      TelescopeModule.forRoot({
-        mcp: true,
-        authorize: isAdmin,
-        mcpAuthorize: authorizeByToken({ token: 'agent-key' }),
-      }),
-    ]);
-    const server = target.getHttpServer();
-    await request(server)
-      .post(MCP)
-      .set('Authorization', 'Bearer agent-key')
-      .send(MCP_BODY)
-      .expect(200);
-    await request(server).post(MCP).set('x-user', adminHeader(true)).send(MCP_BODY).expect(401);
-    await request(server).get(META).set('Authorization', 'Bearer agent-key').expect(403);
-    await request(server).get(META).set('x-user', adminHeader(true)).expect(200);
   });
 
   it('the policy form runs @nestjs/authorization: guest 401, user 403, admin 200', async () => {
@@ -241,21 +218,17 @@ describe('TelescopeModule authorize', () => {
 
 describe('TelescopeModule without authorize', () => {
   it('is open outside production', async () => {
-    const target = await boot([TelescopeModule.forRoot({ mcp: true })]);
+    const target = await boot([TelescopeModule.forRoot()]);
     const server = target.getHttpServer();
     await request(server).get(META).expect(200);
-    await request(server).post(MCP).send(MCP_BODY).expect(200);
   });
 
   it('boots in production, answers 403 everywhere, and warns once', async () => {
     process.env.NODE_ENV = 'production';
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    const target = await boot([
-      TelescopeModule.forRoot({ mcp: true, clientErrors: { enabled: true } }),
-    ]);
+    const target = await boot([TelescopeModule.forRoot({ clientErrors: { enabled: true } })]);
     const server = target.getHttpServer();
     await request(server).get(META).expect(403, { error: 'forbidden' });
-    await request(server).post(MCP).send(MCP_BODY).expect(403);
     expect(await streamStatus(target)).toBe(403);
     const beacon = await request(server).post(BEACON).send({ message: 'x' });
     expect(beacon.status).not.toBe(403);

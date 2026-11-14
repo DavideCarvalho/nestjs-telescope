@@ -30,9 +30,9 @@ function formatStat(value: number, format?: 'number' | 'percent' | 'duration' | 
  * it is being written, renders the empty state instead of throwing inside the
  * table instance where the stack says nothing about which panel is at fault.
  */
-function readPanelRows(data: unknown): PanelRow[] {
-  if (typeof data !== 'object' || data === null || !('rows' in data)) return [];
-  const rows = data.rows;
+function readPanelRows(data: unknown, key: 'rows' | 'data' = 'rows'): PanelRow[] {
+  if (typeof data !== 'object' || data === null || !(key in data)) return [];
+  const rows = Reflect.get(data, key);
   if (!Array.isArray(rows)) return [];
   return rows.filter((row): row is PanelRow => typeof row === 'object' && row !== null);
 }
@@ -45,20 +45,21 @@ function readNumber(data: unknown, key: string): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-/** The paged-table payload — `{ rows, total, page, limit }` — with each field
- *  falling back to what a bare `{ rows }` implies. */
+/** The paged-table payload — the offset list `{ data, meta: { total, currentPage, perPage } }` —
+ *  with each field falling back to what the rows alone imply. */
 function readPagedTable(data: unknown): {
   rows: PanelRow[];
   total: number;
   page: number;
   limit: number;
 } {
-  const rows = readPanelRows(data);
+  const rows = readPanelRows(data, 'data');
+  const meta = typeof data === 'object' && data !== null ? Reflect.get(data, 'meta') : undefined;
   return {
     rows,
-    total: readNumber(data, 'total') ?? rows.length,
-    page: readNumber(data, 'page') ?? 1,
-    limit: readNumber(data, 'limit') ?? 0,
+    total: readNumber(meta, 'total') ?? rows.length,
+    page: readNumber(meta, 'currentPage') ?? 1,
+    limit: readNumber(meta, 'perPage') ?? 0,
   };
 }
 
@@ -273,7 +274,7 @@ export function PanelView({
       const table = (
         <PanelTable
           columns={panel.columns}
-          rows={readPanelRows(data)}
+          rows={readPanelRows(data, panel.paged === true ? 'data' : 'rows')}
           scrolls={panel.paged === true}
           sort={sort}
           {...(onSortChange ? { onSortChange } : {})}

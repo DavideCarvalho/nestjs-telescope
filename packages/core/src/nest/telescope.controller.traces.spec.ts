@@ -54,19 +54,24 @@ describe('GET /telescope/api/traces', () => {
     const res = await request(app.getHttpServer())
       .get('/telescope/api/traces?window=1h')
       .expect(200);
-    const body = res.body as { traces: TraceSummary[] };
-    expect(body.traces.map((t) => t.traceId)).toEqual(['t2', 't1']);
-    const t1 = body.traces.find((t) => t.traceId === 't1');
+    const body = res.body as { data: TraceSummary[]; scanned: number; truncated: boolean };
+    expect(body.truncated).toBe(false);
+    expect(body.data.map((t) => t.traceId)).toEqual(['t2', 't1']);
+    const t1 = body.data.find((t) => t.traceId === 't1');
     expect(t1?.entryCount).toBe(2);
     expect(t1?.types).toEqual(['query', 'request']);
   });
 
-  it('applies the limit query param', async () => {
+  it('rejects the removed limit param', async () => {
+    await request(app.getHttpServer()).get('/telescope/api/traces?window=1h&limit=1').expect(400);
+  });
+
+  it('applies the size query param', async () => {
     const res = await request(app.getHttpServer())
-      .get('/telescope/api/traces?window=1h&limit=1')
+      .get('/telescope/api/traces?window=1h&size=1')
       .expect(200);
-    const body = res.body as { traces: TraceSummary[] };
-    expect(body.traces).toHaveLength(1);
+    const body = res.body as { data: TraceSummary[] };
+    expect(body.data).toHaveLength(1);
   });
 
   it('rejects an unparseable window with 400', async () => {

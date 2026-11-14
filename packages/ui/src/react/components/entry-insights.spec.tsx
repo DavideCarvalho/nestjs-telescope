@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { StatsResult, TelescopeClient, TimeseriesReport } from '../../client/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../telescope-context.js';
 import { EntryInsights } from './entry-insights.js';
 
@@ -31,7 +31,7 @@ function statsFor(over: Partial<StatsResult> & { type: string }): StatsResult {
 
 function mockClient(stats: StatsResult): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     stats: async () => stats,
     meta: async () => ({
       enabled: true,

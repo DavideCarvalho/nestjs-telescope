@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LAST_PAGE_META } from '../testing/mock-telescope-client.js';
 import { createTelescopeClient } from './telescope-client.js';
 
 function jsonResponse(body: unknown): Response {
@@ -40,17 +41,19 @@ describe('createTelescopeClient default base URL', () => {
 });
 
 describe('createTelescopeClient', () => {
-  it('lists entries with type + cursor query params', async () => {
+  it('lists entries with filter[type] + after/first query params', async () => {
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
-      jsonResponse({ data: [], nextCursor: null }),
+      jsonResponse({ data: [], meta: LAST_PAGE_META }),
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
-    await client.entries({ type: 'query', cursor: 'abc', limit: 10 });
-    const url = fetchMock.mock.calls[0]![0] as string;
-    expect(url).toContain('/telescope/api/entries?');
-    expect(url).toContain('type=query');
-    expect(url).toContain('cursor=abc');
-    expect(url).toContain('limit=10');
+    await client.entries({ type: 'query', after: 'abc', first: 10 });
+    const url = new URL(fetchMock.mock.calls[0]![0] as string, 'http://x');
+    expect(url.pathname).toBe('/telescope/api/entries');
+    expect(url.searchParams.get('filter[type]')).toBe('query');
+    expect(url.searchParams.get('after')).toBe('abc');
+    expect(url.searchParams.get('first')).toBe('10');
+    expect(url.searchParams.has('cursor')).toBe(false);
+    expect(url.searchParams.has('limit')).toBe(false);
   });
 
   it('fetches a single entry (with its batch)', async () => {
@@ -166,7 +169,9 @@ describe('createTelescopeClient', () => {
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
     await client.tags('sl');
-    expect(fetchMock.mock.calls[0]![0] as string).toBe('/telescope/api/tags?prefix=sl');
+    expect(fetchMock.mock.calls[0]![0] as string).toBe(
+      `/telescope/api/tags?${new URLSearchParams({ 'filter[tag][startsWith]': 'sl' })}`,
+    );
   });
 
   it('omits the prefix param when listing all tags', async () => {
@@ -242,17 +247,33 @@ describe('createTelescopeClient', () => {
     );
   });
 
-  it('GETs queue jobs with state + cursor + limit', async () => {
+  it('GETs queue jobs with filter[state] + after + first', async () => {
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
-      jsonResponse({ jobs: [], nextCursor: null, total: null }),
+      jsonResponse({ data: [], meta: LAST_PAGE_META }),
     );
     const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
-    await client.queueJobs('bullmq', 'q1', 'failed', { cursor: 'c1', limit: 25 });
-    const url = fetchMock.mock.calls[0]![0] as string;
-    expect(url).toContain('/telescope/api/queues/live/bullmq/q1/jobs?');
-    expect(url).toContain('state=failed');
-    expect(url).toContain('cursor=c1');
-    expect(url).toContain('limit=25');
+    await client.queueJobs('bullmq', 'q1', 'failed', { after: 'c1', first: 25 });
+    const url = new URL(fetchMock.mock.calls[0]![0] as string, 'http://x');
+    expect(url.pathname).toBe('/telescope/api/queues/live/bullmq/q1/jobs');
+    expect(url.searchParams.get('filter[state]')).toBe('failed');
+    expect(url.searchParams.get('after')).toBe('c1');
+    expect(url.searchParams.get('first')).toBe('25');
+  });
+
+  it('GETs traces, profiles and the AI screen with size / first', async () => {
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ data: [], meta: LAST_PAGE_META }),
+    );
+    const client = createTelescopeClient({ baseUrl: '/telescope/api', fetch: fetchMock });
+    await client.traces('1h', 20);
+    await client.profiles({ first: 10, after: 'p' });
+    await client.ai('1h', { size: 100 });
+    const urls = fetchMock.mock.calls.map((call) => call[0] as string);
+    expect(urls).toEqual([
+      '/telescope/api/traces?window=1h&size=20',
+      '/telescope/api/profiles?after=p&first=10',
+      '/telescope/api/ai?window=1h&size=100',
+    ]);
   });
 
   it('GETs a single live job', async () => {
@@ -386,7 +407,7 @@ describe('organization scope', () => {
     await client.entries({ type: 'request' });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       '/t/api/meta?tenant=org%201',
-      '/t/api/entries?type=request&tenant=org%201',
+      '/t/api/entries?filter%5Btype%5D=request&tenant=org%201',
     ]);
   });
 

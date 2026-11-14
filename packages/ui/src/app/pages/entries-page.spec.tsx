@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { EntriesQuery, Entry, Page, TagCount, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { EntriesPage } from './entries-page.js';
 
 function entry(over: Partial<Entry> & { type: string }): Entry {
@@ -33,15 +33,17 @@ const TAGS: TagCount[] = [
 function mockClient(rows: Entry[], extra: Partial<Page<Entry>> = {}) {
   const entries = vi.fn<(query?: EntriesQuery) => Promise<Page<Entry>>>(async () => ({
     data: rows,
-    nextCursor: null,
+    meta: LAST_PAGE_META,
     ...extra,
   }));
   const client: TelescopeClient = mockTelescopeClient({
     entries,
-    tags: async (prefix) =>
-      prefix
+    tags: async (prefix) => ({
+      data: prefix
         ? TAGS.filter((entry) => entry.tag.toLowerCase().includes(prefix.toLowerCase()))
         : TAGS,
+      meta: LAST_PAGE_META,
+    }),
     meta: async () => ({
       enabled: true,
       droppedCount: 0,

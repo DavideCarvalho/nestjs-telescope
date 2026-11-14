@@ -379,25 +379,6 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   exceptions?: ExceptionsOptions;
   /**
-   * MCP (Model Context Protocol) server. When enabled, Telescope serves a
-   * stateless JSON-RPC MCP endpoint at `POST <telescope>/api/mcp` so coding
-   * agents (Claude Code, Cursor, …) can query the captured data directly —
-   * "why is POST /checkout slow?" → the agent pulls the batch waterfall with
-   * every query. Backed by the same storage/stats APIs as the dashboard.
-   *
-   * Protected like every other console route: by {@link authorize}, by
-   * {@link mcpAuthorize} when the agent signs in differently from the
-   * dashboard, or by your own controller with `routes: false`. Agent clients
-   * send a header, not a cookie, so the usual check is a Bearer token:
-   * `mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN })`.
-   *
-   * Pass `true` to enable. DISABLED by default (`undefined`): the handler
-   * answers 404. The route is still mounted, so access is checked first: a
-   * caller it refuses gets 401/403, and only a caller it lets through sees
-   * the 404.
-   */
-  mcp?: boolean;
-  /**
    * Overhead guard / overload protection. Telescope watches the event-loop lag
    * (via `perf_hooks.monitorEventLoopDelay`) and, when the p99 lag crosses a
    * threshold, PAUSES capture (the Recorder drops new `record()` calls) until
@@ -414,8 +395,8 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   overloadProtection?: boolean | { maxEventLoopLagMs?: number; startupGraceMs?: number };
   /**
    * Who may use the console routes this module mounts: the API
-   * (`TelescopeController`), the live feed (`StreamController`) and the MCP
-   * endpoint (`TelescopeMcpController`, unless {@link mcpAuthorize} is set).
+   * (`TelescopeController`), the live feed (`StreamController`) and
+   * telescope's tools on the Aviary dev MCP endpoint (`/mcp/aviary`).
    * Runs after the app's authentication and your {@link decorators}, so
    * `request.user` is set. One of:
    *
@@ -454,23 +435,9 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   tenancy?: TelescopeTenancyOption;
   /**
-   * Who may call the MCP endpoint (`POST <path>/api/mcp`). When set, it
-   * REPLACES {@link authorize} on that route only; leave it out and the MCP
-   * route follows `authorize`. Coding agents send a header, not a cookie:
-   *
-   * ```ts
-   * TelescopeModule.forRoot({
-   *   mcp: true,
-   *   authorize: { policy: ConsolePolicy, ability: 'view' },
-   *   mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
-   * })
-   * ```
-   */
-  mcpAuthorize?: ConsoleAuthorize;
-  /**
    * Class decorators applied to the console controllers this module mounts —
-   * the API (`TelescopeController`), the live feed (`StreamController`) and the
-   * MCP endpoint (`TelescopeMcpController`) — the same shape as `@nestjs/mcp`'s
+   * the API (`TelescopeController`) and the live feed (`StreamController`) —
+   * the same shape as `@nestjs/mcp`'s
    * `decorators`, for authentication, throttling and the like:
    *
    * ```ts
@@ -498,31 +465,6 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   decorators?: ClassDecorator[];
   /**
-   * Class decorators for the MCP controller (`POST <path>/api/mcp`) only. When
-   * set, they REPLACE {@link decorators} on that route; the API and the live
-   * stream keep `decorators`. Leave it out and the MCP route takes
-   * `decorators` like the rest.
-   *
-   * Use it when the coding agent signs in differently from the people on the
-   * dashboard: an agent client sends `Authorization: Bearer <key>`, a browser
-   * sends a session cookie. With `@nestjs/authentication`, keep each
-   * credential to its routes with `Authenticate({ providers })`:
-   *
-   * ```ts
-   * TelescopeModule.forRoot({
-   *   mcp: true,
-   *   decorators: [Authenticate({ providers: [SessionCookieProvider] }), Can(ConsolePolicy, 'view')],
-   *   mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] }), Can(ConsolePolicy, 'view')],
-   * })
-   * ```
-   *
-   * where `TelescopeAgentKey` is your `ApiKeyProvider` subclass. Access is
-   * still decided by {@link mcpAuthorize} (or {@link authorize}).
-   * With `forRootAsync`, pass it as a static top-level option, like
-   * `decorators`. Ignored with `routes: false`.
-   */
-  mcpDecorators?: ClassDecorator[];
-  /**
    * `false` mounts NO controller; every provider (capture, storage, watchers,
    * pruning, alerts, the services below) still runs. Serve the routes you want
    * from controllers of your own, protected with {@link UseConsoleAuthorize}
@@ -541,14 +483,14 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * ```
    *
    * Each exported controller (`TelescopeController`, `StreamController`,
-   * `ClientErrorController`, `TelescopeMcpController`) can be extended this
+   * `ClientErrorController`) can be extended this
    * way; its dependencies are exported by the module. The base classes carry
    * no guard of their own, so what you put on them is the whole gate.
    *
    * Named `routes`, not `path: false`, because `path` keeps a job without
    * routes: it is the base the request-capture self-skip and the UI's asset
-   * URLs use, so set it to where you mount the controllers. `decorators`,
-   * `authorize` and `mcpAuthorize` only apply to mounted controllers and are
+   * URLs use, so set it to where you mount the controllers. `decorators`
+   * and `authorize` only apply to mounted controllers and are
    * ignored here. With `forRootAsync`,
    * pass it as the static top-level `routes`. Default `true`.
    */

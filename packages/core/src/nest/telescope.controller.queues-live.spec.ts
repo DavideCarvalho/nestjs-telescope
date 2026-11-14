@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type {
   JobPage,
   QueueCounts,
@@ -111,14 +111,41 @@ describe('GET /telescope/api/queues/live/*', () => {
 
   it('returns a job page for a valid state', async () => {
     const res = await request(app.getHttpServer())
-      .get('/telescope/api/queues/live/bull/q1/jobs?state=failed')
+      .get('/telescope/api/queues/live/bull/q1/jobs?filter[state]=failed')
       .expect(200);
-    expect(res.body).toEqual(FAILED_PAGE);
+    expect(res.body).toEqual({
+      data: FAILED_PAGE.jobs,
+      meta: { nextCursor: null, prevCursor: null, hasNext: false, hasPrev: false },
+    });
+  });
+
+  it('translates after/first to the driver page, and its nextCursor to meta', async () => {
+    const listJobs = vi.spyOn(fakeManager, 'listJobs').mockResolvedValueOnce({
+      ...FAILED_PAGE,
+      nextCursor: 'c2',
+    });
+    const res = await request(app.getHttpServer())
+      .get('/telescope/api/queues/live/bull/q1/jobs?filter[state]=failed&after=c1&first=999')
+      .expect(200);
+    expect(listJobs).toHaveBeenCalledWith('q1', 'failed', { cursor: 'c1', limit: 200 });
+    expect(res.body.meta).toMatchObject({ nextCursor: 'c2', hasNext: true });
+  });
+
+  it('rejects the removed state/cursor/limit params with 400', async () => {
+    for (const qs of [
+      'state=failed',
+      'filter[state]=failed&cursor=x',
+      'filter[state]=failed&limit=5',
+    ]) {
+      await request(app.getHttpServer())
+        .get(`/telescope/api/queues/live/bull/q1/jobs?${qs}`)
+        .expect(400);
+    }
   });
 
   it('rejects an invalid state with 400', async () => {
     await request(app.getHttpServer())
-      .get('/telescope/api/queues/live/bull/q1/jobs?state=bogus')
+      .get('/telescope/api/queues/live/bull/q1/jobs?filter[state]=bogus')
       .expect(400);
   });
 

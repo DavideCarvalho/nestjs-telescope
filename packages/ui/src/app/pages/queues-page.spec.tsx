@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { QueueMetricsReport, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { QueuesPage, toFailureRateBars } from './queues-page.js';
 
 const report: QueueMetricsReport = {
@@ -39,7 +39,7 @@ const report: QueueMetricsReport = {
 
 function mockClient(): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     queues: async () => report,
     timeseries: async () => ({
       windowStart: '',

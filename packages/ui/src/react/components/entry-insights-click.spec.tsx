@@ -3,7 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react';
 import { cloneElement, isValidElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { StatsResult, TelescopeClient, TimeseriesReport } from '../../client/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../telescope-context.js';
 
 const navigate = vi.fn();
@@ -44,7 +44,7 @@ const overTime: TimeseriesReport = {
 
 function mockClient(stats: StatsResult): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     stats: async () => stats,
     meta: async () => ({
       enabled: true,

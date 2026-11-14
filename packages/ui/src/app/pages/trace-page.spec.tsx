@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { EntriesQuery, Entry, Page, TelescopeClient, Waterfall } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
 import { TracePage } from './trace-page.js';
 
 function entry(over: Partial<Entry> & { type: string; id: string }): Entry {
@@ -26,7 +27,7 @@ function entry(over: Partial<Entry> & { type: string; id: string }): Entry {
 function mockClient(rows: Entry[]) {
   const entries = vi.fn<(query?: EntriesQuery) => Promise<Page<Entry>>>(async () => ({
     data: rows,
-    nextCursor: null,
+    meta: LAST_PAGE_META,
   }));
   const waterfall = vi.fn<(traceId: string) => Promise<Waterfall>>(async () => ({
     traceStartMs: 0,

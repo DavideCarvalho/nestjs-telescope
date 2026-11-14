@@ -1,23 +1,23 @@
 ---
 name: telescope-access-mcp
 description: >-
-  Protecting nestjs-telescope's routes and the MCP server with the `authorize`
+  Protecting nestjs-telescope's routes and its MCP tools with the `authorize`
   option (TelescopeModule/TelescopeUiModule forRoot({ authorize }), otel
   forExporter(exporter, { authorize })): a function, an @Injectable()
   ConsoleAuthorizer class, a lazy import, { policy, ability } from
   @nestjs/authorization, or a gate name from @dudousxd/nestjs-authz; or
   routes:false plus your own subclasses with UseConsoleAuthorize. Without
   authorize the console is open outside production and answers 403 in
-  production (one boot warning). Queue and extension-action mutations need mutations:true. MCP is
-  enabled with mcp:true and follows authorize, or its own mcpAuthorize
-  (authorizeByToken for agents). Use for "lock down the dashboard", "console
+  production (one boot warning). Queue and extension-action mutations need mutations:true. The
+  MCP tools live on the Aviary dev MCP endpoint (/mcp/aviary, @dudousxd/nestjs-agent-mcp-server),
+  gated by authorize; 5.0 removed mcp:true / mcpAuthorize / <path>/api/mcp. Use for "lock down the dashboard", "console
   answers 403 in production", "retry/remove queue jobs are 403", "connect
   Claude Code / Cursor to Telescope", "protect /metrics".
 license: MIT
 metadata:
   type: core
   library: "@dudousxd/nestjs-telescope"
-  library_version: "3.0.0"
+  library_version: "5.0.0"
   framework: nestjs
 ---
 
@@ -42,7 +42,7 @@ const authorize = (ctx: ExecutionContext) =>
 // or: 'console.telescope'                           (gate name, @dudousxd/nestjs-authz)
 // or: authorizeByToken({ token: process.env.CONSOLE_TOKEN })
 
-TelescopeModule.forRoot({ authorize });   // API, live stream, MCP
+TelescopeModule.forRoot({ authorize });   // API, live stream, dev MCP tools
 TelescopeUiModule.forRoot({ authorize }); // the page + assets
 // forRootAsync: `authorize` may come from the factory
 ```
@@ -94,7 +94,7 @@ export class OpsModule {}
 `@UseConsoleAuthorize({ authorize })` runs its own check. It also applies the
 tenant interceptor (a no-op with tenancy off). With `routes: false`
 the module still logs the "no `authorize`" boot warning when it is omitted.
-`StreamController`, `TelescopeMcpController`, `ClientErrorController` and
+`StreamController`, `ClientErrorController` and
 `TelescopeUiController` (from the UI package; it answers denied page
 navigations with a page or a redirect) extend the same way. The base classes
 carry no guard. Keep `path` set to the mount.
@@ -116,32 +116,28 @@ per-driver queue routes and extension data answer 404, and the Prometheus
 scrape (`GET <path>/api/metrics`) answers 404. The SSE live feed only ticks
 for the viewer's organization, and AI diagnoses are per organization. Each extension action run writes a `TelescopeAudit` log line with the caller.
 
-### Pattern 4 — the MCP server
+### Pattern 4 — the MCP tools (`/mcp/aviary`)
 
-```ts
-TelescopeModule.forRoot({
-  mcp: true, // POST <path>/api/mcp
-  authorize: { policy: ConsolePolicy, ability: 'view' },
-  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
-});
-```
+Telescope has no MCP endpoint of its own (5.0 removed `mcp: true`,
+`mcpAuthorize`, `mcpDecorators` and `<path>/api/mcp`). Its `telescope_*` tools
+are registered on the Aviary dev MCP endpoint of
+`@dudousxd/nestjs-agent-mcp-server` (`/mcp/aviary` by default) while the routes
+are mounted (`devTools: true` keeps them with `routes: false`, `devTools: false`
+turns them off), gated by `authorize`. Then
+`claude mcp add --transport http aviary <origin>/mcp/aviary --header "Authorization: Bearer $KEY"`.
 
-Without `mcp: true` the handler answers 404 (the route stays mounted, so the
-access check answers 401/403 first). Agent clients send `Authorization: Bearer
-<key>`, not the dashboard's cookie; `mcpAuthorize` REPLACES `authorize` on the
-MCP route only. Then
-`claude mcp add --transport http telescope <url>/api/mcp --header "Authorization: Bearer $TELESCOPE_MCP_TOKEN"`.
+An agent sends `Authorization: Bearer <key>`, not the dashboard's cookie, so
+`authorize` has to accept it: `authorizeByToken({ token })`, or an
+`ApiKeyProvider` from `@nestjs/authentication` on the dev endpoint
+(`AgentMcpServerModule.forRoot({ devTools: { decorators } })`) with a policy
+`authorize`.
 
-For a key per developer, use an `ApiKeyProvider` from `@nestjs/authentication`
-in `mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] })]` (they
-replace `decorators` on MCP) and keep `authorize` for the policy.
-
-With tenancy on the MCP endpoint and telescope's own dev tools follow the same rule:
-each call runs inside the caller's organization view. Extension-contributed dev
-tools instead span every organization, so a caller limited to some organizations
-is refused instead of running. Extension tools of kind `action` (for example
-`telescope_resilience_reset_circuit`) are console mutations: they are served only with
-`mutations: true`, and each run writes a `TelescopeAudit` log line.
+With tenancy on telescope's own dev tools run inside the caller's organization
+view. Extension-contributed dev tools instead span every organization, so a
+caller limited to some organizations is refused instead of running. Extension
+tools of kind `action` (for example `telescope_resilience_reset_circuit`) are
+console mutations: they are served only with `mutations: true`, and each run
+writes a `TelescopeAudit` log line.
 
 ### Pattern 5 — `GET /metrics` (otel)
 

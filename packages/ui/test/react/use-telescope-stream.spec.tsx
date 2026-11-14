@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TelescopeClient } from '../../src/client/index.js';
 import { TelescopeProvider } from '../../src/react/telescope-context.js';
 import { useTelescopeStream } from '../../src/react/use-telescope-stream.js';
-import { mockTelescopeClient } from '../../src/testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../src/testing/mock-telescope-client.js';
 
 class FakeES {
   onopen: (() => void) | null = null;
@@ -22,8 +22,8 @@ afterEach(() => vi.unstubAllGlobals());
 function makeClient(baseUrl = '/telescope/api'): TelescopeClient {
   return mockTelescopeClient({
     baseUrl,
-    entries: async () => ({ data: [], nextCursor: null }),
-    tags: async () => [],
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
+    tags: async () => ({ data: [], meta: LAST_PAGE_META }),
     meta: async () => ({
       enabled: true,
       droppedCount: 0,

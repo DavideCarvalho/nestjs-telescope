@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient, TelescopeMeta } from '../../client/index.js';
+import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../telescope-context.js';
 import { RetentionIndicator, formatRetention, samplingNote } from './retention-indicator.js';
 
@@ -11,7 +12,7 @@ function mockClient(meta: TelescopeMeta): TelescopeClient {
   };
   return {
     baseUrl: '',
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     entry: async () => {
       throw new Error('not used');
     },

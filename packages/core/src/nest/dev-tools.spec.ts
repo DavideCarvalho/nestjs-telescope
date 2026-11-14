@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import { type ExecutionContext, type INestApplication, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EntryType } from '../entry/entry.js';
 import type { Entry } from '../entry/entry.js';
@@ -14,7 +13,7 @@ import {
   extensionDevTools,
   telescopeDevTools,
 } from './dev-tools.js';
-import { TelescopeMcpServer } from './telescope-mcp.server.js';
+import { TelescopeTools } from './telescope-tools.js';
 import { TelescopeModule } from './telescope.module.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
 import type { TelescopeService } from './telescope.service.js';
@@ -105,11 +104,8 @@ describe('telescope dev tools registration', () => {
     expect(telescope()).toBeUndefined();
   });
 
-  it('is gated by the console’s authorize, not mcpAuthorize', async () => {
-    await boot({
-      authorize: authorizeByToken({ token: TOKEN }),
-      mcpAuthorize: () => true,
-    });
+  it('is gated by the console’s authorize', async () => {
+    await boot({ authorize: authorizeByToken({ token: TOKEN }) });
     expect(await telescope()?.authorize(ctx({ authorization: `Bearer ${TOKEN}` }))).toEqual({
       allowed: true,
     });
@@ -137,31 +133,6 @@ describe('telescope dev tools registration', () => {
     await app?.close();
     await boot({ devTools: false, authorize: () => true });
     expect(telescope()).toBeUndefined();
-  });
-
-  it('leaves the standalone MCP endpoint as it was', async () => {
-    const target = await boot({ mcp: true, authorize: () => true });
-    const res = await request(target.getHttpServer())
-      .post('/telescope/api/mcp')
-      .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
-      .expect(200);
-    expect(res.body.result.tools.map((t: { name: string }) => t.name)).toEqual([
-      'list_entries',
-      'get_entry',
-      'get_batch',
-      'get_stats',
-      'diagnose_exception',
-    ]);
-    const call = await request(target.getHttpServer())
-      .post('/telescope/api/mcp')
-      .send({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/call',
-        params: { name: 'get_trace', arguments: { traceId: 't' } },
-      })
-      .expect(200);
-    expect(call.body.error.message).toBe('Unknown tool: get_trace');
   });
 });
 
@@ -248,7 +219,7 @@ describe('telescope dev tools', () => {
 
   it('lists diagnose_exception only when a diagnosis coordinator exists', async () => {
     expect(await tool('telescope_diagnose_exception').available?.()).toBe(false);
-    const server = app?.get(TelescopeMcpServer);
+    const server = app?.get(TelescopeTools);
     expect(server?.canDiagnose()).toBe(false);
   });
 });
@@ -265,7 +236,7 @@ describe('telescope_diagnose_exception with a coordinator', () => {
     const service = {
       diagnosisCoordinator: { diagnose: async () => ({ markdown: '## Cause' }) },
     } as unknown as TelescopeService;
-    const server = new TelescopeMcpServer(storage, service, {} as PulseService);
+    const server = new TelescopeTools(storage, service, {} as PulseService);
     const diagnose = telescopeDevTools(server).find(
       (t) => t.name === 'telescope_diagnose_exception',
     );

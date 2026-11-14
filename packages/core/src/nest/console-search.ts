@@ -8,7 +8,7 @@ import { type TenantView, tenantViewOf, withTenantView } from '../storage/tenant
 import type { ConsoleDecide } from './console-authorize.js';
 import type { AviaryConsoleSearchHit } from './console-switcher.js';
 import { resolveConsoleTenantScope, selectConsoleTenant } from './console-tenant-scope.js';
-import { summarizeEntry } from './telescope-mcp.server.js';
+import { summarizeEntry } from './telescope-tools.js';
 import {
   TELESCOPE_OPTIONS,
   TELESCOPE_STORAGE,

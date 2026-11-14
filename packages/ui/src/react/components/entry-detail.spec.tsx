@@ -2,13 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { EntryWithBatch, TelescopeClient, TelescopeMeta } from '../../client/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../telescope-context.js';
 import { EntryDetail } from './entry-detail.js';
 
 function mockClient(meta: TelescopeMeta): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     meta: async () => meta,
     liveQueues: async () => ({
       queues: [],
@@ -22,7 +22,7 @@ function mockClient(meta: TelescopeMeta): TelescopeClient {
       completed: 0,
       paused: 0,
     }),
-    queueJobs: async () => ({ jobs: [], nextCursor: null, total: 0 }),
+    queueJobs: async () => ({ data: [], meta: LAST_PAGE_META }),
     queueJob: async () => null,
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),

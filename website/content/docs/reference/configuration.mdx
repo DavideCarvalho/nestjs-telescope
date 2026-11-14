@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: The full TelescopeModule.forRoot() options reference — capture, storage, the gate, retention, alerts, AI, CPU profiling, the MCP server, and overload protection.
+description: The full TelescopeModule.forRoot() options reference — capture, storage, the gate, retention, alerts, AI, CPU profiling, the MCP tools, and overload protection.
 icon: Settings
 ---
 
@@ -40,15 +40,13 @@ Every option below is passed to `TelescopeModule.forRoot({ … })`. All are opti
 
 | Option | Default | Description |
 |---|---|---|
-| `authorize` | none | Who may use the console routes (API, live stream, MCP): a function `(ctx) => result`, an `@Injectable()` class implementing `ConsoleAuthorizer`, a lazy `() => import(...)`, `{ policy, ability }` (`@nestjs/authorization`), a gate name (`@dudousxd/nestjs-authz`) or `authorizeByToken({ token })`. Omitted: open outside production; with `NODE_ENV=production` every request answers 403 and one warning is logged at boot. Can come from the `forRootAsync` factory. Pass the same value to `TelescopeUiModule.forRoot`. See [Protecting the routes](/docs/dashboard/auth). |
+| `authorize` | none | Who may use the console routes (API, live stream) and telescope's tools on the dev MCP endpoint: a function `(ctx) => result`, an `@Injectable()` class implementing `ConsoleAuthorizer`, a lazy `() => import(...)`, `{ policy, ability }` (`@nestjs/authorization`), a gate name (`@dudousxd/nestjs-authz`) or `authorizeByToken({ token })`. Omitted: open outside production; with `NODE_ENV=production` every request answers 403 and one warning is logged at boot. Can come from the `forRootAsync` factory. Pass the same value to `TelescopeUiModule.forRoot`. See [Protecting the routes](/docs/dashboard/auth). (5.0 removed `mcp`, `mcpAuthorize` and `mcpDecorators` with the `<path>/api/mcp` endpoint: coding agents use the [MCP tools](/docs/concepts/mcp) on `/mcp/aviary`.) |
 | `tenancy` | `'inherit'` | Organizations as tenants, following `@dudousxd/nestjs-context` tenancy: entries get a `tenant:<id>` tag and the console shows each viewer the organizations `authorize` granted (`{ allowed: true, tenants }`). `false` opts out. See [Organizations](/docs/dashboard/organizations). |
-| `mcpAuthorize` | `authorize` | `authorize` for the MCP route only, in place of `authorize`. For coding agents: `authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN })`. |
-| `decorators` | none | Class decorators applied to the console controllers the module mounts (API, live stream, MCP), e.g. `[UseGuards(AuthenticationGuard)]`. They run before `authorize` and don't count as access control on their own. Each mounted controller is also marked `Can.Anyone()`-open; a `Can()` passed here is still enforced. Static top-level option on `forRootAsync`. |
-| `mcpDecorators` | `decorators` | Class decorators for the MCP route only, in place of `decorators` (the API and live stream keep `decorators`). Static top-level option on `forRootAsync`. |
+| `decorators` | none | Class decorators applied to the console controllers the module mounts (API, live stream), e.g. `[UseGuards(AuthenticationGuard)]`. They run before `authorize` and don't count as access control on their own. Each mounted controller is also marked `Can.Anyone()`-open; a `Can()` passed here is still enforced. Static top-level option on `forRootAsync`. |
 | `routes` | `true` | `false` mounts no controller; every provider keeps running and the module exports what the controllers need, so your own subclasses of `TelescopeController` / `StreamController` / … serve the routes (protect them with `UseConsoleAuthorize`). Keep `path` set to the mount. Static top-level option on `forRootAsync`. |
-| `devTools` | follows `routes` | Serve telescope's `telescope_*` tools on the Aviary dev MCP endpoint, gated by `authorize`. On while the routes are mounted; `true` keeps them with `routes: false`, `false` turns them off. See [On the Aviary dev MCP endpoint](/docs/concepts/mcp#on-the-aviary-dev-mcp-endpoint). |
+| `devTools` | follows `routes` | Serve telescope's `telescope_*` tools on the Aviary dev MCP endpoint (`/mcp/aviary`), gated by `authorize`. On while the routes are mounted; `true` keeps them with `routes: false`, `false` turns them off. See [MCP tools](/docs/concepts/mcp). |
 
-With `forRootAsync`, `path`, `decorators`, `mcpDecorators`, `routes` and `imports` are static top-level options, next to `useFactory`: the routes are built before the factory runs. The static `path` also reaches the providers (request capture, the UI's asset URLs), overriding a different `path` from the factory. A build-time option returned by the factory has no effect, and the boot logs a warning naming it.
+With `forRootAsync`, `path`, `decorators`, `routes` and `imports` are static top-level options, next to `useFactory`: the routes are built before the factory runs. The static `path` also reaches the providers (request capture, the UI's asset URLs), overriding a different `path` from the factory. A build-time option returned by the factory has no effect, and the boot logs a warning naming it.
 | `imports` | `[]` | Extra Nest `imports` merged into the module, for whatever your `decorators` need. |
 | `mutations` | `false` | Turns on the console's mutations: queue actions, **Prune now**, [request replay](/docs/dashboard#replay-a-request), on-demand profiling, [extension row actions](/docs/concepts/extensions#row-actions). Off: they answer `403`. Who may call them is decided by `authorize`. |
 | `clientErrors` | `{ enabled: false }` | Public frontend error ingestion. Public by design: it takes neither `decorators` nor `authorize`. See [Reporting frontend errors](/docs/recipes/reporting-frontend-errors). |
@@ -89,7 +87,6 @@ With `forRootAsync`, `path`, `decorators`, `mcpDecorators`, `routes` and `import
 
 | Option | Default | Description |
 |---|---|---|
-| `mcp` | disabled | MCP server for coding agents. `true` enables it; omitted/`false` answers 404. Protected by `authorize` (or `mcpAuthorize`) like every console route. See [MCP server](/docs/concepts/mcp). |
 | `overloadProtection` | `true` (200ms) | Pause capture under event-loop pressure. See below. |
 
 ### `overloadProtection`

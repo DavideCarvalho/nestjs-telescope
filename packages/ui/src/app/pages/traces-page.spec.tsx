@@ -19,8 +19,8 @@ function trace(over: Partial<TraceSummary> & { traceId: string }): TraceSummary 
 }
 
 function mockClient(rows: TraceSummary[]) {
-  const traces = vi.fn<(window?: string, limit?: number) => Promise<TracesResult>>(async () => ({
-    traces: rows,
+  const traces = vi.fn<(window?: string, size?: number) => Promise<TracesResult>>(async () => ({
+    data: rows,
     scanned: rows.length,
     truncated: false,
   }));

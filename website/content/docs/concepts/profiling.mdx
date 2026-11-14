@@ -68,7 +68,7 @@ Everything the dashboard does is a plain HTTP call against the mounted API (defa
 | Method | Path | Shape | Notes |
 |---|---|---|---|
 | `GET` | `/api/profiles/status` | read | `{ enabled, sampleRate, active, maxConcurrent, pendingManual }` — powers the dashboard's Profiles tab and its "enable `profiling`" empty state. |
-| `GET` | `/api/profiles` | read | Captured profiles, newest-first, **without** their (large) frame trees (`?limit=` to cap). |
+| `GET` | `/api/profiles` | read | Captured profiles, newest-first, **without** their (large) frame trees, as a cursor list `{ data, meta }`: `first` (default 50, max 200) and `after=<meta.nextCursor>` for the next page. |
 | `GET` | `/api/profiles/:id` | read | One profile's full flame tree — the flamegraph payload. `404` if the id isn't a `cpu_profile` entry. |
 | `POST` | `/api/profiles/arm` | mutation | Arm the next `count` requests (optional `label`). `403` unless `mutations: true`; `400` when profiling is disabled. |
 

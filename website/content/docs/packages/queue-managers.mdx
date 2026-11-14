@@ -55,7 +55,7 @@ TelescopeModule.forRoot({ queueManagers: [new BullMqQueueManager()] });
 |---|---|
 | `GET /telescope/api/queues/live` | `QueueSummary[]` across all drivers — name, per-state counts, `isPaused`. |
 | `GET /telescope/api/queues/live/bullmq/:queue/counts` | `QueueCounts` for one queue. |
-| `GET /telescope/api/queues/live/bullmq/:queue/jobs?state=&cursor=&limit=` | A `JobPage` of jobs in a state; `nextCursor` paginates. |
+| `GET /telescope/api/queues/live/bullmq/:queue/jobs?filter[state]=&after=&first=` | A cursor list `{ data, meta: { nextCursor, hasNext, … } }` of jobs in a state (`first` default 50, max 200); pass `meta.nextCursor` as `after` for the next page. |
 | `GET /telescope/api/queues/live/bullmq/:queue/jobs/:id` | A `QueueJobDetail` (redacted `data`, `opts`, `stacktrace`, `returnValue`). |
 
 **Mutation endpoints** (default-deny):

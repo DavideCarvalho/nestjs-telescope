@@ -58,15 +58,15 @@ TelescopeModule.forRoot({
 | `{ allowed: true, tenants: ['org_1', 'org_2'] }` | Those organizations. |
 | `{ allowed: true, tenants: '*' }` | Every organization, plus entries recorded with no organization. A list containing `'*'` means the same. |
 
-The same rule applies to the API, the MCP endpoint and Telescope's tools on the [Aviary dev MCP endpoint](/docs/concepts/mcp#on-the-aviary-dev-mcp-endpoint).
+The same rule applies to the API and Telescope's tools on the [Aviary dev MCP endpoint](/docs/concepts/mcp).
 
 A caller signed in with `authorizeByToken` has no organization of its own, so it sees an empty console. Grant it organizations explicitly:
 
 ```ts
-const byToken = authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN });
+const byToken = authorizeByToken({ token: process.env.TELESCOPE_TOKEN });
 
 TelescopeModule.forRoot({
-  mcpAuthorize: (ctx) => (byToken(ctx) === true ? { allowed: true, tenants: '*' } : byToken(ctx)),
+  authorize: (ctx) => (byToken(ctx) === true ? { allowed: true, tenants: '*' } : byToken(ctx)),
 }),
 ```
 

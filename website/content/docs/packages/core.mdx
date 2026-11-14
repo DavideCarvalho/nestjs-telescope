@@ -99,11 +99,13 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 
 | Method & path | Returns |
 |---|---|
-| `GET /telescope/api/entries` | A page of entries (filter by `type`, `tag`, `batch`, `family`, time). |
+| `GET /telescope/api/entries` | Entries, newest first, as a cursor list `{ data, meta: { nextCursor, prevCursor, hasNext, hasPrev }, partial? }`. Filters `filter[type]`, `filter[tag]`, `filter[batchId]`, `filter[familyHash]`, `filter[traceId]`, plus `search`; pages with `after=<meta.nextCursor>` and `first` (default 50, max 500). |
 | `GET /telescope/api/entries/:id` | One entry plus its correlated batch. |
 | `GET /telescope/api/pulse?window=1h` | Per-type counts, slowest entries, top exceptions, N+1 occurrences. |
 | `GET /telescope/api/queues?window=1h` | Per-queue throughput, runtime/wait-time percentiles, failure rate. |
 | `GET /telescope/api/timeseries?window=1h&buckets=60` | Bucketed throughput — the sparkline data. |
+| `GET /telescope/api/tags?search=slo` | Tag counts, most used first, as a cursor list (`filter[tag][startsWith]=user:`, `search`, `after` / `first`). |
+| `GET /telescope/api/traces?window=1h&size=50` | The window's most recent traces: `{ data, scanned, truncated }`. |
 | `GET /telescope/api/health` | Telescope's own self-overhead (capture cost, buffer, flush, drops). |
 
 ## Key options
@@ -113,10 +115,8 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `enabled` | Master switch. Compute inline (e.g. `NODE_ENV !== 'production'`). |
 | `storage` | `StorageProvider` (or factory). Defaults to the embedded SQLite store. |
 | `watchers` | Built-in + custom watchers; each individually configurable. |
-| `authorize` | Who may use the console (API, live feed, MCP): a function, an `@Injectable()` class, a lazy import, `{ policy, ability }` or a gate name. Omitted: open outside production, 403 in production — see [Protecting the routes](/docs/dashboard/auth). |
-| `mcpAuthorize` | `authorize` for the MCP route only, in place of `authorize` (e.g. `authorizeByToken({ token })` for coding agents). |
+| `authorize` | Who may use the console (API, live feed, and its tools on the dev MCP endpoint): a function, an `@Injectable()` class, a lazy import, `{ policy, ability }` or a gate name. Omitted: open outside production, 403 in production — see [Protecting the routes](/docs/dashboard/auth). |
 | `decorators` | Class decorators for the mounted console controllers, run before `authorize` (e.g. `[UseGuards(AuthenticationGuard)]`). |
-| `mcpDecorators` | Class decorators for the MCP route only, in place of `decorators`. |
 | `routes` | `false` mounts no controller, so you serve the routes from your own subclasses of the exported controllers. |
 | `mutations` | `true` turns on queue actions, prune, replay and profiling-arm (off: `403`). |
 | `imports` | Extra `imports` for whatever your `decorators` need. |
@@ -126,7 +126,7 @@ On a non-2xx response the entry records `error.response.status`; on a transport 
 | `pulse` | Health-snapshot tuning. `slowRouteMs` (default `1000`) is the p99 a route must reach to count as a slow-request hotspot — matches the `slow` tag threshold, so a quiet host shows no false hotspots. |
 | `traceContext` / `traceLink` | OpenTelemetry trace stamping + deep-link template — see [`-otel`](/docs/packages/otel). |
 | `queueManagers` | Live queue managers — see [queue managers](/docs/packages/queue-managers). |
-| `mcp` | Optional MCP server for coding agents — `true` enables it, protected by `authorize` / `mcpAuthorize`. Disabled by default. See [MCP server](/docs/concepts/mcp). |
+| `devTools` | Serve telescope's `telescope_*` tools on the Aviary dev MCP endpoint (`/mcp/aviary`), gated by `authorize`. On while the routes are mounted. See [MCP tools](/docs/concepts/mcp). (5.0 removed `mcp`, `mcpAuthorize` and `mcpDecorators` with the old `<path>/api/mcp` endpoint.) |
 | `overloadProtection` | Pause capture under event-loop pressure. `true` (default, 200ms p99), `false`, or `{ maxEventLoopLagMs }`. See [Performance](/docs/concepts/performance#overload-protection--pause-under-event-loop-pressure). |
 
 ## Helpers for package authors

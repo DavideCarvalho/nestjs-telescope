@@ -1,5 +1,5 @@
 import type { ModuleRef } from '@nestjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 // packages/core/src/nest/telescope.controller.spec.ts
 import { AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
@@ -74,7 +74,7 @@ describe('TelescopeController', () => {
   it('lists entries filtered by type', async () => {
     const { storage, controller } = setup();
     await storage.store([entry({ id: '1', type: 'request' }), entry({ id: '2', type: 'query' })]);
-    const page = await controller.list({ type: 'query' });
+    const page = await controller.list({ filter: { type: 'query' } });
     expect(page.data.map((e) => e.id)).toEqual(['2']);
   });
 
@@ -85,7 +85,7 @@ describe('TelescopeController', () => {
       entry({ id: 'b1', traceId: 'trace-B' }),
       entry({ id: 'none', traceId: null }),
     ]);
-    const page = await controller.list({ traceId: 'trace-A' });
+    const page = await controller.list({ filter: { traceId: 'trace-A' } });
     expect(page.data.map((e) => e.id)).toEqual(['a1']);
   });
 
@@ -106,11 +106,45 @@ describe('TelescopeController', () => {
     expect(page.data).toHaveLength(2);
   });
 
-  it('falls back to provider default when limit is a non-numeric string', async () => {
+  it('pages with after/first and answers the cursor envelope', async () => {
     const { storage, controller } = setup();
-    await storage.store([entry({ id: '1' }), entry({ id: '2' })]);
-    const page = await controller.list({ limit: 'abc' });
-    expect(page.data).toHaveLength(2);
+    await storage.store([
+      entry({ id: '1', createdAt: new Date(1000) }),
+      entry({ id: '2', createdAt: new Date(2000) }),
+      entry({ id: '3', createdAt: new Date(3000) }),
+    ]);
+    const first = await controller.list({ first: '2' });
+    expect(first.data.map((e) => e.id)).toEqual(['3', '2']);
+    expect(first.meta).toEqual({
+      nextCursor: expect.any(String),
+      prevCursor: null,
+      hasNext: true,
+      hasPrev: false,
+    });
+    const second = await controller.list({ first: '2', after: first.meta.nextCursor });
+    expect(second.data.map((e) => e.id)).toEqual(['1']);
+  });
+
+  it('caps first at 500', async () => {
+    const { storage, controller } = setup();
+    const get = vi.spyOn(storage, 'get');
+    await controller.list({ first: '100000' });
+    expect(get.mock.calls[0]?.[0].limit).toBe(500);
+  });
+
+  it.each([
+    [{ type: 'query' }, /filter\[type\]/],
+    [{ cursor: 'x' }, /"after"/],
+    [{ limit: '10' }, /"first"/],
+    [{ first: 'abc' }, /first/],
+    [{ before: 'x' }, /forward only/],
+    [{ filter: { status: 'x' } }, /unknown field "status"/],
+  ])('rejects %j with a 400', async (query, message) => {
+    const { controller } = setup();
+    await expect(controller.list(query as Record<string, unknown>)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(message),
+    });
   });
 
   it('returns an entry with its batch', async () => {
@@ -130,6 +164,111 @@ describe('TelescopeController', () => {
   });
 });
 
+describe('TelescopeController tags', () => {
+  async function seeded() {
+    const { storage, controller } = setup();
+    await storage.store([
+      entry({ id: '1', tags: ['user:a', 'user:b', 'slow'] }),
+      entry({ id: '2', tags: ['user:a', 'user:c'] }),
+      entry({ id: '3', tags: ['user:a'] }),
+    ]);
+    return { storage, controller };
+  }
+
+  it('pages tags with an opaque cursor, most-used first', async () => {
+    const { controller } = await seeded();
+    const first = await controller.tags({ 'filter[tag][startsWith]': 'user:', first: '2' });
+    expect(first.data).toEqual([
+      { tag: 'user:a', count: 3 },
+      { tag: 'user:b', count: 1 },
+    ]);
+    expect(first.meta).toMatchObject({ hasNext: true, hasPrev: false, prevCursor: null });
+    const second = await controller.tags({
+      filter: { tag: { startsWith: 'user:' } },
+      first: '2',
+      after: first.meta.nextCursor,
+    });
+    expect(second.data).toEqual([{ tag: 'user:c', count: 1 }]);
+    // forward-only: `before` is a 400, so no page ever advertises a previous one
+    expect(second.meta).toMatchObject({
+      nextCursor: null,
+      prevCursor: null,
+      hasNext: false,
+      hasPrev: false,
+    });
+  });
+
+  it('narrows by search', async () => {
+    const { controller } = await seeded();
+    const page = await controller.tags({ search: 'slo' });
+    expect(page.data).toEqual([{ tag: 'slow', count: 1 }]);
+  });
+
+  it('re-applies the page when a provider ignores the query', async () => {
+    const { storage, controller } = await seeded();
+    const all = await storage.tags();
+    vi.spyOn(storage, 'tags').mockResolvedValue(all);
+    const first = await controller.tags({ first: '1' });
+    expect(first.data).toEqual([all[0]]);
+    const second = await controller.tags({ first: '1', after: first.meta.nextCursor });
+    expect(second.data).toEqual([all[1]]);
+  });
+
+  it('pages correctly when a provider honours offset but ignores limit', async () => {
+    const { storage, controller } = await seeded();
+    const all = await storage.tags();
+    expect(all.length).toBeGreaterThan(3);
+    vi.spyOn(storage, 'tags').mockImplementation(async (_prefix, query) =>
+      all.slice(query?.offset ?? 0),
+    );
+    const first = await controller.tags({ first: '1' });
+    expect(first.data).toEqual([all[0]]);
+    const second = await controller.tags({ first: '1', after: first.meta.nextCursor });
+    expect(second.data).toEqual([all[1]]);
+    const third = await controller.tags({ first: '2', after: second.meta.nextCursor });
+    expect(third.data).toEqual([all[2], all[3]]);
+  });
+
+  it.each([
+    [{ prefix: 'user:' }, /filter\[tag\]\[startsWith\]/],
+    [{ limit: '5' }, /"first"/],
+    [{ offset: '5' }, /"after"/],
+    [{ tag: 'x' }, /filter\[tag\]/],
+    [{ page: '2' }, /"page"/],
+    [{ after: 'not-a-cursor' }, /Malformed cursor/],
+    [{ filter: { tag: 'x' } }, /operator "eq" is not supported/],
+  ])('rejects %j with a 400', async (query, message) => {
+    const { controller } = setup();
+    await expect(controller.tags(query as Record<string, unknown>)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(message),
+    });
+  });
+});
+
+describe('TelescopeController profiles', () => {
+  it('lists profiles as a cursor list that resumes after the cursor', async () => {
+    const { storage, controller } = setup();
+    await storage.store([
+      entry({ id: 'p1', type: 'cpu_profile', createdAt: new Date(1000), content: { big: 1 } }),
+      entry({ id: 'p2', type: 'cpu_profile', createdAt: new Date(2000), content: { big: 1 } }),
+      entry({ id: 'r', type: 'request', createdAt: new Date(3000) }),
+    ]);
+    const first = await controller.profiles({ first: '1' });
+    expect(first.data.map((e) => [e.id, e.content])).toEqual([['p2', null]]);
+    expect(first.meta.hasNext).toBe(true);
+    const second = await controller.profiles({ first: '1', after: first.meta.nextCursor });
+    expect(second.data.map((e) => e.id)).toEqual(['p1']);
+  });
+
+  it('rejects limit and unknown params with a 400, but takes the console tenant', async () => {
+    const { controller } = setup();
+    await expect(controller.profiles({ limit: '5' })).rejects.toMatchObject({ status: 400 });
+    await expect(controller.profiles({ next: 'x' })).rejects.toMatchObject({ status: 400 });
+    await expect(controller.profiles({ tenant: 'acme' })).resolves.toMatchObject({ data: [] });
+  });
+});
+
 describe('TelescopeController AI endpoints', () => {
   it('404s the metrics scrape while aiMetrics.prometheus is off', () => {
     const { controller } = setup();
@@ -141,5 +280,16 @@ describe('TelescopeController AI endpoints', () => {
     const result = await controller.ai('1h');
     expect(result.spend.totalUsd).toBe(0);
     expect(result.coverage.legacyAgentLib).toBe(false);
+  });
+
+  it('takes the agent runs size as `size`, and rejects `limit`', async () => {
+    const { controller } = setup();
+    await expect(controller.ai('1h', undefined, undefined, '10')).resolves.toBeDefined();
+    await expect(controller.ai('1h', undefined, undefined, 'x')).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(controller.ai('1h', undefined, undefined, undefined, '10')).rejects.toMatchObject({
+      status: 400,
+    });
   });
 });

@@ -4,13 +4,13 @@ import { HashRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { ConsoleTenancyInfo } from '../client/index.js';
 import { TelescopeProvider } from '../react/index.js';
-import { mockTelescopeClient } from '../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../testing/mock-telescope-client.js';
 import { DashboardLayout } from './dashboard-layout.js';
 import { ThemeProvider } from './theme-context.js';
 
 function renderWith(info: ConsoleTenancyInfo) {
   const client = mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     meta: async () => ({
       enabled: true,
       droppedCount: 0,

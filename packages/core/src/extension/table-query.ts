@@ -15,16 +15,18 @@
  * behaves exactly as it did before they existed, and a panel whose columns
  * declare no `sortable`/`filterable` flag never sends them.
  *
- * The wire shape, flat because the query object is serialized through
- * `URLSearchParams` (a nested object would arrive as the string
- * `"[object Object]"`):
+ * The provider's query shape, flat:
  *
  * ```text
- * ?page=2&limit=50&sort=duration&dir=desc&filter.status=failed
+ * page=2&limit=50&sort=duration&dir=desc&filter.status=failed
  * ```
  *
- * Note that params arrive as **strings** — the host controller passes
- * `@Query()` through verbatim — which is exactly the trap {@link readTableQuery}
+ * Since 5.0 the HTTP wire is the Aviary list API (`?page=2&size=50&sort=-duration&filter[status]=failed`,
+ * answered as `{ data, meta }`). The console route translates it to the shape above and the
+ * provider's `{ rows, total, page, limit }` back, so this SPI did not change.
+ *
+ * Note that params arrive as **strings** — the host controller passes the
+ * query through — which is exactly the trap {@link readTableQuery}
  * exists to close: `query.page > 1` is `false` for the string `'2'`, silently,
  * with no type error to catch it.
  */

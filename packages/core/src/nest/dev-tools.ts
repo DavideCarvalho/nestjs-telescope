@@ -21,7 +21,7 @@ import {
   selectConsoleTenant,
 } from './console-tenant-scope.js';
 import { auditExtensionAction } from './extension-audit.js';
-import { type McpToolArgs, TelescopeMcpServer, isMcpToolNotice } from './telescope-mcp.server.js';
+import { type TelescopeToolArgs, TelescopeTools, isToolNotice } from './telescope-tools.js';
 import {
   TELESCOPE_EXTENSIONS,
   TELESCOPE_OPTIONS,
@@ -123,20 +123,20 @@ const traceId = { type: 'string', description: 'Trace id' } as const;
 /** A `{ notice }` answer (an unknown or pruned id) is a tool error. */
 async function found(result: Promise<unknown>, notFound?: string): Promise<unknown> {
   const value = await result;
-  if (isMcpToolNotice(value)) throw new Error(notFound ?? value.notice);
+  if (isToolNotice(value)) throw new Error(notFound ?? value.notice);
   return value;
 }
 
 /**
- * Telescope's developer tools: the MCP catalogue of `POST <path>/api/mcp`, prefixed `telescope_`,
- * answered by the same {@link TelescopeMcpServer} over the stored (already redacted) entries. An
+ * Telescope's developer tools for the Aviary dev MCP endpoint (`/mcp/aviary`), prefixed
+ * `telescope_`, answered by {@link TelescopeTools} over the stored (already redacted) entries. An
  * unknown or pruned id is an error ("… not found").
  *
  * `viewFor` (tenancy on) gives each call the organization view its caller may see: every tool
  * then reads only that organization's entries.
  */
 export function telescopeDevTools(
-  server: TelescopeMcpServer,
+  server: TelescopeTools,
   viewFor?: (call?: DevToolCall) => TenantView | null,
 ): TelescopeDevTool[] {
   const tools = telescopeTools(server);
@@ -147,7 +147,7 @@ export function telescopeDevTools(
   }));
 }
 
-function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
+function telescopeTools(server: TelescopeTools): TelescopeDevTool[] {
   return [
     {
       name: 'telescope_list_entries',
@@ -180,7 +180,7 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
       },
       run: async (input, call) =>
         server.listEntries({
-          ...(input as McpToolArgs),
+          ...(input as TelescopeToolArgs),
           limit: Math.min(
             typeof input.limit === 'number' ? input.limit : DEFAULT_LIMIT,
             call?.limits.maxRows ?? MAX_LIMIT,
@@ -193,7 +193,7 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
       description:
         'One entry by id with the summaries of its batch (every entry of the same request or job). Returns { entry, batch }.',
       input: { type: 'object', properties: { id }, required: ['id'] },
-      run: (input) => found(server.call('get_entry', input as McpToolArgs)),
+      run: (input) => found(server.call('get_entry', input as TelescopeToolArgs)),
     },
     {
       name: 'telescope_get_trace',
@@ -201,7 +201,7 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
       description:
         'Every entry recorded under one OpenTelemetry trace id (one request or job), newest first. Returns { entries }.',
       input: { type: 'object', properties: { traceId }, required: ['traceId'] },
-      run: (input) => found(server.call('get_trace', input as McpToolArgs)),
+      run: (input) => found(server.call('get_trace', input as TelescopeToolArgs)),
     },
     {
       name: 'telescope_get_waterfall',
@@ -209,7 +209,7 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
       description:
         'The span waterfall of one trace: each recorded operation as a nested start/duration span, in order.',
       input: { type: 'object', properties: { traceId }, required: ['traceId'] },
-      run: (input) => found(server.call('get_waterfall', input as McpToolArgs)),
+      run: (input) => found(server.call('get_waterfall', input as TelescopeToolArgs)),
     },
     {
       name: 'telescope_get_health',
@@ -226,7 +226,7 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
           },
         },
       },
-      run: (input) => server.call('get_health', input as McpToolArgs),
+      run: (input) => server.call('get_health', input as TelescopeToolArgs),
     },
     {
       name: 'telescope_diagnose_exception',
@@ -241,7 +241,7 @@ function telescopeTools(server: TelescopeMcpServer): TelescopeDevTool[] {
       available: () => server.canDiagnose(),
       run: (input) =>
         found(
-          server.call('diagnose_exception', input as McpToolArgs),
+          server.call('diagnose_exception', input as TelescopeToolArgs),
           'Exception entry not found.',
         ),
     },
@@ -360,7 +360,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
   constructor(
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
     @Inject(TELESCOPE_ROUTES_MOUNTED) private readonly routesMounted: boolean,
-    @Inject(TelescopeMcpServer) private readonly server: TelescopeMcpServer,
+    @Inject(TelescopeTools) private readonly server: TelescopeTools,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
     @Optional() @Inject(CONTEXT_ACCESSOR) private readonly accessor?: unknown,
     @Optional() @Inject(TELESCOPE_EXTENSIONS) private readonly extensions?: ExtensionRegistry,

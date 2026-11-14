@@ -81,8 +81,8 @@ async function collectEntries(
     const pageLimit = Math.min(PAGE_SIZE, limit - rows.length);
     const page = await client.entries({
       ...base,
-      limit: pageLimit,
-      ...(cursor !== undefined ? { cursor } : {}),
+      first: pageLimit,
+      ...(cursor !== undefined ? { after: cursor } : {}),
     });
     let reachedWindowEdge = false;
     for (const entry of page.data) {
@@ -94,8 +94,8 @@ async function collectEntries(
       if (rows.length >= limit) break;
     }
     onProgress(rows.length);
-    if (reachedWindowEdge || page.nextCursor === null) break;
-    cursor = page.nextCursor;
+    if (reachedWindowEdge || !page.meta.hasNext || page.meta.nextCursor === null) break;
+    cursor = page.meta.nextCursor;
   }
   return rows;
 }

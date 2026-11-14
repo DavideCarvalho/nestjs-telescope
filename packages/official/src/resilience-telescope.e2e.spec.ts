@@ -105,9 +105,9 @@ describe('resilienceTelescopeExtension (real @nestjs/resilience)', () => {
     expect(await data('resilience.stats', '?metric=open')).toEqual({ value: 1 });
     expect((await data('resilience.stats', '?metric=short-circuited')).value).toBe(1);
     expect((await data('resilience.stats', '?metric=opened')).value).toBe(1);
-    const circuits = await data('resilience.circuits', '?page=1&limit=50');
-    expect(circuits.total).toBe(1);
-    expect(circuits.rows[0]).toMatchObject({
+    const circuits = await data('resilience.circuits', '?page=1&size=50');
+    expect(circuits.meta.total).toBe(1);
+    expect(circuits.data[0]).toMatchObject({
       name: 'payments',
       status: 'open',
       calls: 1,
@@ -118,7 +118,7 @@ describe('resilienceTelescopeExtension (real @nestjs/resilience)', () => {
       shortCircuited: 1,
       scope: 'live',
     });
-    expect(circuits.rows[0].probesAt).not.toBe('');
+    expect(circuits.data[0].probesAt).not.toBe('');
   });
 
   it('lists the bulkheads, the events over time, the noisiest policies and the transitions', async () => {
@@ -148,9 +148,12 @@ describe('resilienceTelescopeExtension (real @nestjs/resilience)', () => {
     ]);
   });
 
-  it('sorts only by a row field', async () => {
-    const sorted = await data('resilience.circuits', '?sort=constructor&dir=desc');
-    expect(sorted.rows.map((row: { name: string }) => row.name)).toEqual(['payments']);
+  it('sorts only by a sortable column', async () => {
+    const sorted = await data('resilience.circuits', '?page=1&size=50&sort=-name');
+    expect(sorted.data.map((row: { name: string }) => row.name)).toEqual(['payments']);
+    await request(app.getHttpServer())
+      .get('/telescope/api/ext/resilience/data/resilience.circuits?sort=-constructor')
+      .expect(400);
   });
 
   it('filters every provider by the drilled-down policy', async () => {

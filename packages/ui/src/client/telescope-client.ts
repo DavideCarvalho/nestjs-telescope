@@ -3,18 +3,19 @@ import type {
   CachedDiagnosis,
   ConsoleTenancyInfo,
   CpuProfileContent,
+  CursorPage,
   DiagnoseResult,
   EntriesQuery,
   Entry,
   EntryWithBatch,
   ExplainResult,
-  JobPage,
   Page,
   ProfilerStatus,
   PrunesInfo,
   PulseReport,
   QueueCapabilities,
   QueueCounts,
+  QueueJob,
   QueueJobDetail,
   QueueMetricsReport,
   QueueState,
@@ -127,8 +128,16 @@ export type BulkActionName = 'retry-all' | 'redrive';
 /** One page of a tag picker's list. See {@link TelescopeClient.tags}. */
 export interface TagPageOptions {
   search?: string;
-  limit?: number;
-  offset?: number;
+  /** The previous page's `meta.nextCursor`. */
+  after?: string;
+  /** Page size (default 50, max 200). */
+  first?: number;
+}
+
+/** One page of a cursor list: `after` is the previous page's `meta.nextCursor`. */
+export interface CursorPageRequest {
+  after?: string;
+  first?: number;
 }
 
 export interface TelescopeClient {
@@ -139,30 +148,32 @@ export interface TelescopeClient {
   pulse(window?: string): Promise<PulseReport>;
   queues(window?: string): Promise<QueueMetricsReport>;
   timeseries(query?: TimeseriesQuery): Promise<TimeseriesReport>;
-  traces(window?: string, limit?: number): Promise<TracesResult>;
+  /** The window's most recent traces, at most `size` (`GET traces`): `{ data, scanned, truncated }`. */
+  traces(window?: string, size?: number): Promise<TracesResult>;
   /** Nested span waterfall for one trace (`GET traces/:traceId/waterfall`). */
   waterfall(traceId: string): Promise<Waterfall>;
   stats(type: string, window: string): Promise<StatsResult>;
-  /** The AI screen: spend, agent runs and unpriced calls over a window (`GET ai`). */
+  /** The AI screen: spend, agent runs (at most `size`) and unpriced calls over a window (`GET ai`). */
   ai(
     window?: string,
-    opts?: { buckets?: number; top?: number; limit?: number },
+    opts?: { buckets?: number; top?: number; size?: number },
   ): Promise<AiUsageReport>;
   /**
-   * Tag counts, most-used first. `prefix` is the control's fixed scope (`user:`); `search` is what
-   * was typed into it and matches anywhere in the tag. Both the search and the page happen on the
-   * SERVER — a picker that narrowed its own fetched page could only ever find what the bound
-   * already let through.
+   * Tag counts, most-used first, as a cursor list. `prefix` is the control's fixed scope (`user:`,
+   * sent as `filter[tag][startsWith]`); `search` is what was typed into it and matches anywhere in
+   * the tag. Both the search and the page happen on the SERVER — a picker that narrowed its own
+   * fetched page could only ever find what the bound already let through.
    */
-  tags(prefix?: string, opts?: TagPageOptions): Promise<TagCount[]>;
+  tags(prefix?: string, opts?: TagPageOptions): Promise<CursorPage<TagCount>>;
   meta(): Promise<TelescopeMeta>;
   /** The console's organization scope (`GET tenancy`); `{ enabled: false }` from older servers. */
   tenancy?(search?: string): Promise<ConsoleTenancyInfo>;
   /**
    * Fetches data for an extension dashboard panel from a registered provider:
    * `GET ext/:ext/data/:provider`. The optional `query` is serialized to the
-   * query string (panel `data.query`). Returns the raw provider payload as
-   * `unknown` — the panel renderer (Task 8) narrows it per panel `kind`.
+   * query string (panel `data.query`, plus a table's `page` / `size` / `sort` /
+   * `filter[col]`). Returns the payload as `unknown` — the panel renderer
+   * narrows it per panel `kind`; a paged table answers the offset list.
    */
   extData(ext: string, provider: string, query?: Record<string, unknown>): Promise<unknown>;
   /**
@@ -205,8 +216,8 @@ export interface TelescopeClient {
   cachedDiagnosis(entryId: string): Promise<CachedDiagnosis>;
   /** CPU profiler runtime status (`GET /profiles/status`). */
   profilerStatus(): Promise<ProfilerStatus>;
-  /** List captured CPU profiles, newest-first, WITHOUT their frame trees (`GET /profiles`). */
-  profiles(limit?: number): Promise<Page<Entry>>;
+  /** Captured CPU profiles, newest-first, WITHOUT their frame trees, as a cursor list (`GET /profiles`). */
+  profiles(page?: CursorPageRequest): Promise<Page<Entry>>;
   /** Fetch one profile's full frame tree (`GET /profiles/:id`). */
   profile(id: string): Promise<Entry & { content: CpuProfileContent }>;
   /**
@@ -221,8 +232,8 @@ export interface TelescopeClient {
     driver: string,
     queue: string,
     state: QueueState,
-    page?: { cursor?: string; limit?: number },
-  ): Promise<JobPage>;
+    page?: CursorPageRequest,
+  ): Promise<CursorPage<QueueJob>>;
   queueJob(driver: string, queue: string, id: string): Promise<QueueJobDetail | null>;
   queueJobAction(
     driver: string,
@@ -381,14 +392,14 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     baseUrl,
     entries: (query = {}) =>
       get<Page<Entry>>('/entries', {
-        type: query.type,
-        tag: query.tag,
-        traceId: query.traceId,
-        batchId: query.batchId,
-        familyHash: query.familyHash,
+        'filter[type]': query.type,
+        'filter[tag]': query.tag,
+        'filter[traceId]': query.traceId,
+        'filter[batchId]': query.batchId,
+        'filter[familyHash]': query.familyHash,
         search: query.search,
-        cursor: query.cursor,
-        limit: query.limit,
+        after: query.after,
+        first: query.first,
       }),
     entry: (id) => get<EntryWithBatch>(`/entries/${encodeURIComponent(id)}`),
     pulse: (window) => get<PulseReport>('/pulse', { window }),
@@ -400,7 +411,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         type: query.type,
         tag: query.tag,
       }),
-    traces: (window, limit) => get<TracesResult>('/traces', { window, limit }),
+    traces: (window, size) => get<TracesResult>('/traces', { window, size }),
     waterfall: (traceId) => get<Waterfall>(`/traces/${encodeURIComponent(traceId)}/waterfall`),
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
     ai: (window, opts) =>
@@ -408,14 +419,14 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         window,
         buckets: opts?.buckets,
         top: opts?.top,
-        limit: opts?.limit,
+        size: opts?.size,
       }),
     tags: (prefix, opts) =>
-      get<TagCount[]>('/tags', {
-        prefix,
+      get<CursorPage<TagCount>>('/tags', {
+        'filter[tag][startsWith]': prefix || undefined,
         search: opts?.search?.trim() || undefined,
-        limit: opts?.limit,
-        offset: opts?.offset,
+        after: opts?.after,
+        first: opts?.first,
       }),
     meta: () => get<TelescopeMeta>('/meta'),
     tenancy: async (search) => {
@@ -459,7 +470,8 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
     diagnose,
     cachedDiagnosis,
     profilerStatus: () => get<ProfilerStatus>('/profiles/status'),
-    profiles: (limit) => get<Page<Entry>>('/profiles', { limit }),
+    profiles: (page = {}) =>
+      get<Page<Entry>>('/profiles', { after: page.after, first: page.first }),
     profile: (id) =>
       get<Entry & { content: CpuProfileContent }>(`/profiles/${encodeURIComponent(id)}`),
     armProfile: (count, label) =>
@@ -475,11 +487,10 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         `/queues/live/${encodeURIComponent(driver)}/${encodeURIComponent(queue)}/counts`,
       ),
     queueJobs: (driver, queue, state, page = {}) =>
-      get<JobPage>(`/queues/live/${encodeURIComponent(driver)}/${encodeURIComponent(queue)}/jobs`, {
-        state,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
+      get<CursorPage<QueueJob>>(
+        `/queues/live/${encodeURIComponent(driver)}/${encodeURIComponent(queue)}/jobs`,
+        { 'filter[state]': state, after: page.after, first: page.first },
+      ),
     queueJob: (driver, queue, id) =>
       get<QueueJobDetail | null>(
         `/queues/live/${encodeURIComponent(driver)}/${encodeURIComponent(queue)}/jobs/${encodeURIComponent(id)}`,

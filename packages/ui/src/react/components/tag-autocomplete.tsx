@@ -64,7 +64,7 @@ export function TagAutocomplete({
   const fullQuery = `${prefix}${trimmed}`;
   const debouncedSearch = useDebounced(trimmed, SEARCH_DEBOUNCE_MS);
   const tags = useTagsInfinite(prefix, debouncedSearch);
-  const suggestions = tags.data?.pages.flat() ?? [];
+  const suggestions = tags.data?.pages.flatMap((page) => page.data) ?? [];
   const showList = open && suggestions.length > 0;
 
   const listRef = useRef<HTMLDivElement>(null);

@@ -3,13 +3,14 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type {
-  JobPage,
+  CursorPage,
   QueueCapabilities,
+  QueueJob,
   QueueSummary,
   TelescopeClient,
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { QueueManagerPage } from './QueueManagerPage.js';
 
 const summaries: QueueSummary[] = [
@@ -21,8 +22,8 @@ const summaries: QueueSummary[] = [
   },
 ];
 
-const waitingPage: JobPage = {
-  jobs: [
+const waitingPage: CursorPage<QueueJob> = {
+  data: [
     {
       id: '900',
       name: 'send-digest',
@@ -36,13 +37,12 @@ const waitingPage: JobPage = {
       progress: null,
     },
   ],
-  nextCursor: null,
-  total: 1,
+  meta: LAST_PAGE_META,
 };
 
 function mockClient(capabilities: QueueCapabilities): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     meta: async () => ({
       enabled: true,
       droppedCount: 0,

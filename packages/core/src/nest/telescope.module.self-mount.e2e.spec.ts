@@ -12,7 +12,6 @@ import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { StreamController } from '../sse/stream.controller.js';
 import { ClientErrorController } from './client-error.controller.js';
-import { TelescopeMcpController } from './telescope-mcp.controller.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeModule } from './telescope.module.js';
 import type { TelescopeModuleOptions } from './telescope.options.js';
@@ -35,10 +34,6 @@ class ConsoleApi extends TelescopeController {}
 @Can(ConsolePolicy, 'view')
 @Controller('ops/telescope/api')
 class ConsoleStream extends StreamController {}
-
-@Can(ConsolePolicy, 'view')
-@Controller('ops/telescope/api/mcp')
-class ConsoleMcp extends TelescopeMcpController {}
 
 @Can.Anyone()
 @Controller('hello')
@@ -65,7 +60,7 @@ async function boot(
     path: 'ops/telescope',
     routes: false,
   } satisfies TelescopeModuleOptions),
-  controllers: Type[] = [ConsoleApi, ConsoleStream, ConsoleMcp, HelloController],
+  controllers: Type[] = [ConsoleApi, ConsoleStream, HelloController],
 ) {
   const moduleRef = await Test.createTestingModule({
     imports: [AuthorizationModule.forRoot(), telescope],
@@ -111,17 +106,6 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
       expect((await get(target, url, USER)).status, `user ${url}`).toBe(403);
       expect((await get(target, url, ADMIN)).status, `admin ${url}`).toBe(200);
     }
-    // The MCP subclass too.
-    const mcp = (user?: User) => {
-      const req = request(target.getHttpServer())
-        .post('/ops/telescope/api/mcp')
-        .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
-      if (user) req.set('x-user', JSON.stringify(user));
-      return req;
-    };
-    expect((await mcp()).status).toBe(401);
-    expect((await mcp(USER)).status).toBe(403);
-    expect([401, 403]).not.toContain((await mcp(ADMIN)).status);
   });
 
   it('capture keeps working and the self-mounted API serves it (own path self-skipped)', async () => {
@@ -130,7 +114,9 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
     await get(target, '/ops/telescope/api/meta', ADMIN).expect(200);
     await target.get(TelescopeService).flush();
 
-    const res = await get(target, '/ops/telescope/api/entries?type=request', ADMIN).expect(200);
+    const res = await get(target, '/ops/telescope/api/entries?filter[type]=request', ADMIN).expect(
+      200,
+    );
     const urls = res.body.data.map((e: { content: { uri?: string; url?: string } }) =>
       String(e.content.uri ?? e.content.url),
     );
@@ -141,12 +127,7 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
 
   it('inherited routes carry no built-in guard: the developer decorators are the whole gate, even in production', async () => {
     // No guard metadata on any extendable base class, so a subclass inherits none.
-    for (const base of [
-      TelescopeController,
-      StreamController,
-      ClientErrorController,
-      TelescopeMcpController,
-    ]) {
+    for (const base of [TelescopeController, StreamController, ClientErrorController]) {
       expect(Reflect.getMetadata('__guards__', base), base.name).toBeUndefined();
     }
     const previous = process.env.NODE_ENV;
@@ -183,12 +164,7 @@ describe('TelescopeModule routes: false (mount it yourself)', () => {
   it('the exported controllers carry no own-only constructor metadata a subclass would lose', () => {
     // Nest reads `@Optional()` constructor params with getOwnMetadata, so a
     // subclass silently drops them. None of the extendable controllers use it.
-    for (const base of [
-      TelescopeController,
-      StreamController,
-      ClientErrorController,
-      TelescopeMcpController,
-    ]) {
+    for (const base of [TelescopeController, StreamController, ClientErrorController]) {
       expect(Reflect.getOwnMetadata('optional:paramtypes', base), base.name).toBeUndefined();
     }
   });

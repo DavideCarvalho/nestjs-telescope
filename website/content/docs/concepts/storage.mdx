@@ -33,6 +33,8 @@ Reads are **keyset-paginated newest-first** (`createdAt DESC, id DESC`), so pagi
 
 A `Page` returned by `get()` is `{ data, nextCursor, partial? }`. `partial: true` means the store answered from a subset of its data — a tiered store whose cold tier could not be read, for instance. What it did return is still valid and pageable; the API passes the flag through, and the dashboard's entries list shows a notice that older entries may be missing. Leave it unset for a complete answer.
 
+That is the storage SPI, and it did not change in 5.0. The HTTP API translates it to the Aviary list API: `GET <path>/api/entries` answers `{ data, meta: { nextCursor, prevCursor, hasNext, hasPrev }, partial? }`, and takes `after` (your `nextCursor`, opaque to clients) and `first` in place of the SPI's `cursor` and `limit`. The store pages forward only, so `before` / `last` are a `400`.
+
 Want to write your own? The [custom storage recipe](/docs/recipes/custom-storage) implements every method end to end.
 
 ## The zero-config SQLite default

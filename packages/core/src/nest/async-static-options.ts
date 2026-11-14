@@ -8,7 +8,7 @@ import type { TelescopeModuleOptions } from './telescope.options.js';
  * runs: they decide which controllers exist, where, and with which
  * decorators. A factory can't change them.
  */
-export const BUILD_TIME_OPTIONS = ['decorators', 'mcpDecorators', 'routes', 'imports'] as const;
+export const BUILD_TIME_OPTIONS = ['decorators', 'routes', 'imports'] as const;
 
 /** What `forRootAsync` was given statically, next to `useFactory`. */
 export type AsyncStaticOptions = Pick<
@@ -20,7 +20,7 @@ export type AsyncStaticOptions = Pick<
  * Reconciles the options an async factory resolved with the static ones
  * `forRootAsync` built the module from:
  *
- * - A build-time option (`decorators`, `mcpDecorators`, `routes`, `imports`)
+ * - A build-time option (`decorators`, `routes`, `imports`)
  *   returned by the factory has no effect: the routes were built without it.
  *   It is logged, since a guard that silently isn't there is easy to miss.
  * - `path` mounts the routes (static) AND tells the request capture and the UI
