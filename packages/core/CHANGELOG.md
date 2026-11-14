@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 5.0.1
+
+### Patch Changes
+
+- [#194](https://github.com/DavideCarvalho/nestjs-telescope/pull/194) [`650b380`](https://github.com/DavideCarvalho/nestjs-telescope/commit/650b380001d80b9c24f919a8a2d7ed04d89a1fba) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `anyAuthorize` keeps a `redirectTo` from any form. Before, when an earlier form answered `unauthenticated` without one (a guest with no token, in `anyAuthorize(authorizeByToken(...), SessionAuthorizer)`), the console answered a bare 401 and ignored a later form's redirect to the sign-in page.
+
 ## 5.0.0
 
 ### Major Changes
