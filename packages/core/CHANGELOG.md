@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 5.0.2
+
+### Patch Changes
+
+- [#197](https://github.com/DavideCarvalho/nestjs-telescope/pull/197) [`210d247`](https://github.com/DavideCarvalho/nestjs-telescope/commit/210d247521648ed219a4b635f37ebd96b9bc1d91) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `GET entries` (and `GET profiles`) now answer `400 Malformed cursor in "after"` to a cursor the shared `decodeCursor` cannot read, as the list API spec says, instead of silently returning the first page; every bundled storage (memory, SQLite, MikroORM, Redis, ClickHouse, tiered/Parquet) makes its cursors with `encodeCursor`, so their cursors keep working. `decodeCursor` is now strict (only the exact `encodeCursor` output decodes). The forward-only lists' unknown-parameter 400 no longer names `before` / `last` as accepted. The storage conformance suite checks that `nextCursor` decodes with `decodeCursor`.
+
 ## 5.0.1
 
 ### Patch Changes
