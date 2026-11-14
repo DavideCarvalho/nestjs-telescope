@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-otel",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "OpenTelemetry for @dudousxd/nestjs-telescope — trace-context provider, a span processor that brings your app's OTel spans into the trace waterfall, Prometheus/OTLP export of recorded entries, and AI-usage and agent-run metrics on the global meter.",
   "license": "MIT",
   "repository": {

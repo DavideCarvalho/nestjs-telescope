@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-redis
 
+## 3.0.1
+
+### Patch Changes
+
+- [#196](https://github.com/DavideCarvalho/nestjs-telescope/pull/196) [`afa6a43`](https://github.com/DavideCarvalho/nestjs-telescope/commit/afa6a43a90020308a9e20ff611b81333e3b2c17e) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Accept `@dudousxd/nestjs-telescope` 5: the peer range adds `^5.0.0` (otel's becomes `^4.2.0 || ^5.0.0`, published as written rather than through `workspace:^`). Nothing else changes; the bullmq and sqs READMEs document the live jobs route's new `filter[state]` / `after` / `first` wire.
+
 ## 3.0.0
 
 ### Major Changes
