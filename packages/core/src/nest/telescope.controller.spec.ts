@@ -168,11 +168,13 @@ describe('TelescopeController', () => {
     expect(message).not.toMatch(/"before"|"last"/);
   });
 
-  it('ignores an empty before', async () => {
+  it('ignores an empty before or last', async () => {
     const { storage, controller } = setup();
     await storage.store([entry({ id: '1' })]);
     const page = await controller.list({ before: '' });
     expect(page.data.map((e) => e.id)).toEqual(['1']);
+    const lastPage = await controller.list({ last: '' });
+    expect(lastPage.data.map((e) => e.id)).toEqual(['1']);
   });
 
   it('returns an entry with its batch', async () => {

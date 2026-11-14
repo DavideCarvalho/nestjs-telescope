@@ -58,11 +58,12 @@ const BACKWARD_PARAMS = ['before', 'last'] as const;
  * A cursor page whose store cannot page backward: `before` / `last` are a 400, then any param
  * outside `allowed` is (see {@link rejectUnknownListParams}). `allowed` lists only what the list
  * reads (`after` / `first`, never `before` / `last`), so the 400's "Accepted parameters" hint
- * names nothing that would itself be a 400. An empty `before=` is not a backward page and is
- * ignored.
+ * names nothing that would itself be a 400. An empty `before=` or `last=` is not a backward
+ * page and is ignored.
  */
 export function forwardOnly(query: Query, allowed: readonly string[]): void {
-  if ((query.before !== undefined && query.before !== '') || query.last !== undefined) {
+  const present = (value: unknown): boolean => value !== undefined && value !== '';
+  if (present(query.before) || present(query.last)) {
     throw new ListQueryError('This list pages forward only: use "after" and "first".');
   }
   const rest = Object.fromEntries(
