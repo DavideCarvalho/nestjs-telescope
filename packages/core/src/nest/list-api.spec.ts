@@ -1,6 +1,7 @@
 /**
- * Tests for the shared Aviary list API helpers. Copy VERBATIM next to `list-api.ts` (canonical
- * source: ~/personal/oss/nestjs/_shared/list-api/). Needs only vitest and `@nestjs/common`.
+ * Tests for the shared Aviary list API helpers. Copy VERBATIM next to `list-api.ts`; every lib
+ * carries the same bytes (the exported versions live in nestjs-filter core). Needs only vitest and
+ * `@nestjs/common`.
  */
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +12,7 @@ import {
   parseCursorParams,
   parseFilterParams,
   parsePageParams,
+  rejectUnknownParams,
   resolveSort,
 } from './list-api.js';
 
@@ -122,6 +124,80 @@ describe('resolveSort', () => {
 
   it('rejects a field outside the allow-list with a 400', () => {
     expect(expect400(() => resolveSort('secret', { sortable })).message).toContain('secret');
+  });
+
+  it('falls back to the default on an empty sort, like empty page/size', () => {
+    for (const raw of ['', '  ', [''], ',']) {
+      expect(resolveSort(raw, { sortable, default: '-createdAt' })).toEqual([
+        { field: 'createdAt', direction: 'desc' },
+      ]);
+    }
+  });
+
+  it('throws a plain Error (not a 400) for a default outside the allow-list', () => {
+    const misconfigured = () => resolveSort(undefined, { sortable, default: '-password' });
+    expect(misconfigured).toThrow(/default sort field "password"/);
+    try {
+      misconfigured();
+    } catch (error) {
+      expect(error).not.toBeInstanceOf(BadRequestException);
+    }
+    // checked on every call, even when the request sends a valid sort
+    expect(() =>
+      resolveSort('name', { sortable, default: [{ field: 'nope' as 'name', direction: 'asc' }] }),
+    ).toThrow(Error);
+  });
+});
+
+describe('rejectUnknownParams', () => {
+  const offsetParams = ['page', 'size', 'sort', 'filter', 'search'] as const;
+  const cursorParams = ['after', 'before', 'first', 'last'] as const;
+
+  it('accepts the params the endpoint reads, including flat filter keys', () => {
+    expect(() =>
+      rejectUnknownParams(
+        {
+          page: '1',
+          size: '5',
+          sort: '-createdAt',
+          filter: { status: 'x' },
+          'filter[id][in]': '1',
+        },
+        offsetParams,
+      ),
+    ).not.toThrow();
+    expect(() => rejectUnknownParams({}, [])).not.toThrow();
+  });
+
+  it.each([
+    ['limit', offsetParams, '"size"'],
+    ['perPage', offsetParams, '"size"'],
+    ['pageSize', offsetParams, '"size"'],
+    ['limit', cursorParams, '"first"'],
+    ['offset', offsetParams, '"page"'],
+    ['cursor', cursorParams, '"after"'],
+    ['next', cursorParams, '"after"'],
+    ['where[status]', offsetParams, '"filter"'],
+    ['dir', offsetParams, '"sort"'],
+  ])('rejects the removed %s with a 400 naming %s', (key, allowed, replacement) => {
+    const error = expect400(() => rejectUnknownParams({ [key]: '5' }, allowed));
+    expect(error.message).toContain('was removed');
+    expect(error.message).toContain(replacement);
+  });
+
+  it('points a bare field at filter[field] when the endpoint filters', () => {
+    const error = expect400(() => rejectUnknownParams({ status: 'open' }, offsetParams));
+    expect(error.message).toContain('filter[status]');
+    const plain = expect400(() => rejectUnknownParams({ status: 'open' }, cursorParams));
+    expect(plain.message).not.toContain('filter[');
+  });
+
+  it('rejects filter and sort when the endpoint does not list them', () => {
+    expect400(() => rejectUnknownParams({ 'filter[a]': 'x' }, ['page', 'size']));
+    expect400(() => rejectUnknownParams({ sort: 'name' }, ['page', 'size']));
+    expect(expect400(() => rejectUnknownParams({ offset: '5' }, cursorParams)).message).toContain(
+      'no replacement',
+    );
   });
 });
 

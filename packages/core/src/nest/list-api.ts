@@ -1,13 +1,15 @@
 /**
  * Aviary list API helpers — shared copy.
  *
- * CANONICAL SOURCE: ~/personal/oss/nestjs/_shared/list-api/list-api.ts (spec:
- * ~/personal/oss/nestjs/_shared/LIST-API-SPEC.md). The published equivalent lives in
- * `@dudousxd/nestjs-filter` (core) as `offsetPage`, `cursorPage`, `parsePageParams`,
- * `parseCursorParams`, `resolveSort` and `ListQueryError`.
+ * REFERENCE: the published, exported versions of these helpers live in the nestjs-filter repo
+ * (https://github.com/DavideCarvalho/nestjs-filter, `packages/core/src/pagination/list-api.ts`,
+ * exported by `@dudousxd/nestjs-filter` as `offsetPage`, `cursorPage`, `parsePageParams`,
+ * `parseCursorParams`, `resolveSort`, `rejectUnknownParams` and `ListQueryError`). Libs keep this
+ * copy instead of depending on nestjs-filter so their releases do not wait on it.
  *
  * RULE: copy this file VERBATIM into a lib's server package (e.g. `src/server/list-api.ts`).
- * Never edit it in one repo only — fix it at the canonical source and re-copy everywhere.
+ * Every Aviary lib carries the same bytes: never edit it in one repo only — change it everywhere
+ * at once (and mirror generic fixes into nestjs-filter core).
  * Its only import is `BadRequestException` from `@nestjs/common`.
  *
  * Wire: offset paging `page` (1-based) + `size`; cursor paging `after`/`before` + `first`/`last`;
@@ -273,6 +275,67 @@ export function parseCursorParams<C = unknown>(
   return result;
 }
 
+// ─── Unknown params ─────────────────────────────────────────────────────────
+
+/**
+ * Old list param names and what replaced them. `limit`/`perPage`/`pageSize` became `size` on offset
+ * lists and `first` on cursor lists; the others have one replacement each.
+ */
+const LEGACY_PARAMS: Readonly<Record<string, readonly string[]>> = {
+  limit: ['size', 'first'],
+  perPage: ['size', 'first'],
+  pageSize: ['size', 'first'],
+  offset: ['page'],
+  cursor: ['after'],
+  next: ['after'],
+  where: ['filter'],
+  dir: ['sort'],
+};
+
+const quoteList = (names: readonly string[]): string => names.map((n) => `"${n}"`).join(', ');
+
+/**
+ * Rejects every top-level query param the endpoint does not read, so a caller still on an old
+ * wire (`?limit=5`, `?where[status]=x`, `?cursor=…`, a bare `?status=x`) gets a 400 instead of a
+ * silently unfiltered or default-sized page. A key's name is the part before its first `[`, so
+ * flat bracket keys (`filter[status][in]`) count as `filter`.
+ *
+ * The message names the replacement for the removed names: `limit` / `perPage` / `pageSize` →
+ * `size` (offset) or `first` (cursor), `offset` → `page`, `cursor` / `next` → `after`, `where` →
+ * `filter`, `dir` → `sort`, and a bare field → `filter[<field>]` when the endpoint takes `filter`.
+ * `filter` and `sort` are accepted only when `allowed` lists them.
+ *
+ * ```ts
+ * rejectUnknownParams(query, ['page', 'size', 'sort', 'filter', 'search']);
+ * ```
+ */
+export function rejectUnknownParams(query: Query, allowed: readonly string[]): void {
+  if (query === null || typeof query !== 'object') return;
+  const known = new Set(allowed);
+  for (const key of Object.keys(query)) {
+    const bracket = key.indexOf('[');
+    const name = bracket > 0 ? key.slice(0, bracket) : key;
+    if (known.has(name)) continue;
+    const accepted = allowed.length > 0 ? quoteList(allowed) : '(none)';
+    const legacy = Object.prototype.hasOwnProperty.call(LEGACY_PARAMS, name)
+      ? (LEGACY_PARAMS[name] as readonly string[])
+      : undefined;
+    let hint: string;
+    if (legacy) {
+      const usable = legacy.filter((r) => known.has(r));
+      hint =
+        usable.length > 0
+          ? `"${name}" was removed; use ${usable.map((r) => `"${r}"`).join(' or ')} instead.`
+          : `"${name}" was removed and this endpoint has no replacement for it.`;
+    } else if (known.has('filter')) {
+      hint = `Unknown query parameter "${name}"; to filter on a field use "filter[${name}]=…".`;
+    } else {
+      hint = `Unknown query parameter "${name}".`;
+    }
+    throw new ListQueryError(`${hint} Accepted parameters: ${accepted}.`);
+  }
+}
+
 // ─── Sort ───────────────────────────────────────────────────────────────────
 
 /** A sort directive whose field is one of the endpoint's sortable fields. */
@@ -323,8 +386,11 @@ function parseSortTokens(raw: unknown): ResolvedSortItem[] {
 /**
  * Checks a request's `sort` against the endpoint's sortable allow-list. Accepts the raw query
  * value (`'-createdAt,name'`, or repeated `sort` params) or already-parsed sort items. A leading
- * `-` means descending. Returns the default order when the request has no sort, and throws
- * {@link ListQueryError} (400) for a field outside `sortable`.
+ * `-` means descending. Returns the default order when the request has no sort (absent or empty,
+ * like `?sort=`), and throws {@link ListQueryError} (400) for a field outside `sortable`.
+ *
+ * The `default` order must use sortable fields too; one that does not throws a plain `Error` on
+ * every call (a developer misconfiguration, not a bad request), so the typo surfaces at once.
  *
  * ```ts
  * const sort = resolveSort(query.sort, { sortable: ['createdAt', 'name'], default: '-createdAt' });
@@ -334,13 +400,18 @@ export function resolveSort<F extends string>(
   raw: unknown,
   options: ResolveSortOptions<F>,
 ): ResolvedSortItem<F>[] {
-  const items = parseSortTokens(raw);
-  if (items.length === 0) {
-    const fallback = options.default;
-    if (fallback === undefined) return [];
-    return parseSortTokens(fallback) as ResolvedSortItem<F>[];
-  }
   const allowed = new Set<string>(options.sortable);
+  const fallback = options.default === undefined ? [] : parseSortTokens(options.default);
+  for (const item of fallback) {
+    if (!allowed.has(item.field)) {
+      const list = options.sortable.length > 0 ? options.sortable.join(', ') : '(none)';
+      throw new Error(
+        `resolveSort: the default sort field "${item.field}" is not sortable. Sortable fields: ${list}.`,
+      );
+    }
+  }
+  const items = parseSortTokens(raw);
+  if (items.length === 0) return fallback as ResolvedSortItem<F>[];
   for (const item of items) {
     if (!allowed.has(item.field)) {
       const list = options.sortable.length > 0 ? options.sortable.join(', ') : '(none)';

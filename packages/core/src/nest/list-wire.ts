@@ -13,6 +13,7 @@ import {
   offsetPage,
   parseFilterParams,
   parsePageParams,
+  rejectUnknownParams,
   resolveSort,
 } from './list-api.js';
 
@@ -29,6 +30,20 @@ export function rejectRemovedParams(query: Query, removed: Record<string, string
       throw new ListQueryError(`"${name}" is not a parameter of this list: use ${replacement}.`);
     }
   }
+}
+
+/**
+ * Params the console client adds to every call, whatever the route: `tenant` (the organization the
+ * console shows, read by the tenancy layer).
+ */
+const CONSOLE_PARAMS = ['tenant'] as const;
+
+/**
+ * Rejects (400) any param a console list does not read, besides the console's own
+ * {@link CONSOLE_PARAMS}, naming the replacement of a removed one (`limit` → `first`, …).
+ */
+export function rejectUnknownListParams(query: Query, allowed: readonly string[]): void {
+  rejectUnknownParams(query, [...allowed, ...CONSOLE_PARAMS]);
 }
 
 /** Reads a top-N `size` (no paging): `defaultSize` when absent, clamped to `maxSize`, 400 on junk. */
@@ -77,21 +92,28 @@ const OLD_TABLE_PARAMS: Record<string, string> = {
   limit: '"size" with "page"',
 };
 
+/** What the table panels bound to one provider let the wire do. */
+export interface TableColumns {
+  sortable: string[];
+  filterable: string[];
+  /** A `paged: true` table panel is bound to the provider. */
+  paged?: boolean;
+}
+
 /** The sortable and filterable column keys of every table panel bound to `provider`. */
-export function tableColumnsOf(
-  panels: Iterable<Panel>,
-  provider: string,
-): { sortable: string[]; filterable: string[] } {
+export function tableColumnsOf(panels: Iterable<Panel>, provider: string): TableColumns {
   const sortable = new Set<string>();
   const filterable = new Set<string>();
+  let paged = false;
   for (const panel of panels) {
     if (panel.kind !== 'table' || panel.data.provider !== provider) continue;
+    if (panel.paged === true) paged = true;
     for (const column of panel.columns) {
       if (column.sortable) sortable.add(column.key);
       if (column.filterable) filterable.add(column.key);
     }
   }
-  return { sortable: [...sortable], filterable: [...filterable] };
+  return { sortable: [...sortable], filterable: [...filterable], paged };
 }
 
 /** What {@link toProviderQuery} read off the wire, besides the provider's query. */
@@ -113,15 +135,33 @@ export interface TableWire {
  * Every other key is the panel's own `data.query` (or a drill-down) and passes through verbatim.
  * A sort or filter on a column no table panel of this provider marks `sortable` / `filterable`,
  * more than one sort field (the SPI sorts by one), or a key of the old table wire is a 400.
+ *
+ * Which keys are "the old table wire" follows the SPI's own namespacing (see `table-query.ts`):
+ * the table state owns `page`, `limit`, `sort` + `dir` and the `filter.` prefix, and a panel's
+ * `data.query` owns everything else. So:
+ *
+ * - `filter.<col>` is always a 400: the prefix exists so no provider key can use it, and
+ *   `readTableQuery` would read it as a column filter anyway.
+ * - `limit` is a 400 when the provider backs a `paged` table (the route owns `limit` there: it is
+ *   `size`), or when the request pages (`page` / `size`).
+ * - `dir` is a 400 when the provider backs a table with a sortable column (the route owns `dir`
+ *   there: it is the `-` of `sort`), or when the request sorts.
+ * - Otherwise `limit` / `dir` are the provider's own keys (a chart's `{ limit: 10 }`, a plain
+ *   table's static scope) and pass through, as before 5.0.
  */
 export function toProviderQuery(
   query: Query,
-  columns: { sortable: string[]; filterable: string[] },
+  columns: TableColumns,
 ): { query: Query; wire: TableWire } {
   for (const key of Object.keys(query)) {
     if (key.startsWith('filter.')) {
       throw new ListQueryError(`"${key}" is not a parameter: use "filter[${key.slice(7)}]".`);
     }
+  }
+  if (columns.paged === true)
+    rejectRemovedParams(query, { limit: OLD_TABLE_PARAMS.limit as string });
+  if (columns.sortable.length > 0) {
+    rejectRemovedParams(query, { dir: OLD_TABLE_PARAMS.dir as string });
   }
   const out: Query = {};
   for (const [key, value] of Object.entries(query)) {

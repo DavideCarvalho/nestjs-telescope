@@ -6,7 +6,7 @@
 
 ### List endpoints
 
-One wire for every list: filters as `filter[field]=value`, cursor lists paged with `after` / `first` and answered as `{ data, meta: { nextCursor, prevCursor, hasNext, hasPrev } }`, offset lists with `page` / `size` answered as `{ data, meta: { total, perPage, currentPage, lastPage, firstPage } }`. The old parameters are not aliased: `limit`, `cursor`, `offset`, `prefix`, `dir`, a bare `?type=` / `?state=` and `filter.<col>` answer **400** with the parameter to use instead, as do an unknown filter field, an unsupported operator, a sort field outside the allow-list and a malformed cursor.
+One wire for every list: filters as `filter[field]=value`, cursor lists paged with `after` / `first` and answered as `{ data, meta: { nextCursor, prevCursor, hasNext, hasPrev } }`, offset lists with `page` / `size` answered as `{ data, meta: { total, perPage, currentPage, lastPage, firstPage } }`. The old parameters are not aliased: `limit`, `cursor`, `offset`, `prefix`, `dir`, a bare `?type=` / `?state=` and `filter.<col>` answer **400** with the parameter to use instead, as do any other parameter a list does not read (the console's `tenant` aside), an unknown filter field, an unsupported operator, a sort field outside the allow-list and a malformed cursor. A forward-only cursor list (entries, tags, jobs, profiles) always answers `prevCursor: null` and `hasPrev: false`.
 
 | Endpoint | Before | After |
 |---|---|---|
@@ -18,9 +18,9 @@ One wire for every list: filters as `filter[field]=value`, cursor lists paged wi
 | `GET ext/:ext/data/:provider` (paged table) | `?page=&limit=&sort=col&dir=desc&filter.col=` → `{ rows, total, page, limit }` | `?page=&size=&sort=-col&filter[col]=` (size max 500) → `{ data, meta }`. Sort and filter fields must be `sortable` / `filterable` columns of a table panel bound to the provider. |
 | `GET ai` | `?limit=` (agent runs) | `?size=` (max 500) |
 
-The extension data-provider SPI does not change: `readTableQuery` still reads `page` / `limit` / `sort` + `dir` / `filter.<col>`, and a paged provider still returns `{ rows, total, page, limit }`. The route translates both ways, so providers shipped by other packages (durable, agent, media, official) keep working as they are. Non-table provider queries (`metric`, drill-downs, a panel's own `data.query`) pass through untouched. The storage SPI (`get` → `{ data, nextCursor, partial? }`, `tags(prefix, { search, limit, offset })`) does not change either. The `telescope_*` MCP dev tools keep their `{ items, next }` contract.
+The extension data-provider SPI does not change: `readTableQuery` still reads `page` / `limit` / `sort` + `dir` / `filter.<col>`, and a paged provider still returns `{ rows, total, page, limit }`. The route translates both ways, so providers shipped by other packages (durable, agent, media, official) keep working as they are. Non-table provider queries (`metric`, drill-downs, a panel's own `data.query`) pass through untouched. The old table keys are a 400 by the SPI's own namespacing: `filter.<col>` always, `limit` when the provider backs a paged table and `dir` when it backs a table with a sortable column (or whenever the request pages or sorts); for any other provider `limit` / `dir` are its own keys and pass through. The storage SPI (`get` → `{ data, nextCursor, partial? }`, `tags(prefix, { search, limit, offset })`) does not change either. The `telescope_*` MCP dev tools keep their `{ items, next }` contract.
 
-The shared list helpers (`parseCursorParams`, `parsePageParams`, `parseFilterParams`, `resolveSort`, `cursorPage`, `offsetPage`, `ListQueryError`) live in `src/nest/list-api.ts`, a verbatim copy of the Aviary canonical file.
+The shared list helpers (`parseCursorParams`, `parsePageParams`, `parseFilterParams`, `resolveSort`, `rejectUnknownParams`, `cursorPage`, `offsetPage`, `ListQueryError`) live in `src/nest/list-api.ts`, a verbatim copy of the Aviary canonical file.
 
 ### MCP endpoint removed
 

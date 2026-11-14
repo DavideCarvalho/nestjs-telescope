@@ -142,6 +142,8 @@ describe('GET /telescope/api/ext/:ext/data/:provider', () => {
     ['sort=-status', /Unknown sort field "status"/],
     ['filter[nope]=x', /unknown field "nope"/],
     ['page=1&limit=10', /"size"/],
+    ['limit=10', /"size"/],
+    ['dir=desc', /sort=-column/],
     ['sort=name&dir=desc', /sort=-column/],
     ['filter.status=failed', /filter\[status\]/],
     ['page=0', /page/],
@@ -151,5 +153,13 @@ describe('GET /telescope/api/ext/:ext/data/:provider', () => {
       .get(`/telescope/api/ext/demo/data/demo.table?${qs}`)
       .expect(400);
     expect(res.body.message).toMatch(message);
+  });
+
+  it("passes a non-table provider's own limit / dir keys through", async () => {
+    app = await makeApp();
+    const res = await request(app.getHttpServer())
+      .get('/telescope/api/ext/demo/data/demo.ok?n=3&limit=10&dir=desc')
+      .expect(200);
+    expect(res.body).toEqual({ value: '3' });
   });
 });

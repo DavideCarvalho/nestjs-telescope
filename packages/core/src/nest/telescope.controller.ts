@@ -82,6 +82,7 @@ import {
   fromProviderResult,
   readSize,
   rejectRemovedParams,
+  rejectUnknownListParams,
   storagePage,
   tableColumnsOf,
   toProviderQuery,
@@ -253,6 +254,33 @@ function boundedCount(raw?: string): number | undefined {
   return raw !== undefined && raw !== '' && Number.isInteger(n) && n >= 0 ? n : undefined;
 }
 
+/**
+ * Reads rows `[from, from + take)` of the tag list from a provider that may ignore its query
+ * (the storage contract allows it), in its stable most-used-first order:
+ *
+ * - At most `take` rows back: the provider honoured `limit`, and with it `offset` (a provider that
+ *   pages by `limit` alone would repeat the top of the list on every page, which no row count can
+ *   reveal — the contract does not allow that half-honoured shape). Used as is.
+ * - More than `take` rows on the first page (`from` = 0): `limit` was ignored and both readings of
+ *   `offset` agree, so the rows are trimmed to `take`.
+ * - More than `take` rows past the first page: `limit` was ignored, and the rows cannot tell
+ *   whether `offset` was honoured (rows from `from`) or ignored too (rows from the top). Slicing
+ *   them at `from` would double-offset the first case, so the list is re-read from the top
+ *   (`offset: 0`, which both kinds of provider answer the same way) and sliced there. Only such a
+ *   provider pays for the second read.
+ */
+async function readTagWindow(
+  read: (page: { limit: number; offset: number }) => Promise<TagCount[]>,
+  from: number,
+  take: number,
+): Promise<TagCount[]> {
+  const rows = await read({ limit: take, offset: from });
+  if (rows.length <= take) return rows;
+  if (from === 0) return rows.slice(0, take);
+  const top = await read({ limit: from + take, offset: 0 });
+  return top.slice(from, from + take);
+}
+
 interface ExtensionActionBody {
   confirmed?: unknown;
   input?: unknown;
@@ -298,6 +326,7 @@ export class TelescopeController {
   @Get('entries')
   async list(@Query() query: Record<string, unknown>): Promise<EntriesPage> {
     rejectRemovedParams(query, REMOVED_ENTRY_PARAMS);
+    rejectUnknownListParams(query, ['filter', 'search', 'after', 'before', 'first', 'last']);
     forwardOnly(query);
     const filters = parseFilterParams(query, { fields: ENTRY_FILTERS });
     const { after, size } = parseCursorParams(query, ENTRY_PAGE);
@@ -347,7 +376,10 @@ export class TelescopeController {
    * The page is re-applied HERE even though the provider was asked for it, because a provider is
    * allowed to ignore the query — the contract says as much, so an older or third-party one simply
    * returns everything. Without this a picker would get more rows than it asked for, and the next
-   * page would repeat them.
+   * page would repeat them. See {@link readTagWindow} for how each case is told apart.
+   *
+   * The list pages forward only (`before` / `last` are a 400), so it never advertises a previous
+   * page: `prevCursor` is `null` and `hasPrev` `false` on every page.
    */
   @Get('tags')
   async tags(@Query() query: Record<string, unknown>): Promise<CursorPageResponse<TagCount>> {
@@ -356,6 +388,7 @@ export class TelescopeController {
       limit: '"first"',
       offset: '"after"',
     });
+    rejectUnknownListParams(query, ['filter', 'search', 'after', 'before', 'first', 'last']);
     forwardOnly(query);
     const [scope] = parseFilterParams(query, { fields: { tag: ['startsWith'] } });
     const { size, decoded } = parseCursorParams(query, {
@@ -364,17 +397,17 @@ export class TelescopeController {
     });
     const from = decoded ?? 0;
     const search = typeof query.search === 'string' ? query.search.trim() : '';
-    const rows = await this.storage.tags(scope ? String(scope.value) : undefined, {
-      ...(search !== '' ? { search } : {}),
-      limit: size + 1,
-      offset: from,
-    });
-    // A provider that ignored the query returned everything from the top.
-    const window = rows.length > size + 1 ? rows.slice(from, from + size + 1) : rows;
+    const prefix = scope ? String(scope.value) : undefined;
+    const window = await readTagWindow(
+      (page) => this.storage.tags(prefix, { ...(search !== '' ? { search } : {}), ...page }),
+      from,
+      size + 1,
+    );
     const hasNext = window.length > size;
     return cursorPage(window.slice(0, size), {
       nextCursor: hasNext ? encodeOffsetCursor(from + size) : null,
-      prevCursor: from > 0 ? encodeOffsetCursor(Math.max(0, from - size)) : null,
+      prevCursor: null,
+      hasPrev: false,
     });
   }
 
@@ -416,6 +449,7 @@ export class TelescopeController {
   @Get('traces')
   async traces(@Query() query: Record<string, unknown>): Promise<TracesList> {
     rejectRemovedParams(query, { limit: '"size"' });
+    rejectUnknownListParams(query, ['window', 'size']);
     const windowMs = parseWindowMs(typeof query.window === 'string' ? query.window : undefined);
     const size = readSize(query, { defaultSize: 50, maxSize: 500 });
     const result = await this.tracesService.getTraces({ windowMs, limit: size });
@@ -540,6 +574,7 @@ export class TelescopeController {
       cursor: '"after"',
       limit: '"first"',
     });
+    rejectUnknownListParams(query, ['filter', 'after', 'before', 'first', 'last']);
     forwardOnly(query);
     const [filter] = parseFilterParams(query, { fields: { state: ['eq'] } });
     const state = filter?.value;
@@ -1011,6 +1046,7 @@ export class TelescopeController {
   @Get('profiles')
   async profiles(@Query() query: Record<string, unknown>): Promise<EntriesPage> {
     rejectRemovedParams(query, { limit: '"first"', cursor: '"after"' });
+    rejectUnknownListParams(query, ['after', 'before', 'first', 'last']);
     forwardOnly(query);
     const { after, size } = parseCursorParams(query, PROFILE_PAGE);
     return storagePage(

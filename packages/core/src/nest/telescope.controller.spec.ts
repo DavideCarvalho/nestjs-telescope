@@ -189,7 +189,13 @@ describe('TelescopeController tags', () => {
       after: first.meta.nextCursor,
     });
     expect(second.data).toEqual([{ tag: 'user:c', count: 1 }]);
-    expect(second.meta).toMatchObject({ nextCursor: null, hasNext: false, hasPrev: true });
+    // forward-only: `before` is a 400, so no page ever advertises a previous one
+    expect(second.meta).toMatchObject({
+      nextCursor: null,
+      prevCursor: null,
+      hasNext: false,
+      hasPrev: false,
+    });
   });
 
   it('narrows by search', async () => {
@@ -208,10 +214,27 @@ describe('TelescopeController tags', () => {
     expect(second.data).toEqual([all[1]]);
   });
 
+  it('pages correctly when a provider honours offset but ignores limit', async () => {
+    const { storage, controller } = await seeded();
+    const all = await storage.tags();
+    expect(all.length).toBeGreaterThan(3);
+    vi.spyOn(storage, 'tags').mockImplementation(async (_prefix, query) =>
+      all.slice(query?.offset ?? 0),
+    );
+    const first = await controller.tags({ first: '1' });
+    expect(first.data).toEqual([all[0]]);
+    const second = await controller.tags({ first: '1', after: first.meta.nextCursor });
+    expect(second.data).toEqual([all[1]]);
+    const third = await controller.tags({ first: '2', after: second.meta.nextCursor });
+    expect(third.data).toEqual([all[2], all[3]]);
+  });
+
   it.each([
     [{ prefix: 'user:' }, /filter\[tag\]\[startsWith\]/],
     [{ limit: '5' }, /"first"/],
     [{ offset: '5' }, /"after"/],
+    [{ tag: 'x' }, /filter\[tag\]/],
+    [{ page: '2' }, /"page"/],
     [{ after: 'not-a-cursor' }, /Malformed cursor/],
     [{ filter: { tag: 'x' } }, /operator "eq" is not supported/],
   ])('rejects %j with a 400', async (query, message) => {
@@ -238,9 +261,11 @@ describe('TelescopeController profiles', () => {
     expect(second.data.map((e) => e.id)).toEqual(['p1']);
   });
 
-  it('rejects limit with a 400', async () => {
+  it('rejects limit and unknown params with a 400, but takes the console tenant', async () => {
     const { controller } = setup();
     await expect(controller.profiles({ limit: '5' })).rejects.toMatchObject({ status: 400 });
+    await expect(controller.profiles({ next: 'x' })).rejects.toMatchObject({ status: 400 });
+    await expect(controller.profiles({ tenant: 'acme' })).resolves.toMatchObject({ data: [] });
   });
 });
 
