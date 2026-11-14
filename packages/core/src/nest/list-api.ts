@@ -290,6 +290,7 @@ const LEGACY_PARAMS: Readonly<Record<string, readonly string[]>> = {
   next: ['after'],
   where: ['filter'],
   dir: ['sort'],
+  q: ['search'],
 };
 
 const quoteList = (names: readonly string[]): string => names.map((n) => `"${n}"`).join(', ');

@@ -179,6 +179,7 @@ describe('rejectUnknownParams', () => {
     ['next', cursorParams, '"after"'],
     ['where[status]', offsetParams, '"filter"'],
     ['dir', offsetParams, '"sort"'],
+    ['q', offsetParams, '"search"'],
   ])('rejects the removed %s with a 400 naming %s', (key, allowed, replacement) => {
     const error = expect400(() => rejectUnknownParams({ [key]: '5' }, allowed));
     expect(error.message).toContain('was removed');
