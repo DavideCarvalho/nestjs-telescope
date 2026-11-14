@@ -261,7 +261,7 @@ export function AppShell({
   // ⌘K trigger and shortcut once that is found out, unless it has local commands.
   const servedSearch = useServedSearch(shell.search);
   const searchEnabled = servedSearch !== undefined || (commands?.length ?? 0) > 0;
-  useSearchShortcut(searchEnabled, setSearchOpen);
+  useSearchShortcut(searchEnabled || searchOpen, setSearchOpen);
   const openSearch = useCallback(() => setSearchOpen(true), []);
   return (
     <TooltipProvider delay={150}>
