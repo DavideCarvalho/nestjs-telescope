@@ -248,7 +248,7 @@ TelescopeModule.forRoot({
 - **`update()` must treat `id` as immutable** — strip it from the patch (the request entry is patched in place when it completes).
 
 <Callout type="warn" title="The keyset-pagination contract">
-  `get()` returns entries **strictly older** than the cursor position, sorted newest-first — never an offset/`skip`. The contract is explicit: if the cursor's original entry was pruned out from under the cursor, pagination must **resume from that position**, not return an empty page. Comparing the `(createdAt, id)` pair (as the `$or` above does) satisfies this for free; a row-offset `skip` does not, and would silently drop or repeat entries as the pruner runs. An undecodable cursor is silently ignored and paging starts from the first page — `decodeCursor` returns `null`, which the example treats as "no cursor".
+  `get()` returns entries **strictly older** than the cursor position, sorted newest-first — never an offset/`skip`. The contract is explicit: if the cursor's original entry was pruned out from under the cursor, pagination must **resume from that position**, not return an empty page. Comparing the `(createdAt, id)` pair (as the `$or` above does) satisfies this for free; a row-offset `skip` does not, and would silently drop or repeat entries as the pruner runs. An undecodable cursor passed to `get()` directly is silently ignored and paging starts from the first page — `decodeCursor` returns `null`, which the example treats as "no cursor". The console's `GET entries` is stricter: it answers `400` to an `after` that `decodeCursor` cannot read before calling `get()`, so make every `nextCursor` with `encodeCursor` (the conformance suite checks this).
 </Callout>
 
 ---

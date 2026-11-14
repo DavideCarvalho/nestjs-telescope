@@ -5,7 +5,7 @@ import type {
   StorageProvider,
   TagCount,
 } from '@dudousxd/nestjs-telescope';
-import { HISTOGRAM_BUCKET_COUNT, isRollupStore } from '@dudousxd/nestjs-telescope';
+import { HISTOGRAM_BUCKET_COUNT, decodeCursor, isRollupStore } from '@dudousxd/nestjs-telescope';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 export interface StorageConformanceOptions {
@@ -208,6 +208,17 @@ export function describeStorageProvider(
         await seed(entries.filter((entry) => entry.id !== 'e-0003'));
         const next = await provider.get({ limit: 2, cursor: first.nextCursor as string });
         expect(ids(next.data)).toEqual(['e-0002', 'e-0001']);
+      });
+
+      it('makes next cursors the shared codec decodes', async () => {
+        // The console's `GET entries` 400s on a cursor `decodeCursor` cannot read.
+        await seed(series(3, (i) => ({ createdAt: at(i) })));
+        const first = await provider.get({ limit: 1 });
+        expect(first.nextCursor).not.toBeNull();
+        expect(decodeCursor(first.nextCursor as string)).toEqual({
+          createdAt: first.data[0]?.createdAt.getTime(),
+          id: first.data[0]?.id,
+        });
       });
 
       it('ignores an undecodable cursor', async () => {

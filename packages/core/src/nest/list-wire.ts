@@ -51,11 +51,25 @@ export function readSize(query: Query, options: PageSizeOptions): number {
   return parsePageParams({ size: query.size }, options).size;
 }
 
-/** A cursor page whose store cannot page backward: `before` / `last` are a 400. */
-export function forwardOnly(query: Query): void {
-  if ((query.before !== undefined && query.before !== '') || query.last !== undefined) {
+/** The cursor params a forward-only list refuses: it cannot page backward. */
+const BACKWARD_PARAMS = ['before', 'last'] as const;
+
+/**
+ * A cursor page whose store cannot page backward: `before` / `last` are a 400, then any param
+ * outside `allowed` is (see {@link rejectUnknownListParams}). `allowed` lists only what the list
+ * reads (`after` / `first`, never `before` / `last`), so the 400's "Accepted parameters" hint
+ * names nothing that would itself be a 400. An empty `before=` or `last=` is not a backward
+ * page and is ignored.
+ */
+export function forwardOnly(query: Query, allowed: readonly string[]): void {
+  const present = (value: unknown): boolean => value !== undefined && value !== '';
+  if (present(query.before) || present(query.last)) {
     throw new ListQueryError('This list pages forward only: use "after" and "first".');
   }
+  const rest = Object.fromEntries(
+    Object.entries(query).filter(([key]) => !(BACKWARD_PARAMS as readonly string[]).includes(key)),
+  );
+  rejectUnknownListParams(rest, allowed);
 }
 
 /** A storage page as the cursor envelope; a tiered store's `partial` stays next to `data`. */
