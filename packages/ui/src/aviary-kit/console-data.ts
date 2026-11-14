@@ -162,6 +162,7 @@ export function loadConsoles(config: SwitcherConfig): Promise<SwitcherConsole[]>
 export function resetConsoleCache(): void {
   cached = undefined;
   unserved.clear();
+  for (const listener of unservedListeners) listener();
 }
 
 /**
