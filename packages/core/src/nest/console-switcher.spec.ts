@@ -217,7 +217,19 @@ function httpContext(request: Record<string, unknown> = {}): ExecutionContext {
 describe('isSameOriginPath', () => {
   it('takes /x only: never //host, /\\host, a URL or a control character', () => {
     expect(isSameOriginPath('/telescope#/entries/view/1')).toBe(true);
-    for (const bad of ['//evil', '/\\evil', 'https://x', 'x', '/a\nb', '', 1]) {
+    for (const bad of [
+      '//evil',
+      '/\\evil',
+      '/\\evil.test',
+      '/a\\b',
+      'https://x',
+      'x',
+      '/a\nb',
+      '/a\u0007b',
+      '/a\u007fb',
+      '',
+      1,
+    ]) {
       expect(isSameOriginPath(bad)).toBe(false);
     }
   });

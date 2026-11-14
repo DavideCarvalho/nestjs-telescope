@@ -61,7 +61,7 @@ Panel, DataTable, Pager, QueryBoundary, ErrorBoundary, EmptyState, ActionDialog)
 - durable: MONITOR (Runs, Workers) · OPERATIONS (Schedules)
 - agent: MONITOR (Overview, Reliability) · ACTIVITY (Runs, Threads, Tool calls, …) · GOVERNANCE
   (Approvals, Quota) · CONFIG (Tools, Pricing)
-- media: LIBRARY (Library, Collections) · TRANSFERS (Uploads, Upload)
+- media: LIBRARY (Library, Collections) · TRANSFERS (Uploads, Disks)
 - telescope: MONITOR (Overview, Pulse, Exceptions) · EXPLORE (Entries, Traces, …) · OPERATIONS
   (Queues, Schedules) · DASHBOARDS · WATCHERS · DATA (Exports)
 

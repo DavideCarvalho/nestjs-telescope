@@ -120,6 +120,16 @@ function pageId(to: string): string {
   return to === '/' ? 'overview' : to === '/entries/exception' ? 'exceptions' : to.slice(1);
 }
 
+/** `decodeURIComponent`, or the raw segment on a malformed escape (`#/entries/%`): this runs in the
+ *  layout, outside every page's error boundary, so it must never throw. */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 /**
  * The sidebar item a location belongs to: a fixed page, a watcher (`watcher:<type>`) or a
  * contributed dashboard (`dashboard:<id>`). Entry detail pages light up Entries.
@@ -129,9 +139,9 @@ export function activeNavId(pathname: string): string | undefined {
   if (pathname === '/entries/exception') return 'exceptions';
   if (pathname === '/entries' || pathname.startsWith('/entries/view/')) return 'entries';
   const watcher = /^\/entries\/([^/]+)$/.exec(pathname);
-  if (watcher?.[1]) return `watcher:${decodeURIComponent(watcher[1])}`;
+  if (watcher?.[1]) return `watcher:${decodeSegment(watcher[1])}`;
   const dashboard = /^\/ext\/([^/]+)$/.exec(pathname);
-  if (dashboard?.[1]) return `dashboard:${decodeURIComponent(dashboard[1])}`;
+  if (dashboard?.[1]) return `dashboard:${decodeSegment(dashboard[1])}`;
   const first = pathname.split('/')[1];
   return first ? first : undefined;
 }

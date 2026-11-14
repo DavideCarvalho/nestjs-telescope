@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetConsoleCache } from '../console-data';
+import { loadConsoles, resetConsoleCache } from '../console-data';
 import { parseShellConfig, readShellConfig } from '../shell-config';
 import { ThemeProvider } from '../theme';
 import {
@@ -104,6 +104,15 @@ describe('ConsoleSwitcher', () => {
     expect(links[2]?.querySelector('svg')?.getAttribute('data-icon')).toBe('generic');
   });
 
+  it('retries a failed consoles request on the next call, and caches a successful one', async () => {
+    fetchMock.mockReturnValueOnce(Promise.reject(new TypeError('network down')));
+    expect(await loadConsoles(config)).toEqual([]);
+    fetchMock.mockReturnValue(respond(consoles));
+    expect((await loadConsoles(config)).map((c) => c.id)).toEqual(['telescope', 'media', 'odd']);
+    await loadConsoles(config);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('closes on Escape', async () => {
     fetchMock.mockReturnValue(respond(consoles));
     render(<ConsoleSwitcher brand={brand} current={current} config={config} />);
@@ -193,6 +202,56 @@ describe('ConsoleSearch', () => {
       target: { value: 'ann' },
     });
     await waitFor(() => expect(screen.getByText('ann@x.test')).toBeTruthy(), { timeout: 2000 });
+  });
+});
+
+describe('ConsoleSearch hit clicks', () => {
+  const hitAnswer = {
+    results: [
+      {
+        id: 'media',
+        title: 'Media',
+        icon: 'media',
+        hits: [{ title: 'pi_9', href: '/media#/p/pi_9' }],
+      },
+    ],
+  };
+
+  async function openWithHit() {
+    fetchMock.mockImplementation(() => respond(hitAnswer));
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    render(<SearchHarness />);
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    });
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Search all consoles' }), {
+      target: { value: 'pi' },
+    });
+    await waitFor(() => expect(screen.getByText('pi_9')).toBeTruthy(), { timeout: 2000 });
+    const link = screen.getByText('pi_9').closest('a') as HTMLAnchorElement;
+    return { assign, link };
+  }
+
+  it('navigates exactly once on a plain left click', async () => {
+    const { assign, link } = await openWithHit();
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    await act(async () => {
+      link.dispatchEvent(click);
+    });
+    expect(click.defaultPrevented).toBe(true);
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith('/media#/p/pi_9');
+  });
+
+  it('leaves modified clicks to the browser (new tab, window, download)', async () => {
+    const { assign, link } = await openWithHit();
+    for (const mod of ['metaKey', 'ctrlKey', 'shiftKey', 'altKey'] as const) {
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true, [mod]: true });
+      link.dispatchEvent(click);
+      expect(click.defaultPrevented).toBe(false);
+    }
+    expect(assign).not.toHaveBeenCalled();
   });
 });
 
@@ -496,6 +555,13 @@ describe('shell config (the data block)', () => {
     });
     expect(parseShellConfig({ search: { endpoint: '/d/api/s', self: 'Bad Id' } }).search).toEqual({
       endpoint: '/d/api/s',
+    });
+  });
+
+  it('trims viewer text like the server does', () => {
+    expect(parseShellConfig({ viewer: { label: '  Ann  ', role: ' admin ' } }).viewer).toEqual({
+      label: 'Ann',
+      role: 'admin',
     });
   });
 

@@ -62,7 +62,9 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 
 function text(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 /** Validate the shell fields of an already-parsed data block. */

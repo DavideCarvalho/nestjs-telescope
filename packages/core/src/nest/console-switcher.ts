@@ -192,16 +192,18 @@ async function verdicts(
 }
 
 /**
- * Whether `path` is a same-origin absolute path (`/x`; never `//host`, `/\host` or a URL). Browsers
- * read `\` as `/` in http(s) URLs, so `/\evil.example` would leave the origin.
+ * Whether `path` is a same-origin absolute path (`/x`): never `//host`, a URL, a backslash or a
+ * control character. Browsers read `\` as `/` in http(s) URLs, so `/\evil.example` would leave the
+ * origin. The Aviary kit's `isSafeHref` applies the same rule in the browser.
  */
 export function isSameOriginPath(path: unknown): path is string {
   return (
     typeof path === 'string' &&
     path.startsWith('/') &&
-    path[1] !== '/' &&
-    path[1] !== '\\' &&
-    !Array.from(path).some((char) => char.charCodeAt(0) < 0x20)
+    !path.startsWith('//') &&
+    !path.includes('\\') &&
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting control characters is the point
+    !/[\u0000-\u001f\u007f]/.test(path)
   );
 }
 

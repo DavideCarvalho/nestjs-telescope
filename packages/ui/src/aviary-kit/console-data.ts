@@ -90,12 +90,18 @@ async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
 
 let cached: { endpoint: string; result: Promise<SwitcherConsole[]> } | undefined;
 
-/** The other consoles this viewer may open, fetched once per page life. */
+/**
+ * The other consoles this viewer may open, fetched once per page life. Only a successful answer is
+ * kept: a failed request resolves to `[]` and is forgotten, so the next call asks again.
+ */
 export function loadConsoles(config: SwitcherConfig): Promise<SwitcherConsole[]> {
   if (cached?.endpoint === config.endpoint) return cached.result;
   const result = getJson(config.endpoint)
     .then((body) => sanitizeConsoles(record(body)?.consoles))
-    .catch(() => []);
+    .catch((): SwitcherConsole[] => {
+      if (cached?.result === result) cached = undefined;
+      return [];
+    });
   cached = { endpoint: config.endpoint, result };
   return result;
 }

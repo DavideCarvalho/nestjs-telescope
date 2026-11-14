@@ -371,8 +371,14 @@ export function ConsoleSearch({
                     tabIndex={-1}
                     className="flex min-w-0 flex-col"
                     onClick={(e) => {
+                      // A modified click (new tab/window, download) is the browser's: keep it from
+                      // bubbling to CommandItem, whose onSelect would also navigate this tab.
+                      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                        e.stopPropagation();
+                        return;
+                      }
+                      // A plain left click navigates once, through CommandItem.onSelect.
                       e.preventDefault();
-                      go(hit.href);
                     }}
                   >
                     <span className="mono truncate text-[13px] text-fg">{hit.title}</span>

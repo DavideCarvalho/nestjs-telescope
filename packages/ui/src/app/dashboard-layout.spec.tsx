@@ -115,6 +115,11 @@ describe('DashboardLayout', () => {
     expect(activeNavId('/traces/t1')).toBe('traces');
   });
 
+  it('keeps the raw segment on a malformed escape instead of throwing', () => {
+    expect(activeNavId('/entries/%')).toBe('watcher:%');
+    expect(activeNavId('/ext/%E0%A4%A')).toBe('dashboard:%E0%A4%A');
+  });
+
   it('hides the Traces nav item only when tracesEnabled is positively false', () => {
     // No traceContext on the host → Traces page is permanently empty → drop it.
     const hidden = visibleTopNav(TOP_NAV, false);
