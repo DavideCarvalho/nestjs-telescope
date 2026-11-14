@@ -1,5 +1,13 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 4.3.0
+
+### Minor Changes
+
+- [#195](https://github.com/DavideCarvalho/nestjs-telescope/pull/195) [`633da31`](https://github.com/DavideCarvalho/nestjs-telescope/commit/633da31c315028e79211444d20da3388a0dccf3b) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - The console moves onto the shared Aviary console kit: a sidebar shell (console switcher, MONITOR · Overview / Pulse / Exceptions, EXPLORE · Entries / Traces / AI / Profiles, OPERATIONS · Queues / Schedules, DASHBOARDS · the contributed ones, WATCHERS · one dot per entry type (folded), DATA · Exports / Prunes, signed-in user, light/dark toggle, sign-out), a topbar with the organization, the retention, the live / pause toggle and ⌘K, bundled Sora + JetBrains Mono (mono for data only, no more all-monospace shell), Tailwind 4 + React 19 inside the bundle, page headers, shaped skeletons, error boundaries and empty states, light mode on the kit's palette, and a phone-width drawer. Every page, route, deep link and the access-denied page are kept. The theme is now remembered under `aviary-telescope-theme` (a choice saved under `telescope-theme` is kept as the default).
+
+  ⌘K lists Telescope's pages and entry types first, then searches each console on its own, streaming the groups in as they answer: `GET <path>/api/consoles/search?q=&console=<id>` answers for one console (`searchVisibleConsoles` takes the id as a new last argument). New `TelescopeUiModule.forRoot` / `forRootAsync` options feed the sidebar footer: `viewer: (request) => ({ label, email?, role? })` (default: `request.user` read structurally) and `signOut: '/path' | { href } | { action, csrfToken? } | false` (default: the `account.signOut` an account console announces on the Aviary consoles registry). `TelescopeUiController.index()` is now async and takes the request: a host subclass that overrides `index()` must make its override async too (`async index(request?): Promise<string>`). `isSameOriginPath` now rejects a backslash or control character anywhere in the path; `.woff` / `.woff2` assets are served with font content types. The published `/react` components keep their API and React 18/19 peer range; their class names follow the kit's tokens.
+
 ## 4.2.0
 
 ### Minor Changes
