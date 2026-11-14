@@ -2,9 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadConsoles, resetConsoleCache } from '../console-data';
+import { fetchSearchGroups, loadConsoles, resetConsoleCache } from '../console-data';
 import { parseShellConfig, readShellConfig } from '../shell-config';
 import { ThemeProvider } from '../theme';
+import { AppShell } from './app-shell';
 import {
   ConsoleSearch,
   type SearchCommand,
@@ -111,6 +112,16 @@ describe('ConsoleSwitcher', () => {
     expect((await loadConsoles(config)).map((c) => c.id)).toEqual(['telescope', 'media', 'odd']);
     await loadConsoles(config);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays a plain brand and never asks again when the app does not serve /consoles (404)', async () => {
+    fetchMock.mockReturnValue(respond({ message: 'Cannot GET /durable/api/consoles' }, 404));
+    render(<ConsoleSwitcher brand={brand} current={current} config={config} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('durable brand')).toBeTruthy();
+    expect(document.querySelector('[data-aviary-switcher]')).toBeNull();
+    expect(await loadConsoles(config)).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('closes on Escape', async () => {
@@ -441,6 +452,127 @@ describe('ConsoleSearch per console', () => {
     expect(skeleton()).toBeNull();
   });
 });
+
+describe('ConsoleSearch when the app does not serve the endpoint', () => {
+  it.each([404, 405, 501])(
+    'answers %i: says search is off, no "Nothing found", no error, no retry, no new request',
+    async (status) => {
+      fetchMock.mockImplementation(() => respond({ message: 'Cannot GET' }, status));
+      const input = await openAndType('ord');
+      await waitFor(
+        () => expect(document.querySelector('[data-aviary-search-unavailable]')).toBeTruthy(),
+        { timeout: 2000 },
+      );
+      expect(screen.getByText("Search isn't enabled in this app.")).toBeTruthy();
+      expect(screen.queryByText('Nothing found.')).toBeNull();
+      expect(document.querySelector('[data-aviary-search-error]')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+      expect(spinner()).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      fireEvent.change(input, { target: { value: 'orde' } });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Nothing found.')).toBeNull();
+    },
+  );
+
+  it('per console: a 404 on the first console turns search off too', async () => {
+    fetchMock.mockImplementation((url: string) =>
+      url === '/durable/api/consoles'
+        ? respond({}, 404)
+        : respond({ message: 'Cannot GET /durable/api/consoles/search' }, 404),
+    );
+    render(
+      <ConsoleSearch
+        config={{ endpoint: '/durable/api/consoles/search', self: 'durable' }}
+        switcher={{ endpoint: '/durable/api/consoles', others: 2 }}
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Search all consoles' }), {
+      target: { value: 'ord' },
+    });
+    await waitFor(
+      () => expect(document.querySelector('[data-aviary-search-unavailable]')).toBeTruthy(),
+      { timeout: 2000 },
+    );
+    expect(document.querySelector('[data-aviary-search-error]')).toBeNull();
+    expect(screen.queryByText('Nothing found.')).toBeNull();
+  });
+
+  const shellProps = {
+    brand: { name: 'durable', mark: <span>D</span>, current },
+    nav: [],
+    activeId: undefined,
+    title: 'Runs',
+  };
+  const trigger = () => screen.queryByRole('button', { name: 'Search all consoles' });
+
+  it('AppShell hides the ⌘K trigger and shortcut once the endpoint answers 404', async () => {
+    fetchMock.mockImplementation(() => respond({}, 404));
+    render(
+      <AppShell {...shellProps} shell={{ search: { endpoint: '/durable/api/consoles/search' } }}>
+        page
+      </AppShell>,
+    );
+    expect(trigger()).toBeTruthy();
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    });
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Search all consoles' }), {
+      target: { value: 'ord' },
+    });
+    await waitFor(
+      () => expect(screen.getByText("Search isn't enabled in this app.")).toBeTruthy(),
+      {
+        timeout: 2000,
+      },
+    );
+    expect(trigger()).toBeNull();
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? window, { key: 'Escape' });
+    });
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('AppShell keeps ⌘K for local commands, without asking the unserved endpoint again', async () => {
+    fetchMock.mockImplementation(() => respond({}, 404));
+    await loadConsoles({ endpoint: '/durable/api/consoles', others: 1 });
+    await fetchSearchGroupsQuietly();
+    const onSelect = vi.fn();
+    render(
+      <AppShell
+        {...shellProps}
+        shell={{ search: { endpoint: '/durable/api/consoles/search' } }}
+        commands={[{ id: 'runs', label: 'Runs page', group: 'Pages', onSelect }]}
+      >
+        page
+      </AppShell>,
+    );
+    expect(screen.getByRole('button', { name: 'Search all consoles' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Search all consoles' }));
+    const input = await screen.findByRole('combobox', { name: 'Search' });
+    fireEvent.change(input, { target: { value: 'runs' } });
+    expect(screen.getByText('Runs page')).toBeTruthy();
+    fireEvent.change(input, { target: { value: 'qqq' } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.queryByText('Nothing found.')).toBeNull();
+    expect(screen.getByText("Search isn't enabled in this app.")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+async function fetchSearchGroupsQuietly() {
+  await expect(
+    fetchSearchGroups({ endpoint: '/durable/api/consoles/search' }, 'x'),
+  ).rejects.toThrow('HTTP 404');
+}
 
 describe('ConsoleSearch commands', () => {
   const commands: SearchCommand[] = [

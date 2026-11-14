@@ -26,6 +26,7 @@ import {
   type SearchCommand,
   SearchTrigger,
   useSearchShortcut,
+  useServedSearch,
 } from './console-search';
 import { ConsoleSwitcher, type CurrentConsole } from './console-switcher';
 import { UserFooter } from './user-footer';
@@ -256,8 +257,11 @@ export function AppShell({
   commands?: readonly SearchCommand[] | undefined;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
-  const searchEnabled = shell.search !== undefined || (commands?.length ?? 0) > 0;
-  useSearchShortcut(searchEnabled, setSearchOpen);
+  // aviary: an app that doesn't serve `/consoles/search` (404/405/501, `routes: false`) loses the
+  // ⌘K trigger and shortcut once that is found out, unless it has local commands.
+  const servedSearch = useServedSearch(shell.search);
+  const searchEnabled = servedSearch !== undefined || (commands?.length ?? 0) > 0;
+  useSearchShortcut(searchEnabled || searchOpen, setSearchOpen);
   const openSearch = useCallback(() => setSearchOpen(true), []);
   return (
     <TooltipProvider delay={150}>
@@ -298,7 +302,8 @@ export function AppShell({
           </div>
         </SidebarInset>
       </SidebarProvider>
-      {searchEnabled && (
+      {/* Kept while open, so the dialog that found search unserved can say so before it closes. */}
+      {(searchEnabled || searchOpen) && (
         <ConsoleSearch
           config={shell.search}
           switcher={shell.switcher}

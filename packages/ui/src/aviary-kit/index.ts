@@ -20,6 +20,9 @@ export { errorStatus, QueryBoundary, type QueryLike } from './blocks/query-bound
 export {
   fetchConsoleGroups,
   fetchSearchGroups,
+  HttpError,
+  isEndpointServed,
+  isNotServed,
   loadConsoles,
   resetConsoleCache,
   type SearchGroup,
@@ -47,6 +50,7 @@ export {
   type SearchCommand,
   SearchTrigger,
   useSearchShortcut,
+  useServedSearch,
 } from './shell/console-search';
 export { ConsoleSwitcher, type CurrentConsole, useConsoles } from './shell/console-switcher';
 export { UserFooter } from './shell/user-footer';

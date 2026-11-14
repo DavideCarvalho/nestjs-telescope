@@ -4,6 +4,8 @@ import { type SearchConfig, type SwitcherConfig, isSafeHref } from './shell-conf
 /**
  * The two requests the switcher and ⌘K make, with every entry sanitized (unsafe hrefs dropped,
  * unknown icons → `generic`). Any failure reads as "nothing": the shell never breaks on them.
+ * aviary: an endpoint that answers 404/405/501 isn't served by this app (`routes: false` with the
+ * host's own controllers): it is remembered for the page's life and never asked again.
  */
 
 export interface SwitcherConsole {
@@ -78,13 +80,62 @@ export function sanitizeSearchGroups(body: unknown): SearchGroup[] {
   return groups;
 }
 
-async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
+/** aviary: a non-2xx answer, with its status. */
+export class HttpError extends Error {
+  constructor(readonly status: number) {
+    super(`HTTP ${status}`);
+    this.name = 'HttpError';
+  }
+}
+
+/**
+ * aviary: the statuses that mean "this app doesn't serve that route" rather than "it failed": a
+ * host that mounts a console with `routes: false` and its own controllers may leave out
+ * `/consoles` and `/consoles/search`.
+ */
+const NOT_SERVED = new Set([404, 405, 501]);
+
+/** aviary: whether `error` is an answer that means the endpoint isn't served (404/405/501). */
+export function isNotServed(error: unknown): boolean {
+  return error instanceof HttpError && NOT_SERVED.has(error.status);
+}
+
+/** aviary: endpoints that answered 404/405/501 in this page's life; never asked again. */
+const unserved = new Set<string>();
+const unservedListeners = new Set<() => void>();
+
+/** aviary: whether `endpoint` may be served (`false` once it answered 404/405/501). */
+export function isEndpointServed(endpoint: string): boolean {
+  return !unserved.has(endpoint);
+}
+
+/** aviary: runs `listener` whenever an endpoint turns out not to be served. */
+export function subscribeEndpointServed(listener: () => void): () => void {
+  unservedListeners.add(listener);
+  return () => {
+    unservedListeners.delete(listener);
+  };
+}
+
+function markUnserved(endpoint: string): void {
+  if (unserved.has(endpoint)) return;
+  unserved.add(endpoint);
+  for (const listener of unservedListeners) listener();
+}
+
+/** GET `url` (under `endpoint`); an endpoint known not to be served rejects without a request. */
+async function getJson(endpoint: string, url: string, signal?: AbortSignal): Promise<unknown> {
+  if (unserved.has(endpoint)) throw new HttpError(404);
   const res = await fetch(url, {
     headers: { accept: 'application/json' },
     credentials: 'same-origin',
     ...(signal ? { signal } : {}),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const error = new HttpError(res.status);
+    if (isNotServed(error)) markUnserved(endpoint);
+    throw error;
+  }
   return res.json();
 }
 
@@ -92,28 +143,31 @@ let cached: { endpoint: string; result: Promise<SwitcherConsole[]> } | undefined
 
 /**
  * The other consoles this viewer may open, fetched once per page life. Only a successful answer is
- * kept: a failed request resolves to `[]` and is forgotten, so the next call asks again.
+ * kept: a failed request resolves to `[]` and is forgotten, so the next call asks again. aviary: an
+ * endpoint that isn't served (404/405/501) stays `[]` for the page's life, with no new request.
  */
 export function loadConsoles(config: SwitcherConfig): Promise<SwitcherConsole[]> {
   if (cached?.endpoint === config.endpoint) return cached.result;
-  const result = getJson(config.endpoint)
+  const result = getJson(config.endpoint, config.endpoint)
     .then((body) => sanitizeConsoles(record(body)?.consoles))
-    .catch((): SwitcherConsole[] => {
-      if (cached?.result === result) cached = undefined;
+    .catch((error: unknown): SwitcherConsole[] => {
+      if (!isNotServed(error) && cached?.result === result) cached = undefined;
       return [];
     });
   cached = { endpoint: config.endpoint, result };
   return result;
 }
 
-/** Forget the cached console list (tests). */
+/** Forget the cached console list and the endpoints found not served (tests). */
 export function resetConsoleCache(): void {
   cached = undefined;
+  unserved.clear();
+  for (const listener of unservedListeners) listener();
 }
 
 /**
  * One query across every console the viewer may open. Rejects when the request fails (network,
- * non-2xx, abort), so a caller can tell "no hits" from "didn't answer". The server fans out to each
+ * non-2xx as an {@link HttpError}, abort), so a caller can tell "no hits" from "didn't answer". The server fans out to each
  * console and drops one that errors or times out, so a single request covers them all.
  */
 export async function fetchSearchGroups(
@@ -122,7 +176,7 @@ export async function fetchSearchGroups(
   signal?: AbortSignal,
 ): Promise<SearchGroup[]> {
   return sanitizeSearchGroups(
-    await getJson(`${config.endpoint}?q=${encodeURIComponent(q)}`, signal),
+    await getJson(config.endpoint, `${config.endpoint}?q=${encodeURIComponent(q)}`, signal),
   );
 }
 
@@ -138,7 +192,9 @@ export async function fetchConsoleGroups(
   signal?: AbortSignal,
 ): Promise<SearchGroup[]> {
   const url = `${config.endpoint}?q=${encodeURIComponent(q)}&console=${encodeURIComponent(consoleId)}`;
-  return sanitizeSearchGroups(await getJson(url, signal)).filter((g) => g.id === consoleId);
+  return sanitizeSearchGroups(await getJson(config.endpoint, url, signal)).filter(
+    (g) => g.id === consoleId,
+  );
 }
 
 /**
