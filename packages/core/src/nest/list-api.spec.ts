@@ -96,7 +96,8 @@ describe('parseCursorParams', () => {
   it('round-trips a cursor through the response envelope', () => {
     const response = cursorPage([{ id: 1 }, { id: 2 }], { nextCursor: encode([2]) });
     const wire = JSON.parse(JSON.stringify(response)) as typeof response;
-    const next = parseCursorParams({ after: wire.meta.nextCursor!, first: '2' }, { decode });
+    const after = wire.meta.nextCursor ?? '';
+    const next = parseCursorParams({ after, first: '2' }, { decode });
     expect(next).toEqual({ after: wire.meta.nextCursor, size: 2, backward: false, decoded: [2] });
   });
 });
