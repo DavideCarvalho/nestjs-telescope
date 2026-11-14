@@ -138,13 +138,41 @@ describe('TelescopeController', () => {
     [{ limit: '10' }, /"first"/],
     [{ first: 'abc' }, /first/],
     [{ before: 'x' }, /forward only/],
+    [{ last: '5' }, /forward only/],
     [{ filter: { status: 'x' } }, /unknown field "status"/],
+    [{ after: 'garbage' }, /Malformed cursor in "after"/],
+    [{ after: 'not a cursor' }, /Malformed cursor/],
+    // valid base64url whose payload is not a (createdAt, id) position
+    [{ after: Buffer.from('abc:def').toString('base64url') }, /Malformed cursor/],
   ])('rejects %j with a 400', async (query, message) => {
     const { controller } = setup();
     await expect(controller.list(query as Record<string, unknown>)).rejects.toMatchObject({
       status: 400,
       message: expect.stringMatching(message),
     });
+  });
+
+  it('rejects a malformed cursor before reading the store', async () => {
+    const { storage, controller } = setup();
+    const get = vi.spyOn(storage, 'get');
+    await expect(controller.list({ after: 'garbage' })).rejects.toMatchObject({ status: 400 });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('names only the forward params it accepts in the unknown-param hint', async () => {
+    const { controller } = setup();
+    const error = await controller.list({ bogus: '1' }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 400 });
+    const message = (error as Error).message;
+    expect(message).toMatch(/Accepted parameters: .*"after".*"first"/);
+    expect(message).not.toMatch(/"before"|"last"/);
+  });
+
+  it('ignores an empty before', async () => {
+    const { storage, controller } = setup();
+    await storage.store([entry({ id: '1' })]);
+    const page = await controller.list({ before: '' });
+    expect(page.data.map((e) => e.id)).toEqual(['1']);
   });
 
   it('returns an entry with its batch', async () => {
@@ -237,6 +265,7 @@ describe('TelescopeController tags', () => {
     [{ page: '2' }, /"page"/],
     [{ after: 'not-a-cursor' }, /Malformed cursor/],
     [{ filter: { tag: 'x' } }, /operator "eq" is not supported/],
+    [{ last: '5' }, /forward only/],
   ])('rejects %j with a 400', async (query, message) => {
     const { controller } = setup();
     await expect(controller.tags(query as Record<string, unknown>)).rejects.toMatchObject({
@@ -266,6 +295,14 @@ describe('TelescopeController profiles', () => {
     await expect(controller.profiles({ limit: '5' })).rejects.toMatchObject({ status: 400 });
     await expect(controller.profiles({ next: 'x' })).rejects.toMatchObject({ status: 400 });
     await expect(controller.profiles({ tenant: 'acme' })).resolves.toMatchObject({ data: [] });
+  });
+
+  it('rejects a malformed cursor with a 400', async () => {
+    const { controller } = setup();
+    await expect(controller.profiles({ after: 'garbage' })).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/Malformed cursor/),
+    });
   });
 });
 

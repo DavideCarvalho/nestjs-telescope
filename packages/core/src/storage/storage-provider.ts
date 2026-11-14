@@ -34,6 +34,7 @@ export interface EntryQuery {
    * If the cursor's original entry was since removed (e.g. pruned), pagination
    * RESUMES from that position rather than returning an empty page.
    * An undecodable cursor is silently ignored and pagination starts from the first page.
+   * Make it with `encodeCursor`: the console's `GET entries` 400s on one `decodeCursor` can't read.
    */
   cursor?: string;
   limit?: number;

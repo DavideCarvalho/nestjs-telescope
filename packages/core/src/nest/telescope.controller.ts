@@ -58,6 +58,7 @@ import {
 import { QueueManagerRegistry } from '../queue/queue-manager.registry.js';
 import type { ScheduledTask } from '../schedule/schedule-manager.js';
 import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.js';
+import { decodeCursor } from '../storage/cursor.js';
 import type {
   EntryQuery,
   EntryWithBatch,
@@ -320,16 +321,16 @@ export class TelescopeController {
   /**
    * Entries, newest first, as a cursor list: `filter[type|tag|familyHash|batchId|traceId]=v`,
    * `search`, `after` (the previous page's `meta.nextCursor`) and `first` (default 50, max 500).
-   * The store pages forward only. Its cursors are opaque and provider-made, so an undecodable one
-   * starts from the first page, as the storage contract says.
+   * The store pages forward only (`before` / `last` are a 400). A cursor that does not decode as a
+   * storage cursor (`encodeCursor`, which every bundled provider pages with) is a 400 here, not a
+   * silent first page: the storage contract's "undecodable starts over" is for direct SPI callers.
    */
   @Get('entries')
   async list(@Query() query: Record<string, unknown>): Promise<EntriesPage> {
     rejectRemovedParams(query, REMOVED_ENTRY_PARAMS);
-    rejectUnknownListParams(query, ['filter', 'search', 'after', 'before', 'first', 'last']);
-    forwardOnly(query);
+    forwardOnly(query, ['filter', 'search', 'after', 'first']);
     const filters = parseFilterParams(query, { fields: ENTRY_FILTERS });
-    const { after, size } = parseCursorParams(query, ENTRY_PAGE);
+    const { after, size } = parseCursorParams(query, { ...ENTRY_PAGE, decode: decodeCursor });
     const search = typeof query.search === 'string' ? query.search.trim() : '';
     const entryQuery: EntryQuery = {
       ...Object.fromEntries(filters.map((filter) => [filter.field, filter.value as string])),
@@ -388,8 +389,7 @@ export class TelescopeController {
       limit: '"first"',
       offset: '"after"',
     });
-    rejectUnknownListParams(query, ['filter', 'search', 'after', 'before', 'first', 'last']);
-    forwardOnly(query);
+    forwardOnly(query, ['filter', 'search', 'after', 'first']);
     const [scope] = parseFilterParams(query, { fields: { tag: ['startsWith'] } });
     const { size, decoded } = parseCursorParams(query, {
       ...TAG_PAGE,
@@ -574,8 +574,7 @@ export class TelescopeController {
       cursor: '"after"',
       limit: '"first"',
     });
-    rejectUnknownListParams(query, ['filter', 'after', 'before', 'first', 'last']);
-    forwardOnly(query);
+    forwardOnly(query, ['filter', 'after', 'first']);
     const [filter] = parseFilterParams(query, { fields: { state: ['eq'] } });
     const state = filter?.value;
     if (!isQueueState(state)) {
@@ -1046,9 +1045,8 @@ export class TelescopeController {
   @Get('profiles')
   async profiles(@Query() query: Record<string, unknown>): Promise<EntriesPage> {
     rejectRemovedParams(query, { limit: '"first"', cursor: '"after"' });
-    rejectUnknownListParams(query, ['after', 'before', 'first', 'last']);
-    forwardOnly(query);
-    const { after, size } = parseCursorParams(query, PROFILE_PAGE);
+    forwardOnly(query, ['after', 'first']);
+    const { after, size } = parseCursorParams(query, { ...PROFILE_PAGE, decode: decodeCursor });
     return storagePage(
       await this.storage.get({
         type: CPU_PROFILE_ENTRY_TYPE,
