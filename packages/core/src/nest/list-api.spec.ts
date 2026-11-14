@@ -186,6 +186,15 @@ describe('rejectUnknownParams', () => {
     expect(error.message).toContain(replacement);
   });
 
+  it('never suggests filter[...] for a list wire param or a dotted key', () => {
+    const allowed = ['after', 'first', 'filter'] as const;
+    for (const key of ['page', 'size', 'sort', 'filter.status']) {
+      const error = expect400(() => rejectUnknownParams({ [key]: '2' }, allowed));
+      expect(error.message).not.toContain('filter[');
+      expect(error.message).toContain(`"${key}"`);
+    }
+  });
+
   it('points a bare field at filter[field] when the endpoint filters', () => {
     const error = expect400(() => rejectUnknownParams({ status: 'open' }, offsetParams));
     expect(error.message).toContain('filter[status]');

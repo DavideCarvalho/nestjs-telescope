@@ -293,6 +293,23 @@ const LEGACY_PARAMS: Readonly<Record<string, readonly string[]>> = {
   q: ['search'],
 };
 
+/**
+ * The Aviary list wire's own params. Sent to an endpoint that doesn't take them (`?page=` on a
+ * cursor list), they are not field names, so they never get a `filter[...]` hint; neither does a
+ * dotted key (`filter.status`), which is an old table wire, not a field.
+ */
+const LIST_WIRE_PARAMS: ReadonlySet<string> = new Set([
+  'page',
+  'size',
+  'after',
+  'before',
+  'first',
+  'last',
+  'sort',
+  'search',
+  'filter',
+]);
+
 const quoteList = (names: readonly string[]): string => names.map((n) => `"${n}"`).join(', ');
 
 /**
@@ -328,7 +345,7 @@ export function rejectUnknownParams(query: Query, allowed: readonly string[]): v
         usable.length > 0
           ? `"${name}" was removed; use ${usable.map((r) => `"${r}"`).join(' or ')} instead.`
           : `"${name}" was removed and this endpoint has no replacement for it.`;
-    } else if (known.has('filter')) {
+    } else if (known.has('filter') && !LIST_WIRE_PARAMS.has(name) && !name.includes('.')) {
       hint = `Unknown query parameter "${name}"; to filter on a field use "filter[${name}]=…".`;
     } else {
       hint = `Unknown query parameter "${name}".`;
