@@ -295,6 +295,11 @@ export type Panel =
        * The provider MUST then return `{ rows, total, page, limit }` instead of
        * a bare `{ rows }` — see {@link DataProvider.resolve}. Omit (or `false`)
        * for the existing bare-rows table, unchanged.
+       *
+       * On the wire the UI sends the Aviary list API (`page`, `size`,
+       * `sort=-col`, `filter[col]`) and the console route answers the offset list
+       * `{ data, meta }`; the route translates both ways, so the provider keeps
+       * reading `page` / `limit` / `sort` + `dir` / `filter.<col>`.
        */
       paged?: boolean;
     }

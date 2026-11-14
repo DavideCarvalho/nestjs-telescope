@@ -143,9 +143,19 @@ describe('ExtensionDashboardPage', () => {
       (_ext: string, provider: string, query?: Record<string, unknown>) => {
         if (provider === 'runs.list') {
           const page = typeof query?.page === 'number' ? query.page : 1;
-          const limit = typeof query?.limit === 'number' ? query.limit : 50;
+          const size = typeof query?.size === 'number' ? query.size : 50;
           return {
-            data: { rows: [{ runId: `r${page}` }], total: 120, page, limit },
+            // What the console route answers a paged table: the offset list.
+            data: {
+              data: [{ runId: `r${page}` }],
+              meta: {
+                total: 120,
+                perPage: size,
+                currentPage: page,
+                lastPage: Math.ceil(120 / size),
+                firstPage: 1,
+              },
+            },
             isError: false,
           };
         }
@@ -213,7 +223,7 @@ describe('ExtensionDashboardPage', () => {
     expect(screen.getByText('Dashboard not found.')).toBeTruthy();
   });
 
-  it('paged table: clicking Next re-resolves the provider with query.page/query.limit', async () => {
+  it('paged table: clicking Next re-resolves the provider with page/size', async () => {
     renderPage('demo.paged');
     await waitFor(() => {
       expect(screen.getByText('r1')).toBeTruthy();
@@ -233,10 +243,10 @@ describe('ExtensionDashboardPage', () => {
     expect(lastProvider).toBe('runs.list');
     const query = lastQuery as Record<string, unknown> | undefined;
     expect(query?.page).toBe(2);
-    expect(query?.limit).toBe(50);
+    expect(query?.size).toBe(50);
   });
 
-  it('non-paged tables never carry page/limit in their resolve query', async () => {
+  it('non-paged tables never carry page/size in their resolve query', async () => {
     renderPage('demo.flat');
     await waitFor(() => {
       expect(screen.getByText('Flat Dashboard')).toBeTruthy();
@@ -260,31 +270,30 @@ describe('ExtensionDashboardPage', () => {
       await waitFor(() => {
         expect(screen.getByText('r1')).toBeTruthy();
       });
-      expect(lastQuery()).toEqual({ page: 1, limit: 50 });
+      expect(lastQuery()).toEqual({ page: 1, size: 50 });
     });
 
-    it('clicking a sortable header re-resolves the provider with `sort` + `dir`', async () => {
+    it('clicking a sortable header re-resolves the provider with `sort`', async () => {
       renderPage('demo.sortable');
       await waitFor(() => {
         expect(screen.getByText('r1')).toBeTruthy();
       });
       // The panel's own static query survives the merge — it is the scope the
       // extension author declared, not something the table may drop.
-      expect(lastQuery()).toEqual({ window: '24h', page: 1, limit: 50 });
+      expect(lastQuery()).toEqual({ window: '24h', page: 1, size: 50 });
 
       fireEvent.click(screen.getByRole('button', { name: /Run/ }));
       await waitFor(() => {
         expect(lastQuery()).toEqual({
           window: '24h',
           page: 1,
-          limit: 50,
+          size: 50,
           sort: 'runId',
-          dir: 'asc',
         });
       });
     });
 
-    it('committing a filter re-resolves with a `filter.`-namespaced param', async () => {
+    it('committing a filter re-resolves with a `filter[col]` param', async () => {
       renderPage('demo.sortable');
       await waitFor(() => {
         expect(screen.getByText('r1')).toBeTruthy();
@@ -293,7 +302,7 @@ describe('ExtensionDashboardPage', () => {
       fireEvent.change(box, { target: { value: 'checkout' } });
       fireEvent.keyDown(box, { key: 'Enter' });
       await waitFor(() => {
-        expect(lastQuery()?.['filter.runId']).toBe('checkout');
+        expect(lastQuery()?.['filter[runId]']).toBe('checkout');
       });
     });
 

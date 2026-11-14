@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
 import { ExportsPage } from './exports-page.js';
 
 function mockClient(): TelescopeClient {
@@ -12,7 +13,7 @@ function mockClient(): TelescopeClient {
   };
   return {
     baseUrl: '',
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     entry: unused,
     pulse: unused,
     queues: unused,

@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { ScheduledTask, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { DashboardLayout } from '../dashboard-layout.js';
 import { ThemeProvider } from '../theme-context.js';
 import { SchedulesPage } from './schedules-page.js';
@@ -44,8 +44,8 @@ const TASKS: ScheduledTask[] = [
 
 function mockClient(tasks: ScheduledTask[]): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
-    tags: async () => [],
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
+    tags: async () => ({ data: [], meta: LAST_PAGE_META }),
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
@@ -74,7 +74,7 @@ function mockClient(tasks: ScheduledTask[]): TelescopeClient {
       completed: 0,
       paused: 0,
     }),
-    queueJobs: async () => ({ jobs: [], nextCursor: null, total: 0 }),
+    queueJobs: async () => ({ data: [], meta: LAST_PAGE_META }),
     queueJob: async () => null,
     queueJobAction: async () => ({ ok: true }),
     queueAction: async () => ({ ok: true }),

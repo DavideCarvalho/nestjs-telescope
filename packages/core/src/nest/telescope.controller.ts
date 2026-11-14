@@ -29,7 +29,7 @@ import { tenantLabels, tenantTagPrefix } from '../context/tenancy.js';
 import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
-import type { ExtensionActionCaller } from '../extension/types.js';
+import type { ExtensionActionCaller, Panel } from '../extension/types.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import {
@@ -46,10 +46,10 @@ import { CPU_PROFILE_ENTRY_TYPE, ProfilerService } from '../profiling/profiler.s
 import type { CpuProfileContent } from '../profiling/types.js';
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
 import {
-  type JobPage,
   QUEUE_ACTIONS,
   type QueueActionName,
   type QueueCounts,
+  type QueueJob,
   type QueueJobDetail,
   type QueueManager,
   type QueueSummary,
@@ -61,7 +61,6 @@ import { ScheduleManagerRegistry } from '../schedule/schedule-manager.registry.j
 import type {
   EntryQuery,
   EntryWithBatch,
-  Page,
   StorageProvider,
   TagCount,
 } from '../storage/storage-provider.js';
@@ -70,6 +69,23 @@ import type { ConsoleTenancyInfo } from './console-tenant-scope.js';
 import { consoleTenantCallOf } from './console-tenant.interceptor.js';
 import { auditExtensionAction, consoleCallerOf } from './extension-audit.js';
 import { createExtensionContext } from './extension-context.factory.js';
+import {
+  type CursorPageResponse,
+  cursorPage,
+  parseCursorParams,
+  parseFilterParams,
+} from './list-api.js';
+import {
+  decodeOffsetCursor,
+  encodeOffsetCursor,
+  forwardOnly,
+  fromProviderResult,
+  readSize,
+  rejectRemovedParams,
+  storagePage,
+  tableColumnsOf,
+  toProviderQuery,
+} from './list-wire.js';
 import { type ReplayResult, replayRequest } from './request-replay.js';
 import { type PruneRun, TelescopePruner } from './telescope-pruner.service.js';
 import {
@@ -81,15 +97,43 @@ import {
 import type { TelescopeModuleOptions } from './telescope.options.js';
 import { type TelescopeHealth, type TelescopeMeta, TelescopeService } from './telescope.service.js';
 
-interface ListQuery {
-  type?: string;
-  tag?: string;
-  familyHash?: string;
-  batchId?: string;
-  traceId?: string;
-  search?: string;
-  cursor?: string;
-  limit?: string;
+/** Entries per page of `GET entries`: the default, and the cap (a trace's waterfall reads 500). */
+const ENTRY_PAGE = { defaultSize: 50, maxSize: 500 } as const;
+
+/** The `filter[...]` fields of `GET entries`, each an exact match. */
+const ENTRY_FILTERS = {
+  type: ['eq'],
+  tag: ['eq'],
+  familyHash: ['eq'],
+  batchId: ['eq'],
+  traceId: ['eq'],
+} as const;
+
+/** Parameters `GET entries` dropped for the list API, with what replaced them. */
+const REMOVED_ENTRY_PARAMS: Record<string, string> = {
+  type: '"filter[type]"',
+  tag: '"filter[tag]"',
+  familyHash: '"filter[familyHash]"',
+  batchId: '"filter[batchId]"',
+  traceId: '"filter[traceId]"',
+  cursor: '"after"',
+  limit: '"first"',
+};
+
+/** A page of entries: the cursor envelope, plus `partial` when a tiered store read only part. */
+export type EntriesPage = CursorPageResponse<Entry> & { partial?: true };
+
+/** CPU profiles per page of `GET profiles`. */
+const PROFILE_PAGE = { defaultSize: 50, maxSize: 200 } as const;
+
+/** Jobs per page of `GET queues/live/:driver/:queue/jobs`. */
+const JOB_PAGE = { defaultSize: 50, maxSize: 200 } as const;
+
+/** `GET traces`: the summaries in `data`, with the scan's side data next to it. */
+export interface TracesList {
+  data: TracesResult['traces'];
+  scanned: number;
+  truncated: boolean;
 }
 
 export interface QueueCapabilities {
@@ -198,8 +242,8 @@ const LABEL_CHUNK = 200;
 /** Organizations of a granted list a picker search labels at most (and so finds by label). */
 const MAX_LABEL_SCAN = 2_000;
 
-/** Tags per request when a caller names no bound — a picker's list, not a listing. */
-const DEFAULT_TAG_PAGE = 50;
+/** Tags per page when a caller names no size — a picker's list, not a listing. */
+const TAG_PAGE = { defaultSize: 50, maxSize: 200 } as const;
 
 /** A non-negative integer from the query string, or `undefined` for anything else. A junk bound is
  *  treated as absent rather than coerced to 0, which would return an empty page and read as "there
@@ -245,21 +289,26 @@ export class TelescopeController {
     }
   }
 
+  /**
+   * Entries, newest first, as a cursor list: `filter[type|tag|familyHash|batchId|traceId]=v`,
+   * `search`, `after` (the previous page's `meta.nextCursor`) and `first` (default 50, max 500).
+   * The store pages forward only. Its cursors are opaque and provider-made, so an undecodable one
+   * starts from the first page, as the storage contract says.
+   */
   @Get('entries')
-  list(@Query() query: ListQuery): Promise<Page<Entry>> {
+  async list(@Query() query: Record<string, unknown>): Promise<EntriesPage> {
+    rejectRemovedParams(query, REMOVED_ENTRY_PARAMS);
+    forwardOnly(query);
+    const filters = parseFilterParams(query, { fields: ENTRY_FILTERS });
+    const { after, size } = parseCursorParams(query, ENTRY_PAGE);
+    const search = typeof query.search === 'string' ? query.search.trim() : '';
     const entryQuery: EntryQuery = {
-      ...(query.type !== undefined ? { type: query.type } : {}),
-      ...(query.tag !== undefined ? { tag: query.tag } : {}),
-      ...(query.familyHash !== undefined ? { familyHash: query.familyHash } : {}),
-      ...(query.batchId !== undefined ? { batchId: query.batchId } : {}),
-      ...(query.traceId !== undefined ? { traceId: query.traceId } : {}),
-      ...(query.search !== undefined && query.search !== '' ? { search: query.search } : {}),
-      ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
-      ...(query.limit !== undefined && Number.isFinite(Number(query.limit))
-        ? { limit: Number(query.limit) }
-        : {}),
+      ...Object.fromEntries(filters.map((filter) => [filter.field, filter.value as string])),
+      ...(search !== '' ? { search } : {}),
+      ...(after !== undefined ? { cursor: after } : {}),
+      limit: size,
     };
-    return this.storage.get(entryQuery);
+    return storagePage(await this.storage.get(entryQuery));
   }
 
   @Get('entries/:id')
@@ -286,30 +335,47 @@ export class TelescopeController {
   }
 
   /**
-   * Tag counts for a picker: most-used first, ties alphabetical, narrowed by `search` and cut to one
+   * Tag counts for a picker, most-used first (ties alphabetical), as a cursor list:
+   * `filter[tag][startsWith]=user:` (the picker's fixed scope), `search` (anywhere in the tag),
+   * `after` / `first` (default 50, max 200).
+   *
+   * Cursor, not offset paging: the store pages tags by offset in a stable order but cannot count
+   * them, and the offset envelope's `total` / `lastPage` need a count. The cursor is the next
+   * offset, opaque to the client; one more row than asked is read to know whether there is a next
    * page.
    *
    * The page is re-applied HERE even though the provider was asked for it, because a provider is
    * allowed to ignore the query — the contract says as much, so an older or third-party one simply
-   * returns everything. Without this line such a provider hands a picker more rows than it asked
-   * for, the picker reads that as "there is another page", and the next request returns the same
-   * rows again.
+   * returns everything. Without this a picker would get more rows than it asked for, and the next
+   * page would repeat them.
    */
   @Get('tags')
-  async tags(
-    @Query('prefix') prefix?: string,
-    @Query('search') search?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-  ): Promise<TagCount[]> {
-    const size = boundedCount(limit) ?? DEFAULT_TAG_PAGE;
-    const from = boundedCount(offset) ?? 0;
-    const rows = await this.storage.tags(prefix, {
-      ...(search?.trim() ? { search: search.trim() } : {}),
-      limit: size,
+  async tags(@Query() query: Record<string, unknown>): Promise<CursorPageResponse<TagCount>> {
+    rejectRemovedParams(query, {
+      prefix: '"filter[tag][startsWith]"',
+      limit: '"first"',
+      offset: '"after"',
+    });
+    forwardOnly(query);
+    const [scope] = parseFilterParams(query, { fields: { tag: ['startsWith'] } });
+    const { size, decoded } = parseCursorParams(query, {
+      ...TAG_PAGE,
+      decode: decodeOffsetCursor,
+    });
+    const from = decoded ?? 0;
+    const search = typeof query.search === 'string' ? query.search.trim() : '';
+    const rows = await this.storage.tags(scope ? String(scope.value) : undefined, {
+      ...(search !== '' ? { search } : {}),
+      limit: size + 1,
       offset: from,
     });
-    return rows.length > size ? rows.slice(from, from + size) : rows;
+    // A provider that ignored the query returned everything from the top.
+    const window = rows.length > size + 1 ? rows.slice(from, from + size + 1) : rows;
+    const hasNext = window.length > size;
+    return cursorPage(window.slice(0, size), {
+      nextCursor: hasNext ? encodeOffsetCursor(from + size) : null,
+      prevCursor: from > 0 ? encodeOffsetCursor(Math.max(0, from - size)) : null,
+    });
   }
 
   @Get('queues')
@@ -343,14 +409,17 @@ export class TelescopeController {
     });
   }
 
+  /**
+   * The window's most recent traces (a top-N, not a paged list): `window`, `size` (default 50, max
+   * 500). `{ data, scanned, truncated }`.
+   */
   @Get('traces')
-  traces(@Query('window') window?: string, @Query('limit') limit?: string): Promise<TracesResult> {
-    const windowMs = parseWindowMs(window);
-    const limitCount = limit !== undefined ? Number(limit) : undefined;
-    return this.tracesService.getTraces({
-      windowMs,
-      ...(limitCount !== undefined && Number.isFinite(limitCount) ? { limit: limitCount } : {}),
-    });
+  async traces(@Query() query: Record<string, unknown>): Promise<TracesList> {
+    rejectRemovedParams(query, { limit: '"size"' });
+    const windowMs = parseWindowMs(typeof query.window === 'string' ? query.window : undefined);
+    const size = readSize(query, { defaultSize: 50, maxSize: 500 });
+    const result = await this.tracesService.getTraces({ windowMs, limit: size });
+    return { data: result.traces, scanned: result.scanned, truncated: result.truncated };
   }
 
   // Nested span waterfall for ONE trace. Returns 404 when the trace has no
@@ -373,12 +442,14 @@ export class TelescopeController {
     @Query('window') window?: string,
     @Query('buckets') buckets?: string,
     @Query('top') top?: string,
+    @Query('size') size?: string,
     @Query('limit') limit?: string,
   ): Promise<AiUsageResult> {
+    rejectRemovedParams({ limit }, { limit: '"size" (agent runs)' });
     const windowMs = parseWindowMs(window);
     const bucketCount = boundedCount(buckets);
     const topCount = boundedCount(top);
-    const runsLimit = boundedCount(limit);
+    const runsLimit = size === undefined ? undefined : readSize({ size }, { maxSize: 500 });
     return this.aiUsage.getUsage({
       windowMs,
       ...(bucketCount !== undefined && bucketCount > 0 ? { buckets: bucketCount } : {}),
@@ -453,20 +524,35 @@ export class TelescopeController {
     return this.requireManager(driver).counts(queue);
   }
 
+  /**
+   * One page of a live queue's jobs in one state, as a cursor list: `filter[state]` (required),
+   * `after` / `first` (default 50, max 200). The drivers keep their `listJobs({ cursor, limit })`
+   * SPI and its `{ jobs, nextCursor }` page; this route translates.
+   */
   @Get('queues/live/:driver/:queue/jobs')
-  liveJobs(
+  async liveJobs(
     @Param('driver') driver: string,
     @Param('queue') queue: string,
-    @Query('state') state?: string,
-    @Query('cursor') cursor?: string,
-    @Query('limit') limit?: string,
-  ): Promise<JobPage> {
-    if (!isQueueState(state)) throw new BadRequestException(`Invalid state: ${state}`);
-    const page = {
-      ...(cursor !== undefined ? { cursor } : {}),
-      ...(limit !== undefined && Number.isFinite(Number(limit)) ? { limit: Number(limit) } : {}),
-    };
-    return this.requireManager(driver).listJobs(queue, state, page);
+    @Query() query: Record<string, unknown>,
+  ): Promise<CursorPageResponse<QueueJob>> {
+    rejectRemovedParams(query, {
+      state: '"filter[state]"',
+      cursor: '"after"',
+      limit: '"first"',
+    });
+    forwardOnly(query);
+    const [filter] = parseFilterParams(query, { fields: { state: ['eq'] } });
+    const state = filter?.value;
+    if (!isQueueState(state)) {
+      throw new BadRequestException(`Invalid "filter[state]": ${String(state)}`);
+    }
+    const { after, size } = parseCursorParams(query, JOB_PAGE);
+    const manager = this.requireManager(driver);
+    const page = await manager.listJobs(queue, state, {
+      ...(after !== undefined ? { cursor: after } : {}),
+      limit: size,
+    });
+    return cursorPage(page.jobs, { nextCursor: page.nextCursor, prevCursor: null, hasPrev: false });
   }
 
   @Get('queues/live/:driver/:queue/jobs/:id')
@@ -555,6 +641,14 @@ export class TelescopeController {
   private requireAllTenants(): void {
     if (activeTenantView() !== null) {
       throw new ForbiddenException('Only a viewer of every organization can do this.');
+    }
+  }
+
+  /** Every panel of every extension dashboard, sectioned or flat. */
+  private *panels(): Iterable<Panel> {
+    for (const dashboard of this.extensions.dashboards()) {
+      yield* dashboard.panels ?? [];
+      for (const section of dashboard.sections ?? []) yield* section.panels;
     }
   }
 
@@ -666,9 +760,16 @@ export class TelescopeController {
     if (!found || this.extensions.providerOwner(provider) !== ext) {
       throw new NotFoundException(`Unknown data provider "${provider}".`);
     }
+    // A table panel's `page` / `size` / `sort=-col` / `filter[col]` become the provider SPI's
+    // `page` / `limit` / `sort` + `dir` / `filter.<col>`, and its `{ rows, total, page, limit }`
+    // the offset envelope. The SPI is unchanged, so extensions shipped elsewhere keep working.
+    const { query: providerQuery, wire } = toProviderQuery(
+      query,
+      tableColumnsOf(this.panels(), provider),
+    );
     const ctx = createExtensionContext(this.moduleRef, this.extConfig);
     try {
-      return await found.resolve(query, ctx);
+      return fromProviderResult(await found.resolve(providerQuery, ctx), wire);
     } catch (error) {
       throw new BadGatewayException((error as Error).message);
     }
@@ -903,17 +1004,23 @@ export class TelescopeController {
   }
 
   /**
-   * List captured CPU profiles, newest-first, WITHOUT their (potentially large)
-   * frame trees — `omitContent` keeps the list cheap; the tree is fetched per
-   * profile via {@link profile}. Read-shaped.
+   * Captured CPU profiles, newest first, WITHOUT their (potentially large) frame trees, as a
+   * cursor list: `after` / `first` (default 50, max 200). `omitContent` keeps the list cheap; the
+   * tree is fetched per profile via {@link profile}. Read-shaped.
    */
   @Get('profiles')
-  async profiles(@Query('limit') limit?: string): Promise<Page<Entry>> {
-    return this.storage.get({
-      type: CPU_PROFILE_ENTRY_TYPE,
-      omitContent: true,
-      ...(limit !== undefined && Number.isFinite(Number(limit)) ? { limit: Number(limit) } : {}),
-    });
+  async profiles(@Query() query: Record<string, unknown>): Promise<EntriesPage> {
+    rejectRemovedParams(query, { limit: '"first"', cursor: '"after"' });
+    forwardOnly(query);
+    const { after, size } = parseCursorParams(query, PROFILE_PAGE);
+    return storagePage(
+      await this.storage.get({
+        type: CPU_PROFILE_ENTRY_TYPE,
+        omitContent: true,
+        ...(after !== undefined ? { cursor: after } : {}),
+        limit: size,
+      }),
+    );
   }
 
   /**

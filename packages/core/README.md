@@ -23,8 +23,8 @@ TelescopeModule.forRoot({
 TelescopeUiModule.forRoot({ authorize: /* the same */ });
 ```
 
-It covers the API, the live stream and the MCP endpoint (`mcpAuthorize`
-replaces it on MCP alone); pass the same value to the UI module, which serves
+It covers the API, the live stream and telescope's tools on the dev MCP
+endpoint; pass the same value to the UI module, which serves
 the page. Return `true`/`false`, `{ allowed: false, reason: 'unauthenticated' }`
 (401) or `{ redirectTo: '/login' }` (302 for the page, 401 with `redirectTo`
 for the API; the dashboard follows it). Denials answer
@@ -36,9 +36,7 @@ checks `Authorization: Bearer <token>` in constant time:
 
 ```ts
 TelescopeModule.forRoot({
-  mcp: true,
-  authorize: { policy: ConsolePolicy, ability: 'view' },
-  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
+  authorize: authorizeByToken({ token: process.env.TELESCOPE_TOKEN }),
 });
 ```
 
@@ -80,7 +78,7 @@ class ConsolePage extends TelescopeUiController {}
 export class OpsModule {}
 ```
 
-`StreamController`, `TelescopeMcpController` and `ClientErrorController` extend
+`StreamController` and `ClientErrorController` extend
 the same way. Keep `path` set to where you mount them, since the request
 capture skips the console's own calls and the page rebases its assets on it.
 Every mounted controller is also marked open to `@nestjs/authorization`'s
@@ -285,30 +283,23 @@ cookie/authorization/host headers — a replay must not silently reuse the captu
 session. Replayed requests are tagged `replay`. The dashboard's request detail
 exposes a *Replay* button when `mutations: true` is set.
 
-## MCP server (coding agents)
+## MCP tools (coding agents)
 
-With `mcp` enabled, Telescope serves a **stateless JSON-RPC** [Model Context
-Protocol](https://modelcontextprotocol.io) server over streamable HTTP at
-`POST /telescope/api/mcp`, so a coding agent (Claude Code, Cursor, …) can debug
-straight from the captured data — backed by the same storage/stats/diagnosis APIs
-as the dashboard. JSON-RPC is hand-rolled (no SDK dependency); being stateless,
-the transport's `GET` stream returns `405` and `DELETE` is a `200` no-op.
-
-```ts
-TelescopeModule.forRoot({
-  mcp: true, // omit (or false) and the endpoint answers 404
-});
-```
-
-Register it with Claude Code:
+Telescope has no MCP endpoint of its own. It registers its tools on the Aviary
+dev MCP endpoint, `/mcp/aviary`, served by `@dudousxd/nestjs-agent-mcp-server`,
+so a coding agent (Claude Code, Cursor, …) can debug straight from the captured
+data:
 
 ```bash
-claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp
+claude mcp add --transport http aviary http://localhost:3000/mcp/aviary
 ```
 
-Tools: `list_entries` (filter by type/search/tag/time window), `get_entry` (one
-entry + its full batch), `get_batch`, `get_stats` (last-hour health snapshot), and
-`diagnose_exception` (AI diagnosis, when `ai` is configured). It is protected like
-every console route, by `authorize`, or by `mcpAuthorize` on this route alone
-(agent clients send a header: `mcpAuthorize: authorizeByToken({ token })`), or
-by your own controller.
+Tools: `telescope_list_entries` (filter by type/search/tag/time window,
+`{ items, next }` pages), `telescope_get_entry` (one entry + its batch),
+`telescope_get_trace`, `telescope_get_waterfall`, `telescope_get_health`, and
+`telescope_diagnose_exception` (AI diagnosis, when `ai` is configured). They are
+gated by the console's `authorize`, and registered while the routes are mounted
+(`devTools: true` keeps them with `routes: false`, `devTools: false` turns them
+off). 4.x's `mcp: true` endpoint at `<path>/api/mcp`, with `mcpAuthorize` and
+`mcpDecorators`, was removed in 5.0.
+

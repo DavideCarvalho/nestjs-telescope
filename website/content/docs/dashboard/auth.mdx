@@ -1,6 +1,6 @@
 ---
 title: Protecting the routes
-description: Decide who may open the Telescope console, its API, the MCP endpoint and /metrics with one authorize option.
+description: Decide who may open the Telescope console, its API, its MCP tools and /metrics with one authorize option.
 icon: Lock
 ---
 
@@ -83,8 +83,7 @@ The dashboard follows `redirectTo` from a 401, and shows an access-denied screen
 
 | Option | Covers |
 |---|---|
-| `TelescopeModule.forRoot({ authorize })` | the API (`TelescopeController`), the live feed (`StreamController`) and the MCP endpoint (`TelescopeMcpController`) |
-| `TelescopeModule.forRoot({ mcpAuthorize })` | the MCP endpoint only, in place of `authorize` |
+| `TelescopeModule.forRoot({ authorize })` | the API (`TelescopeController`), the live feed (`StreamController`) and telescope's tools on the [Aviary dev MCP endpoint](/docs/concepts/mcp) (`/mcp/aviary`) |
 | `TelescopeUiModule.forRoot({ authorize })` | the dashboard page and its assets |
 | `TelescopeOtelMetricsModule.forExporter(exporter, { authorize })` | `GET /metrics` |
 
@@ -103,15 +102,13 @@ TelescopeModule.forRootAsync({
 
 ## Tokens: `authorizeByToken`
 
-For callers that send a header instead of a cookie (coding agents on the MCP endpoint, Prometheus on `/metrics`):
+For callers that send a header instead of a cookie (coding agents on the dev MCP endpoint, Prometheus on `/metrics`):
 
 ```ts
 import { authorizeByToken } from '@dudousxd/nestjs-telescope';
 
 TelescopeModule.forRoot({
-  mcp: true,
-  authorize: { policy: ConsolePolicy, ability: 'view' },
-  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
+  authorize: authorizeByToken({ token: process.env.TELESCOPE_TOKEN }),
 });
 
 TelescopeOtelMetricsModule.forExporter(exporter, {
@@ -141,7 +138,7 @@ Each form can be any `authorize` value: a function, a class, a lazy import, `{ p
 ## Without `authorize`
 
 - Outside production (`NODE_ENV !== 'production'`) the console is open, so local work needs no setup.
-- In production every request (page, API, live feed, MCP, `/metrics`) answers 403 `{ "error": "forbidden" }`.
+- In production every request (page, API, live feed, dev MCP tools, `/metrics`) answers 403 `{ "error": "forbidden" }`.
 - One warning is logged at boot per module, with `routes: false` too:
 
 ```txt
@@ -161,10 +158,10 @@ TelescopeModule.forRoot({
 });
 ```
 
-With `forRootAsync`, `decorators` and `mcpDecorators` are static top-level options next to `path` (the routes are built before any factory runs). Every mounted controller is marked open to `@nestjs/authorization`'s deny-by-default global `AuthorizationGuard` (as `Can.Anyone()` would), so that guard doesn't lock the console out; `authorize` decides. A `Can(...)` you pass in `decorators` is still enforced.
+With `forRootAsync`, `decorators` is a static top-level option next to `path` (the routes are built before any factory runs). Every mounted controller is marked open to `@nestjs/authorization`'s deny-by-default global `AuthorizationGuard` (as `Can.Anyone()` would), so that guard doesn't lock the console out; `authorize` decides. A `Can(...)` you pass in `decorators` is still enforced.
 
 <Callout type="info">
-  The dashboard page is a full-page navigation: the browser sends your app's cookies, not an `Authorization` header. The check in front of `TelescopeUiModule` must read a cookie session. The MCP endpoint is the opposite: agent clients send a header, which is what `mcpAuthorize` is for.
+  The dashboard page is a full-page navigation: the browser sends your app's cookies, not an `Authorization` header. The check in front of `TelescopeUiModule` must read a cookie session. Coding agents on the dev MCP endpoint are the opposite: they send a header, so the `authorize` that gates telescope's tools there has to accept one.
 </Callout>
 
 ## Mount the routes yourself (`routes: false`)
@@ -223,11 +220,10 @@ export class OpsModule {}
 | `TelescopeController` | `<path>/api` | the API the dashboard reads |
 | `StreamController` | `<path>/api` | the live SSE feed (`/stream`) |
 | `ClientErrorController` | `<path>/api/client-errors` | front-end error ingestion, only if `clientErrors` is enabled |
-| `TelescopeMcpController` | `<path>/api/mcp` | the MCP endpoint, only if `mcp` is enabled |
 | `TelescopeUiController` (`-ui`) | `<path>` | the dashboard page and its assets |
 | `TelescopeOtelMetricsController` (`-otel`) | anywhere | `GET metrics` (or call `exporter.prometheus()` from your own handler) |
 
-List `ClientErrorController` and `TelescopeMcpController` before `TelescopeController` when you mount them, as `TelescopeModule` does. With `forRootAsync`, `routes` is a static top-level option next to `path`.
+List `ClientErrorController` before `TelescopeController` when you mount it, as `TelescopeModule` does. With `forRootAsync`, `routes` is a static top-level option next to `path`.
 
 Why `routes: false` and not `path: false` like `@nestjs/mcp`: Telescope's `path` keeps a job when nothing is mounted (it tells request capture which URLs are the console's own, and rebases the page's asset URLs), so it stays a string and a separate `routes` flag turns the controllers off. The three modules use the same name.
 
@@ -256,6 +252,17 @@ class ConsoleApi extends TelescopeController {
 
 ## Migrating
 
+### To Telescope 5: the MCP endpoint is gone
+
+Telescope's own MCP endpoint (`POST <path>/api/mcp`) was removed, with `mcp`, `mcpAuthorize`, `mcpDecorators`, `TelescopeMcpController` and `TelescopeMcpServer`. The `telescope_*` tools stay on the Aviary dev MCP endpoint, `/mcp/aviary`, served by `@dudousxd/nestjs-agent-mcp-server` and gated by `authorize`; point your agent there (see [MCP tools](/docs/concepts/mcp)). If the agent used `mcpAuthorize` to sign in with a token, give `authorize` a form that accepts it, or sign the agent in on the dev endpoint (`devTools: { decorators }`).
+
+| Removed | Now |
+|---|---|
+| `mcp: true`, `POST <path>/api/mcp` | the `telescope_*` tools on `/mcp/aviary` |
+| `mcpAuthorize` | `authorize` (it gates the dev tools) |
+| `mcpDecorators` | `AgentMcpServerModule.forRoot({ devTools: { decorators } })` |
+| `TelescopeMcpController`, `TelescopeMcpServer`, `MCP_TOOLS`, `McpToolArgs` | none |
+
 ### To `authorize` (Telescope 3)
 
 The production boot refusal is gone: a console with no `authorize` now boots and answers 403 in production, with one warning. `decorators` no longer counts as protection on its own; move the authorization part to `authorize` and keep authentication in `decorators`.
@@ -279,7 +286,6 @@ After:
 TelescopeModule.forRoot({
   decorators: [UseGuards(AuthenticationGuard)],
   authorize: { policy: ConsolePolicy, ability: 'view' },
-  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
 });
 TelescopeOtelMetricsModule.forExporter(exporter, {
   authorize: authorizeByToken({ token: process.env.METRICS_TOKEN }),
@@ -308,5 +314,5 @@ These options were removed in Telescope 2. The 2.x line starts at **2.0.1**: the
 | `openTelescopeConsole`, `useOpenTelescopeConsole`, `<OpenTelescopeConsoleButton>`, `./react/console` | a plain link: `telescopeConsoleUrl(basePath)` from `@dudousxd/nestjs-telescope-ui/client` |
 | `authorizeAction` | `mutations: true`; a stricter rule via an overriding method with its own `@Can(...)` |
 | `clientErrors.authorize` | `routes: false` + your own `ClientErrorController` subclass |
-| `mcp: { token }` | `mcp: true` + `mcpAuthorize: authorizeByToken({ token })` |
+| `mcp: { token }` | the `telescope_*` tools on the Aviary dev MCP endpoint (`/mcp/aviary`), gated by `authorize` (see Telescope 5 above) |
 | the built-in "open in dev, closed in production" gate | `authorize`, omitted = the same default |

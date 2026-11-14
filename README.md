@@ -78,7 +78,7 @@ apps are done in under five minutes — see the
 | **AI diagnosis** | `@dudousxd/nestjs-telescope-ai` turns an exception into a probable-cause / suggested-fix report (Bedrock, OpenAI, any AI-SDK model). On-demand button or auto-mode that enriches the Slack alert. |
 | **Frontend errors** | An opt-in public endpoint records browser `client_exception` reports through the same pipeline — family hashing, alerts, archive, dashboard. |
 | **Request replay** | Re-issue a captured request against the local app from the dashboard (a mutation, so it needs `mutations: true`); replayed calls carry an `x-telescope-replay: 1` header and a `replay` tag. |
-| **MCP server** | A stateless JSON-RPC MCP endpoint lets coding agents (Claude Code, Cursor, …) query the captured data directly — list entries, pull a batch waterfall, read the health snapshot, diagnose an exception. |
+| **MCP tools** | `telescope_*` tools on the Aviary dev MCP endpoint (`/mcp/aviary`) let coding agents (Claude Code, Cursor, …) query the captured data directly — list entries, pull a batch waterfall, read the health snapshot, diagnose an exception. |
 | **Overload protection** | Watches event-loop lag and auto-pauses capture under pressure, resuming when the loop recovers — a telescope under load can never amplify an incident (on by default). |
 | **One `authorize` option** | A function, an injectable class, a lazy import, an `@nestjs/authorization` policy or a gate name decides who opens the console; without it, production answers 403. |
 
@@ -98,47 +98,24 @@ See [Protecting the routes](#protecting-the-routes) below.
 
 ![A request detail: the batch timeline waterfall, the correlated batch panel, and the request payload](./website/public/screenshots/request-detail.png)
 
-## MCP server
+## MCP tools
 
-Let a coding agent debug straight from the captured data. With `mcp` enabled,
-Telescope serves a stateless JSON-RPC [Model Context Protocol](https://modelcontextprotocol.io)
-server (streamable-HTTP) at `<path>/api/mcp`, so an agent can answer
-*"why is `POST /checkout` slow?"* by pulling the batch waterfall with every query
-it ran — backed by the same storage/stats/diagnosis APIs as the dashboard.
-
-```ts
-TelescopeModule.forRoot({
-  mcp: true, // omit (or false) and the handler answers 404 (after the access check)
-});
-```
-
-Register it with Claude Code:
+Let a coding agent debug straight from the captured data. Telescope registers
+its tools on the Aviary dev MCP endpoint, `/mcp/aviary`, served by
+`@dudousxd/nestjs-agent-mcp-server` next to the other Aviary consoles' tools, so
+an agent can answer *"why is `POST /checkout` slow?"* by pulling the batch
+waterfall with every query it ran.
 
 ```bash
-claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp
+claude mcp add --transport http aviary http://localhost:3000/mcp/aviary
 ```
 
-Tools exposed: `list_entries` (filter by type/search/tag/time window),
-`get_entry` (one entry + its full batch), `get_batch`, `get_stats` (the last-hour
-health snapshot), and `diagnose_exception` (AI diagnosis, when `ai` is
-configured). It is protected like every console route, by `authorize`.
-
-Agent clients send `Authorization: Bearer <key>`, not your session cookie, so
-give the MCP route its own check with `mcpAuthorize` (it replaces `authorize`
-on that route only):
-
-```ts
-TelescopeModule.forRoot({
-  mcp: true,
-  authorize: { policy: ConsolePolicy, ability: 'view' },
-  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
-});
-```
-
-```bash
-claude mcp add --transport http telescope https://app.example.com/telescope/api/mcp \
-  --header "Authorization: Bearer $TELESCOPE_MCP_TOKEN"
-```
+Tools: `telescope_list_entries`, `telescope_get_entry`, `telescope_get_trace`,
+`telescope_get_waterfall`, `telescope_get_health` and
+`telescope_diagnose_exception` (when AI diagnosis is configured), gated by the
+console's `authorize`. Telescope 4.x's own endpoint (`mcp: true`,
+`<path>/api/mcp`, `mcpAuthorize`) is gone in 5.0; see
+[MCP tools](https://davidecarvalho.github.io/aviary/docs/telescope/concepts/mcp).
 
 ## Protecting the routes
 
@@ -158,8 +135,8 @@ TelescopeModule.forRoot({
 TelescopeUiModule.forRoot({ authorize: /* the same */ });
 ```
 
-It covers the API, the live stream and the MCP endpoint (`mcpAuthorize`
-replaces it on MCP alone); pass the same value to the UI module, which serves
+It covers the API, the live stream and telescope's tools on the dev MCP
+endpoint; pass the same value to the UI module, which serves
 the page. Return `true`/`false`, `{ allowed: false, reason: 'unauthenticated' }`
 (401) or `{ redirectTo: '/login' }` (302 for the page, 401 with `redirectTo`
 for the API; the dashboard follows it). Denials answer
@@ -171,9 +148,7 @@ checks `Authorization: Bearer <token>` in constant time:
 
 ```ts
 TelescopeModule.forRoot({
-  mcp: true,
-  authorize: { policy: ConsolePolicy, ability: 'view' },
-  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
+  authorize: authorizeByToken({ token: process.env.TELESCOPE_TOKEN }),
 });
 ```
 
@@ -215,7 +190,7 @@ class ConsolePage extends TelescopeUiController {}
 export class OpsModule {}
 ```
 
-`StreamController`, `TelescopeMcpController` and `ClientErrorController` extend
+`StreamController` and `ClientErrorController` extend
 the same way. Keep `path` set to where you mount them, since the request
 capture skips the console's own calls and the page rebases its assets on it.
 Every mounted controller is also marked open to `@nestjs/authorization`'s

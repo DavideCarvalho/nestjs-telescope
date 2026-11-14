@@ -1,188 +1,40 @@
 ---
-title: MCP server
-description: An optional Model Context Protocol server at /telescope/api/mcp — stateless JSON-RPC over streamable HTTP so coding agents (Claude Code, Cursor, …) can debug straight from the captured data.
+title: MCP tools
+description: Telescope's tools on the Aviary dev MCP endpoint (/mcp/aviary) — so coding agents (Claude Code, Cursor, …) can debug straight from the captured data.
 icon: Bot
 ---
 
-import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Telescope can expose an **MCP (Model Context Protocol) server** so a coding agent — Claude Code, Cursor, or anything that speaks MCP — can query your captured data directly. Instead of pasting a stack trace into a chat, you ask *"why is `POST /checkout` slow?"* and the agent pulls the request's batch waterfall with every query, log, and exception it produced.
+A coding agent — Claude Code, Cursor, or anything that speaks MCP (Model Context Protocol) — can query Telescope's captured data directly. Instead of pasting a stack trace into a chat, you ask *"why is `POST /checkout` slow?"* and the agent pulls the request's batch waterfall with every query, log, and exception it produced.
 
-It's the same storage, pulse, and AI-diagnosis APIs the dashboard uses, exposed as MCP tools. There is **no SDK dependency** — it's a hand-rolled, stateless JSON-RPC server over the MCP streamable-HTTP transport.
+Telescope does not run an MCP server of its own. It registers its tools on the **Aviary dev MCP endpoint**, `/mcp/aviary`, served by `@dudousxd/nestjs-agent-mcp-server`, next to the other Aviary consoles' tools. One endpoint, one connection, every console.
 
-## Enable it
-
-The server is **disabled by default**. Turn it on with the `mcp` option:
-
-```ts
-import { TelescopeModule } from '@dudousxd/nestjs-telescope';
-
-TelescopeModule.forRoot({
-  mcp: true, // omitted / false: the handler answers 404
-});
-```
-
-Once enabled it answers at `POST <path>/api/mcp` — for the default mount path that's `POST /telescope/api/mcp`.
-
-The route is mounted either way, and `mcp` is checked in the handler. Access is checked first, so while MCP is off a refused caller still gets 401 or 403; only a caller let through sees the 404.
-
-<Callout type="info">
-  The transport is stateless: `POST` carries every JSON-RPC call, `GET` returns `405` (there is no server→client notification stream to open), and `DELETE` is a `200` no-op (there is no session to terminate).
+<Callout type="warn" title="Removed in 5.0">
+  Telescope 4.x had its own opt-in endpoint, `POST <path>/api/mcp` (`mcp: true`, `mcpAuthorize`, `mcpDecorators`, `TelescopeMcpController`). 5.0 removes it: connect the agent to `/mcp/aviary` instead. The tools below are the same data, gated by the console's `authorize`.
 </Callout>
 
-## Protecting it
+## Set it up
 
-The MCP controller is a console route like the API: it follows the module's `authorize` (open outside production and 403 in production when omitted, see [Protecting the routes](/docs/dashboard/auth)), or you mount it yourself by extending `TelescopeMcpController` with `routes: false`.
-
-The dashboard is a browser sending your app's session cookie; an agent client sends `Authorization: Bearer <key>`. `mcpAuthorize` gives the MCP route its own check **in place of** `authorize`, and the API and live stream keep `authorize`. The simplest is one shared token:
+Install the agent's MCP server and mount it in the app that runs Telescope:
 
 ```ts
-import { authorizeByToken } from '@dudousxd/nestjs-telescope';
+import { AgentMcpServerModule } from '@dudousxd/nestjs-agent-mcp-server';
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
 
-TelescopeModule.forRoot({
-  mcp: true,
-  authorize: { policy: ConsolePolicy, ability: 'view' },
-  mcpAuthorize: authorizeByToken({ token: process.env.TELESCOPE_MCP_TOKEN }),
-});
+@Module({
+  imports: [
+    TelescopeModule.forRoot({ authorize: { policy: ConsolePolicy, ability: 'view' } }),
+    AgentMcpServerModule.forRoot({
+      // …your MCP server options (see the agent's docs). The dev endpoint is on by default
+      // at /mcp/aviary; `devTools: { path }` moves it, `devTools: false` turns it off.
+    }),
+  ],
+})
+export class AppModule {}
 ```
 
-`authorizeByToken` compares the Bearer token in constant time, answers 401 otherwise, and throws at boot when the token is empty. For a key per developer, revocable on its own, use the recipe below.
-
-### Recipe: an API key for the agent
-
-`@nestjs/authentication` already ships the Bearer side: `ApiKeyProvider` reads `Authorization: Bearer <prefix>_<id>_<secret>`, generates keys, and checks them in constant time. What it can't know is where your app keeps keys, so you write one method.
-
-**1. The provider.** Extend `ApiKeyProvider` and look a key up in your table:
-
-```ts
-import { Injectable } from '@nestjs/common';
-import { ApiKeyProvider, AuthenticationRegistry } from '@nestjs/authentication';
-
-@Injectable()
-export class TelescopeAgentKey extends ApiKeyProvider<User> {
-  constructor(
-    private readonly agentKeys: AgentKeysRepository,
-    registry: AuthenticationRegistry,
-  ) {
-    super({ prefix: 'tsc' }); // keys look like tsc_<id>_<secret>
-    registry.registerProvider(this, { order: 2 });
-  }
-
-  findKey(id: string) {
-    // { hash, user, expiresAt } or null (unknown, revoked, user gone)
-    return this.agentKeys.findWithUser(id);
-  }
-}
-```
-
-List it in a module's `providers` like any other. Register the prefix with your secret scanner (GitHub push protection, for one) so a leaked key is caught.
-
-**2. Keep each credential to its routes.** `Authenticate({ providers })` restricts which providers may sign a route in, so the key opens MCP and nothing else, and the session cookie keeps the dashboard. `mcpDecorators` puts its decorators on the MCP route in place of `decorators`; `authorize` then decides for both:
-
-```ts
-import { Authenticate, SessionCookieProvider } from '@nestjs/authentication';
-
-TelescopeModule.forRoot({
-  mcp: true,
-  decorators: [Authenticate({ providers: [SessionCookieProvider] })],
-  mcpDecorators: [Authenticate({ providers: [TelescopeAgentKey] })],
-  authorize: { policy: ConsolePolicy, ability: 'view' },
-});
-```
-
-`AuthenticationModule.forRoot()` registers `AuthenticationGuard` globally (its `globalGuard` default), so `Authenticate(...)` is enough here. With `globalGuard: false`, add `UseGuards(AuthenticationGuard)` to both lists. With `forRootAsync`, `mcpDecorators` is a static top-level option, like `decorators`, while `mcp: true` stays in the factory's options. Returned from the factory, `mcpDecorators` has no effect (MCP keeps `decorators`), and the boot logs a warning.
-
-The key signs in **the user it belongs to**, and `authorize` (here `ConsolePolicy.view`) still decides: a key for a user the policy denies gets 403. Give the agent its own user, or bind keys to the developers who use them. For a rule per key, the policy can read the key id from the session (`ApiKeySession.keyId`).
-
-**3. Issue a key.** `generate()` returns the whole key once; store only its `id` and `hash`:
-
-```ts
-const { key, id, hash } = app.get(TelescopeAgentKey).generate();
-await agentKeys.insert({ id, hash, userId: agentUser.id, expiresAt: inNinetyDays() });
-console.log(key); // show it once: it is not stored anywhere
-```
-
-Revoke a key by deleting its row (or setting `expiresAt`): `findKey` returns `null` and the agent gets 401.
-
-**4. Give it to the agent.** See [Connect an agent](#connect-an-agent) below.
-
-### When the agent gets a redirect or an OAuth prompt instead of a 401
-
-Two things in the host app decide what an agent sees when its key is refused:
-
-- **A global 401 filter.** Apps that render a sign-in page often have an exception filter turning every `UnauthorizedException` into a 302 to the login page. An agent then follows a redirect to HTML instead of reading a 401. Throw your own `HttpException` subclass from the MCP guard (status 401) so the filter doesn't match it, or exclude `<path>/api/mcp` from the filter.
-- **The `WWW-Authenticate` header.** `ApiKeyProvider` sends `WWW-Authenticate: Bearer realm="…"` with its 401, so a client knows a key is expected. A hand-written guard usually sends none, and some MCP clients answer a bare 401 by starting OAuth discovery against your app. Set the header in your guard's response (`Bearer realm="telescope"`) to keep them on the key.
-
-
-## Connect an agent
-
-For Claude Code, register the server over the HTTP transport:
-
-```bash
-claude mcp add --transport http telescope http://localhost:3000/telescope/api/mcp
-```
-
-With an API key (the recipe above), pass it as a header:
-
-```bash
-claude mcp add --transport http telescope https://app.example.com/telescope/api/mcp \
-  --header "Authorization: Bearer $TELESCOPE_MCP_KEY"
-```
-
-In a shared `.mcp.json`, reference an environment variable instead of committing the key; Claude Code expands `${VAR}` in headers:
-
-```json
-{
-  "mcpServers": {
-    "telescope": {
-      "type": "http",
-      "url": "https://app.example.com/telescope/api/mcp",
-      "headers": { "Authorization": "Bearer ${TELESCOPE_MCP_KEY}" }
-    }
-  }
-}
-```
-
-Any MCP-capable client works the same way: point it at the `<path>/api/mcp` URL and send the credential your provider reads.
-
-## Tools
-
-The agent gets five tools, all reading the same data the dashboard does:
-
-| Tool | What it does |
-|---|---|
-| `list_entries` | List recent entries, newest first. Filter by `type`, full-text `search`, `tag`, or `sinceMinutes`; `limit` defaults to 20 (max 100). Returns compact summaries — the agent drills in with `get_entry`. |
-| `get_entry` | One entry by `id` **with its full batch** — every other entry recorded during the same request/job (queries, logs, renders…), i.e. the waterfall. |
-| `get_batch` | Every entry of a batch (one request/job execution) by `batchId`, ordered by sequence. |
-| `get_stats` | Aggregate health snapshot of the last hour: throughput + percentiles, slowest requests/queries, N+1 suspects, exception families, per-route aggregates, cache hit rate, telescope health. |
-| `diagnose_exception` | Run [AI diagnosis](/docs/packages/ai) on an exception entry by `id` (probable cause, where to look, suggested fix). Only available when `ai` is configured — otherwise it returns a "not configured" message. |
-
-A typical agent flow: `get_stats` to find the slowest route, `list_entries` to find a representative request, then `get_entry` to pull its batch waterfall and spot the N+1.
-
-## On the Aviary dev MCP endpoint
-
-When the app also runs the agent's MCP server (`@dudousxd/nestjs-agent-mcp-server`) with its dev endpoint, Telescope serves its tools there too, prefixed `telescope_`, next to the other Aviary consoles' tools. This needs neither `mcp: true` nor `mcpAuthorize`: the tools are gated by the console's `authorize`.
-
-| Tool | What it does |
-|---|---|
-| `telescope_list_entries` | Recent entries, newest first, as summaries. Filters: `type`, `search`, `tag`, `sinceMinutes`; `limit` (default 20, max 100). Returns `{ items, next }`: pass `next` as `cursor` for the next page. |
-| `telescope_get_entry` | One entry by `id` with the summaries of its batch. |
-| `telescope_get_trace` | Every entry recorded under one `traceId`. |
-| `telescope_get_waterfall` | The span waterfall of one `traceId`. |
-| `telescope_get_health` | Pulse health over the last `sinceMinutes` (default 60). |
-| `telescope_diagnose_exception` | AI diagnosis of an exception entry by `id`. Listed only when [AI diagnosis](/docs/packages/ai) is configured. It spends AI tokens. |
-
-An unknown or pruned id is a tool error ("… not found").
-
-[Extensions](/docs/concepts/extensions) can add tools to this list (the
-[Resilience page](/docs/packages/official#dev-tools) adds `telescope_resilience_circuits` and
-`telescope_resilience_reset_circuit`). Each is served as `telescope_<its name>`; a tool that is
-not valid (not snake_case, no description, or a name already taken) is left out with a warning,
-and telescope's own tools are still served. Their data spans every organization, so with organizations on, a
-caller limited to some organizations gets an error from them.
-
-The tools are registered while the console's routes are mounted. Set `devTools: true` to keep them with `routes: false`, or `devTools: false` to turn them off:
+Telescope's tools are registered while the console's routes are mounted. Set `devTools: true` to keep them with `routes: false`, or `devTools: false` to turn them off:
 
 ```ts
 TelescopeModule.forRoot({
@@ -190,3 +42,52 @@ TelescopeModule.forRoot({
   devTools: false,
 });
 ```
+
+## Protecting it
+
+Each lib on the dev endpoint is gated by its own console check: Telescope's tools by the module's `authorize` (open outside production and 403 in production when omitted, see [Protecting the routes](/docs/dashboard/auth)). An agent client sends `Authorization: Bearer <key>` rather than the dashboard's session cookie, so give `authorize` a form that accepts it — for one shared token, `authorizeByToken`:
+
+```ts
+import { authorizeByToken } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  authorize: authorizeByToken({ token: process.env.TELESCOPE_TOKEN }),
+});
+```
+
+For a key per developer, revocable on its own, sign the agent in with `@nestjs/authentication`'s `ApiKeyProvider` on the dev endpoint (`AgentMcpServerModule.forRoot({ devTools: { decorators: [...] } })`) and keep a policy-based `authorize`: the key signs in the user it belongs to, and the policy still decides.
+
+## Connect an agent
+
+For Claude Code, register the dev endpoint over the HTTP transport:
+
+```bash
+claude mcp add --transport http aviary http://localhost:3000/mcp/aviary
+```
+
+With a key, pass it as a header (in a shared `.mcp.json`, reference an environment variable, `"Authorization": "Bearer ${AVIARY_MCP_KEY}"`, instead of committing it):
+
+```bash
+claude mcp add --transport http aviary https://app.example.com/mcp/aviary \
+  --header "Authorization: Bearer $AVIARY_MCP_KEY"
+```
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `telescope_list_entries` | Recent entries, newest first, as summaries. Filters: `type`, `search`, `tag`, `sinceMinutes`; `limit` (default 20, max 100). Returns `{ items, next }`: pass `next` as `cursor` for the next page. |
+| `telescope_get_entry` | One entry by `id` with the summaries of its batch — every other entry recorded during the same request or job, i.e. the waterfall. |
+| `telescope_get_trace` | Every entry recorded under one `traceId`. |
+| `telescope_get_waterfall` | The span waterfall of one `traceId`. |
+| `telescope_get_health` | Pulse health over the last `sinceMinutes` (default 60): throughput, percentiles, slowest requests and queries, N+1 suspects, exception families, cache hit rate. |
+| `telescope_diagnose_exception` | [AI diagnosis](/docs/packages/ai) of an exception entry by `id`. Listed only when AI diagnosis is configured. It spends AI tokens. |
+
+An unknown or pruned id is a tool error ("… not found"). A typical agent flow: `telescope_get_health` to find the slowest route, `telescope_list_entries` to find a representative request, then `telescope_get_entry` to pull its batch and spot the N+1.
+
+[Extensions](/docs/concepts/extensions) can add tools to this list (the
+[Resilience page](/docs/packages/official#dev-tools) adds `telescope_resilience_circuits` and
+`telescope_resilience_reset_circuit`). Each is served as `telescope_<its name>`; a tool that is
+not valid (not snake_case, no description, or a name already taken) is left out with a warning,
+and telescope's own tools are still served. Their data spans every organization, so with organizations on, a
+caller limited to some organizations gets an error from them.

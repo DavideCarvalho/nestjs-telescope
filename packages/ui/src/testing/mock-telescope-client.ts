@@ -59,3 +59,11 @@ export function mockTelescopeClient(overrides: Partial<TelescopeClient> = {}): T
   };
   return { ...base, ...overrides };
 }
+
+/** The `meta` of a cursor list's last (or only) page. */
+export const LAST_PAGE_META = {
+  nextCursor: null,
+  prevCursor: null,
+  hasNext: false,
+  hasPrev: false,
+} as const;

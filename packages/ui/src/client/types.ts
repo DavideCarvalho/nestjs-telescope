@@ -1,5 +1,4 @@
 export type {
-  JobPage,
   QueueActionName,
   QueueCounts,
   QueueJob,
@@ -33,9 +32,37 @@ export interface Entry {
   spanId: string | null;
   createdAt: string;
 }
-export interface Page<T> {
-  data: T[];
+/** The `meta` of a cursor list (the Aviary list API). */
+export interface CursorPageMeta {
   nextCursor: string | null;
+  prevCursor: string | null;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+/** The `meta` of an offset list (the Aviary list API). `currentPage` is 1-based. */
+export interface OffsetPageMeta {
+  total: number;
+  perPage: number;
+  currentPage: number;
+  lastPage: number;
+  firstPage: number;
+}
+
+/** A cursor list: `{ data, meta }`. Pass `meta.nextCursor` as `after` for the next page. */
+export interface CursorPage<T> {
+  data: T[];
+  meta: CursorPageMeta;
+}
+
+/** An offset list: `{ data, meta }`. */
+export interface OffsetPage<T> {
+  data: T[];
+  meta: OffsetPageMeta;
+}
+
+/** A page of entries: a cursor list, plus `partial` when a tiered store read only part. */
+export interface Page<T> extends CursorPage<T> {
   /** The store answered from a subset of its data, so older entries may be missing. */
   partial?: boolean;
 }
@@ -50,8 +77,10 @@ export interface EntriesQuery {
   familyHash?: string;
   /** Case-insensitive substring matched against the entry's content. */
   search?: string;
-  cursor?: string;
-  limit?: number;
+  /** The previous page's `meta.nextCursor`. */
+  after?: string;
+  /** Page size (default 50, max 500). */
+  first?: number;
 }
 /** A distinct tag and how many entries carry it. Returned by `GET /tags`. */
 export interface TagCount {
@@ -165,11 +194,11 @@ export type Panel =
         link?: { href: string; external?: boolean };
         /**
          * Header becomes a sort control; the choice is re-resolved through the
-         * provider as `sort=<key>` + `dir=asc|desc`. Server-side because the UI
+         * provider as `sort=<key>` / `sort=-<key>`. Server-side because the UI
          * holds one page — see the core `Column` doc for the full reasoning.
          */
         sortable?: boolean;
-        /** Header gets a filter box; committed text is sent as `filter.<key>=<text>`. */
+        /** Header gets a filter box; committed text is sent as `filter[<key>]=<text>`. */
         filterable?: boolean;
         /** Column can be hidden from the table's column menu (client-side only). */
         hideable?: boolean;
@@ -179,9 +208,9 @@ export type Panel =
       /**
        * Paged-table opt-in (mirrors core's `Panel` table variant): when true, the
        * dashboard renders prev/next + "page X of Y" controls and re-resolves this
-       * panel's provider with `query.page` (1-based) / `query.limit` merged onto
-       * `data.query`. The resolved data is then `{ rows, total, page, limit }`
-       * instead of a bare `{ rows }`. Omit for the existing bare-rows table.
+       * panel's provider with `page` (1-based) / `size` merged onto `data.query`.
+       * The response is then the offset list `{ data, meta }` instead of a bare
+       * `{ rows }`. Omit for the existing bare-rows table.
        */
       paged?: boolean;
     }
@@ -548,7 +577,7 @@ export interface TraceSummary {
   rootLabel?: string;
 }
 export interface TracesResult {
-  traces: TraceSummary[];
+  data: TraceSummary[];
   scanned: number;
   truncated: boolean;
 }

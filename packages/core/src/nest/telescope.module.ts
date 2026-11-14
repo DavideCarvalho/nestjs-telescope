@@ -44,11 +44,10 @@ import { dynamicController } from './dynamic-controller.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import { TelescopeCrashCapture } from './telescope-crash-capture.service.js';
 import { TelescopeExceptionInterceptor } from './telescope-exception.interceptor.js';
-import { TelescopeMcpController } from './telescope-mcp.controller.js';
-import { TelescopeMcpServer } from './telescope-mcp.server.js';
 import { TelescopeOverloadGuard } from './telescope-overload-guard.service.js';
 import { TelescopePruner } from './telescope-pruner.service.js';
 import { TelescopeRequestMiddleware } from './telescope-request.middleware.js';
+import { TelescopeTools } from './telescope-tools.js';
 import { TelescopeWatcherRegistrar } from './telescope-watcher-registrar.service.js';
 import { TelescopeController } from './telescope.controller.js';
 import {
@@ -123,10 +122,10 @@ const SHARED_PROVIDERS: Provider[] = [
   },
   ServerStatsService,
   {
-    // The MCP tools, shared by `POST <path>/api/mcp` and the Aviary dev-tools endpoint.
-    provide: TelescopeMcpServer,
+    // What telescope's tools on the Aviary dev-tools endpoint (`/mcp/aviary`) run.
+    provide: TelescopeTools,
     useFactory: (storage: StorageProvider, service: TelescopeService, pulse: PulseService) =>
-      new TelescopeMcpServer(storage, service, pulse),
+      new TelescopeTools(storage, service, pulse),
     inject: [TELESCOPE_STORAGE, TelescopeService, PulseService],
   },
   TelescopeDevToolsRegistration,
@@ -176,7 +175,6 @@ const TELESCOPE_EXPORTS = [
   ProfilerService,
   QueueManagerRegistry,
   ScheduleManagerRegistry,
-  TelescopeMcpServer,
 ];
 
 @Module({})
@@ -228,12 +226,6 @@ export class TelescopeModule implements NestModule {
      */
     decorators?: ClassDecorator[];
     /**
-     * Class decorators for the MCP controller only, in place of `decorators`.
-     * Must be passed HERE, like `decorators`. See
-     * {@link TelescopeModuleOptions.mcpDecorators}.
-     */
-    mcpDecorators?: ClassDecorator[];
-    /**
      * `false` mounts no controller (serve the routes from your own). Must be
      * passed HERE (not inside the async-resolved options): which controllers
      * exist is decided at module-build time — the SAME constraint as `path`
@@ -258,13 +250,10 @@ export class TelescopeModule implements NestModule {
 
   /**
    * Shared by `forRoot` / `forRootAsync`. `staticOptions` carries only what is
-   * read at module-build time (`path`, `decorators`, `mcpDecorators`, `routes`, `imports`); everything else reaches the providers through `optionsProvider`.
+   * read at module-build time (`path`, `decorators`, `routes`, `imports`); everything else reaches the providers through `optionsProvider`.
    */
   private static build(
-    staticOptions: Pick<
-      TelescopeModuleOptions,
-      'path' | 'decorators' | 'mcpDecorators' | 'routes' | 'imports'
-    >,
+    staticOptions: Pick<TelescopeModuleOptions, 'path' | 'decorators' | 'routes' | 'imports'>,
     optionsProvider: Provider,
     registration: string,
   ): DynamicModule {
@@ -284,11 +273,10 @@ export class TelescopeModule implements NestModule {
 
   /** The controllers mounted when `routes` is not `false`, in mount order. */
   private static controllers(
-    staticOptions: Pick<TelescopeModuleOptions, 'path' | 'decorators' | 'mcpDecorators'>,
+    staticOptions: Pick<TelescopeModuleOptions, 'path' | 'decorators'>,
   ): Type[] {
     const path = normalizeTelescopePath(staticOptions.path);
     const decorators = staticOptions.decorators ?? [];
-    const mcpDecorators = staticOptions.mcpDecorators ?? decorators;
     // `authorize` is read once the options resolve (it may come from an async
     // factory), so the guards look it up from TELESCOPE_OPTIONS at init. They
     // run after the host's `decorators`, so its authentication sets the user first.
@@ -297,20 +285,11 @@ export class TelescopeModule implements NestModule {
       from: { token: TELESCOPE_OPTIONS, select: (o) => (o as TelescopeModuleOptions).authorize },
       warn: false,
     });
-    const mcpAccess = UseConsoleAuthorize({
-      from: {
-        token: TELESCOPE_OPTIONS,
-        select: (o) =>
-          (o as TelescopeModuleOptions).mcpAuthorize ?? (o as TelescopeModuleOptions).authorize,
-      },
-      warn: false,
-    });
     return [
       // Public front-end error beacon: guests' browsers must reach it, so it
       // takes NO `decorators` (only the Can.Anyone mark). It 404s while
       // `clientErrors.enabled` is off. Mounts before the catch-all controller.
       dynamicController(ClientErrorController, `${path}/api/client-errors`),
-      dynamicController(TelescopeMcpController, `${path}/api/mcp`, [...mcpDecorators, mcpAccess]),
       dynamicController(TelescopeConsolesController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(TelescopeController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(StreamController, `${path}/api`, [...decorators, consoleAccess]),

@@ -7,12 +7,13 @@ import type {
   TelescopeClient,
   TelescopeMeta,
 } from '../../client/index.js';
+import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../telescope-context.js';
 import { EntryDetail } from './entry-detail.js';
 
 function mockClient(meta: TelescopeMeta, explain: (id: string) => Promise<ExplainResult>) {
   return {
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     entry: async () => {
       throw new Error('not used');
     },

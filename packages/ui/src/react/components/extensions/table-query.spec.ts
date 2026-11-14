@@ -11,18 +11,20 @@ describe('buildTableQuery', () => {
     expect(buildTableQuery(undefined, {})).toBeUndefined();
   });
 
-  it('merges paging the way the pager already did', () => {
-    expect(buildTableQuery({ window: '24h' }, { paging: { page: 2, limit: 50 } })).toEqual({
+  it('merges paging as `page` + `size`', () => {
+    expect(buildTableQuery({ window: '24h' }, { paging: { page: 2, size: 50 } })).toEqual({
       window: '24h',
       page: 2,
-      limit: 50,
+      size: 50,
     });
   });
 
-  it('sends a sort as `sort` + `dir`', () => {
+  it('sends a sort as `sort=-key` (descending) or `sort=key`', () => {
     expect(buildTableQuery(undefined, { sort: { key: 'duration', dir: 'desc' } })).toEqual({
+      sort: '-duration',
+    });
+    expect(buildTableQuery(undefined, { sort: { key: 'duration', dir: 'asc' } })).toEqual({
       sort: 'duration',
-      dir: 'desc',
     });
   });
 
@@ -31,7 +33,7 @@ describe('buildTableQuery', () => {
     // ordinary combination; unprefixed, one would silently overwrite the other.
     expect(buildTableQuery({ status: 'running' }, { filters: { status: 'failed' } })).toEqual({
       status: 'running',
-      'filter.status': 'failed',
+      'filter[status]': 'failed',
     });
   });
 
@@ -47,7 +49,7 @@ describe('buildTableQuery', () => {
       buildTableQuery(
         { window: '24h' },
         {
-          paging: { page: 3, limit: 50 },
+          paging: { page: 3, size: 50 },
           sort: { key: 'startedAt', dir: 'asc' },
           filters: { workflow: 'checkout' },
         },
@@ -55,10 +57,9 @@ describe('buildTableQuery', () => {
     ).toEqual({
       window: '24h',
       page: 3,
-      limit: 50,
+      size: 50,
       sort: 'startedAt',
-      dir: 'asc',
-      'filter.workflow': 'checkout',
+      'filter[workflow]': 'checkout',
     });
   });
 });

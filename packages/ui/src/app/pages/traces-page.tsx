@@ -42,7 +42,7 @@ function TraceRow({ trace }: { trace: TraceSummary }): React.JSX.Element {
 export function TracesPage(): React.JSX.Element {
   const [window, setWindow] = useState('1h');
   const { data, isLoading } = useTraces(window);
-  const traces = data?.traces ?? [];
+  const traces = data?.data ?? [];
 
   return (
     <TelescopePage

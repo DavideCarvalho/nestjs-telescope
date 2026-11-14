@@ -152,17 +152,17 @@ describe('scope from authorize', () => {
     await boot();
     const headers = { 'x-tenant': 'A' };
     expect(await ids('/telescope/api/entries', headers)).toEqual(['a1', 'a2']);
-    expect(await ids('/telescope/api/entries?type=exception', headers)).toEqual(['a2']);
+    expect(await ids('/telescope/api/entries?filter[type]=exception', headers)).toEqual(['a2']);
     const other = await request(app?.getHttpServer())
       .get('/telescope/api/entries/b1')
       .set(headers)
       .expect(200);
     expect(other.body).toEqual({});
     const tags = await request(app?.getHttpServer())
-      .get('/telescope/api/tags?prefix=user:')
+      .get('/telescope/api/tags?filter[tag][startsWith]=user:')
       .set(headers)
       .expect(200);
-    expect(tags.body).toEqual([{ tag: 'user:User#1', count: 1 }]);
+    expect(tags.body.data).toEqual([{ tag: 'user:User#1', count: 1 }]);
     const info = await request(app?.getHttpServer())
       .get('/telescope/api/tenancy')
       .set(headers)

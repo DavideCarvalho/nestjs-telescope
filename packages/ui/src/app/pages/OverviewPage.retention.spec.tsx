@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TelescopeClient, TelescopeMeta } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
+import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
 import { OverviewPage } from './OverviewPage.js';
 
 const EMPTY_PULSE = {
@@ -58,7 +59,7 @@ function baseMeta(pruneEnabled: boolean): TelescopeMeta {
 
 function mockClient(pruneEnabled: boolean, prune: () => Promise<{ pruned: number }>) {
   return {
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     entry: async () => {
       throw new Error('not used');
     },

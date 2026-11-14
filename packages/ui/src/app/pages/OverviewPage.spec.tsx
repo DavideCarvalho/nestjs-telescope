@@ -10,7 +10,7 @@ import type {
   TimeseriesReport,
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import {
   OverviewPage,
   QUEUE_WAITING_ATTENTION_THRESHOLD,
@@ -108,7 +108,7 @@ const timeseries: TimeseriesReport = {
 
 function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     pulse: async () => pulse,
     queues: async () => queues,
     timeseries: async () => timeseries,

@@ -189,7 +189,7 @@ describe('TelescopeRequestMiddleware', () => {
     for (const url of [
       '/telescope',
       '/telescope/api/entries',
-      '/telescope/api/entries?type=request',
+      '/telescope/api/entries?filter[type]=request',
     ]) {
       const req = {
         method: 'GET',

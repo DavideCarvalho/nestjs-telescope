@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../client/index.js';
-import { mockTelescopeClient } from '../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../testing/mock-telescope-client.js';
 import { TelescopeProvider, useLiveTail } from './telescope-context.js';
 import {
   REFETCH_MS,
@@ -13,7 +13,7 @@ import {
 
 function mockClient(): TelescopeClient {
   return mockTelescopeClient({
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     meta: async () => ({
       enabled: true,
       droppedCount: 0,

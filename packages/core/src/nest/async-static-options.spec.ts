@@ -20,23 +20,23 @@ function capture() {
 describe('withStaticOptions', () => {
   it('logs every build-time option the factory returned, by name', () => {
     const { logger, warn } = capture();
-    withStaticOptions({ decorators: [marker], mcpDecorators: [marker], routes: false }, {}, logger);
+    withStaticOptions({ decorators: [marker], imports: [], routes: false }, {}, logger);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toMatch(
-      /`decorators`, `mcpDecorators`, `routes` returned by useFactory have no effect/,
+      /`decorators`, `routes`, `imports` returned by useFactory have no effect/,
     );
   });
 
   it('says nothing when the factory returns only runtime options', () => {
     const { logger, warn } = capture();
-    const resolved: TelescopeModuleOptions = { mcp: true, mutations: true };
+    const resolved: TelescopeModuleOptions = { mutations: true };
     expect(withStaticOptions(resolved, { decorators: [marker] }, logger)).toEqual(resolved);
     expect(warn).not.toHaveBeenCalled();
   });
 
   it('copies the static path into the resolved options', () => {
     const { logger, warn } = capture();
-    expect(withStaticOptions({ mcp: true }, { path: 'ops/telescope' }, logger).path).toBe(
+    expect(withStaticOptions({ mutations: true }, { path: 'ops/telescope' }, logger).path).toBe(
       'ops/telescope',
     );
     expect(warn).not.toHaveBeenCalled();
@@ -92,16 +92,14 @@ describe('TelescopeModule.forRootAsync with static options', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         TelescopeModule.forRootAsync({
-          useFactory: () => ({ mcp: true, mcpDecorators: [UseGuards(deny)] }),
+          useFactory: () => ({ decorators: [UseGuards(deny)] }),
         }),
       ],
     }).compile();
     app = moduleRef.createNestApplication({ logger: false });
     await app.init();
-    // The guard never reached the MCP route: it answers.
-    const res = await request(app.getHttpServer())
-      .post('/telescope/api/mcp')
-      .send({ jsonrpc: '2.0', id: 1, method: 'ping' });
+    // The guard never reached the console API: it answers.
+    const res = await request(app.getHttpServer()).get('/telescope/api/meta');
     expect(res.status).toBe(200);
   });
 });

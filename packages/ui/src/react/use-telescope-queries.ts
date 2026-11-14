@@ -8,6 +8,8 @@ import {
 } from '@tanstack/react-query';
 import type {
   BulkActionName,
+  CursorPage,
+  CursorPageRequest,
   EntriesQuery,
   JobActionName,
   QueueState,
@@ -39,7 +41,7 @@ export function entryQuery(client: TelescopeClient, id: string) {
 export function tagsQuery(client: TelescopeClient, prefix = '') {
   return queryOptions({
     queryKey: ['telescope', 'tags', prefix],
-    queryFn: () => client.tags(prefix === '' ? undefined : prefix),
+    queryFn: async () => (await client.tags(prefix === '' ? undefined : prefix)).data,
     staleTime: REFETCH_MS,
   });
 }
@@ -61,14 +63,13 @@ export function tagsInfiniteQuery(client: TelescopeClient, prefix = '', search =
     queryFn: ({ pageParam }) =>
       client.tags(prefix === '' ? undefined : prefix, {
         search,
-        limit: TAG_PAGE_SIZE,
-        offset: pageParam,
+        first: TAG_PAGE_SIZE,
+        ...(pageParam !== undefined ? { after: pageParam } : {}),
       }),
-    initialPageParam: 0,
-    // A short page is the last one. Counting what is already loaded (rather than multiplying a page
-    // number) keeps the offset right even when a page comes back trimmed.
-    getNextPageParam: (last: TagCount[], all: TagCount[][]) =>
-      last.length < TAG_PAGE_SIZE ? undefined : all.reduce((n, page) => n + page.length, 0),
+    initialPageParam: undefined as string | undefined,
+    // The server says whether there is a next page and hands its cursor.
+    getNextPageParam: (last: CursorPage<TagCount>) =>
+      last.meta.hasNext && last.meta.nextCursor !== null ? last.meta.nextCursor : undefined,
     staleTime: REFETCH_MS,
   });
 }
@@ -149,7 +150,7 @@ export function statsQuery(client: TelescopeClient, type: string, window: string
 export function aiQuery(client: TelescopeClient, window: string, paused = false) {
   return queryOptions({
     queryKey: ['telescope', 'ai', window],
-    queryFn: () => client.ai(window, { buckets: 24, top: 8, limit: 100 }),
+    queryFn: () => client.ai(window, { buckets: 24, top: 8, size: 100 }),
     refetchInterval: intervalWhenLive(REFETCH_MS * 3, paused),
   });
 }
@@ -175,12 +176,12 @@ export function timeseriesQuery(
 export function tracesQuery(
   client: TelescopeClient,
   window: string,
-  limit?: number,
+  size?: number,
   paused = false,
 ) {
   return queryOptions({
-    queryKey: ['telescope', 'traces', window, limit],
-    queryFn: () => client.traces(window, limit),
+    queryKey: ['telescope', 'traces', window, size],
+    queryFn: () => client.traces(window, size),
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
@@ -204,7 +205,7 @@ export function queueJobsKey(
   driver: string,
   queue: string,
   state: QueueState,
-  page: { cursor?: string; limit?: number } = {},
+  page: CursorPageRequest = {},
 ) {
   return ['telescope', 'queue-jobs', driver, queue, state, page] as const;
 }
@@ -224,7 +225,7 @@ export function queueJobsQuery(
   driver: string,
   queue: string,
   state: QueueState,
-  page: { cursor?: string; limit?: number } = {},
+  page: CursorPageRequest = {},
   paused = false,
 ) {
   return queryOptions({
@@ -262,7 +263,7 @@ export function useQueueJobs(
   driver: string,
   queue: string,
   state: QueueState,
-  page: { cursor?: string; limit?: number } = {},
+  page: CursorPageRequest = {},
 ) {
   return useQuery(queueJobsQuery(useTelescopeClient(), driver, queue, state, page, usePaused()));
 }
@@ -459,8 +460,8 @@ export function useTimeseries(query: {
 }) {
   return useQuery(timeseriesQuery(useTelescopeClient(), query, usePaused()));
 }
-export function useTraces(window: string, limit?: number) {
-  return useQuery(tracesQuery(useTelescopeClient(), window, limit, usePaused()));
+export function useTraces(window: string, size?: number) {
+  return useQuery(tracesQuery(useTelescopeClient(), window, size, usePaused()));
 }
 export function useWaterfall(traceId: string) {
   return useQuery(waterfallQuery(useTelescopeClient(), traceId));
@@ -475,10 +476,10 @@ export function profilerStatusQuery(client: TelescopeClient, paused = false) {
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
-export function profilesQuery(client: TelescopeClient, limit?: number, paused = false) {
+export function profilesQuery(client: TelescopeClient, first?: number, paused = false) {
   return queryOptions({
-    queryKey: ['telescope', 'profiles', limit],
-    queryFn: () => client.profiles(limit),
+    queryKey: ['telescope', 'profiles', first],
+    queryFn: () => client.profiles(first !== undefined ? { first } : {}),
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
@@ -493,8 +494,8 @@ export function profileQuery(client: TelescopeClient, id: string) {
 export function useProfilerStatus() {
   return useQuery(profilerStatusQuery(useTelescopeClient(), usePaused()));
 }
-export function useProfiles(limit?: number) {
-  return useQuery(profilesQuery(useTelescopeClient(), limit, usePaused()));
+export function useProfiles(first?: number) {
+  return useQuery(profilesQuery(useTelescopeClient(), first, usePaused()));
 }
 export function useProfile(id: string) {
   return useQuery(profileQuery(useTelescopeClient(), id));

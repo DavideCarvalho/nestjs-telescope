@@ -141,7 +141,10 @@ describe('PanelView (pure render from resolved data)', () => {
       render(
         <PanelView
           panel={{ kind: 'table', title: 'Runs', data: { provider: 'p' }, columns, paged: true }}
-          data={{ rows: [{ runId: 'r2' }], total: 30, page: 2, limit: 10 }}
+          data={{
+            data: [{ runId: 'r2' }],
+            meta: { total: 30, perPage: 10, currentPage: 2, lastPage: 3, firstPage: 1 },
+          }}
           onPageChange={onPageChange}
         />,
       );
@@ -156,7 +159,10 @@ describe('PanelView (pure render from resolved data)', () => {
       const { rerender } = render(
         <PanelView
           panel={{ kind: 'table', title: 'Runs', data: { provider: 'p' }, columns, paged: true }}
-          data={{ rows: [], total: 30, page: 1, limit: 10 }}
+          data={{
+            data: [],
+            meta: { total: 30, perPage: 10, currentPage: 1, lastPage: 3, firstPage: 1 },
+          }}
         />,
       );
       expect(screen.getByRole('button', { name: 'Prev' }).hasAttribute('disabled')).toBe(true);
@@ -165,7 +171,10 @@ describe('PanelView (pure render from resolved data)', () => {
       rerender(
         <PanelView
           panel={{ kind: 'table', title: 'Runs', data: { provider: 'p' }, columns, paged: true }}
-          data={{ rows: [], total: 30, page: 3, limit: 10 }}
+          data={{
+            data: [],
+            meta: { total: 30, perPage: 10, currentPage: 3, lastPage: 3, firstPage: 1 },
+          }}
         />,
       );
       expect(screen.getByRole('button', { name: 'Prev' }).hasAttribute('disabled')).toBe(false);
@@ -179,7 +188,10 @@ describe('PanelView (pure render from resolved data)', () => {
     // the failure degrades to "the rows don't change", which is visible and recoverable.
     it('keeps advancing when the provider pins the page it reports', () => {
       const onPageChange = vi.fn();
-      const pinned = { rows: [{ runId: 'r1' }], total: 30, page: 1, limit: 10 };
+      const pinned = {
+        data: [{ runId: 'r1' }],
+        meta: { total: 30, perPage: 10, currentPage: 1, lastPage: 3, firstPage: 1 },
+      };
       const panel = {
         kind: 'table',
         title: 'Runs',
@@ -208,7 +220,10 @@ describe('PanelView (pure render from resolved data)', () => {
       render(
         <PanelView
           panel={{ kind: 'table', title: 'Runs', data: { provider: 'p' }, columns, paged: true }}
-          data={{ rows: [], total: 30, page: 2, limit: 10 }}
+          data={{
+            data: [],
+            meta: { total: 30, perPage: 10, currentPage: 2, lastPage: 3, firstPage: 1 },
+          }}
         />,
       );
       expect(screen.getByText('Page 2 of 3')).toBeTruthy();
@@ -247,7 +262,10 @@ describe('PanelView (pure render from resolved data)', () => {
       const { container } = render(
         <PanelView
           panel={{ kind: 'table', title: 'Workers', data: { provider: 'p' }, columns, paged: true }}
-          data={{ rows, total: 30, page: 1, limit: 10 }}
+          data={{
+            data: rows,
+            meta: { total: 30, perPage: 10, currentPage: 1, lastPage: 3, firstPage: 1 },
+          }}
         />,
       );
       const table = container.querySelector('table');

@@ -82,7 +82,7 @@ rest of the console:
 |---------------|---------|
 | `GET /telescope/api/queues/live` | `{ queues: QueueSummary[] }` across all drivers — name, per-state counts, `isPaused`. |
 | `GET /telescope/api/queues/live/bullmq/:queue/counts` | `QueueCounts` for one queue. |
-| `GET /telescope/api/queues/live/bullmq/:queue/jobs?state=&cursor=&limit=` | A `JobPage` of jobs in `state` (`waiting`/`active`/`delayed`/`failed`/`completed`/`paused`); `nextCursor` paginates. |
+| `GET /telescope/api/queues/live/bullmq/:queue/jobs?filter[state]=&after=&first=` | A cursor list `{ data, meta: { nextCursor, prevCursor, hasNext, hasPrev } }` of jobs in `filter[state]` (`waiting`/`active`/`delayed`/`failed`/`completed`/`paused`); `first` defaults to 50 (max 200), and `meta.nextCursor` goes back as `after` for the next page. |
 | `GET /telescope/api/queues/live/bullmq/:queue/jobs/:id` | A `QueueJobDetail` (adds redacted `data`, `opts`, `stacktrace`, `returnValue`). |
 
 Job payloads (`data`) are passed through core redaction before they leave the

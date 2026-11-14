@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { PrunesInfo, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
-import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { DashboardLayout } from '../dashboard-layout.js';
 import { ThemeProvider } from '../theme-context.js';
 import { PrunesPage } from './prunes-page.js';
@@ -56,7 +56,7 @@ function mockClient(prunes: PrunesInfo, pruneEnabled: boolean): TelescopeClient 
     }),
     prunes: async () => prunes,
     prune: async () => ({ pruned: 0 }),
-    entries: async () => ({ data: [], nextCursor: null }),
+    entries: async () => ({ data: [], meta: LAST_PAGE_META }),
     schedulesLive: async () => ({ tasks: [] }),
     liveQueues: async () => ({
       queues: [],

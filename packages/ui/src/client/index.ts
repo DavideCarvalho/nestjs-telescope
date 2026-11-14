@@ -10,6 +10,7 @@ export {
 } from './telescope-client.js';
 export type {
   BulkActionName,
+  CursorPageRequest,
   JobActionName,
   TagPageOptions,
   TelescopeAccessDenial,

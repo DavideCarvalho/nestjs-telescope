@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { TagCount, TelescopeClient } from '../../client/index.js';
+import type { CursorPage, TagCount, TagPageOptions, TelescopeClient } from '../../client/index.js';
 import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { TelescopeProvider } from '../index.js';
 import { TagAutocomplete } from './tag-autocomplete.js';
@@ -16,20 +16,29 @@ const ALL_TAGS: TagCount[] = [
  *  count and cuts a page — the same contract the storage providers implement, so a component tested
  *  against it is tested against what it will actually be given. */
 function mockClient(tags: TagCount[] = ALL_TAGS) {
-  const tagsFn = vi.fn<
-    (
-      prefix?: string,
-      opts?: { search?: string; limit?: number; offset?: number },
-    ) => Promise<TagCount[]>
-  >(async (prefix, opts) => {
-    const search = opts?.search?.trim().toLowerCase();
-    const matching = tags
-      .filter((entry) => !prefix || entry.tag.startsWith(prefix))
-      .filter((entry) => !search || entry.tag.toLowerCase().includes(search))
-      .sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag));
-    const offset = opts?.offset ?? 0;
-    return opts?.limit === undefined ? matching : matching.slice(offset, offset + opts.limit);
-  });
+  const tagsFn = vi.fn<(prefix?: string, opts?: TagPageOptions) => Promise<CursorPage<TagCount>>>(
+    async (prefix, opts) => {
+      const search = opts?.search?.trim().toLowerCase();
+      const matching = tags
+        .filter((entry) => !prefix || entry.tag.startsWith(prefix))
+        .filter((entry) => !search || entry.tag.toLowerCase().includes(search))
+        .sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag));
+      // The cursor is opaque to the client; this stand-in makes it the next offset.
+      const offset = opts?.after ? Number(opts.after) : 0;
+      const size = opts?.first ?? matching.length;
+      const data = matching.slice(offset, offset + size);
+      const hasNext = offset + size < matching.length;
+      return {
+        data,
+        meta: {
+          nextCursor: hasNext ? String(offset + size) : null,
+          prevCursor: null,
+          hasNext,
+          hasPrev: offset > 0,
+        },
+      };
+    },
+  );
   const client: TelescopeClient = mockTelescopeClient({
     tags: tagsFn,
     meta: async () => ({
@@ -112,7 +121,7 @@ describe('TagAutocomplete', () => {
 
     expect(tagsFn).toHaveBeenCalledWith(
       undefined,
-      expect.objectContaining({ search: 'slow', limit: expect.any(Number), offset: 0 }),
+      expect.objectContaining({ search: 'slow', first: expect.any(Number) }),
     );
   });
 
@@ -129,9 +138,9 @@ describe('TagAutocomplete', () => {
     tagsFn.mockClear();
     fireEvent.scroll(screen.getByRole('listbox'));
 
-    // The offset is what has already been loaded, not a page number — a short page cannot desync it.
+    // The next page resumes at the cursor the server handed back.
     await waitFor(() =>
-      expect(tagsFn).toHaveBeenCalledWith(undefined, expect.objectContaining({ offset: 50 })),
+      expect(tagsFn).toHaveBeenCalledWith(undefined, expect.objectContaining({ after: '50' })),
     );
   });
 

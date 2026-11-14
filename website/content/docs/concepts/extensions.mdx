@@ -111,8 +111,8 @@ A `table` panel can opt into pagination with `paged: true`:
 
 This changes both sides of the contract:
 
-- **The UI** renders prev/next controls plus a "Page X of Y" indicator, and re-resolves the panel's provider on every page change with `query.page` (1-based) and `query.limit` merged in on top of the panel's own static `data.query`. The first request (before the user has paged) asks for page `1` at the UI's default page size.
-- **The provider** must then return `{ rows, total, page, limit }` instead of the bare `{ rows }` a non-paged table returns — `total` is the **full, unpaginated** row count so the UI can compute how many pages exist; `page`/`limit` normally just echo back what was requested.
+- **The UI** renders prev/next controls plus a "Page X of Y" indicator, and re-resolves the panel on every page change with `page` (1-based) and `size` merged in on top of the panel's own static `data.query`. The route hands them to the provider as `query.page` and `query.limit`. The first request (before the user has paged) asks for page `1` at the UI's default page size.
+- **The provider** must then return `{ rows, total, page, limit }` instead of the bare `{ rows }` a non-paged table returns — `total` is the **full, unpaginated** row count so the UI can compute how many pages exist; `page`/`limit` normally just echo back what was requested. The route answers it as the offset list `{ data: rows, meta: { total, perPage, currentPage, lastPage, firstPage } }`.
 
 Omit `paged` (or set it `false`) for the original bare-`{ rows }` table — that variant is byte-identical to before pagination existed, so existing extensions don't need to change anything.
 
@@ -128,13 +128,17 @@ columns: [
 ]
 ```
 
-| Flag | UI | Reaches the provider as |
-|---|---|---|
-| `sortable` | The header becomes a button that cycles ascending → descending → unsorted | `sort=<column key>` and `dir=asc\|desc` (both absent when unsorted) |
-| `filterable` | A filter box appears under the header, committed on Enter or blur | `filter.<column key>=<text>` (absent when the box is empty) |
-| `hideable` | The column appears in the panel's **Columns** menu | nothing — hiding a column is display-only, and the provider keeps returning it |
+| Flag | UI | On the wire (list API) | Reaches the provider as |
+|---|---|---|---|
+| `sortable` | The header becomes a button that cycles ascending → descending → unsorted | `sort=<key>` / `sort=-<key>` (absent when unsorted) | `sort=<column key>` and `dir=asc\|desc` |
+| `filterable` | A filter box appears under the header, committed on Enter or blur | `filter[<key>]=<text>` (absent when the box is empty) | `filter.<column key>=<text>` |
+| `hideable` | The column appears in the panel's **Columns** menu | nothing | nothing — hiding a column is display-only, and the provider keeps returning it |
 
-Filters are namespaced with `filter.` so a filterable column can never collide with a key the panel already declared in `data.query`: a panel scoped to `{ status: 'running' }` **and** carrying a filterable `status` column is an ordinary combination, and unprefixed one would silently overwrite the other.
+A `paged: true` table sends `page` (1-based) and `size` (default 50, max 500) on the wire; the provider receives them as `page` and `limit`, and returns `{ rows, total, page, limit }`, which the route answers as the Aviary offset list `{ data, meta: { total, perPage, currentPage, lastPage, firstPage } }`.
+
+The console route (`GET <path>/api/ext/:ext/data/:provider`) does the translation, so the provider SPI — `readTableQuery` and `{ rows, total, page, limit }` — did not change in 5.0, and extensions shipped from other packages keep working. The route validates the wire against the panels bound to the provider: a `sort` on a column no table panel marks `sortable`, a `filter[...]` on one none marks `filterable`, more than one sort field, or an old parameter (`limit`, `dir`, `filter.<key>`) is a `400`.
+
+The provider still reads filters namespaced with `filter.` so a filterable column can never collide with a key the panel already declared in `data.query`: a panel scoped to `{ status: 'running' }` **and** carrying a filterable `status` column is an ordinary combination, and unprefixed one would silently overwrite the other.
 
 On the provider side, read the state with `readTableQuery` rather than by hand:
 
@@ -189,7 +193,7 @@ When the UI renders a panel, it fetches that panel's binding from a single endpo
 GET <path>/api/ext/:ext/data/:provider?<query>
 ```
 
-The server looks up the provider by name, builds an `ExtensionContext`, and calls `resolve(query, ctx)`. Query params arrive as strings and are passed through verbatim — including the paging, sort and filter params a table panel adds (see [Sortable and filterable columns](#sortable-and-filterable-columns), and use `readTableQuery` to read them back as numbers). An unknown provider is a `404`; a provider that throws surfaces a `502` with its message (so a panel author can see *why* a panel is empty).
+The server looks up the provider by name, builds an `ExtensionContext`, and calls `resolve(query, ctx)`. Query params arrive as strings and are passed through verbatim, except a table panel's paging, sort and filter params (`page`, `size`, `sort`, `filter[col]`), which the route translates to the provider's `page`, `limit`, `sort` + `dir` and `filter.<col>` (see [Sortable and filterable columns](#sortable-and-filterable-columns), and use `readTableQuery` to read them back as numbers). An unknown provider is a `404`; a provider that throws surfaces a `502` with its message (so a panel author can see *why* a panel is empty).
 
 <Callout type="warn" title="The console's protection applies">
   The data endpoint is a route of `TelescopeController`, so it is protected exactly like the rest of the dashboard API (your `decorators`, or your own controllers). Extension data is never a side door: if the dashboard is protected, the panels are too. See [Protecting the routes](/docs/dashboard/auth).

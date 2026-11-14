@@ -15,7 +15,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { StreamController } from '../sse/stream.controller.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { AUTHORIZATION_CAN_ANYONE_METADATA } from './dynamic-controller.js';
-import { TelescopeMcpController } from './telescope-mcp.controller.js';
 import { TelescopeController } from './telescope.controller.js';
 import { TelescopeModule } from './telescope.module.js';
 
@@ -33,11 +32,6 @@ type Route = { method: 'get' | 'post'; url: string; body?: object };
 /** One route per console controller TelescopeModule mounts (they take `decorators`). */
 const CONSOLE_ROUTES: Route[] = [
   { method: 'get', url: '/telescope/api/meta' }, // TelescopeController
-  {
-    method: 'post',
-    url: '/telescope/api/mcp',
-    body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-  }, // TelescopeMcpController
 ];
 
 /** The public client-error beacon: no `decorators`, guests must reach it. */
@@ -175,12 +169,7 @@ describe('TelescopeModule under @nestjs/authorization', () => {
     expect(await statusOf(second, META, { id: 'u', admin: false })).toBe(200);
 
     // The shared base classes never receive the host's metadata.
-    for (const base of [
-      TelescopeController,
-      StreamController,
-      ClientErrorController,
-      TelescopeMcpController,
-    ]) {
+    for (const base of [TelescopeController, StreamController, ClientErrorController]) {
       expect(Reflect.getMetadata('authorization:can', base)).toBeUndefined();
       expect(Reflect.getMetadata(AUTHORIZATION_CAN_ANYONE_METADATA, base)).toBeUndefined();
     }
@@ -194,7 +183,7 @@ describe('TelescopeModule under @nestjs/authorization', () => {
       TelescopeModule.forRoot({ decorators: [marker] }),
       TelescopeModule.forRootAsync({ useFactory: () => ({}), decorators: [marker] }),
     ]) {
-      expect(mod.controllers).toHaveLength(5);
+      expect(mod.controllers).toHaveLength(4);
       for (const controller of mod.controllers ?? []) {
         expect(Reflect.getMetadata(AUTHORIZATION_CAN_ANYONE_METADATA, controller)).toBe(true);
         const isBeacon = controller.prototype instanceof ClientErrorController;
