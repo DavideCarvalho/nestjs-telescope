@@ -5,7 +5,7 @@ const WINDOWS = ['15m', '1h', '6h', '24h'] as const;
 export function WindowSelect({
   value,
   onChange,
-}: { value: string; onChange: (w: string) => void }): JSX.Element {
+}: { value: string; onChange: (w: string) => void }): React.JSX.Element {
   return (
     <Select
       value={value}

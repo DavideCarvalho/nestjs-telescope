@@ -22,7 +22,7 @@ import { ThemeProvider } from './theme-context.js';
 
 const queryClient = new QueryClient();
 
-function Dashboard(): JSX.Element {
+function Dashboard(): React.JSX.Element {
   return (
     <HashRouter>
       <DashboardLayout>
@@ -50,7 +50,7 @@ function Dashboard(): JSX.Element {
   );
 }
 
-export function App(): JSX.Element {
+export function App(): React.JSX.Element {
   return (
     <ThemeProvider>
       <TelescopeProvider>

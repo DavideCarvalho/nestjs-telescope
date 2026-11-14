@@ -43,7 +43,7 @@ function flatten(spans: WaterfallSpan[]): WaterfallSpan[] {
   return out;
 }
 
-function WaterfallRow({ span, totalDurationMs, onSelect }: RowProps): JSX.Element {
+function WaterfallRow({ span, totalDurationMs, onSelect }: RowProps): React.JSX.Element {
   // Guard against a zero-width trace (all instant spans) so bars stay visible.
   const span100 = totalDurationMs > 0 ? totalDurationMs : 1;
   const leftPct = Math.min(100, (span.offsetMs / span100) * 100);
@@ -88,14 +88,14 @@ export interface WaterfallViewProps {
  * depth (Sentry/Tempo style). The bars are derived entirely from the headless
  * `/traces/:id/waterfall` payload.
  */
-export function WaterfallView({ waterfall, onSelect }: WaterfallViewProps): JSX.Element {
+export function WaterfallView({ waterfall, onSelect }: WaterfallViewProps): React.JSX.Element {
   const rows = flatten(waterfall.spans);
   if (rows.length === 0) {
     return <p className="text-muted-foreground">No spans in this trace</p>;
   }
   return (
     <div className="space-y-0.5">
-      <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-faint">
         <span>Span</span>
         <span>Total {formatMs(waterfall.totalDurationMs)}</span>
       </div>

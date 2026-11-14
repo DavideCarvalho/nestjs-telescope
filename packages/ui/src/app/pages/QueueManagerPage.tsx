@@ -16,7 +16,7 @@ interface Selection {
   queue: string;
 }
 
-export function QueueManagerPage(): JSX.Element {
+export function QueueManagerPage(): React.JSX.Element {
   const { data } = useLiveQueues();
   const queues = data?.queues ?? [];
   const capabilities = data?.capabilities;
@@ -43,25 +43,23 @@ export function QueueManagerPage(): JSX.Element {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="space-y-2">
-        <h3 className="px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Live queues
-        </h3>
+        <h3 className="px-1 text-[10px] uppercase tracking-[0.12em] text-faint">Live queues</h3>
         <QueueList {...(selected ? { selected } : {})} onSelect={handleSelect} />
       </aside>
 
       <section className="min-w-0 space-y-3">
         {!selected ? (
-          <div className="rounded-lg border border-dashed border-line px-4 py-12 text-center text-xs text-muted-foreground">
+          <div className="rounded-lg border border-dashed border-border px-4 py-12 text-center text-xs text-faint">
             Select a queue to inspect its jobs.
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between gap-3">
-              <h2 className="truncate text-sm text-brand">
+              <h2 className="truncate text-sm font-semibold text-fg">
                 {selected.queue}
-                <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-faint">
                   {selected.driver}
                 </span>
               </h2>

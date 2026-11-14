@@ -1,6 +1,7 @@
 import type { Entry } from '../../client/index.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/index.js';
 import { CacheBadge } from './cache-badge.js';
+import { dotForType } from './entry-types.js';
 import { InertiaBadge } from './inertia-badge.js';
 import { isOfficialEventType, officialEventLabel } from './official-event.js';
 import { buildUserActivityHref, findUserTag, userTagId } from './user-tag.js';
@@ -73,16 +74,16 @@ export function dumpValuePreview(value: unknown): string {
 export function EntriesTable({
   entries,
   onSelect,
-}: { entries: Entry[]; onSelect?: (id: string) => void }): JSX.Element {
+}: { entries: Entry[]; onSelect?: (id: string) => void }): React.JSX.Element {
   return (
     <Table className="text-left">
       <TableHeader>
         <TableRow>
-          <TableHead className="px-0 py-2">Time</TableHead>
-          <TableHead className="px-0">Type</TableHead>
-          <TableHead className="px-0">Summary</TableHead>
-          <TableHead className="px-0">Duration</TableHead>
-          <TableHead className="px-0">Tags</TableHead>
+          <TableHead className="py-2.5 pr-3 pl-4">Time</TableHead>
+          <TableHead className="px-3">Type</TableHead>
+          <TableHead className="px-3">Summary</TableHead>
+          <TableHead className="px-3 text-right">Duration</TableHead>
+          <TableHead className="hidden pr-4 pl-3 md:table-cell">Tags</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -96,30 +97,38 @@ export function EntriesTable({
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') onSelect?.(entry.id);
               }}
-              className="cursor-pointer hover:bg-panel"
+              className="cursor-pointer transition-colors hover:bg-hover"
             >
-              <TableCell className="px-0 py-1.5 align-middle text-muted-foreground">
+              <TableCell className="py-2 pr-3 pl-4 align-middle font-mono whitespace-nowrap tabular-nums text-faint">
                 {new Date(entry.createdAt).toLocaleTimeString()}
               </TableCell>
-              <TableCell className="px-0 py-1.5 align-middle text-brand">{entry.type}</TableCell>
-              <TableCell className="max-w-md truncate px-0 py-1.5 align-middle text-foreground">
+              <TableCell className="px-3 py-2 align-middle whitespace-nowrap text-fg-2">
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={`size-[7px] shrink-0 rounded-full ${dotForType(entry.type)}`}
+                    aria-hidden="true"
+                  />
+                  {entry.type}
+                </span>
+              </TableCell>
+              <TableCell className="max-w-md truncate px-3 py-2 align-middle font-mono text-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   {entry.type === 'cache' ? <CacheBadge content={entry.content} /> : null}
                   {entry.type === 'inertia' ? <InertiaBadge content={entry.content} /> : null}
                   <span className="truncate">{entryLabel(entry)}</span>
                 </span>
               </TableCell>
-              <TableCell className="px-0 py-1.5 align-middle text-muted-foreground">
+              <TableCell className="px-3 py-2 text-right align-middle font-mono whitespace-nowrap tabular-nums text-fg-2">
                 {entry.durationMs != null ? `${entry.durationMs}ms` : '—'}
               </TableCell>
-              <TableCell className="px-0 py-1.5 align-middle text-muted-foreground">
+              <TableCell className="hidden py-2 pr-4 pl-3 align-middle font-mono text-[11px] text-faint md:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   {entry.traceId !== null && (
                     <a
                       href={`#/traces/${entry.traceId}`}
                       title={`View trace ${entry.traceId}`}
                       onClick={(event) => event.stopPropagation()}
-                      className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-brand hover:bg-panel-2"
+                      className="rounded border border-brand-border bg-brand-soft px-1.5 py-0.5 font-mono text-[10px] text-brand hover:bg-panel-2"
                     >
                       trace:{entry.traceId.slice(0, 6)}
                     </a>
@@ -129,7 +138,7 @@ export function EntriesTable({
                       href={buildUserActivityHref(userTag)}
                       title={`View all activity for user ${userTagId(userTag)}`}
                       onClick={(event) => event.stopPropagation()}
-                      className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-good hover:bg-panel-2"
+                      className="rounded border border-good/25 bg-good/10 px-1.5 py-0.5 font-mono text-[10px] text-good hover:bg-good/15"
                     >
                       {userTag}
                     </a>

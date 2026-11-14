@@ -15,7 +15,7 @@ export function Sparkline({
   values,
   width = 160,
   height = 36,
-}: { values: number[]; width?: number; height?: number }): JSX.Element {
+}: { values: number[]; width?: number; height?: number }): React.JSX.Element {
   const points = sparklinePoints(values, width, height);
   const area = points ? `0,${height} ${points} ${width},${height}` : '';
   return (

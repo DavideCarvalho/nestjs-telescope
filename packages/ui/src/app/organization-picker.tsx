@@ -25,7 +25,7 @@ function useDebounced(value: string, ms: number): string {
  * The header's "Organization" control, shown when the console is scoped by organization: a fixed
  * chip for one organization, a searchable picker for several or all of them.
  */
-export function OrganizationPicker(): JSX.Element | null {
+export function OrganizationPicker(): React.JSX.Element | null {
   const current = useTenancy();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');

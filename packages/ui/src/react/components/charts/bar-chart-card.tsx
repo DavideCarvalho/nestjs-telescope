@@ -57,7 +57,7 @@ export function BarChartCard({
   truncateLabel,
   valueFormatter,
   onSelect,
-}: BarChartCardProps): JSX.Element {
+}: BarChartCardProps): React.JSX.Element {
   const bodyHeight = height - 64;
   const config = useMemo(
     () =>
@@ -115,7 +115,7 @@ export function BarChartCard({
                 {...tickFormatterProps}
               />
             ) : (
-              <YAxis tickLine={false} width={40} allowDecimals={false} />
+              <YAxis tickLine={false} width={52} allowDecimals={false} />
             )}
             <ChartTooltip
               cursor={{ fill: 'color-mix(in srgb, var(--text) 5%, transparent)' }}

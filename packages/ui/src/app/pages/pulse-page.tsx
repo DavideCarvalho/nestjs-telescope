@@ -8,27 +8,28 @@ import {
   usePulse,
   useTimeseries,
 } from '../../react/index.js';
+import { RowsSkeleton, TelescopePage } from '../page-chrome.js';
 import { toByTypeRows } from './OverviewPage.js';
 
-export function PulsePage(): JSX.Element {
+export function PulsePage(): React.JSX.Element {
   const [window, setWindow] = useState('1h');
   const navigate = useNavigate();
   const { data, isLoading } = usePulse(window);
   const series = useTimeseries({ window, buckets: 60 });
   const types = deriveTypes(series.data?.buckets ?? []);
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm text-brand">Pulse</h2>
-        <WindowSelect value={window} onChange={setWindow} />
-      </div>
+    <TelescopePage
+      title="Pulse"
+      description="Throughput by type, the slowest routes and queries, top exceptions and N+1 hotspots."
+      actions={<WindowSelect value={window} onChange={setWindow} />}
+    >
       <StackedAreaChartCard
         title="Throughput by type"
         series={types}
         data={toByTypeRows(series.data)}
       />
       {isLoading || !data ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <RowsSkeleton rows={6} />
       ) : (
         <PulsePanel
           report={data}
@@ -44,6 +45,6 @@ export function PulsePage(): JSX.Element {
           }
         />
       )}
-    </div>
+    </TelescopePage>
   );
 }

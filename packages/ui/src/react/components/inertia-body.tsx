@@ -8,7 +8,7 @@ import { humanBytes } from './inertia-badge.js';
  * — the content may have been redacted/clipped by the Recorder, and an older
  * producer may omit fields — so nothing is assumed beyond `component`.
  */
-export function InertiaBody({ content }: { content: unknown }): JSX.Element {
+export function InertiaBody({ content }: { content: unknown }): React.JSX.Element {
   const record =
     typeof content === 'object' && content !== null ? (content as Record<string, unknown>) : {};
 
@@ -35,21 +35,21 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
     accent: string;
     annotations?: Record<string, string>;
   }[] = [
-    { label: 'Shared', keys: props.sharedKeys, accent: 'text-sky-300' },
+    { label: 'Shared', keys: props.sharedKeys, accent: 'text-info' },
     { label: 'Final', keys: props.finalKeys, accent: 'text-foreground' },
-    { label: 'Optional', keys: props.optionalKeys, accent: 'text-indigo-300' },
-    { label: 'Once', keys: props.onceKeys, accent: 'text-fuchsia-300' },
-    { label: 'Merge', keys: props.merge, accent: 'text-teal-300', annotations: props.matchPropsOn },
+    { label: 'Optional', keys: props.optionalKeys, accent: 'text-violet' },
+    { label: 'Once', keys: props.onceKeys, accent: 'text-brand' },
+    { label: 'Merge', keys: props.merge, accent: 'text-teal', annotations: props.matchPropsOn },
     {
       label: 'Deep-merge',
       keys: props.deepMerge,
-      accent: 'text-teal-300',
+      accent: 'text-teal',
       annotations: props.matchPropsOn,
     },
     {
       label: 'Prepend',
       keys: props.prepend,
-      accent: 'text-teal-300',
+      accent: 'text-teal',
       annotations: props.matchPropsOn,
     },
     { label: 'Rescued', keys: props.rescued, accent: 'text-bad' },
@@ -58,7 +58,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
   return (
     <div>
       {/* 1. Header */}
-      <h3 className="mb-2 flex flex-wrap items-center gap-2 font-mono text-sm text-cyan-400">
+      <h3 className="mb-2 flex flex-wrap items-center gap-2 font-mono text-sm text-info">
         {method ? (
           <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] uppercase">{method}</span>
         ) : null}
@@ -95,7 +95,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 2. Partial-reload panel */}
       {isPartial ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
             Partial reload
           </h3>
           <div className="grid grid-cols-2 gap-3">
@@ -116,7 +116,9 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
 
       {/* 3. Prop classification */}
       <div className="mb-4">
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Props</h3>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+          Props
+        </h3>
         <div className="flex flex-col gap-1.5">
           {propRows.map((r) => (
             <ChipRow {...r} key={r.label} />
@@ -127,11 +129,13 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 4. Deferred groups */}
       {Object.keys(props.deferred).length > 0 ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Deferred</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            Deferred
+          </h3>
           <div className="flex flex-col gap-1.5">
             {Object.entries(props.deferred).map(([group, paths]) => (
               <div key={group} className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[11px] text-violet-300">{group}:</span>
+                <span className="font-mono text-[11px] text-violet">{group}:</span>
                 {paths.map((path) => (
                   <span
                     key={path}
@@ -149,11 +153,13 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 4b. Once props cache metadata */}
       {Object.keys(props.once).length > 0 ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Once cache</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            Once cache
+          </h3>
           <div className="flex flex-col gap-1.5">
             {Object.entries(props.once).map(([cacheKey, meta]) => (
               <div key={cacheKey} className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-fuchsia-300">
+                <span className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-brand">
                   {cacheKey}
                 </span>
                 <span className="text-[10px] text-muted-foreground">→ {meta.prop}</span>
@@ -169,11 +175,13 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
       {/* 4c. Infinite-scroll cursors */}
       {Object.keys(props.scroll).length > 0 ? (
         <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Scroll</h3>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            Scroll
+          </h3>
           <div className="flex flex-col gap-1.5">
             {Object.entries(props.scroll).map(([path, cursor]) => (
               <div key={path} className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-teal-300">
+                <span className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-teal">
                   {path}
                 </span>
                 <span className="text-[10px] text-muted-foreground">page «{cursor.pageName}»</span>
@@ -194,7 +202,7 @@ export function InertiaBody({ content }: { content: unknown }): JSX.Element {
 
       {/* 5. Resolved props tree */}
       <div className="mb-4">
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
           Resolved props
         </h3>
         <pre className="overflow-auto rounded bg-panel p-3 text-xs text-foreground">
@@ -330,7 +338,7 @@ function ChipRow({
   keys: string[];
   accent: string;
   annotations?: Record<string, string>;
-}): JSX.Element | null {
+}): React.JSX.Element | null {
   if (keys.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -356,12 +364,10 @@ function KeyColumn({
   label,
   keys,
   accent,
-}: { label: string; keys: string[]; accent: string }): JSX.Element {
+}: { label: string; keys: string[]; accent: string }): React.JSX.Element {
   return (
     <div className="rounded bg-panel p-2">
-      <div className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
+      <div className="mb-1.5 text-[10px] uppercase tracking-[0.12em] text-faint">{label}</div>
       {keys.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {keys.map((key) => (
@@ -378,7 +384,7 @@ function KeyColumn({
 }
 
 /** A boolean flag chip: green when on, neutral when off. */
-function FlagChip({ label, on }: { label: string; on: boolean }): JSX.Element {
+function FlagChip({ label, on }: { label: string; on: boolean }): React.JSX.Element {
   return (
     <span
       className={`rounded bg-panel px-1.5 py-0.5 text-[10px] ${

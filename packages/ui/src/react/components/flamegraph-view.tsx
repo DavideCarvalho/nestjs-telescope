@@ -17,7 +17,7 @@ const ROW_HEIGHT = 18;
  * that the DOM is the simplest robust renderer. This keeps the UI bundle free of
  * a heavy flamegraph dependency, as the task requires.
  */
-export function Flamegraph({ tree }: { tree: FlameNode }): JSX.Element {
+export function Flamegraph({ tree }: { tree: FlameNode }): React.JSX.Element {
   // Zoom focus: the path key of the frame currently treated as the root.
   const [focusKey, setFocusKey] = useState('0');
 
@@ -32,7 +32,7 @@ export function Flamegraph({ tree }: { tree: FlameNode }): JSX.Element {
 
   if (tree.totalMs <= 0 || cells.length === 0) {
     return (
-      <div className="flex h-24 items-center justify-center rounded-lg border border-line bg-panel/40 text-xs text-muted-foreground">
+      <div className="flex h-24 items-center justify-center aviary-surface rounded-lg border border-border text-xs text-muted-foreground">
         No samples — the capture was empty.
       </div>
     );

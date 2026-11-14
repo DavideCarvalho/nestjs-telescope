@@ -86,7 +86,7 @@ export const chartBrushProps = {
   travellerWidth: 8,
   // `stroke` colours the travellers and the outline; the accent makes the two
   // drag handles read as the interactive part of an otherwise static chart.
-  stroke: 'var(--accent)',
+  stroke: 'var(--aviary-accent-ink, var(--accent))',
   fill: 'color-mix(in srgb, var(--panel-2) 80%, transparent)',
 } as const;
 
@@ -123,7 +123,7 @@ export function ChartContainer({
   config: ChartConfig;
   className?: string;
   children: ReactElement;
-}): JSX.Element {
+}): React.JSX.Element {
   const style: CSSProperties & ChartCssVars = useMemo(() => chartCssVars(config), [config]);
   return (
     <ChartContext.Provider value={config}>
@@ -257,7 +257,7 @@ export function ChartTooltipContent({
   labelFormatter,
   valueFormatter,
   className,
-}: ChartTooltipContentProps): JSX.Element | null {
+}: ChartTooltipContentProps): React.JSX.Element | null {
   const config = useChartConfig();
   const items = payloadItems(payload);
   if (!active || items.length === 0) return null;
@@ -273,9 +273,7 @@ export function ChartTooltipContent({
       )}
     >
       {!hideLabel && labelNode !== null && (
-        <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {labelNode}
-        </p>
+        <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-faint">{labelNode}</p>
       )}
       <div className="grid gap-0.5">
         {items.map((item, index) => {
@@ -327,7 +325,7 @@ export function ChartLegendContent({
   hidden,
   onToggle,
   className,
-}: ChartLegendContentProps): JSX.Element | null {
+}: ChartLegendContentProps): React.JSX.Element | null {
   const config = useChartConfig();
   const items = payloadItems(payload);
   if (items.length === 0) return null;

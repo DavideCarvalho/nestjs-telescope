@@ -42,7 +42,7 @@ export const TableHeader = forwardRef<
     <thead
       ref={ref}
       className={cn(
-        'border-b border-line text-left text-[10px] uppercase tracking-wide text-muted-foreground',
+        'border-b border-line text-left text-[10px] uppercase tracking-[0.12em] text-faint',
         className,
       )}
       {...props}

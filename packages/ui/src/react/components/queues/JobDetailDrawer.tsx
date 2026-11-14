@@ -13,10 +13,10 @@ function prettyJson(value: unknown): string {
   }
 }
 
-function JsonBlock({ label, value }: { label: string; value: unknown }): JSX.Element {
+function JsonBlock({ label, value }: { label: string; value: unknown }): React.JSX.Element {
   return (
     <section>
-      <h4 className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</h4>
+      <h4 className="mb-1 text-[10px] uppercase tracking-[0.12em] text-faint">{label}</h4>
       <pre className="overflow-auto rounded bg-background p-2.5 text-[11px] leading-relaxed text-foreground ring-1 ring-line">
         {prettyJson(value)}
       </pre>
@@ -24,10 +24,10 @@ function JsonBlock({ label, value }: { label: string; value: unknown }): JSX.Ele
   );
 }
 
-function MetaRow({ label, value }: { label: string; value: string }): JSX.Element {
+function MetaRow({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="flex items-baseline justify-between gap-3 border-t border-line-soft py-1 first:border-0">
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-[10px] uppercase tracking-[0.12em] text-faint">{label}</span>
       <span className="tabular-nums text-foreground">{value}</span>
     </div>
   );
@@ -52,7 +52,7 @@ function DetailBody({
   queue: string;
   state: QueueState;
   onClose: () => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <div className="space-y-4">
       <header className="space-y-1">
@@ -102,9 +102,7 @@ function DetailBody({
 
       {detail.stacktrace && detail.stacktrace.length > 0 && (
         <section>
-          <h4 className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-            Stacktrace
-          </h4>
+          <h4 className="mb-1 text-[10px] uppercase tracking-[0.12em] text-faint">Stacktrace</h4>
           <pre className="overflow-auto rounded bg-background p-2.5 text-[11px] leading-relaxed text-bad ring-1 ring-line">
             {detail.stacktrace.join('\n')}
           </pre>
@@ -129,7 +127,7 @@ export function JobDetailDrawer({
   state: QueueState;
   capabilities: QueueCapabilities | undefined;
   onClose: () => void;
-}): JSX.Element {
+}): React.JSX.Element {
   const { data, isLoading, isError } = useQueueJob(driver, queue, jobId);
 
   return (
@@ -141,7 +139,7 @@ export function JobDetailDrawer({
     >
       <DialogContent placement="right" className="flex flex-col">
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <DialogTitle className="text-xs font-normal uppercase tracking-wide text-muted-foreground">
+          <DialogTitle className="text-xs font-normal uppercase tracking-[0.12em] text-faint">
             Job detail
           </DialogTitle>
           <Button variant="ghost" size="xs" aria-label="Close job detail" onClick={onClose}>

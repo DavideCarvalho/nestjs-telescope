@@ -1,4 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { cn } from '../../aviary-kit/lib/utils';
+import { TelescopePage } from '../page-chrome.js';
 
 const SUB_TABS = [
   { to: '/queues', label: 'Manage', end: true },
@@ -6,26 +8,30 @@ const SUB_TABS = [
 ];
 
 /** Shared shell for the Queues area: management (default) + metrics sub-tabs. */
-export function QueuesShell(): JSX.Element {
+export function QueuesShell(): React.JSX.Element {
   return (
-    <div className="space-y-1">
-      <div className="flex gap-1 border-b border-line px-4 pt-3">
+    <TelescopePage
+      title="Queues"
+      description="Live queues with their jobs and actions, and failure and throughput metrics."
+    >
+      <nav aria-label="Queues" className="flex gap-1 border-b border-border">
         {SUB_TABS.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
             end={tab.end}
             className={({ isActive }) =>
-              `rounded-t-md px-3 py-1.5 text-xs transition-colors ${
-                isActive ? 'bg-panel text-brand' : 'text-muted-foreground hover:text-foreground'
-              }`
+              cn(
+                '-mb-px border-b-2 px-3 py-2 text-[12.5px] font-medium transition-colors',
+                isActive ? 'border-primary text-fg' : 'border-transparent text-dim hover:text-fg',
+              )
             }
           >
             {tab.label}
           </NavLink>
         ))}
-      </div>
+      </nav>
       <Outlet />
-    </div>
+    </TelescopePage>
   );
 }

@@ -32,7 +32,7 @@ export function BreakdownCard({
   height?: number;
   /** Drill-down: called with the segment under a click. Omit and the chart is inert. */
   onSelect?: (selection: ChartSelection) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   const bodyHeight = height - 64;
   const config = useMemo(
     () =>

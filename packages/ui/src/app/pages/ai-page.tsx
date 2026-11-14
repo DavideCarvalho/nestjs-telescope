@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { PageHeader } from '../../aviary-kit/blocks/page-header';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import { StatCard } from '../../react/components/extensions/stat-card.js';
 import {
   type AiRunRow,
@@ -22,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../react/ui/index.js';
+import { LoadError, RowsSkeleton } from '../page-chrome.js';
 
 /**
  * Categorical hues for a run's time split. They encode DATA (which slice of the run), not state,
@@ -68,18 +71,18 @@ function actorLabel(key: string): string {
   return key === '@platform' ? 'Platform (@platform)' : key;
 }
 
-function SectionHeading({ title, hint }: { title: string; hint?: string }): JSX.Element {
+function SectionHeading({ title, hint }: { title: string; hint?: string }): React.JSX.Element {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <h3 className="text-[12.5px] font-semibold tracking-[0.02em] text-fg">{title}</h3>
       {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
     </div>
   );
 }
 
-function Panel({ children }: { children: React.ReactNode }): JSX.Element {
+function Panel({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <section className="space-y-3 rounded-lg border border-line bg-panel/40 p-4">
+    <section className="space-y-3 aviary-surface rounded-lg border border-border p-4">
       {children}
     </section>
   );
@@ -96,7 +99,7 @@ function SpendTable({
   rows: AiSpendRow[];
   total: number;
   label?: (key: string) => string;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <Panel>
       <SectionHeading title={title} />
@@ -139,7 +142,7 @@ export function TimeSplitBar({
 }: {
   run: Pick<AiRunRow, 'queueMs' | 'modelMs' | 'toolsMs' | 'durationMs'>;
   scaleMs: number;
-}): JSX.Element {
+}): React.JSX.Element {
   const slices = [
     { key: 'queue', ms: run.queueMs ?? 0 },
     { key: 'model', ms: run.modelMs ?? 0 },
@@ -169,7 +172,7 @@ export function TimeSplitBar({
   );
 }
 
-function TimeLegend(): JSX.Element {
+function TimeLegend(): React.JSX.Element {
   return (
     <span className="flex items-center gap-3 text-[10px] text-muted-foreground">
       {(Object.keys(TIME_SLICE_COLORS) as (keyof typeof TIME_SLICE_COLORS)[]).map((key) => (
@@ -200,7 +203,7 @@ function RunsTable({
   runs: AiRunRow[];
   selectedId: string | null;
   onSelect: (run: AiRunRow) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   const scaleMs = Math.max(
     1,
     ...runs.map((r) => (r.queueMs ?? 0) + (r.modelMs ?? 0) + (r.toolsMs ?? 0)),
@@ -259,7 +262,7 @@ function RunsTable({
   );
 }
 
-function StepBar({ step, scaleMs }: { step: AiStepTiming; scaleMs: number }): JSX.Element {
+function StepBar({ step, scaleMs }: { step: AiStepTiming; scaleMs: number }): React.JSX.Element {
   const scale = Math.max(1, scaleMs);
   return (
     <div className="flex h-2 w-56 overflow-hidden rounded bg-line" aria-hidden="true">
@@ -278,13 +281,16 @@ function StepBar({ step, scaleMs }: { step: AiStepTiming; scaleMs: number }): JS
 }
 
 /** The selected run: its numbers, its per-step breakdown, and links into the existing views. */
-export function RunDetail({ run, onClose }: { run: AiRunRow; onClose: () => void }): JSX.Element {
+export function RunDetail({
+  run,
+  onClose,
+}: { run: AiRunRow; onClose: () => void }): React.JSX.Element {
   const scaleMs = Math.max(1, ...run.stepTimings.map((s) => (s.modelMs ?? 0) + s.toolsMs));
   return (
     <Panel>
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Run</h3>
+          <h3 className="text-[12.5px] font-semibold tracking-[0.02em] text-fg">Run</h3>
           <span className="font-mono text-xs text-foreground">{run.runId ?? run.entryId}</span>
           <StatusBadge status={run.status} code={run.code} />
         </div>
@@ -394,7 +400,7 @@ function RankList({
   runs: AiRunRow[];
   value: (run: AiRunRow) => string;
   onSelect: (run: AiRunRow) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <Panel>
       <SectionHeading title={title} />
@@ -423,7 +429,7 @@ function RankList({
   );
 }
 
-function UnpricedTable({ rows }: { rows: AiUnpricedRow[] }): JSX.Element {
+function UnpricedTable({ rows }: { rows: AiUnpricedRow[] }): React.JSX.Element {
   return (
     <Table>
       <TableHeader>
@@ -473,7 +479,7 @@ export function spendRows(report: AiUsageReport): StackedAreaRow[] {
  * The empty state. Two different claims, so two different messages: "nothing used AI in this
  * window" and "this app's agent lib does not publish the ledger event this screen reads".
  */
-export function AiEmptyState({ report }: { report: AiUsageReport }): JSX.Element {
+export function AiEmptyState({ report }: { report: AiUsageReport }): React.JSX.Element {
   if (report.coverage.legacyAgentLib) {
     return (
       <div className="rounded-md border border-dashed border-line px-4 py-6 text-sm text-muted-foreground">
@@ -503,7 +509,7 @@ export function AiEmptyState({ report }: { report: AiUsageReport }): JSX.Element
   );
 }
 
-export function AiPage(): JSX.Element {
+export function AiPage(): React.JSX.Element {
   const [window, setWindow] = useState('24h');
   const [params, setParams] = useSearchParams();
   const { data, isLoading, error } = useAi(window);
@@ -531,16 +537,17 @@ export function AiPage(): JSX.Element {
     data !== undefined && (data.coverage.usageEvents > 0 || data.coverage.runEvents > 0);
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm text-brand">AI</h2>
-        <WindowSelect value={window} onChange={setWindow} />
-      </div>
+    <PageBody>
+      <PageHeader
+        title="AI"
+        description="Model calls and agent runs: spend, tokens, latency and failures."
+        actions={<WindowSelect value={window} onChange={setWindow} />}
+      />
 
       {error ? (
-        <p className="text-sm text-bad">Failed to load: {(error as Error).message}</p>
+        <LoadError label="AI usage" error={error} />
       ) : isLoading || !data || !spend ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <RowsSkeleton rows={6} />
       ) : !hasAny ? (
         <AiEmptyState report={data} />
       ) : (
@@ -666,6 +673,6 @@ export function AiPage(): JSX.Element {
           )}
         </>
       )}
-    </div>
+    </PageBody>
   );
 }

@@ -10,7 +10,7 @@ export function QueueStateTabs({
   counts: QueueCounts | undefined;
   state: QueueState;
   onState: (state: QueueState) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <Tabs
       value={state}

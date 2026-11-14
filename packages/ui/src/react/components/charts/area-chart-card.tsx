@@ -52,7 +52,7 @@ export function AreaChartCard({
   valueFormatter?: (value: number) => ReactNode;
   /** Drill-down: called with the point under a click. Omit and the chart is inert. */
   onSelect?: (selection: ChartSelection) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   const gradientId = useId();
   const bodyHeight = height - 64;
   const config = useMemo(
@@ -100,7 +100,7 @@ export function AreaChartCard({
             </defs>
             <CartesianGrid vertical={false} />
             <XAxis dataKey="label" tickLine={false} minTickGap={24} />
-            <YAxis tickLine={false} width={40} allowDecimals={false} />
+            <YAxis tickLine={false} width={52} allowDecimals={false} />
             <ChartTooltip
               cursor={{ stroke: 'var(--line)' }}
               content={

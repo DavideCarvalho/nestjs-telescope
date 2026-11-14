@@ -10,7 +10,7 @@ export function QueuesPanel({
 }: {
   report: QueueMetricsReport;
   sparkline?: (queue: string) => React.ReactNode;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
     <table className="w-full text-left text-xs">
       <thead className="text-muted-foreground">

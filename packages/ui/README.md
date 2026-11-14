@@ -54,6 +54,12 @@ Without `authorize` the page is open outside production; with
 `decorators` (e.g. `[UseGuards(AuthenticationGuard)]`) still run first. See
 [Protecting the routes](../../README.md#protecting-the-routes).
 
+The console's sidebar footer shows who is signed in and a sign-out. `viewer: (req) => ({ label,
+email?, role? })` (sync or async) defaults to `request.user`, read structurally and never triggering
+an authentication. `signOut: '/logout' | { href } | { action, csrfToken? } | false` defaults to the
+`account.signOut` an account console announced on the Aviary consoles registry, else none. Only
+same-origin paths reach the page.
+
 To link to the console from your app, `telescopeConsoleUrl(basePath)` (from
 `@dudousxd/nestjs-telescope-ui/client`) gives its URL.
 

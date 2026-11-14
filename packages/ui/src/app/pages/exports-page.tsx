@@ -1,4 +1,6 @@
 import { useId, useState } from 'react';
+import { PageHeader } from '../../aviary-kit/blocks/page-header';
+import { PageBody } from '../../aviary-kit/shell/app-shell';
 import type { EntriesQuery, Entry, TelescopeClient } from '../../client/index.js';
 import {
   ENTRY_TYPES,
@@ -98,7 +100,7 @@ async function collectEntries(
   return rows;
 }
 
-function RecentExports({ records }: { records: ExportRecord[] }): JSX.Element | null {
+function RecentExports({ records }: { records: ExportRecord[] }): React.JSX.Element | null {
   if (records.length === 0) return null;
   return (
     <div className="rounded-lg border border-line">
@@ -132,7 +134,7 @@ function RecentExports({ records }: { records: ExportRecord[] }): JSX.Element | 
   );
 }
 
-export function ExportsPage(): JSX.Element {
+export function ExportsPage(): React.JSX.Element {
   const client = useTelescopeClient();
   const searchId = useId();
   const limitId = useId();
@@ -177,20 +179,15 @@ export function ExportsPage(): JSX.Element {
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="px-1">
-        <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Export workbench
-        </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Page captured entries into a downloadable JSON or CSV file. Gathering runs in your browser
-          against the live store, newest-first within the selected window.
-        </p>
-      </div>
+    <PageBody>
+      <PageHeader
+        title="Exports"
+        description="Page captured entries into a downloadable JSON or CSV file. Gathering runs in your browser against the live store, newest-first within the selected window."
+      />
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-panel/40 p-4">
+      <div className="flex flex-wrap items-end gap-3 aviary-surface rounded-lg border border-border p-4">
         {/* Not a <label>: Select renders a button trigger, which a label cannot bind to. */}
-        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.12em] text-faint">
           Type
           {/* `items` lets <SelectValue> render the human label rather than the raw id. */}
           <Select
@@ -216,7 +213,7 @@ export function ExportsPage(): JSX.Element {
 
         {/* Not a <label>: WindowSelect renders its own <select>, so wrapping it in a
             label has no native control to bind to (a11y/noLabelWithoutControl). */}
-        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.12em] text-faint">
           Window
           <WindowSelect value={window} onChange={setWindow} />
         </div>
@@ -224,7 +221,7 @@ export function ExportsPage(): JSX.Element {
         {/* `htmlFor` rather than wrapping: <Input> is a component, so a static a11y check
             cannot see the <input> it renders. */}
         <label
-          className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground"
+          className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.12em] text-faint"
           htmlFor={searchId}
         >
           Search
@@ -238,7 +235,7 @@ export function ExportsPage(): JSX.Element {
         </label>
 
         <label
-          className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground"
+          className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.12em] text-faint"
           htmlFor={limitId}
         >
           Limit
@@ -254,7 +251,7 @@ export function ExportsPage(): JSX.Element {
         </label>
 
         {/* Not a <label>: Select renders a button trigger, which a label cannot bind to. */}
-        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <div className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.12em] text-faint">
           Format
           <Select
             items={FORMAT_ITEMS}
@@ -285,7 +282,7 @@ export function ExportsPage(): JSX.Element {
       {error && <p className="px-1 text-xs text-bad">{error}</p>}
 
       <div className="space-y-2">
-        <h4 className="px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <h4 className="px-1 text-[10px] uppercase tracking-[0.12em] text-faint">
           Recent exports (this session)
         </h4>
         {records.length === 0 ? (
@@ -296,6 +293,6 @@ export function ExportsPage(): JSX.Element {
           <RecentExports records={records} />
         )}
       </div>
-    </div>
+    </PageBody>
   );
 }

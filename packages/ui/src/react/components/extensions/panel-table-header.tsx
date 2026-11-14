@@ -6,7 +6,7 @@ import { type PanelHeader, type PanelTableInstance, flexRender } from './table-f
 
 /** The three sort states a header can be in, as a glyph. `↕` is the "you can
  *  sort by this" affordance, dimmed so it reads as available rather than active. */
-function SortIndicator({ direction }: { direction: false | 'asc' | 'desc' }): JSX.Element {
+function SortIndicator({ direction }: { direction: false | 'asc' | 'desc' }): React.JSX.Element {
   if (direction === 'asc') return <span aria-hidden="true">↑</span>;
   if (direction === 'desc') return <span aria-hidden="true">↓</span>;
   return (
@@ -32,7 +32,7 @@ function SortableHead({
 }: {
   header: PanelHeader;
   className: string;
-}): JSX.Element {
+}): React.JSX.Element {
   const direction = header.column.getIsSorted();
   const label = flexRender(header.column.columnDef.header, header.getContext());
   return (
@@ -63,7 +63,7 @@ function SortableHead({
  * what makes "clear the box" mean "drop the filter" rather than "match the
  * empty string".
  */
-function ColumnFilterInput({ header }: { header: PanelHeader }): JSX.Element {
+function ColumnFilterInput({ header }: { header: PanelHeader }): React.JSX.Element {
   const applied = header.column.getFilterValue();
   const appliedText = typeof applied === 'string' ? applied : '';
   const [draft, setDraft] = useState(appliedText);
@@ -111,8 +111,8 @@ export function PanelTableHeader({
   table: PanelTableInstance;
   sticky: boolean;
   /** The column-visibility menu, rendered in its own trailing cell when present. */
-  menu?: JSX.Element | null;
-}): JSX.Element {
+  menu?: React.JSX.Element | null;
+}): React.JSX.Element {
   const headers = table.getHeaderGroups().at(-1)?.headers ?? [];
   const anyFilterable = headers.some((header) => header.column.getCanFilter());
   // The filter row sticks BELOW the label row, hence the second offset — both

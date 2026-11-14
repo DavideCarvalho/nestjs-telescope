@@ -26,7 +26,7 @@ export function samplingNote(sampling: Record<string, number>): string | null {
  * Subtle header indicator surfacing the configured retention window (or "none"
  * when unbounded) plus a tooltip hint when any entry type is down-sampled.
  */
-export function RetentionIndicator(): JSX.Element | null {
+export function RetentionIndicator(): React.JSX.Element | null {
   const { data: meta } = useMeta();
   if (!meta) return null;
   const note = samplingNote(meta.sampling ?? {});
@@ -35,7 +35,7 @@ export function RetentionIndicator(): JSX.Element | null {
       className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
       title={note ?? undefined}
     >
-      <span className="uppercase tracking-wide text-muted-foreground">retention:</span>
+      <span className="uppercase tracking-[0.12em] text-faint">retention:</span>
       {meta.retention ? (
         <span className="text-muted-foreground">{formatRetention(meta.retention.afterMs)}</span>
       ) : (

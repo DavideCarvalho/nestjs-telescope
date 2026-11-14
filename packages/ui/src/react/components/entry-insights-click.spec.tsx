@@ -16,10 +16,15 @@ vi.mock('react-router-dom', () => ({
 // render and be clicked.
 vi.mock('recharts', async () => {
   const actual = await vi.importActual<typeof import('recharts')>('recharts');
-  function MockResponsiveContainer({ children }: { children: React.ReactNode }): JSX.Element {
+  function MockResponsiveContainer({ children }: { children: React.ReactNode }): React.JSX.Element {
     return (
       <div>
-        {isValidElement(children) ? cloneElement(children, { width: 600, height: 300 }) : children}
+        {isValidElement(children)
+          ? cloneElement(children as React.ReactElement<{ width?: number; height?: number }>, {
+              width: 600,
+              height: 300,
+            })
+          : children}
       </div>
     );
   }

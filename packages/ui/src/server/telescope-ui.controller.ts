@@ -6,6 +6,7 @@ import {
   TELESCOPE_CONSOLE_ID,
   consoleSwitcherConfig,
   normalizeTelescopePath,
+  readAviaryConsoles,
 } from '@dudousxd/nestjs-telescope';
 import {
   Controller,
@@ -14,8 +15,10 @@ import {
   Inject,
   NotFoundException,
   Param,
+  Req,
   StreamableFile,
 } from '@nestjs/common';
+import { resolveConsoleSignOut, resolveConsoleViewer } from './console-shell.js';
 import { TELESCOPE_UI_OPTIONS, type TelescopeUiModuleOptions } from './telescope-ui.options.js';
 
 /** dist/server/telescope-ui.controller.js -> ../spa */
@@ -30,6 +33,8 @@ const CONTENT_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.json': 'application/json; charset=utf-8',
   '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
 
 /**
@@ -39,8 +44,8 @@ const CONTENT_TYPES: Record<string, string> = {
  * time instead of rebuilding the bundle per-path. When the path is the default
  * `'telescope'` the source and target strings are identical, so this is a no-op.
  */
-function rewriteAssetBase(html: string, path: string): string {
-  const injectedBase = `<script>window.__TELESCOPE_BASE__ = ${JSON.stringify(`/${path}`)};</script>${configBlock(path)}`;
+function rewriteAssetBase(html: string, path: string, config: string): string {
+  const injectedBase = `<script>window.__TELESCOPE_BASE__ = ${JSON.stringify(`/${path}`)};</script>${config}`;
   const rebased = html.split('/telescope/').join(`/${path}/`);
   // Expose the runtime base before the bundle so the client can derive API URLs.
   if (rebased.includes('</head>')) {
@@ -54,13 +59,29 @@ export const TELESCOPE_DASHBOARD_CONFIG_ID = 'telescope-dashboard-config';
 
 /**
  * The page's JSON config block (`telescope-dashboard-config`, CSP-safe: data, not script). It
- * carries `switcher` only when another Aviary console is registered.
+ * carries `switcher` only when another Aviary console is registered; `search` (⌘K, answering per
+ * console too) whenever this console is in the registry; `viewer` and `signOut` for the sidebar
+ * footer when they resolve (see `TelescopeUiModuleOptions.viewer` / `signOut`).
  */
-function configBlock(path: string): string {
-  const switcher = consoleSwitcherConfig(TELESCOPE_CONSOLE_ID, `/${path}/api/consoles`);
+async function configBlock(
+  path: string,
+  request: unknown,
+  options: Pick<TelescopeUiModuleOptions, 'viewer' | 'signOut'>,
+): Promise<string> {
+  const api = `/${path}/api`;
+  const switcher = consoleSwitcherConfig(TELESCOPE_CONSOLE_ID, `${api}/consoles`);
+  const registry = readAviaryConsoles();
+  const registered = registry?.entries.some((entry) => entry.id === TELESCOPE_CONSOLE_ID);
+  const viewer = await resolveConsoleViewer(request, options.viewer);
+  const signOut = resolveConsoleSignOut(request, options.signOut, registry);
   const json = JSON.stringify({
     base: `/${path}`,
     ...(switcher !== undefined ? { switcher } : {}),
+    ...(registered
+      ? { search: { endpoint: `${api}/consoles/search`, self: TELESCOPE_CONSOLE_ID } }
+      : {}),
+    ...(viewer ? { viewer } : {}),
+    ...(signOut ? { signOut } : {}),
   }).replaceAll('<', '\\u003c');
   return `<script type="application/json" id="${TELESCOPE_DASHBOARD_CONFIG_ID}">${json}</script>`;
 }
@@ -72,7 +93,7 @@ export class TelescopeUiController {
   private readonly assetsDir: string;
   private readonly path: string;
 
-  constructor(@Inject(TELESCOPE_UI_OPTIONS) options: TelescopeUiModuleOptions) {
+  constructor(@Inject(TELESCOPE_UI_OPTIONS) private readonly options: TelescopeUiModuleOptions) {
     this.assetsDir = options.assetsDir ?? defaultAssetsDir();
     this.path = normalizeTelescopePath(options.path);
   }
@@ -84,12 +105,13 @@ export class TelescopeUiController {
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
   @Header('Cache-Control', 'no-store, must-revalidate')
-  index(): string {
+  async index(@Req() request?: unknown): Promise<string> {
     const indexPath = join(this.assetsDir, 'index.html');
     if (!existsSync(indexPath)) {
       throw new NotFoundException('Telescope UI is not built. Run the package build.');
     }
-    return rewriteAssetBase(readFileSync(indexPath, 'utf8'), this.path);
+    const config = await configBlock(this.path, request, this.options);
+    return rewriteAssetBase(readFileSync(indexPath, 'utf8'), this.path, config);
   }
 
   // Asset filenames are content-hashed by the build, so they're safe to cache

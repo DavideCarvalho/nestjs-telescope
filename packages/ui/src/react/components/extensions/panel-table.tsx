@@ -59,7 +59,7 @@ export function PanelTable({
   /** Cap the body height and pin the header — used for paged tables, which are
    *  the ones whose row count is unbounded from the panel's point of view. */
   scrolls?: boolean;
-}): JSX.Element {
+}): React.JSX.Element {
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
   const columnDefs = useMemo(() => buildPanelColumns(columns), [columns]);
 

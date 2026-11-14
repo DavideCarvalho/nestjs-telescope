@@ -15,7 +15,7 @@ import type { PanelColumn } from './table-features.js';
  * Renders nothing at all when no column opted in, which is what keeps every
  * dashboard that predates this feature rendering exactly as it did.
  */
-export function PanelColumnMenu({ columns }: { columns: PanelColumn[] }): JSX.Element | null {
+export function PanelColumnMenu({ columns }: { columns: PanelColumn[] }): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const hideable = columns.filter((column) => column.getCanHide());

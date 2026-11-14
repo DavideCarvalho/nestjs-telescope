@@ -49,7 +49,7 @@ export function PanelActionsProvider({
 }: {
   ext: string;
   children: ReactNode;
-}): JSX.Element {
+}): React.JSX.Element {
   const client = useOptionalTelescopeClient();
   const queryClient = useQueryClient();
   const meta = useMeta();
@@ -146,7 +146,7 @@ export function RowActionButton({
 }: {
   action: ColumnAction;
   row: PanelRow;
-}): JSX.Element | null {
+}): React.JSX.Element | null {
   const actions = useContext(PanelActionsContext);
   const info = actions?.info(action);
   if (actions === null || info === undefined || !actionShownFor(action, row)) return null;

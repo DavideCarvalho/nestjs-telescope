@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { HashRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { TelescopeClient } from '../client/index.js';
 import { ENTRY_TYPES, TelescopeProvider } from '../react/index.js';
 import { mockTelescopeClient } from '../testing/mock-telescope-client.js';
-import { DashboardLayout, visibleTopNav } from './dashboard-layout.js';
+import { DashboardLayout, activeNavId, visibleTopNav } from './dashboard-layout.js';
 import { ThemeProvider } from './theme-context.js';
 
 const TOP_NAV = [
@@ -53,21 +53,38 @@ function renderLayout(watchers?: string[]) {
 }
 
 describe('DashboardLayout', () => {
-  it('renders the top-level nav and the page children', () => {
+  it('renders the nav sections and the page children', () => {
     renderLayout();
     expect(screen.getByText('child')).toBeTruthy();
-    for (const label of ['Overview', 'Entries', 'Traces', 'Pulse', 'Queues']) {
+    for (const label of ['Overview', 'Pulse', 'Entries', 'Traces', 'Queues', 'Schedules']) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();
     }
+    for (const section of ['Monitor', 'Explore', 'Operations', 'Watchers', 'Data']) {
+      expect(screen.getByText(section)).toBeTruthy();
+    }
+    // Exceptions sits under MONITOR, as the exception entries.
+    expect(screen.getByRole('link', { name: 'Exceptions' }).getAttribute('href')).toBe(
+      '#/entries/exception',
+    );
   });
+
+  /** Unfold the Watchers section and return it. */
+  function openWatchers(): HTMLElement {
+    fireEvent.click(screen.getByRole('button', { name: 'Watchers' }));
+    const group = screen
+      .getByRole('button', { name: 'Watchers' })
+      .closest('[data-slot="sidebar-group"]');
+    if (!(group instanceof HTMLElement)) throw new Error('no watchers group');
+    return group;
+  }
 
   it('renders every Watchers nav item before meta resolves (no flash-of-hidden-nav)', () => {
     // Asserting synchronously, before the async meta query settles: watchers is
     // still undefined, so the fallback shows the full list.
     renderLayout();
-    expect(screen.getByText('Watchers')).toBeTruthy();
+    const watchers = openWatchers();
     for (const type of ENTRY_TYPES) {
-      const link = screen.getByRole('link', { name: type.label });
+      const link = within(watchers).getByRole('link', { name: type.label });
       expect(link.getAttribute('href')).toBe(`#/entries/${type.id}`);
     }
   });
@@ -76,14 +93,31 @@ describe('DashboardLayout', () => {
     // Only request, exception, and query are registered → redis/model/etc. drop
     // out of the nav once meta resolves.
     renderLayout(['request', 'exception', 'query']);
+    const watchers = openWatchers();
     await waitFor(() => {
-      expect(screen.queryByRole('link', { name: 'Redis' })).toBeNull();
+      expect(within(watchers).queryByRole('link', { name: 'Redis' })).toBeNull();
     });
-    expect(screen.getByRole('link', { name: 'Requests' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Queries' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Exceptions' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Models' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Mail' })).toBeNull();
+    expect(within(watchers).getByRole('link', { name: 'Requests' })).toBeTruthy();
+    expect(within(watchers).getByRole('link', { name: 'Queries' })).toBeTruthy();
+    expect(within(watchers).getByRole('link', { name: 'Exceptions' })).toBeTruthy();
+    expect(within(watchers).queryByRole('link', { name: 'Models' })).toBeNull();
+    expect(within(watchers).queryByRole('link', { name: 'Mail' })).toBeNull();
+  });
+
+  it('maps each route to its sidebar item', () => {
+    expect(activeNavId('/')).toBe('overview');
+    expect(activeNavId('/entries/exception')).toBe('exceptions');
+    expect(activeNavId('/entries')).toBe('entries');
+    expect(activeNavId('/entries/view/abc')).toBe('entries');
+    expect(activeNavId('/entries/query')).toBe('watcher:query');
+    expect(activeNavId('/ext/billing')).toBe('dashboard:billing');
+    expect(activeNavId('/queues/metrics')).toBe('queues');
+    expect(activeNavId('/traces/t1')).toBe('traces');
+  });
+
+  it('keeps the raw segment on a malformed escape instead of throwing', () => {
+    expect(activeNavId('/entries/%')).toBe('watcher:%');
+    expect(activeNavId('/ext/%E0%A4%A')).toBe('dashboard:%E0%A4%A');
   });
 
   it('hides the Traces nav item only when tracesEnabled is positively false', () => {

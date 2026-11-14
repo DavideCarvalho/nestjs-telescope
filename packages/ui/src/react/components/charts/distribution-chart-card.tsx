@@ -46,7 +46,7 @@ export function DistributionChartCard({
   height?: number;
   /** Drill-down: called with the bucket under a click. Omit and the chart is inert. */
   onSelect?: (selection: ChartSelection) => void;
-}): JSX.Element {
+}): React.JSX.Element {
   const chips: Array<[number, keyof typeof MARKER_TINT]> = [];
   if (p50 !== undefined) chips.push([p50, 'p50']);
   if (p95 !== undefined) chips.push([p95, 'p95']);
@@ -90,7 +90,7 @@ export function DistributionChartCard({
               <BarChart data={buckets} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="label" tickLine={false} />
-                <YAxis tickLine={false} allowDecimals={false} width={40} />
+                <YAxis tickLine={false} allowDecimals={false} width={52} />
                 <ChartTooltip
                   cursor={{ fill: 'color-mix(in srgb, var(--text) 5%, transparent)' }}
                   content={<ChartTooltipContent />}

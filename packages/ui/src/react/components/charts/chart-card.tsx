@@ -9,13 +9,11 @@ export function ChartCard({
   right?: React.ReactNode;
   height?: number;
   children: React.ReactNode;
-}): JSX.Element {
+}): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-line bg-panel/40 p-4">
-      <header className="mb-3 flex items-center justify-between">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {title}
-        </h3>
+    <section className="aviary-surface rounded-lg border border-border p-4">
+      <header className="-mx-4 -mt-4 mb-3 flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <h3 className="text-[12.5px] font-semibold tracking-[0.02em] text-fg">{title}</h3>
         {right}
       </header>
       <div style={{ height }}>{children}</div>
@@ -30,7 +28,7 @@ export function ChartCard({
  * the chart needs, since there the chart's share of the body is not the card's
  * height.
  */
-export function ChartEmptyState({ height }: { height?: number }): JSX.Element {
+export function ChartEmptyState({ height }: { height?: number }): React.JSX.Element {
   return (
     <div
       className="flex h-full items-center justify-center text-xs text-muted-foreground"

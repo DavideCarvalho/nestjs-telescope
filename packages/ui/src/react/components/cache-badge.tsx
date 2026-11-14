@@ -62,7 +62,7 @@ export function cacheBadge(content: unknown): CacheBadgeInfo | null {
 }
 
 /** Small cache hit/miss/set status pill; renders nothing for non-cache content. */
-export function CacheBadge({ content }: { content: unknown }): JSX.Element | null {
+export function CacheBadge({ content }: { content: unknown }): React.JSX.Element | null {
   const badge = cacheBadge(content);
   if (badge === null) return null;
   return <Badge variant={badge.variant}>{badge.label}</Badge>;
