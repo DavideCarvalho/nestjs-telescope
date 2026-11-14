@@ -443,6 +443,14 @@ describe('UserFooter', () => {
   });
 
   it('toggles the theme on <html> and remembers it', () => {
+    // Node 26 ships its own `localStorage`, which is undefined without --localstorage-file and
+    // shadows the DOM one; the kit tolerates that, so give this test a storage of its own.
+    const saved = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    });
     render(
       <ThemeProvider storageKey="test-theme">
         <UserFooter />
@@ -451,9 +459,10 @@ describe('UserFooter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch to light mode' }));
     expect(document.documentElement.classList.contains('light')).toBe(true);
     expect(document.documentElement.dataset.theme).toBe('light');
-    expect(window.localStorage.getItem('test-theme')).toBe('light');
+    expect(saved.get('test-theme')).toBe('light');
     fireEvent.click(screen.getByRole('button', { name: 'Switch to dark mode' }));
     expect(document.documentElement.classList.contains('light')).toBe(false);
+    vi.unstubAllGlobals();
   });
 });
 
