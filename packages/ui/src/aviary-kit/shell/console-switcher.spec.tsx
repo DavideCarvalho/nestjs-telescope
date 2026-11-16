@@ -507,7 +507,7 @@ describe('ConsoleSearch when the app does not serve the endpoint', () => {
     activeId: undefined,
     title: 'Runs',
   };
-  const trigger = () => screen.queryByRole('button', { name: 'Search all consoles' });
+  const trigger = () => screen.queryByRole('button', { name: /^Search/ });
 
   it('AppShell hides the ⌘K trigger and shortcut once the endpoint answers 404', async () => {
     fetchMock.mockImplementation(() => respond({}, 404));
@@ -555,8 +555,9 @@ describe('ConsoleSearch when the app does not serve the endpoint', () => {
         page
       </AppShell>,
     );
-    expect(screen.getByRole('button', { name: 'Search all consoles' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Search all consoles' }));
+    // The trigger is named after the palette it opens: no console search here, so "Search".
+    expect(screen.queryByRole('button', { name: 'Search all consoles' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     const input = await screen.findByRole('combobox', { name: 'Search' });
     fireEvent.change(input, { target: { value: 'runs' } });
     expect(screen.getByText('Runs page')).toBeTruthy();

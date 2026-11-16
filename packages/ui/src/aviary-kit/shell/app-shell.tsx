@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useCallback, useState } from 'react';
+import { type CSSProperties, type ReactNode, useCallback, useMemo, useState } from 'react';
 import { ChevronDownIcon } from '../icons';
 import { cn } from '../lib/utils';
 import type { AviaryShellConfig } from '../shell-config';
@@ -28,7 +28,8 @@ import {
   useSearchShortcut,
   useServedSearch,
 } from './console-search';
-import { ConsoleSwitcher, type CurrentConsole } from './console-switcher';
+import { ConsoleSwitcher, type CurrentConsole, useConsoles } from './console-switcher';
+import { consoleCommands, pageCommands } from './navigation';
 import { UserFooter } from './user-footer';
 
 /** One sidebar entry. Give it an `href` (a real link) or an `onSelect` (an in-app action). */
@@ -41,6 +42,8 @@ export interface NavItem {
   onSelect?: () => void;
   /** A small count/status at the end of the row. */
   badge?: ReactNode;
+  /** aviary: more words ⌘K finds this page by ("flamegraphs" for Profiles). */
+  keywords?: string[];
 }
 
 /** A group of entries under an UPPERCASE section label. */
@@ -74,9 +77,11 @@ export function BrandBlock({ brand }: { brand: ConsoleBrand }) {
         <span className="aviary-ring" aria-hidden />
       </div>
       <div className="min-w-0 overflow-hidden">
-        <div className="truncate text-sm font-bold tracking-[0.03em] text-fg">{brand.name}</div>
+        <div className="truncate text-sm leading-[normal] font-bold tracking-[0.03em] text-fg">
+          {brand.name}
+        </div>
         {brand.subtitle && (
-          <div className="mt-px truncate text-[10px] font-medium uppercase tracking-[0.08em] text-faint">
+          <div className="mt-px truncate text-[10px] leading-[normal] font-medium uppercase tracking-[0.08em] text-faint">
             {brand.subtitle}
           </div>
         )}
@@ -101,7 +106,7 @@ function NavMenu({ nav, activeId }: { nav: NavSection[]; activeId: string | unde
                 <SidebarGroupLabel
                   className={cn(navLabelClass, 'p-0')}
                   render={
-                    <CollapsibleTrigger className="flex w-full items-center gap-1 rounded-md px-2 pt-3 pb-1.5 text-left uppercase hover:text-dim" />
+                    <CollapsibleTrigger className="flex w-full items-center gap-1 rounded-md px-2 pt-3 pb-[5px] text-left uppercase hover:text-dim" />
                   }
                 >
                   {section.section}
@@ -127,8 +132,9 @@ function NavMenu({ nav, activeId }: { nav: NavSection[]; activeId: string | unde
   );
 }
 
+/** authkit's `.nav-section`: 9.5px caps, 12px above / 5px below, normal line height. */
 const navLabelClass =
-  'h-auto px-2 pt-3 pb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.14em] text-faint';
+  'h-auto px-2 pt-3 pb-[5px] text-[9.5px] leading-[normal] font-semibold uppercase tracking-[0.14em] text-faint';
 
 function NavItems({
   items,
@@ -140,7 +146,7 @@ function NavItems({
   after: () => void;
 }) {
   return (
-    <SidebarMenu className="gap-0.5">
+    <SidebarMenu className="gap-0">
       {items.map((item) => {
         const active = item.id === activeId;
         const content = (
@@ -195,10 +201,11 @@ function NavItems({
   );
 }
 
-/** authkit's `.nav-item`: 12.5px muted label, faint 15px icon; active = accent-soft fill, accent
+/** authkit's `.nav-item`: 32px rows stacked with no gap (7px padding + hairline around a
+ *  normal-line-height 12.5px muted label), faint 15px icon; active = accent-soft fill, accent
  *  hairline, accent icon. */
 const navButtonClass =
-  'h-auto gap-[9px] rounded-md border border-transparent px-[9px] py-[7px] text-[12.5px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg data-active:border-brand-border data-active:bg-brand-soft data-active:font-medium data-active:text-fg [&_svg]:size-[15px]! [&_svg]:text-faint hover:[&_svg]:text-dim data-active:[&_svg]:text-brand';
+  'h-auto gap-[9px] rounded-md border border-transparent px-[9px] py-[7px] text-[12.5px] leading-[normal] font-medium text-dim transition-colors hover:bg-hover hover:text-fg data-active:border-brand-border data-active:bg-brand-soft data-active:font-medium data-active:text-fg [&_svg]:size-[15px]! [&_svg]:text-faint hover:[&_svg]:text-dim data-active:[&_svg]:text-brand';
 
 /** The topbar: sidebar toggle (drawer on phones), page title, page-level pickers, ⌘K. */
 export function Topbar({
@@ -253,14 +260,24 @@ export function AppShell({
   searchPlaceholder?: string | undefined;
   /** Classes for the scrolling content column (pages that manage their own scroll pass `overflow-hidden`). */
   contentClassName?: string | undefined;
-  /** aviary: console-local ⌘K entries (pages, filters); ⌘K works with these even without `shell.search`. */
+  /**
+   * aviary: console-local ⌘K entries (filters, views). The nav's pages and the other consoles are
+   * already in ⌘K; don't repeat them here.
+   */
   commands?: readonly SearchCommand[] | undefined;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
+  // ⌘K navigation: this console's pages, then the consoles in the switcher (same cached request).
+  const consoles = useConsoles(shell.switcher);
+  const navigation = useMemo(
+    () => [...pageCommands(nav, brand.current.title), ...consoleCommands(consoles)],
+    [nav, brand.current.title, consoles],
+  );
   // aviary: an app that doesn't serve `/consoles/search` (404/405/501, `routes: false`) loses the
-  // ⌘K trigger and shortcut once that is found out, unless it has local commands.
+  // ⌘K trigger and shortcut once that is found out, unless it has pages or commands to jump to.
   const servedSearch = useServedSearch(shell.search);
-  const searchEnabled = servedSearch !== undefined || (commands?.length ?? 0) > 0;
+  const searchEnabled =
+    servedSearch !== undefined || navigation.length > 0 || (commands?.length ?? 0) > 0;
   useSearchShortcut(searchEnabled || searchOpen, setSearchOpen);
   const openSearch = useCallback(() => setSearchOpen(true), []);
   return (
@@ -279,7 +296,7 @@ export function AppShell({
               {...(searchEnabled ? { onSearch: openSearch } : {})}
             />
           </SidebarHeader>
-          <SidebarContent className="pt-1 pb-2">
+          <SidebarContent className="pt-2.5 pb-2">
             <nav aria-label="Console">
               <NavMenu nav={nav} activeId={activeId} />
             </nav>
@@ -295,7 +312,14 @@ export function AppShell({
           <Topbar
             title={title}
             actions={actions}
-            search={searchEnabled ? <SearchTrigger onOpen={openSearch} /> : undefined}
+            search={
+              searchEnabled ? (
+                <SearchTrigger
+                  onOpen={openSearch}
+                  label={servedSearch ? 'Search all consoles' : 'Search'}
+                />
+              ) : undefined
+            }
           />
           <div className={cn('relative min-h-0 flex-1 overflow-y-auto', contentClassName)}>
             {children}
@@ -307,6 +331,7 @@ export function AppShell({
         <ConsoleSearch
           config={shell.search}
           switcher={shell.switcher}
+          navigation={navigation}
           commands={commands}
           open={searchOpen}
           onOpenChange={setSearchOpen}
