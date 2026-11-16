@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 5.3.0
+
+### Minor Changes
+
+- [#202](https://github.com/DavideCarvalho/nestjs-telescope/pull/202) [`9a0191e`](https://github.com/DavideCarvalho/nestjs-telescope/commit/9a0191ebe222e9528efab50690bd03b24dfee5c8) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Broker transports for tenant → control plane: `transports.bullmq({ connection, queue?, attempts? })` and `transports.redis({ connection | client, prefix? })`, set as `tenant.transport` on tenants and as `transport` on the control plane, which consumes the broker and keeps its HTTP ingest route (mixed fleets work, deduped across both). Every message is verified with `verifyTenant`, refused or poison messages are dead-lettered (BullMQ's failed set, `<prefix>:ingest:dead`), transient failures are retried. `bullmq` and `ioredis` are optional peers, loaded only when their driver is used.
+
 ## 5.2.0
 
 ### Minor Changes
