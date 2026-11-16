@@ -12,6 +12,7 @@ import type { DynamicModule, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
+import { TelescopeDiscoveryController } from '../discovery/discovery.controller.js';
 import { TelescopeProbesController } from '../fleet/probes.controller.js';
 import { StreamController } from '../sse/stream.controller.js';
 import { TelescopeIngestController } from '../topology/ingest.controller.js';
@@ -185,13 +186,15 @@ describe('TelescopeModule under @nestjs/authorization', () => {
       TelescopeModule.forRoot({ decorators: [marker] }),
       TelescopeModule.forRootAsync({ useFactory: () => ({}), decorators: [marker] }),
     ]) {
-      expect(mod.controllers).toHaveLength(6);
+      expect(mod.controllers).toHaveLength(7);
       for (const controller of mod.controllers ?? []) {
         expect(Reflect.getMetadata(AUTHORIZATION_CAN_ANYONE_METADATA, controller)).toBe(true);
-        // The public routes (the beacon, the tenants' ingest, the probes) never take the host's decorators.
+        // The public routes (the beacon, the tenants' ingest and discovery, the probes) never take
+        // the host's decorators.
         const isPublic =
           controller.prototype instanceof ClientErrorController ||
           controller.prototype instanceof TelescopeIngestController ||
+          controller.prototype instanceof TelescopeDiscoveryController ||
           controller.prototype instanceof TelescopeProbesController;
         expect(Reflect.getMetadata('test:marked', controller), controller.name).toBe(
           isPublic ? undefined : true,

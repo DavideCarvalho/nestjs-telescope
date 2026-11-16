@@ -57,6 +57,7 @@ An instance beats every `fleet.interval` (`15s`). Its state is `starting` until 
 | `retention` | `'7d'` | How long a gone instance is kept, along with its deploy and restart history. |
 | `restartLoop` | `{ restarts: 3, within: '10m' }` | What counts as a restart loop on one host. |
 | `store` | in memory | Where instances are kept: any `FleetStore` (`upsert`, `list`, `prune`). |
+| `url` | `APP_URL` | The URL other apps reach this one at, sent with each heartbeat for [service discovery](/docs/concepts/service-discovery). |
 
 <Callout type="warn">
 The default store is in memory. A control plane with several replicas behind a load balancer keeps one fleet per replica. Run one control plane replica, or pass a shared `FleetStore`.

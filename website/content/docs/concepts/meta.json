@@ -8,6 +8,7 @@
     "topologies",
     "fleet",
     "tracing-across-apps",
+    "service-discovery",
     "performance",
     "profiling",
     "mcp",

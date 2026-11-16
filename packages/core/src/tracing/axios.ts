@@ -1,3 +1,4 @@
+import { DISCOVERY_SLOT, type DiscoveryContract } from '../discovery/directory.js';
 import { axiosHeaders, axiosRequestUrl } from '../http/axios-instances.js';
 // packages/core/src/tracing/axios.ts
 //
@@ -18,6 +19,23 @@ const ATTACHED = new WeakMap<
   { active: boolean; config: ResolvedPropagation }
 >();
 
+/**
+ * Where a call to `url` really goes when its host is an app name discovery resolves: whichever
+ * interceptor runs first, targets match the real origin, as they do for `fetch`.
+ */
+function resolvedByDiscovery(url: URL): URL {
+  if (url.hostname.includes('.') || url.hostname.includes(':')) return url;
+  const discovery = (globalThis as Record<symbol, unknown>)[DISCOVERY_SLOT] as
+    | DiscoveryContract
+    | undefined;
+  try {
+    const base = discovery?.resolve(url.hostname);
+    return base === undefined ? url : new URL(`${base}${url.pathname}`);
+  } catch {
+    return url;
+  }
+}
+
 /** Add the trace headers to one axios request config. Exported for tests. */
 export function injectIntoAxiosConfig(
   config: ResolvedPropagation,
@@ -27,7 +45,7 @@ export function injectIntoAxiosConfig(
   if (url === null) return;
   const headers = axiosHeaders(request);
   if (headers.has('traceparent')) return;
-  const trace = headersFor(config, originOf(url.href));
+  const trace = headersFor(config, originOf(resolvedByDiscovery(url).href));
   if (trace === null) return;
   headers.set('traceparent', trace.traceparent);
   if (trace.tracestate !== undefined) headers.set('tracestate', trace.tracestate);

@@ -138,4 +138,6 @@ export * from './alerts/fleet-rules.js';
 
 export * from './tracing/index.js';
 
+export * from './discovery/index.js';
+
 export const TELESCOPE_VERSION = '0.0.0';

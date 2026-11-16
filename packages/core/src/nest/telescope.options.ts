@@ -3,6 +3,8 @@ import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
 import type { TelescopeTenancyOption } from '../context/tenancy.js';
+// packages/core/src/nest/telescope.options.ts
+import type { DiscoveryOptions } from '../discovery/config.js';
 import type { TelescopeExtension } from '../extension/types.js';
 import type { TelescopeCheck } from '../fleet/checks.js';
 import type { FleetConfig } from '../fleet/config.js';
@@ -13,7 +15,6 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import type { TelescopeTenantOptions, TelescopeTopology } from '../topology/config.js';
 import type { TenantVerifier } from '../topology/tenant-auth.js';
 import type { TelescopeTransport } from '../topology/transport.js';
-// packages/core/src/nest/telescope.options.ts
 import type { PropagationOptions } from '../tracing/config.js';
 import type { TelescopeAppsOptions } from './console-app-scope.js';
 import type { ConsoleAuthorize } from './console-authorize.js';
@@ -487,6 +488,13 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * tenant or a control plane only continues incoming traces.
    */
   propagation?: PropagationOptions;
+  /**
+   * Service discovery: `fetch('http://billing/…')` reaches the app named `billing`. A tenant reads
+   * the control plane's map (built from heartbeats carrying `fleet.url`) with no config; a control
+   * plane serves it (`GET <path>/api/discovery`) and resolves from it; `apps` is a static map (a
+   * standalone app's directory, or a local override). `false` turns it off.
+   */
+  discovery?: DiscoveryOptions | false;
   /** The App picker of a control plane's console: labels for app ids. */
   apps?: TelescopeAppsOptions;
   /**

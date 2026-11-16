@@ -18,6 +18,8 @@ import { AiUsageService } from '../agent-metrics/ai-usage.service.js';
 import { normalizeTelescopePath } from '../config/normalize-path.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { resolveConfig } from '../config/resolve-config.js';
+import { TelescopeDiscoveryController } from '../discovery/discovery.controller.js';
+import { TelescopeDiscovery } from '../discovery/discovery.service.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import { TelescopeFleet } from '../fleet/fleet.service.js';
 import { TelescopeProbesController } from '../fleet/probes.controller.js';
@@ -187,6 +189,8 @@ const SHARED_PROVIDERS: Provider[] = [
   TelescopeFleet,
   // Tracing across apps (`propagation`); installs nothing when nothing is configured.
   TelescopeTracing,
+  // Service discovery (`fetch('http://billing/…')`); installs nothing with nothing to resolve.
+  TelescopeDiscovery,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 
@@ -216,6 +220,7 @@ const TELESCOPE_EXPORTS = [
   TelescopeIngest,
   TelescopeFleet,
   TelescopeTracing,
+  TelescopeDiscovery,
 ];
 
 @Module({})
@@ -336,6 +341,9 @@ export class TelescopeModule implements NestModule {
       dynamicController(TelescopeIngestController, `${path}/api/ingest`),
       // Readiness / liveness probes (a 404 unless `health: { probes: true }`), public like the beacon.
       dynamicController(TelescopeProbesController, `${path}/api/probes`),
+      // The control plane's app name → URL map, for tenants (a 404 elsewhere). Public like the
+      // ingest route: the tenant's token is checked by `verifyTenant`.
+      dynamicController(TelescopeDiscoveryController, `${path}/api/discovery`),
       dynamicController(TelescopeConsolesController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(TelescopeController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(StreamController, `${path}/api`, [...decorators, consoleAccess]),

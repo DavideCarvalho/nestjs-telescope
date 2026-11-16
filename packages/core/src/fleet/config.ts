@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { durationToMs } from '../config/parse-duration.js';
+import { normalizeAppUrl } from '../discovery/config.js';
 import type { FleetStore } from './store.js';
 
 /** `fleet` in `TelescopeModule.forRoot()`: this instance's heartbeat, and how the fleet is read. */
@@ -35,6 +36,12 @@ export interface FleetConfig {
   restartLoop?: { restarts?: number; within?: number | string };
   /** Where the control plane (or a standalone app) keeps instances. Default in memory. */
   store?: FleetStore;
+  /**
+   * The URL other apps reach this one at (`https://billing.internal`), sent with each heartbeat so
+   * the control plane can tell other apps where it is (service discovery). Default `APP_URL`;
+   * none when unset.
+   */
+  url?: string;
 }
 
 /** {@link FleetConfig} with defaults. */
@@ -48,6 +55,8 @@ export interface ResolvedFleetConfig {
   retentionMs: number;
   restartLoop: { restarts: number; withinMs: number };
   store: FleetStore | null;
+  /** This app's URL (`fleet.url`, else `APP_URL`), or `null`. */
+  url: string | null;
 }
 
 const PREFIX = '[@dudousxd/nestjs-telescope]';
@@ -112,7 +121,18 @@ export function resolveFleetConfig(
       withinMs: positiveMs(fleet.restartLoop?.within, 10 * 60_000, 'restartLoop.within'),
     },
     store,
+    url: resolveAppUrl(fleet.url),
   };
+}
+
+function resolveAppUrl(configured: string | undefined): string | null {
+  if (configured !== undefined) {
+    const url = normalizeAppUrl(configured);
+    if (url === null) throw new Error(`${PREFIX} fleet.url must be an absolute http(s) URL`);
+    return url;
+  }
+  // APP_URL is a convention, not a promise: a malformed one is ignored rather than fatal.
+  return normalizeAppUrl(process.env.APP_URL);
 }
 
 function safeHostname(): string {

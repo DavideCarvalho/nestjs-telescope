@@ -1,0 +1,130 @@
+---
+title: Service discovery
+description: Call your apps by name. fetch('http://billing/invoices/1') reaches the app named billing, wherever it runs, from the URL its heartbeat carries.
+icon: Compass
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`fetch('http://billing/invoices/1')` reaches the app named `billing`. The [control plane](/docs/concepts/topologies) already knows every live instance from the [fleet](/docs/concepts/fleet), so it also knows where each app lives.
+
+## Turn it on
+
+Each app says where it can be reached. Set `APP_URL`, or `fleet.url`:
+
+```ts title="billing: app.module.ts"
+TelescopeModule.forRoot({
+  topology: 'tenant',
+  tenant: { url: process.env.TELESCOPE_URL, partition: 'billing', token: process.env.TELESCOPE_TOKEN },
+  fleet: { url: 'https://billing.internal' }, // default: APP_URL
+});
+```
+
+A tenant on HTTP needs nothing more. Call the app by its name, through `@nestjs/axios`'s `HttpService`:
+
+```ts title="shop: billing.client.ts"
+import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
+import { firstValueFrom } from 'rxjs';
+
+@Injectable()
+export class BillingClient {
+  constructor(private readonly http: HttpService) {}
+
+  async invoice(id: number) {
+    const { data } = await firstValueFrom(this.http.get(`http://billing/invoices/${id}`));
+    return data;
+  }
+}
+```
+
+Every `HttpService` in the app is covered on its own, including a module's `HttpModule.register({ baseURL: 'http://billing/v2' })`. So is a plain `fetch`:
+
+```ts
+const response = await fetch(`http://billing/invoices/${id}`);
+```
+
+Both calls go to `https://billing.internal/invoices/1`. A base path in the registered URL (`https://gateway.internal/billing`) is kept in front of the call's path.
+
+## Standalone apps and local development
+
+A static map resolves first, ahead of the control plane's. It is the whole directory of a standalone app, and the override for local development:
+
+```ts
+TelescopeModule.forRoot({
+  discovery: {
+    apps: { billing: 'http://localhost:3334' },
+  },
+});
+```
+
+## Options
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `apps` | `{}` | App name → URL. Wins over the control plane's map. |
+| `snapshotPath` | `telescope-discovery-<app>.json` in the OS temp directory | Where a tenant keeps the last map, so names resolve while the control plane is down or the app restarts without it. A snapshot written for another app or control plane is never read. |
+| `failFast` | `false` | Fail a call to an app with no live instance, instead of sending it to the last URL seen. |
+| `strict` | `false` | Fail a call to a single-label host that names no app (`http://billng/…`) with `DiscoveryError: app billng is not registered`, instead of letting it reach DNS. |
+| `passthrough` | `[]` | With `strict`: single-label hosts that are not apps (`minio`). `localhost` always passes. |
+| `nodeHttp` | `false` | Also resolve names in `http.request` / `https.request` (axios, got). `fetch` is always covered. |
+| `serverUrl` | `tenant.url` | A tenant on a broker transport: the control plane's telescope URL to read the map from. |
+| `axios` | every `HttpService` | More axios instances that resolve names (a bare `axios.create()`, or a `CustomAxiosSource` that resolves one), or `false` for none. |
+
+`discovery: false` turns it off.
+
+`HttpService` instances created at startup are found on their own; a request-scoped provider's `HttpService` or a bare axios instance is not, so hand it over:
+
+```ts
+discovery: {
+  axios: [payments, { instrument: (attach, ctx) => attach(ctx.moduleRef.get(PaymentsClient, { strict: false }).axios) }],
+}
+```
+
+With `HttpService` a name that cannot be resolved (`strict`, `failFast`) rejects the call with `DiscoveryError` itself; with `fetch` it is the rejection's `cause`. `nodeHttp` is not needed for `HttpService`, and with it on a call is still resolved once.
+
+## What gets rewritten
+
+- Only a **single-label host** that names a known app: `http://billing/…`.
+- A host with a dot (`billing.internal`), an IP, `localhost`, and a single-label host that names no app (a Docker Compose service such as `http://minio:9000`) go out as written. With `strict`, an unknown name fails instead.
+- Telescope's own calls are never rewritten.
+- The rewrite runs first, so the [trace headers](/docs/concepts/tracing-across-apps) and anything else composed onto `fetch` see the real origin: list `https://billing.internal` in `propagation.targets`, not `http://billing`.
+
+An app whose name has a dot cannot be written as a single-label host. Give it a name without one.
+
+<Callout type="warn" title="Compose onto the dispatcher, don't replace it">
+The rewrite is composed onto Node's global `fetch` dispatcher. At startup Telescope checks that `fetch` still goes through it and fails the start if it does not: something called `setGlobalDispatcher(new Agent(...))` and replaced it. Compose onto the existing dispatcher instead (`getGlobalDispatcher().compose(...)`).
+</Callout>
+
+## On the control plane
+
+The control plane serves the map at `GET <path>/api/discovery` (`?since=<version>&wait=<seconds>`). The request is held until the map changes, so a new app or a new URL reaches the tenants as it happens. Each app's URL is the one its most recently seen live instance sent, and `live` counts its instances up right now.
+
+The caller's tenant token decides what it sees:
+
+| Token | Sees |
+|-------|------|
+| No capabilities (an `hmacTenantVerifier` token) | Every app |
+| Lists `telescope:discovery` | Every app |
+| Lists `telescope:discovery:<app>` | Those apps only |
+| Lists other capabilities only | Nothing (403) |
+
+The control plane resolves names for its own calls from the same map.
+
+## For other libraries
+
+Telescope publishes the directory on a global slot, so a library can find out which app a call goes to without importing Telescope:
+
+```ts
+interface DiscoveryContract {
+  resolve(name: string): string | undefined; // the base URL a call to `name` goes to
+  appOf(origin: string): string | undefined; // 'https://billing.internal' → 'billing'
+  subscribe(listener: () => void): () => void; // called when the map changes
+}
+
+const discovery = (globalThis as Record<symbol, unknown>)[
+  Symbol.for('@dudousxd/aviary:discovery')
+] as DiscoveryContract | undefined;
+```
+
+Read it when you need it, not at import time: Telescope publishes it at startup and removes it at shutdown.
