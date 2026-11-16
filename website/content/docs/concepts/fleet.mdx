@@ -1,0 +1,81 @@
+---
+title: Fleet and health checks
+description: Health checks, instance heartbeats and the Fleet page — which instances are up, deploys and their rollout, restart loops, and failing checks with the exceptions recorded since.
+icon: Server
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Every instance can send a **heartbeat** with its version, its state, the results of its health checks, and (for a tenant) its send buffer. The app that keeps the **fleet** turns those heartbeats into the **Fleet** page, the `telescope_get_fleet` MCP tool, and fleet alert rules. That app is a [control plane](/docs/concepts/topologies), or a standalone app with `fleet: true`.
+
+| Topology | Default |
+|----------|---------|
+| standalone | Off. `fleet: true` (or `fleet: { … }`) makes the app keep a fleet of its own replicas, which beat in process. |
+| control plane | On. It keeps the fleet: tenants' heartbeats and its own. |
+| tenant | On. Its heartbeat rides its batches (`heartbeat` next to `entries`) over every transport. It takes no buffer slot, since only the newest heartbeat is kept. A control plane that predates the fleet ignores it. |
+
+## Health checks
+
+```ts
+import { TelescopeModule, checks } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  checks: [
+    checks.redis({ client: redis }), // PING, a 10 s write, warn at 90% of maxmemory
+    checks.terminus('db', () => db.pingCheck('db')), // any @nestjs/terminus indicator
+    checks.custom('stripe', async () => ({ status: 'ok' })),
+  ],
+  health: { probes: true },
+});
+```
+
+- `checks.redis({ client })` sends `PING`, then writes a key that expires after 10 s. A Redis at `maxmemory` with `noeviction` still answers `PING` but refuses writes, so the write catches that case and the check is **down**. The check is `warn` at `memoryWarnRatio` (0.9) of `maxmemory`.
+- `checks.terminus(name, fn)` maps an `@nestjs/terminus` indicator: `up` is `ok`, and `down` or a throw is `down`.
+- `checks.custom(name, run)` answers `{ status: 'ok' | 'warn' | 'down', message? }`. A throw is `down`.
+
+Each check is cached for `cacheFor` (default `30s`) and single-flight, and it is `down` after `timeout` (default `5s`). `critical: false` keeps a check out of readiness.
+
+With `health: { probes: true }` two unauthenticated routes answer. Their bodies carry check names and statuses only, never messages.
+
+| Route | Answers |
+|-------|---------|
+| `GET <path>/api/probes/ready` | 200, or 503 while a critical check is down or the instance is draining (from the shutdown signal on) |
+| `GET <path>/api/probes/live` | 200 while the process answers. It never runs the checks. |
+
+## Heartbeats
+
+An instance beats every `fleet.interval` (`15s`). Its state is `starting` until the app has booted, then `ready`, then `draining` once shutdown begins.
+
+| `fleet` option | Default | What it does |
+|----------------|---------|--------------|
+| `enabled` | see above | Send heartbeats and keep the fleet. |
+| `interval` | `'15s'` | How often each instance beats. |
+| `app` | `APP_NAME`, else package.json `name`, else `'app'` | The name of a standalone app or control plane in the fleet. A tenant is named by its token. |
+| `version` | first of `GIT_SHA`, `COMMIT_SHA`, `SOURCE_VERSION`, `RENDER_GIT_COMMIT`, `RAILWAY_GIT_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `HEROKU_SLUG_COMMIT`, `K_REVISION`, else package.json `version` | The deployed version (a string or a function). |
+| `host` | `HOSTNAME`, else the OS hostname | Host or pod name. |
+| `goneAfter` | `3` | An instance is **gone** after this many of its own intervals without a heartbeat, measured on the receiver's clock. |
+| `retention` | `'7d'` | How long a gone instance is kept, along with its deploy and restart history. |
+| `restartLoop` | `{ restarts: 3, within: '10m' }` | What counts as a restart loop on one host. |
+| `store` | in memory | Where instances are kept: any `FleetStore` (`upsert`, `list`, `prune`). |
+
+<Callout type="warn">
+The default store is in memory. A control plane with several replicas behind a load balancer keeps one fleet per replica. Run one control plane replica, or pass a shared `FleetStore`.
+</Callout>
+
+## What the Fleet page shows
+
+Monitor → **Fleet** (also in ⌘K) re-reads every 15 s and shows, for each app:
+
+- **Instance counts.** Up, starting, draining and gone, plus the tenant send buffer (waiting, dropped, lag).
+- **Every instance.** Host, status, version, uptime, when it was last seen, health, and its buffer.
+- **Deploys.** Each version change with its rollout: `2/5 live`, `complete`, or `no live instances`. A draining instance on the old version keeps a rollout incomplete.
+- **Restart loops.** For example, `shop-worker-0 restarted 3 times in 7 min`.
+- **Failing checks.** For example, `Redis: down for 12 min on 4 of 4 instances`, with the exception families recorded since. Click one to open its entry.
+
+`GET <path>/api/fleet` follows the console's scope:
+
+- `?app=` narrows the view.
+- A viewer limited to some apps sees only those apps.
+- A viewer limited to some organizations sees nothing. Instances are shared by every organization, so the page explains that instead.
+
+The Fleet item appears in the sidebar only where a fleet is kept.

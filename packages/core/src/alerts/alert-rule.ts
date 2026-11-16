@@ -42,6 +42,7 @@ import type { StatusPageConfig } from './integrations/status-pages.js';
  */
 export type AlertRule = AlertRuleRouting &
   (
+    | FleetAlertRuleKind
     | { type: 'exception-rate'; window: string; threshold: number }
     | { type: 'slow-request-rate'; window: string; thresholdMs: number; count: number }
     | { type: 'dropped-entries'; threshold: number }
@@ -84,6 +85,36 @@ export type AlertSeverity = 'info' | 'warning' | 'error' | 'critical';
 export interface AlertRuleRouting {
   severity?: AlertSeverity;
   channels?: string[];
+}
+
+/**
+ * Fleet rules (a control plane, or a standalone app with `fleet` on), each raised once per subject
+ * (an app, an app's check, a looping host) and resolved once it clears (a `status: 'resolved'`
+ * payload, for the channels that accept resolves):
+ * - `instances-up`: fewer than `below` instances up (0 included, and an app never seen), held for
+ *   `for` (default `'1m'`) so a rolling deploy does not page.
+ * - `restart-loop`: a host booted `fleet.restartLoop.restarts` times within its window.
+ * - `check-down`: a check (`check`, else any) down on an app's instance for `for`.
+ * - `entries-dropped`: a tenant dropped at least `threshold` (default 1) entries within `window`.
+ *
+ * Like every rule they take the routing fields ({@link AlertRuleRouting}).
+ */
+type FleetAlertRuleKind =
+  | { type: 'instances-up'; app?: string; below: number; for?: string }
+  | { type: 'restart-loop'; app?: string }
+  | { type: 'check-down'; check?: string; app?: string; for: string }
+  | { type: 'entries-dropped'; app?: string; window: string; threshold?: number };
+
+/** A fleet rule, with its routing fields. */
+export type FleetAlertRule = AlertRuleRouting & FleetAlertRuleKind;
+
+/** What a fleet alert is about. */
+export interface FleetAlertContext {
+  app: string;
+  check?: string;
+  host?: string;
+  /** One line: `Redis: down for 12 min on 4 of 4 instances`. */
+  detail: string;
 }
 
 /**
@@ -322,7 +353,7 @@ export interface AlertPayload {
    */
   diagnosis?: string;
   /**
-   * `'resolved'` when this notifies that a previously firing interval rule
+   * `'resolved'` when this notifies that a previously firing interval rule (or a fleet subject)
    * stopped crossing its threshold; absent on a firing alert. Resolved
    * notifications only reach channels that set `acceptsResolved` (the on-call,
    * chat and email integrations do; `slackChannel`/`webhookChannel` don't).
@@ -330,4 +361,16 @@ export interface AlertPayload {
   status?: 'firing' | 'resolved';
   /** The service name from `alerts.app`, when set (incident keys and titles use it). */
   app?: string;
+  /** What a fleet rule is about (the app, and the check or host); absent for the other rules. */
+  fleet?: FleetAlertContext;
+}
+
+/** Whether `rule` is one of the {@link FleetAlertRule}s. */
+export function isFleetRule(rule: AlertRule): rule is FleetAlertRule {
+  return (
+    rule.type === 'instances-up' ||
+    rule.type === 'restart-loop' ||
+    rule.type === 'check-down' ||
+    rule.type === 'entries-dropped'
+  );
 }

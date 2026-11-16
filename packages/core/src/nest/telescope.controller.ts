@@ -30,6 +30,8 @@ import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionActionCaller, Panel } from '../extension/types.js';
+import { TelescopeFleet } from '../fleet/fleet.service.js';
+import type { FleetView } from '../fleet/view.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { type QueueMetricsResult, QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import {
@@ -838,6 +840,22 @@ export class TelescopeController {
   @Get('health')
   health(): TelescopeHealth {
     return this.service.getHealth();
+  }
+
+  /**
+   * The fleet: every app's instances, deploys, restart loops and failing checks (with the exception
+   * families recorded since). Scoped like every read: `?app=` narrows, a viewer limited to some apps
+   * sees only theirs, and one limited to some organizations sees none (instances are shared by
+   * every organization).
+   */
+  @Get('fleet')
+  async fleet(@Req() request: unknown): Promise<FleetView> {
+    const fleet = this.moduleRef.get(TelescopeFleet, { strict: false });
+    const app = consoleAppCallOf(request)?.selection ?? { kind: 'all' as const };
+    const tenant = consoleTenantCallOf(request);
+    const hidden = tenant?.scope != null && tenant.scope.tenants !== '*';
+    const apps = app.kind === 'all' ? null : app.kind === 'apps' ? app.ids : [];
+    return fleet.read({ apps, hidden }, this.storage);
   }
 
   // ── Extension data providers ────────────────────────────────────────────────

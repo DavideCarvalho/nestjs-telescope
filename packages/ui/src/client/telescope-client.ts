@@ -10,6 +10,7 @@ import type {
   Entry,
   EntryWithBatch,
   ExplainResult,
+  FleetView,
   Page,
   ProfilerStatus,
   PrunesInfo,
@@ -209,6 +210,8 @@ export interface TelescopeClient {
   meta(): Promise<TelescopeMeta>;
   /** The console's organization scope (`GET tenancy`); `{ enabled: false }` from older servers. */
   tenancy?(search?: string): Promise<ConsoleTenancyInfo>;
+  /** The fleet (`GET fleet`): instances, deploys, restart loops, failing checks. */
+  fleet?(): Promise<FleetView>;
   /** The console's apps (`GET apps`, a control plane); `enabled: false` from older servers. */
   apps?(search?: string): Promise<ConsoleAppsInfo>;
   /**
@@ -484,6 +487,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
       if (!response.ok) throw new Error(`Telescope API /tenancy failed: ${response.status}`);
       return (await response.json()) as ConsoleTenancyInfo;
     },
+    fleet: () => get<FleetView>('/fleet'),
     apps: async (search) => {
       const qs = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
       const response = await rawGet(`/apps${qs}`);

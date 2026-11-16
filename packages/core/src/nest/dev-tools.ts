@@ -11,6 +11,8 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
 import type { ExtensionRegistry } from '../extension/registry.js';
+import { TelescopeFleet } from '../fleet/fleet.service.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
 import { type TenantView, withTenantView } from '../storage/tenant-scoped-storage.js';
 import { consoleAppsFor, rememberConsoleApps } from './console-app-scope.js';
 import { type ConsoleDecide, resolveConsoleAuthorize } from './console-authorize.js';
@@ -21,6 +23,7 @@ import { type TelescopeToolArgs, TelescopeTools, isToolNotice } from './telescop
 import {
   TELESCOPE_EXTENSIONS,
   TELESCOPE_OPTIONS,
+  TELESCOPE_STORAGE,
   type TelescopeModuleOptions,
 } from './telescope.options.js';
 
@@ -379,6 +382,43 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     }).view;
   }
 
+  /**
+   * `telescope_get_fleet`: the same read as the Fleet page (`GET <path>/api/fleet`), scoped by the
+   * caller's grant: its apps, and nothing for a caller limited to some organizations.
+   */
+  private fleetTool(): TelescopeDevTool {
+    return {
+      name: 'telescope_get_fleet',
+      kind: 'read',
+      description:
+        "The fleet: each app's instances (up / starting / draining / gone, version, uptime, health checks, send buffer), deploys with rollout progress, restart loops, and failing health checks with the exception families recorded since. Pass app to narrow to one app.",
+      input: {
+        type: 'object',
+        properties: { app: { type: 'string', description: 'Only this app' } },
+      },
+      run: async (input, call) => {
+        const context = call?.context;
+        const request =
+          typeof context?.getType === 'function' && context.getType() === 'http'
+            ? context.switchToHttp().getRequest()
+            : undefined;
+        const { tenant, app, view } = resolveConsoleView({
+          options: this.options,
+          accessor: this.accessor,
+          granted: { tenants: consoleTenantsFor(request), apps: consoleAppsFor(request) },
+          requested: { app: typeof input.app === 'string' ? input.app : undefined },
+        });
+        const selection = app.selection;
+        const apps =
+          selection.kind === 'all' ? null : selection.kind === 'apps' ? selection.ids : [];
+        const hidden = tenant?.scope != null && tenant.scope.tenants !== '*';
+        const fleet = this.moduleRef.get(TelescopeFleet, { strict: false });
+        const storage = this.moduleRef.get<StorageProvider>(TELESCOPE_STORAGE, { strict: false });
+        return withTenantView(view, () => fleet.read({ apps, hidden }, storage));
+      },
+    };
+  }
+
   async onModuleInit(): Promise<void> {
     if (!(this.options.devTools ?? this.routesMounted)) return;
     const slot = devToolsSlot();
@@ -386,7 +426,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     const decide = await resolveConsoleAuthorize(this.options.authorize, this.moduleRef, {
       warnIfMissing: false,
     });
-    const own = telescopeDevTools(this.server, (call) => this.viewFor(call));
+    const own = [...telescopeDevTools(this.server, (call) => this.viewFor(call)), this.fleetTool()];
     try {
       this.#unregister = slot.register({
         lib: TELESCOPE_DEV_TOOLS_LIB,

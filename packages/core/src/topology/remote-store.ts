@@ -36,6 +36,10 @@ export interface ShippingStats {
   lastSentAt: Date | null;
   /** Why the last send failed, or `null` after a success. */
   lastError: string | null;
+  /** Failed sends in a row (0 after a success). */
+  consecutiveFailures: number;
+  /** How long the oldest waiting entry has waited, in ms (0 with nothing waiting). */
+  lagMs: number;
 }
 
 export interface RemoteTelescopeStoreOptions {
@@ -73,6 +77,8 @@ export class RemoteTelescopeStore implements StorageProvider {
   private sending: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private retryAt = 0;
+  /** The newest heartbeat not sent yet (only the newest is kept: it takes no buffer slot). */
+  private heartbeat: unknown = undefined;
   private consecutiveFailures = 0;
   private readonly counters = {
     dropped: 0,
@@ -104,11 +110,23 @@ export class RemoteTelescopeStore implements StorageProvider {
   }
 
   stats(): ShippingStats {
+    const oldest = this.inflight?.batch.entries[0]?.createdAt ?? this.buffer[0]?.createdAt;
+    const oldestAt = oldest === undefined ? null : new Date(oldest).getTime();
     return {
       transport: this.options.transport.kind,
       buffered: this.buffer.length + (this.inflight?.size ?? 0),
       ...this.counters,
+      consecutiveFailures: this.consecutiveFailures,
+      lagMs: oldestAt === null ? 0 : Math.max(0, this.now() - oldestAt),
     };
+  }
+
+  /**
+   * Sends `heartbeat` with the next batch (or alone when no entry waits). A newer one replaces
+   * one not sent yet.
+   */
+  setHeartbeat(heartbeat: unknown): void {
+    this.heartbeat = heartbeat;
   }
 
   async init(): Promise<void> {
@@ -137,6 +155,7 @@ export class RemoteTelescopeStore implements StorageProvider {
   }
 
   private drop(count: number, reason: string): void {
+    if (count === 0) return;
     this.counters.dropped += count;
     this.logger.warn(`dropped ${count} ${count === 1 ? 'entry' : 'entries'}: ${reason}`);
   }
@@ -198,13 +217,15 @@ export class RemoteTelescopeStore implements StorageProvider {
 
   /** Moves the next batch that fits {@link maxBatchBytes} into `inflight`. `false`: nothing left. */
   private takeBatch(): boolean {
+    const heartbeat = this.heartbeat;
     while (this.buffer.length > 0) {
       let count = Math.min(this.batchSize, this.buffer.length);
       for (;;) {
-        const batch = ingestBatch(this.buffer.slice(0, count), new Date(this.now()));
+        const batch = ingestBatch(this.buffer.slice(0, count), new Date(this.now()), heartbeat);
         if (Buffer.byteLength(JSON.stringify(batch), 'utf8') <= this.maxBatchBytes) {
           this.buffer.splice(0, count);
           this.inflight = { batch, size: count };
+          this.heartbeat = undefined;
           return true;
         }
         if (count === 1) break;
@@ -212,6 +233,12 @@ export class RemoteTelescopeStore implements StorageProvider {
       }
       this.buffer.shift();
       this.drop(1, `the entry is larger than maxBatchBytes (${this.maxBatchBytes})`);
+    }
+    if (heartbeat !== undefined) {
+      // Nothing waits: the heartbeat goes alone.
+      this.inflight = { batch: ingestBatch([], new Date(this.now()), heartbeat), size: 0 };
+      this.heartbeat = undefined;
+      return true;
     }
     return false;
   }
@@ -223,7 +250,7 @@ export class RemoteTelescopeStore implements StorageProvider {
     }
     // A real-time budget: shutdown waits on real sends whatever clock the store was given.
     const deadline = Date.now() + (this.options.shutdownTimeoutMs ?? 5_000);
-    while (this.buffer.length > 0 || this.inflight !== null) {
+    while (this.buffer.length > 0 || this.inflight !== null || this.heartbeat !== undefined) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
       await Promise.race([

@@ -49,6 +49,7 @@ const NAV: TopNavItem[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/pulse', label: 'Pulse', end: false },
   { to: '/entries/exception', label: 'Exceptions', end: true },
+  { to: '/fleet', label: 'Fleet', end: false },
   { to: '/entries', label: 'Entries', end: true },
   { to: '/traces', label: 'Traces', end: true },
   { to: '/ai', label: 'AI', end: false },
@@ -64,6 +65,7 @@ const KEYWORDS_OF: Record<string, string[]> = {
   '/': ['triage', 'dashboard'],
   '/pulse': ['health', 'throughput'],
   '/entries/exception': ['errors', 'grouped by class'],
+  '/fleet': ['instances', 'deploys', 'health checks', 'restart loop'],
   '/entries': ['live tail', 'logs', 'requests'],
   '/traces': ['waterfall', 'spans', 'n+1'],
   '/ai': ['spend', 'agent runs', 'llm'],
@@ -90,6 +92,7 @@ export function visibleTopNav(
   items: readonly TopNavItem[],
   tracesEnabled: boolean | undefined,
   profilingEnabled?: boolean | undefined,
+  fleetEnabled?: boolean | undefined,
 ): TopNavItem[] {
   return items.filter((item) => {
     // Only a POSITIVE `false` hides Traces (page would be permanently empty).
@@ -98,6 +101,9 @@ export function visibleTopNav(
     // the page has no fallback content and the feature is off by default, so we
     // hide on undefined (meta still loading) too.
     if (item.to === '/profiles' && profilingEnabled !== true) return false;
+    // Fleet: only where the server keeps one (a control plane, or `fleet: true`), so a
+    // standalone console is unchanged. Hidden while meta loads, like Profiles.
+    if (item.to === '/fleet' && fleetEnabled !== true) return false;
     return true;
   });
 }
@@ -107,6 +113,7 @@ const SECTION_OF: Record<string, string> = {
   '/': 'Monitor',
   '/pulse': 'Monitor',
   '/entries/exception': 'Monitor',
+  '/fleet': 'Monitor',
   '/entries': 'Explore',
   '/traces': 'Explore',
   '/ai': 'Explore',
@@ -121,6 +128,7 @@ const ICON_OF: Record<string, ReactNode> = {
   '/': <GridIcon />,
   '/pulse': <PulseIcon />,
   '/entries/exception': <AlertIcon />,
+  '/fleet': <ServerIcon />,
   '/entries': <ListIcon />,
   '/traces': <TraceIcon />,
   '/ai': <AiIcon />,
@@ -223,7 +231,12 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
   // Hide the Traces nav item when meta positively reports no traceContext: the
   // page would be permanently empty. Undefined meta → show it (same backward-
   // compatible fallback as the watcher-driven nav above).
-  const topNav = visibleTopNav(NAV, meta.data?.tracesEnabled, meta.data?.profiling?.enabled);
+  const topNav = visibleTopNav(
+    NAV,
+    meta.data?.tracesEnabled,
+    meta.data?.profiling?.enabled,
+    meta.data?.fleet,
+  );
   const dashboards = meta.data?.dashboards ?? [];
 
   const watchersOpen = activeNavId(pathname)?.startsWith('watcher:') ?? false;

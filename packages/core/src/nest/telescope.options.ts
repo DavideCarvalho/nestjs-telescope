@@ -5,6 +5,8 @@ import type { AlertsOptions } from '../alerts/alert-rule.js';
 import type { TelescopeCoreOptions } from '../config/options.js';
 import type { TelescopeTenancyOption } from '../context/tenancy.js';
 import type { TelescopeExtension } from '../extension/types.js';
+import type { TelescopeCheck } from '../fleet/checks.js';
+import type { FleetConfig } from '../fleet/config.js';
 import type { PulseServiceOptions } from '../pulse/pulse.service.js';
 import type { QueueManager } from '../queue/queue-manager.js';
 import type { ScheduleManager } from '../schedule/schedule-manager.js';
@@ -459,6 +461,24 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   transport?: TelescopeTransport;
   /** Tenant only: the control plane to send entries to, as which app, with which token. */
   tenant?: TelescopeTenantOptions;
+  /**
+   * Health checks of this process (`checks.redis({ client })`, `checks.terminus(...)`,
+   * `checks.custom(...)`): each cached (`cacheFor`, 30 s) and single-flight, reported in the
+   * heartbeat and the Fleet page, and answered by the readiness probe.
+   */
+  checks?: TelescopeCheck[];
+  /**
+   * Heartbeats and the fleet (instances, deploys, restart loops, failing checks). On by default
+   * for a control plane (it keeps the fleet) and a tenant (it reports to it); off for a standalone
+   * app unless `fleet: true` (or options), so a standalone app is unchanged.
+   */
+  fleet?: boolean | FleetConfig;
+  /**
+   * Unauthenticated probe routes, off by default: `GET <path>/api/probes/ready` answers 503 while
+   * a critical check is down or the instance drains; `GET <path>/api/probes/live` never runs the
+   * checks. Bodies carry names and statuses only.
+   */
+  health?: { probes?: boolean };
   /** The App picker of a control plane's console: labels for app ids. */
   apps?: TelescopeAppsOptions;
   /**

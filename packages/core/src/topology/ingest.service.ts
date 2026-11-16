@@ -9,6 +9,7 @@ import {
   Logger,
   type OnApplicationBootstrap,
 } from '@nestjs/common';
+import { TelescopeFleet } from '../fleet/fleet.service.js';
 import {
   TELESCOPE_OPTIONS,
   TELESCOPE_STORAGE,
@@ -36,6 +37,7 @@ export class TelescopeIngest implements OnApplicationBootstrap, BeforeApplicatio
     @Inject(TELESCOPE_OPTIONS) options: TelescopeModuleOptions,
     @Inject(TelescopeService) private readonly service: TelescopeService,
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
+    @Inject(TelescopeFleet) private readonly fleet: TelescopeFleet,
   ) {
     this.topology = resolveTopology(options);
     this.handler =
@@ -44,6 +46,7 @@ export class TelescopeIngest implements OnApplicationBootstrap, BeforeApplicatio
             verifyTenant: this.topology.verifyTenant,
             store: (entries) => this.service.storeIngested(entries),
             existing: (ids) => this.existing(ids),
+            heartbeat: (app, heartbeat) => this.fleet.heartbeat(app, heartbeat),
           })
         : null;
   }

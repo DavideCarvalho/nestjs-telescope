@@ -6,6 +6,7 @@
     "storage",
     "scaling-storage",
     "topologies",
+    "fleet",
     "performance",
     "profiling",
     "mcp",

@@ -27,6 +27,12 @@ const DEFAULT_SEVERITY: Record<string, AlertSeverity> = {
   'slow-request-rate': 'warning',
   'dropped-entries': 'warning',
   'metric-threshold': 'warning',
+  // Fleet rules: an app with too few instances or a down check is an outage; a restart loop is
+  // an error; a tenant dropping entries loses data, not users.
+  'instances-up': 'critical',
+  'check-down': 'critical',
+  'restart-loop': 'error',
+  'entries-dropped': 'warning',
 };
 
 /** The rule's own `severity`, else the default for its kind. */
@@ -44,8 +50,12 @@ export function statusOf(alert: AlertPayload): 'firing' | 'resolved' {
   return alert.status ?? 'firing';
 }
 
-/** The service an alert is about: `alerts.app` when set, else the reporting instance. */
+/**
+ * The service an alert is about: the fleet app a fleet rule is about, else `alerts.app` when set,
+ * else the reporting instance.
+ */
 export function appOf(alert: AlertPayload): string {
+  if (alert.fleet !== undefined && alert.fleet.app !== '') return alert.fleet.app;
   return alert.app !== undefined && alert.app !== '' ? alert.app : alert.instanceId;
 }
 
@@ -56,7 +66,16 @@ export function appOf(alert: AlertPayload): string {
 function ruleIdentity(rule: AlertRule): string {
   const parts: string[] = [rule.type];
   const loose: Record<string, unknown> = { ...rule };
-  for (const field of ['metric', 'comparator', 'threshold', 'thresholdMs', 'count', 'window']) {
+  for (const field of [
+    'metric',
+    'comparator',
+    'threshold',
+    'thresholdMs',
+    'count',
+    'window',
+    'below',
+    'for',
+  ]) {
     const value = loose[field];
     if (typeof value === 'string' || typeof value === 'number') parts.push(String(value));
   }
@@ -64,7 +83,9 @@ function ruleIdentity(rule: AlertRule): string {
 }
 
 /**
- * The deduplication key for an alert: `telescope:<app>:<rule>[:<exception family>]`.
+ * The deduplication key for an alert: `telescope:<app>:<rule>[:<exception family>]`, and for a
+ * fleet rule `telescope:<fleet app>:<rule>[:<check>][:<host>]`, so each fleet subject (an app, an
+ * app's check, a looping host) is its own incident and its resolve closes that one.
  * PagerDuty's `dedup_key`, Opsgenie's `alias`, incident.io's `deduplication_key`
  * and Grafana OnCall's `alert_uid` all use it, so a trigger repeated while the
  * incident is open is folded into it, and the resolve closes the right one.
@@ -73,6 +94,8 @@ export function incidentKey(alert: AlertPayload): string {
   const parts = [`telescope:${appOf(alert)}:${ruleIdentity(alert.rule)}`];
   const family = alert.exception?.familyHash;
   if (family !== undefined) parts.push(family);
+  if (alert.fleet?.check !== undefined) parts.push(alert.fleet.check);
+  if (alert.fleet?.host !== undefined) parts.push(alert.fleet.host);
   return parts.join(':');
 }
 
@@ -102,6 +125,7 @@ export function titleOf(alert: AlertPayload): string {
     const where = route !== null ? ` (${method !== null ? `${method} ` : ''}${route})` : '';
     return `${prefix} ${app}: ${cls}: ${message}${where}`;
   }
+  if (alert.fleet !== undefined) return `${prefix} ${app}: ${alert.fleet.detail}`;
   const what = alert.rule.type === 'metric-threshold' ? alert.rule.metric : alert.rule.type;
   return `${prefix} ${app}: ${what} = ${formatValue(alert.value)} (threshold ${formatValue(alert.threshold)})`;
 }
@@ -117,6 +141,11 @@ export function summaryLines(alert: AlertPayload): string[] {
     `Value: ${formatValue(alert.value)} (threshold ${formatValue(alert.threshold)})`,
     `At: ${alert.firedAt}`,
   ];
+  if (alert.fleet !== undefined) {
+    if (alert.fleet.check !== undefined) lines.push(`Check: ${alert.fleet.check}`);
+    if (alert.fleet.host !== undefined) lines.push(`Host: ${alert.fleet.host}`);
+    lines.push(`Detail: ${alert.fleet.detail}`);
+  }
   const ex = alert.exception;
   if (ex !== undefined) {
     lines.push(`Occurrences in window: ${ex.occurrences}`);
@@ -158,6 +187,7 @@ export function detailsOf(alert: AlertPayload): Record<string, unknown> {
     firedAt: alert.firedAt,
   };
   if (alert.rule.type === 'metric-threshold') details.metric = alert.rule.metric;
+  if (alert.fleet !== undefined) details.fleet = { ...alert.fleet };
   const ex = alert.exception;
   if (ex !== undefined) {
     details.exception = ex.class;

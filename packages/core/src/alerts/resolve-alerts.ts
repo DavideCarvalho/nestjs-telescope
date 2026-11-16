@@ -72,6 +72,19 @@ export function resolveAlerts(alerts: AlertsOptions | undefined): ResolvedAlerts
     if (rule.type === 'every-exception' && rule.window !== undefined) {
       durationToMs(rule.window);
     }
+    if (rule.type === 'entries-dropped') {
+      durationToMs(rule.window);
+      if (rule.threshold !== undefined && !(rule.threshold >= 1)) {
+        throw new Error('Telescope alerts: `entries-dropped` needs a `threshold` of 1 or more.');
+      }
+    }
+    if (rule.type === 'check-down') durationToMs(rule.for);
+    if (rule.type === 'instances-up') {
+      if (rule.for !== undefined) durationToMs(rule.for);
+      if (typeof rule.below !== 'number' || !(rule.below > 0)) {
+        throw new Error('Telescope alerts: `instances-up` needs `below`, a number above 0.');
+      }
+    }
   }
 
   return {

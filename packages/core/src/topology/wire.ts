@@ -33,6 +33,11 @@ export interface IngestBatch {
   /** When the tenant sent it (its own clock), for lag reporting. */
   sentAt: string;
   entries: WireEntry[];
+  /**
+   * The sender's latest heartbeat (an `InstanceHeartbeat`), riding the batch so it travels over
+   * every transport. Additive: a control plane that predates the fleet ignores it.
+   */
+  heartbeat?: unknown;
 }
 
 /**
@@ -69,6 +74,8 @@ const batchSchema = z.object({
   id: z.string().regex(ID),
   sentAt: z.string().max(64),
   entries: z.array(wireEntrySchema).max(MAX_INGEST_ENTRIES),
+  // Validated by the fleet (`normalizeHeartbeat`); an older control plane ignores it.
+  heartbeat: z.unknown().optional(),
 });
 
 /** A wire entry with its `createdAt` as a string. */
@@ -77,12 +84,17 @@ export function toWireEntry(entry: Entry): WireEntry {
 }
 
 /** Builds a batch with a fresh id. */
-export function ingestBatch(entries: Entry[], now: Date = new Date()): IngestBatch {
+export function ingestBatch(
+  entries: Entry[],
+  now: Date = new Date(),
+  heartbeat?: unknown,
+): IngestBatch {
   return {
     v: INGEST_WIRE_VERSION,
     id: randomUUID(),
     sentAt: now.toISOString(),
     entries: entries.map(toWireEntry),
+    ...(heartbeat !== undefined ? { heartbeat } : {}),
   };
 }
 
