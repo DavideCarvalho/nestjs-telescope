@@ -282,7 +282,9 @@ The suite needs Vitest (an optional peer of the testing package).
 
 ## Advanced — pre-aggregated rollups
 
-`get()` alone is enough; pulse and timeseries fall back to a raw scan. If your store can aggregate cheaply (most can), additionally implement the optional `RollupStore` SPI from [`rollup-store.ts`](https://github.com/dudousxd/nestjs-telescope/blob/main/packages/core/src/rollup/rollup-store.ts). It's **detected at runtime via duck-typing** (`isRollupStore`) — it is deliberately *not* part of `StorageProvider`, so adding it is purely additive and a store that omits it keeps working.
+`get()` alone is enough; pulse and timeseries fall back to a raw scan. A SQL store can instead answer the window itself through the optional `aggregate(request)` method: five kinds of `GROUP BY` (`count` by type and time bucket, `slowest`, per-family `families` with nearest-rank quantiles, per-batch `batchFamilies`, and `tagSets`), specified on `EntryAggregation` in [`storage-provider.ts`](https://github.com/dudousxd/nestjs-telescope/blob/main/packages/core/src/storage/storage-provider.ts). The conformance suite checks that Pulse and the timeseries computed through it equal the scan; a store that throws from it is scanned instead.
+
+If your store can aggregate cheaply (most can), additionally implement the optional `RollupStore` SPI from [`rollup-store.ts`](https://github.com/dudousxd/nestjs-telescope/blob/main/packages/core/src/rollup/rollup-store.ts). It's **detected at runtime via duck-typing** (`isRollupStore`) — it is deliberately *not* part of `StorageProvider`, so adding it is purely additive and a store that omits it keeps working.
 
 ```ts
 import {

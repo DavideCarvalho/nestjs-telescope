@@ -249,6 +249,26 @@ import { RedisCommandWatcher } from '@dudousxd/nestjs-telescope-redis-watcher';
 TelescopeModule.forRoot({ watchers: [new RedisCommandWatcher(ioredisClient)] });
 ```
 
+Values are **redacted by default**: an entry keeps the command, its keys and the arguments that only shape it (TTLs, flags, ranges, counts), and every value is recorded as `[REDACTED]` in its place. Replies are never recorded.
+
+```ts
+// SET sess:abc '{"csrfSecret":…,"refreshToken":…}' EX 7200 is recorded as
+{ command: 'SET', args: ['sess:abc', '[REDACTED]', 'EX', 7200] }
+// HSET user:1 email a@b.c → ['user:1', 'email', '[REDACTED]']
+// EVALSHA <sha> 1 lock:x <argv…> → ['<sha>', 1, 'lock:x', '[REDACTED]']
+// AUTH / HELLO / CONFIG / MIGRATE → every argument redacted
+```
+
+To record values verbatim, opt in per watcher:
+
+```ts
+new RedisCommandWatcher(ioredisClient, { recordValues: true });
+```
+
+<Callout type="warn">
+  With `recordValues: true`, whatever the app keeps in redis lands in the telemetry as is: sessions (with their csrf secret and refresh tokens), cached user records, one-time codes. The core's key-based redaction (`redact.keys`) cannot help, since redis arguments are bare strings with no key names. Turn it on only for a client that holds nothing sensitive.
+</Callout>
+
 <Callout type="info">
   Pass a **dedicated/observed** client. If you share one `ioredis` with Telescope's own Redis storage provider, those storage commands get captured too — noise.
 </Callout>

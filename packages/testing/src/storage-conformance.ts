@@ -1,12 +1,19 @@
 import type {
   Entry,
+  EntryAggregation,
   RollupDelta,
   RollupStore,
   StorageProvider,
   TagCount,
 } from '@dudousxd/nestjs-telescope';
-import { HISTOGRAM_BUCKET_COUNT, decodeCursor, isRollupStore } from '@dudousxd/nestjs-telescope';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  HISTOGRAM_BUCKET_COUNT,
+  PulseService,
+  TimeseriesService,
+  decodeCursor,
+  isRollupStore,
+} from '@dudousxd/nestjs-telescope';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 export interface StorageConformanceOptions {
   /**
@@ -733,6 +740,245 @@ export function describeStorageProvider(
       });
     });
   });
+
+  describeStorageAggregation(name, factory, options);
+}
+
+/**
+ * Registers the optional {@link StorageProvider.aggregate} contract: pulse and the timeseries
+ * computed by the store must equal what scanning the window computes. Part of
+ * {@link describeStorageProvider}; exported on its own for a provider whose full suite does not run
+ * against a given database (e.g. a SQL dialect only covered here). A provider without `aggregate`
+ * passes trivially.
+ */
+export function describeStorageAggregation(
+  name: string,
+  factory: () => StorageProvider | Promise<StorageProvider>,
+  options: Pick<StorageConformanceOptions, 'afterSeed' | 'teardown' | 'skip' | 'timeoutMs'> = {},
+): void {
+  const suite = options.skip !== undefined ? describe.skip : describe;
+  const title =
+    options.skip !== undefined
+      ? `StorageProvider aggregate: ${name} (skipped: ${options.skip})`
+      : `StorageProvider aggregate: ${name}`;
+
+  suite(title, { timeout: options.timeoutMs ?? 30_000 }, () => {
+    let provider: StorageProvider;
+    const base = Math.floor((Date.now() - 2 * 60 * 60 * SECOND) / SECOND) * SECOND;
+    const at = (offsetSeconds: number): Date => new Date(base + offsetSeconds * SECOND);
+    const seed = async (entries: Entry[]): Promise<void> => {
+      await provider.store(entries);
+      await options.afterSeed?.(provider, entries);
+    };
+
+    beforeEach(async () => {
+      provider = await factory();
+      await provider.init?.();
+      await provider.clear();
+    });
+
+    afterEach(async () => {
+      if (options.teardown) await options.teardown(provider);
+      else await provider.close?.();
+    });
+
+    describe('aggregate', () => {
+      // The store's aggregation must answer exactly what scanning the window answers: pulse and
+      // the timeseries are run once on the provider and once on a view of it without `aggregate`
+      // (and without rollups, which would answer the timeseries first).
+      const scanOnly = (): StorageProvider =>
+        new Proxy(provider, {
+          get: (target, prop) =>
+            prop === 'aggregate' || prop === 'queryRollups' || prop === 'recordRollups'
+              ? undefined
+              : Reflect.get(target, prop, target),
+        });
+      // Counts the aggregations and keeps their failures: a failed one falls back to the scan,
+      // which would make the comparison vacuous.
+      const aggregated = { calls: 0, failures: [] as unknown[] };
+      const withoutRollups = (): StorageProvider =>
+        new Proxy(provider, {
+          get: (target, prop) => {
+            if (prop === 'queryRollups' || prop === 'recordRollups') return undefined;
+            if (prop === 'aggregate') {
+              return async (request: EntryAggregation) => {
+                aggregated.calls += 1;
+                try {
+                  return await target.aggregate?.(request);
+                } catch (error) {
+                  aggregated.failures.push(error);
+                  throw error;
+                }
+              };
+            }
+            return Reflect.get(target, prop, target);
+          },
+        });
+      const now = base + 30 * 60 * SECOND;
+
+      beforeEach(() => {
+        aggregated.calls = 0;
+        aggregated.failures = [];
+        vi.useFakeTimers({ toFake: ['Date'], now });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('aggregates pulse exactly as the scan does', async () => {
+        if (typeof provider.aggregate !== 'function') return;
+        await seed(aggregateDataset(base));
+        const fromStore = await new PulseService(withoutRollups(), { slowRouteMs: 50 }).getHealth(
+          60 * 60 * SECOND,
+        );
+        const fromScan = await new PulseService(scanOnly(), { slowRouteMs: 50 }).getHealth(
+          60 * 60 * SECOND,
+        );
+        expect(aggregated.failures).toEqual([]);
+        expect(aggregated.calls).toBeGreaterThan(0);
+        expect(fromScan.truncated).toBe(false);
+        expect(fromStore).toEqual(fromScan);
+        // The dataset exercises every card, so the comparison means something.
+        expect(fromStore.slowRoutes.length).toBeGreaterThan(0);
+        expect(fromStore.slowOutgoing.length).toBeGreaterThan(0);
+        expect(fromStore.slowJobs.length).toBeGreaterThan(0);
+        expect(fromStore.topExceptions.length).toBeGreaterThan(0);
+        expect(fromStore.nPlusOne.length).toBeGreaterThan(0);
+        expect(fromStore.loadByUser.length).toBeGreaterThan(0);
+        expect(fromStore.topExceptions[0]?.class).toBe('TypeError');
+        expect(fromStore.nPlusOne[0]?.sql).toContain('select');
+      });
+
+      it('aggregates the timeseries exactly as the scan does, by type and by tag', async () => {
+        if (typeof provider.aggregate !== 'function') return;
+        await seed(aggregateDataset(base));
+        for (const query of [
+          { windowMs: 60 * 60 * SECOND, buckets: 60 },
+          { windowMs: 60 * 60 * SECOND, buckets: 7, type: 'query' },
+          { windowMs: 60 * 60 * SECOND, buckets: 13, tag: 'user:u2' },
+        ]) {
+          const fromStore = await new TimeseriesService(withoutRollups()).getTimeseries(query);
+          const fromScan = await new TimeseriesService(scanOnly()).getTimeseries(query);
+          expect(fromStore).toEqual(fromScan);
+          expect(fromStore.scanned).toBeGreaterThan(0);
+        }
+        expect(aggregated.failures).toEqual([]);
+        expect(aggregated.calls).toBe(3);
+      });
+
+      it('answers the kind it was asked', async () => {
+        if (typeof provider.aggregate !== 'function') return;
+        await seed(aggregateDataset(base));
+        const window = { after: at(-1) };
+        const requests: EntryAggregation[] = [
+          { kind: 'count', window },
+          { kind: 'slowest', window, limit: 3 },
+          { kind: 'families', window, quantiles: [0.5] },
+          { kind: 'batchFamilies', window, minCount: 2 },
+          { kind: 'tagSets', window, tagPrefix: 'user:' },
+        ];
+        for (const request of requests) {
+          expect((await provider.aggregate(request)).kind).toBe(request.kind);
+        }
+      });
+    });
+  });
+}
+
+/**
+ * A window of traffic covering every pulse card: requests per route and user, outgoing calls,
+ * jobs, exceptions, and batches running one query family past the N+1 threshold, a different
+ * number of times each. Durations are integers (a store may keep whole milliseconds), and the
+ * entries span the 30 minutes after `base`.
+ */
+function aggregateDataset(base: number): Entry[] {
+  let state = 7;
+  const random = (): number => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
+  };
+  const entries: Entry[] = [];
+  let index = 0;
+  const add = (over: Partial<Entry>): void => {
+    entries.push(
+      makeEntry({
+        id: `agg-${String(index).padStart(5, '0')}`,
+        sequence: index,
+        createdAt: new Date(base + Math.floor(random() * 30 * 60 * SECOND)),
+        ...over,
+      }),
+    );
+    index += 1;
+  };
+  const routes = ['GET /a', 'GET /b/:id', 'POST /c', 'GET /health'];
+  for (let batch = 0; batch < 40; batch += 1) {
+    const batchId = `batch-${String(batch).padStart(3, '0')}`;
+    const route = routes[batch % routes.length] as string;
+    const user = batch % 5 === 4 ? null : `u${batch % 4}`;
+    add({
+      batchId,
+      type: 'request',
+      familyHash: route,
+      durationMs: route === 'GET /health' ? 3 : 20 + Math.floor(random() * 400),
+      tags: [...(user ? [`user:${user}`] : []), `status:${batch % 7 === 0 ? 500 : 200}`],
+      content: { method: route.split(' ')[0], uri: route.split(' ')[1] },
+    });
+    // N+1: batch n runs the posts query (10 + n % 9) times in a third of the batches.
+    const loops = batch % 3 === 0 ? 10 + batch : 1;
+    for (let loop = 0; loop < loops; loop += 1) {
+      add({
+        batchId,
+        type: 'query',
+        familyHash: 'posts-by-user',
+        durationMs: 1 + Math.floor(random() * 5),
+        content: { sql: 'select * from posts where user_id = ?', bindings: [] },
+      });
+    }
+    add({
+      batchId,
+      type: 'query',
+      familyHash: 'user-by-id',
+      durationMs: batch % 6 === 0 ? null : 2,
+      content: { sql: 'select * from users where id = ?', bindings: [] },
+    });
+    if (batch % 2 === 0) {
+      add({
+        batchId,
+        type: 'http_client',
+        familyHash: batch % 4 === 0 ? 'GET api.example.com/x' : 'POST pay.example.com/charge',
+        durationMs: 60 + Math.floor(random() * 900),
+        content: { method: 'GET', url: 'https://api.example.com/x' },
+      });
+    }
+    if (batch % 5 === 0) {
+      add({
+        batchId,
+        type: 'exception',
+        familyHash: batch % 10 === 0 ? 'TypeError:x' : 'RangeError:y',
+        content: { class: batch % 10 === 0 ? 'TypeError' : 'RangeError', message: 'boom' },
+      });
+    }
+  }
+  for (let job = 0; job < 12; job += 1) {
+    add({
+      batchId: `job-${job}`,
+      type: 'job',
+      origin: 'queue',
+      familyHash: job % 2 === 0 ? 'mail:send' : 'reports:build',
+      durationMs: 100 + Math.floor(random() * 2000),
+      content: { queue: 'default', name: job % 2 === 0 ? 'send' : 'build' },
+    });
+  }
+  // Extra TypeErrors so the exception ranking has a clear first.
+  for (let extra = 0; extra < 3; extra += 1) {
+    add({
+      batchId: `err-${extra}`,
+      type: 'exception',
+      familyHash: 'TypeError:x',
+      content: { class: 'TypeError', message: 'boom' },
+    });
+  }
+  return entries;
 }
 
 /** A complete entry with neutral defaults; `over` wins. */

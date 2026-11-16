@@ -1,12 +1,12 @@
 // packages/core/src/metrics/timeseries.service.ts
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { EntryType } from '../entry/entry.js';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import { type RollupStore, floorToBucket, isRollupStore } from '../rollup/rollup-store.js';
 import type { EntryQuery, StorageProvider } from '../storage/storage-provider.js';
 import { collectEntriesInWindow } from './collect-window.js';
 import { timeseriesFromRollups } from './timeseries-from-rollups.js';
-import { type TimeseriesReport, bucketTimeseries } from './timeseries.js';
+import { type TimeseriesBucket, type TimeseriesReport, bucketTimeseries } from './timeseries.js';
 
 /** Metric universe queried when no explicit `type` filter is supplied. */
 const BUILTIN_METRICS: string[] = Object.values(EntryType);
@@ -37,6 +37,7 @@ export interface TimeseriesResult extends TimeseriesReport {
 export class TimeseriesService {
   private readonly pageSize: number | undefined;
   private readonly scanCap: number | undefined;
+  private readonly logger = new Logger('TelescopeTimeseries');
 
   constructor(
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
@@ -64,6 +65,9 @@ export class TimeseriesService {
       return this.fromRollups(this.storage, query, windowStart, windowEnd, buckets);
     }
 
+    const counted = await this.fromAggregate(query, windowStart, windowEnd, buckets);
+    if (counted !== null) return counted;
+
     const baseQuery: Omit<EntryQuery, 'cursor' | 'limit'> = {
       after: windowStart,
       // bucketTimeseries only reads createdAt + type, so scan content-less.
@@ -78,6 +82,65 @@ export class TimeseriesService {
 
     const report = bucketTimeseries(entries, windowStart, windowEnd, buckets);
     return { ...report, scanned, truncated };
+  }
+
+  /**
+   * Counted by the store (a SQL store's GROUP BY over type and bucket), when it aggregates: the
+   * same buckets as {@link bucketTimeseries}, nothing truncated. `null` when it does not, or when
+   * the aggregation failed (then the window is scanned).
+   */
+  private async fromAggregate(
+    query: TimeseriesQuery,
+    windowStart: Date,
+    windowEnd: Date,
+    buckets: number,
+  ): Promise<TimeseriesResult | null> {
+    const storage = this.storage;
+    if (typeof storage.aggregate !== 'function') return null;
+    // The same geometry as bucketTimeseries.
+    const count = Math.max(1, Math.floor(buckets));
+    const startMs = windowStart.getTime();
+    const spanMs = Math.max(1, windowEnd.getTime() - startMs);
+    const bucketMs = Math.max(1, Math.floor(spanMs / count));
+    try {
+      const result = await storage.aggregate({
+        kind: 'count',
+        window: {
+          after: windowStart,
+          ...(query.type !== undefined ? { type: query.type } : {}),
+          ...(query.tag !== undefined ? { tag: query.tag } : {}),
+        },
+        bucket: { startMs, widthMs: bucketMs },
+      });
+      if (result.kind !== 'count') throw new Error(`aggregate(count) answered ${result.kind}`);
+      const series: TimeseriesBucket[] = Array.from({ length: count }, (_, index) => ({
+        t: new Date(startMs + index * bucketMs).toISOString(),
+        total: 0,
+        byType: {},
+      }));
+      let scanned = 0;
+      for (const row of result.rows) {
+        const index = Math.min(count - 1, Math.max(0, row.bucket ?? 0));
+        const bucket = series[index];
+        if (!bucket) continue;
+        bucket.total += row.count;
+        bucket.byType[row.type] = (bucket.byType[row.type] ?? 0) + row.count;
+        scanned += row.count;
+      }
+      return {
+        windowStart: windowStart.toISOString(),
+        windowEnd: windowEnd.toISOString(),
+        bucketMs,
+        buckets: series,
+        scanned,
+        truncated: false,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `the store could not aggregate the timeseries, scanning instead: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 
   /**

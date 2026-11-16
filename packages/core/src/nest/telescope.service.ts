@@ -184,6 +184,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       retryDelayMs: config.recorder.retryDelayMs,
       idFactory: () => v7(),
       ...(config.filter ? { filter: config.filter } : {}),
+      ...(config.ignoreQueries ? { ignoreQueries: config.ignoreQueries } : {}),
       ...(config.traceContext ? { traceContext: config.traceContext } : {}),
       // Additive, opt-in context enrichment (traceId fallback + user/tenant
       // tags). Present only when nestjs-context bound the shared accessor token.

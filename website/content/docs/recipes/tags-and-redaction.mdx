@@ -97,6 +97,25 @@ TelescopeModule.forRoot({
 
 `filter` runs on the finished entry, so you can branch on `type`, `tags`, `durationMs`, or `content`. It's the blunt instrument — for "keep some, drop some" of a high-volume type, reach for sampling instead.
 
+### Drop polling queries — `ignoreQueries`
+
+A worker polling its runs table, or a health check's `select 1`, records thousands of identical queries nobody reads. `ignoreQueries` drops them before they are buffered (no store write, no redaction work):
+
+```ts
+TelescopeModule.forRoot({
+  ignoreQueries: [
+    // A string matches when the sql contains it: case-insensitive, whitespace collapsed.
+    'select * from durable_workflow_runs where id = ?',
+    // A RegExp is tested against the sql as recorded.
+    /^select 1$/i,
+    // A function gets the sql and the whole query content (bindings, connection…).
+    (sql, content) => content.connection === 'poller',
+  ],
+});
+```
+
+The N+1 detector runs over the queries that are kept, so ignoring a polling query never hides a real N+1 elsewhere.
+
 ---
 
 ## Sample high-volume types

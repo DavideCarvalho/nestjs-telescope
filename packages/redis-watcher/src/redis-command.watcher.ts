@@ -7,6 +7,7 @@ import {
 } from '@dudousxd/nestjs-telescope';
 // Namespace import: `markCoveredByTelescope` is new in core 3, so with core 2 the call below is skipped.
 import * as telescope from '@dudousxd/nestjs-telescope';
+import { redactRedisArgs } from './redis-redaction.js';
 
 /** A single ioredis command, structurally. `name` is the command (e.g. `get`);
  *  `args` are its arguments. */
@@ -27,6 +28,22 @@ export interface RedisClientLike {
  *  host provides. */
 export interface CustomRedisSource {
   instrument(use: (client: RedisClientLike) => void, ctx: WatcherContext): void;
+}
+
+/** Options of {@link RedisCommandWatcher}. */
+export interface RedisCommandWatcherOptions {
+  /**
+   * Record every argument verbatim, values included. Default `false`: a command keeps its name,
+   * its keys and its shaping arguments (TTLs, flags, ranges, counts), and every value (what `SET`
+   * stores, what `PUBLISH` sends, a script's `ARGV`, an `AUTH` password) is recorded as
+   * `[REDACTED]`.
+   *
+   * **Warning:** with `true`, whatever your app keeps in redis lands in the telemetry as is:
+   * sessions (with their csrf secret and refresh tokens), cached user records, one-time codes, job
+   * payloads. The Recorder's key-based redaction cannot help here, since redis arguments are bare
+   * strings with no key names. Turn it on only for a client that holds nothing sensitive.
+   */
+  recordValues?: boolean;
 }
 
 /** Narrows the constructor argument to a {@link CustomRedisSource} (instrument
@@ -76,10 +93,15 @@ function isThenable(value: unknown): value is Promise<unknown> {
  * records a `redis` entry per command (`{ command, args, durationMs }`),
  * correlated to the request/job that issued it.
  *
+ * ## What is recorded
+ * By default the command name, its keys and its shaping arguments (TTLs, flags, ranges); every
+ * value argument is recorded as `[REDACTED]` in place (see {@link RedisCommandWatcherOptions}).
+ * Replies are never recorded.
+ *
  * ## How it works
  * Every ioredis command funnels through `client.sendCommand(command)`. The
  * watcher monkey-patches that method on the host's client instance: it captures
- * the command name + args, times the round-trip via the command's returned
+ * the command name + (redacted) args, times the round-trip via the command's returned
  * promise, and records the entry. The original is always called and its result
  * returned/thrown unchanged — recording failures are swallowed so a telescope
  * error can never alter a command's outcome. The wrap runs in the caller's async
@@ -107,9 +129,14 @@ export class RedisCommandWatcher implements Watcher {
   private patched: BrandedRedisClient | null = null;
   private original: RedisClientLike['sendCommand'] | null = null;
   private releaseCovered: (() => void) | null = null;
+  private readonly recordValues: boolean;
 
-  constructor(source: RedisClientLike | CustomRedisSource) {
+  constructor(
+    source: RedisClientLike | CustomRedisSource,
+    options: RedisCommandWatcherOptions = {},
+  ) {
     this.source = source;
+    this.recordValues = options.recordValues === true;
   }
 
   register(ctx: WatcherContext): void {
@@ -188,7 +215,8 @@ export class RedisCommandWatcher implements Watcher {
     try {
       const name =
         typeof command.name === 'string' ? command.name.toUpperCase() : String(command.name ?? '');
-      const args = Array.isArray(command.args) ? command.args : [];
+      const raw = Array.isArray(command.args) ? command.args : [];
+      const args = this.recordValues ? raw : redactRedisArgs(name, raw);
       const input: RecordInput = {
         type: EntryType.Redis,
         familyHash: `redis:${name}`,

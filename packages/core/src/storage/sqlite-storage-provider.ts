@@ -6,17 +6,21 @@ import type { RollupBucket, RollupDelta, RollupStore } from '../rollup/rollup-st
 import { mergeHistograms, normalizeHistogram } from '../rollup/rollup-store.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import { safeJsonParse } from './safe-json.js';
-import type {
-  BoundedPruneCapable,
-  BoundedPruneResult,
-  BoundedPruneScope,
-  EntryQuery,
-  EntryWithBatch,
-  LeaseCapableStorage,
-  Page,
-  PruneScope,
-  TagCount,
-  TagQuery,
+import {
+  type AggregateWindow,
+  type BoundedPruneCapable,
+  type BoundedPruneResult,
+  type BoundedPruneScope,
+  type EntryAggregateResult,
+  type EntryAggregation,
+  type EntryQuery,
+  type EntryWithBatch,
+  type LeaseCapableStorage,
+  type Page,
+  type PruneScope,
+  type TagCount,
+  type TagQuery,
+  quantileRank,
 } from './storage-provider.js';
 
 export interface SqliteStorageOptions {
@@ -220,6 +224,199 @@ export class SqliteStorageProvider
     if (!row) return null;
     const entry = this.fromRow(row);
     return { ...entry, batch: await this.batch(entry.batchId) };
+  }
+
+  /** The window of an aggregation as a where clause (`created_at` is epoch ms here). */
+  private windowWhere(window: AggregateWindow, params: Record<string, unknown>): string[] {
+    const where = ['created_at > @after'];
+    params.after = window.after.getTime();
+    if (window.before !== undefined) {
+      where.push('created_at < @before');
+      params.before = window.before.getTime();
+    }
+    if (window.type !== undefined) {
+      where.push('type = @type');
+      params.type = window.type;
+    }
+    if (window.types !== undefined) {
+      where.push(
+        window.types.length === 0
+          ? '0'
+          : `type in (${window.types.map((_, index) => `@type${index}`).join(', ')})`,
+      );
+      window.types.forEach((type, index) => {
+        params[`type${index}`] = type;
+      });
+    }
+    if (window.tag !== undefined) {
+      where.push('exists (select 1 from json_each(telescope_entries.tags) where value = @tag)');
+      params.tag = window.tag;
+    }
+    return where;
+  }
+
+  async aggregate(request: EntryAggregation): Promise<EntryAggregateResult> {
+    const params: Record<string, unknown> = {};
+    const where = this.windowWhere(request.window, params).join(' and ');
+    switch (request.kind) {
+      case 'count': {
+        const bucket = request.bucket;
+        if (bucket !== undefined) {
+          params.bStart = bucket.startMs;
+          params.bWidth = Math.max(1, Math.floor(bucket.widthMs));
+        }
+        const rows = this.db
+          .prepare(
+            bucket !== undefined
+              ? `select type, (created_at - @bStart) / @bWidth as bucket, count(*) as count
+                 from telescope_entries where ${where} group by type, bucket`
+              : `select type, null as bucket, count(*) as count
+                 from telescope_entries where ${where} group by type`,
+          )
+          .all(params) as { type: string; bucket: number | null; count: number }[];
+        return {
+          kind: 'count',
+          rows: rows.map((row) => ({
+            type: row.type,
+            bucket: row.bucket === null ? null : Math.floor(Number(row.bucket)),
+            count: Number(row.count),
+          })),
+        };
+      }
+      case 'slowest': {
+        params.limit = Math.max(0, Math.floor(request.limit));
+        const rows = this.db
+          .prepare(
+            `select id, type, duration_ms, batch_id from telescope_entries
+             where ${where} and duration_ms is not null
+             order by duration_ms desc, id asc limit @limit`,
+          )
+          .all(params) as { id: string; type: string; duration_ms: number; batch_id: string }[];
+        return {
+          kind: 'slowest',
+          rows: rows.map((row) => ({
+            id: row.id,
+            type: row.type,
+            durationMs: row.duration_ms,
+            batchId: row.batch_id,
+          })),
+        };
+      }
+      case 'families': {
+        const groups = this.db
+          .prepare(
+            `select type, family_hash, count(*) as count, count(duration_ms) as duration_count,
+                    coalesce(sum(duration_ms), 0) as duration_sum
+             from telescope_entries where ${where} and family_hash is not null
+             group by type, family_hash`,
+          )
+          .all(params) as {
+          type: string;
+          family_hash: string;
+          count: number;
+          duration_count: number;
+          duration_sum: number;
+        }[];
+        // Nearest rank per quantile, in SQL: ceil(q * n) in double precision, clamped to [1, n].
+        const rankOf = (index: number): string => {
+          const x = `(@q${index} * n)`;
+          return `min(n, max(1, cast(${x} as integer) + (${x} > cast(${x} as integer))))`;
+        };
+        request.quantiles.forEach((q, index) => {
+          params[`q${index}`] = q;
+        });
+        const ranked =
+          request.quantiles.length === 0
+            ? []
+            : (this.db
+                .prepare(
+                  `select type, family_hash, rn, duration_ms from (
+                     select type, family_hash, duration_ms,
+                            row_number() over (partition by type, family_hash order by duration_ms) as rn,
+                            count(*) over (partition by type, family_hash) as n
+                     from telescope_entries
+                     where ${where} and family_hash is not null and duration_ms is not null
+                   ) where ${request.quantiles.map((_, index) => `rn = ${rankOf(index)}`).join(' or ')}`,
+                )
+                .all(params) as {
+                type: string;
+                family_hash: string;
+                rn: number;
+                duration_ms: number;
+              }[]);
+        const valueAt = new Map<string, number>();
+        for (const row of ranked) {
+          valueAt.set(`${row.type}\u0000${row.family_hash}\u0000${row.rn}`, row.duration_ms);
+        }
+        return {
+          kind: 'families',
+          rows: groups.map((group) => {
+            const n = Number(group.duration_count);
+            return {
+              type: group.type,
+              familyHash: group.family_hash,
+              count: Number(group.count),
+              durationCount: n,
+              durationSum: Number(group.duration_sum),
+              quantiles: request.quantiles.map((q) =>
+                n === 0
+                  ? 0
+                  : (valueAt.get(
+                      `${group.type}\u0000${group.family_hash}\u0000${quantileRank(q, n)}`,
+                    ) ?? 0),
+              ),
+            };
+          }),
+        };
+      }
+      case 'batchFamilies': {
+        params.minCount = Math.max(1, Math.floor(request.minCount));
+        const rows = this.db
+          .prepare(
+            `select batch_id, family_hash, count(*) as count,
+                    coalesce(sum(duration_ms), 0) as duration_sum
+             from telescope_entries where ${where} and family_hash is not null
+             group by batch_id, family_hash having count(*) >= @minCount`,
+          )
+          .all(params) as {
+          batch_id: string;
+          family_hash: string;
+          count: number;
+          duration_sum: number;
+        }[];
+        return {
+          kind: 'batchFamilies',
+          rows: rows.map((row) => ({
+            batchId: row.batch_id,
+            familyHash: row.family_hash,
+            count: Number(row.count),
+            durationSum: Number(row.duration_sum),
+          })),
+        };
+      }
+      case 'tagSets': {
+        params.tagPrefix = request.tagPrefix;
+        const rows = this.db
+          .prepare(
+            `select tags, count(*) as count, coalesce(sum(duration_ms), 0) as duration_sum
+             from telescope_entries
+             where ${where} and exists (
+               select 1 from json_each(telescope_entries.tags)
+               where substr(value, 1, length(@tagPrefix)) = @tagPrefix
+             )
+             group by tags`,
+          )
+          .all(params) as { tags: string; count: number; duration_sum: number }[];
+        return {
+          kind: 'tagSets',
+          rows: rows.map((row) => ({
+            tags: safeJsonParse<string[]>(row.tags, []),
+            count: Number(row.count),
+            durationSum: Number(row.duration_sum),
+          })),
+        };
+      }
+    }
   }
 
   async get(query: EntryQuery): Promise<Page<Entry>> {

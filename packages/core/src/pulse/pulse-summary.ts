@@ -133,16 +133,32 @@ function toHotspots(
   durationsByFamily: Map<string, number[]>,
   options: PulseOptions,
 ): SlowRouteHotspot[] {
-  return [...durationsByFamily.entries()]
-    .map(([route, durations]) => {
-      const sorted = [...durations].sort((a, b) => a - b);
-      return {
-        route,
-        count: sorted.length,
-        p99: percentile(sorted, 0.99),
-        p50: percentile(sorted, 0.5),
-      };
-    })
+  return rankRouteHotspots(familyStats(durationsByFamily), options);
+}
+
+/** count/p99/p50 of each family's durations. */
+function familyStats(durationsByFamily: Map<string, number[]>): SlowRouteHotspot[] {
+  return [...durationsByFamily.entries()].map(([route, durations]) => {
+    const sorted = [...durations].sort((a, b) => a - b);
+    return {
+      route,
+      count: sorted.length,
+      p99: percentile(sorted, 0.99),
+      p50: percentile(sorted, 0.5),
+    };
+  });
+}
+
+/**
+ * Rank route families (requests, outgoing http) already reduced to count/p99/p50: the ones at
+ * least `slowRouteMinCount` strong whose p99 reaches `slowRouteMs`, slowest first. Shared by the
+ * scan and by the store's aggregation, so both rank alike.
+ */
+export function rankRouteHotspots(
+  stats: SlowRouteHotspot[],
+  options: PulseOptions,
+): SlowRouteHotspot[] {
+  return stats
     .filter(
       (hotspot) => hotspot.count >= options.slowRouteMinCount && hotspot.p99 >= options.slowRouteMs,
     )
@@ -170,25 +186,25 @@ function labelFrom(type: string, content: unknown): string {
   return type;
 }
 
-interface SlowCandidate {
+export interface SlowCandidate {
   id: string;
   type: string;
   durationMs: number;
   batchId: string;
 }
 
-interface ExceptionAccumulator {
+export interface ExceptionAccumulator {
   /** A representative entry id to hydrate class/message from. */
   representativeId: string;
   count: number;
   lastSeen: Date;
 }
 
-interface ExceptionGroupAggregate extends ExceptionAccumulator {
+export interface ExceptionGroupAggregate extends ExceptionAccumulator {
   familyHash: string;
 }
 
-interface NPlusOneAccumulator {
+export interface NPlusOneAccumulator {
   familyHash: string;
   perRequest: number;
   requests: number;
@@ -334,15 +350,12 @@ export function aggregatePulse(
     else batches.set(entry.batchId, [entry]);
   }
 
-  const slowest = slowCandidates
-    .sort((a, b) => b.durationMs - a.durationMs || a.id.localeCompare(b.id))
-    .slice(0, options.topN);
+  const slowest = rankSlowest(slowCandidates, options);
 
-  const exceptions = [...exceptionGroups.entries()]
-    .map(([familyHash, group]) => ({ familyHash, group }))
-    .sort((a, b) => b.group.count - a.group.count || a.familyHash.localeCompare(b.familyHash))
-    .slice(0, options.topN)
-    .map(({ familyHash, group }) => ({ familyHash, ...group }));
+  const exceptions = rankExceptionFamilies(
+    [...exceptionGroups.entries()].map(([familyHash, group]) => ({ familyHash, ...group })),
+    options,
+  );
 
   // N+1 detection only needs familyHash counts per batch; sql is hydrated later.
   // We track one representative query-entry id per family for the sql label.
@@ -391,15 +404,7 @@ export function aggregatePulse(
   }
   // Rank by total time WASTED in the loop first (cost-weighted, the actionable
   // signal), then by repetition totals as the tie-break.
-  const nPlusOne = [...hotspots.values()]
-    .sort(
-      (a, b) =>
-        b.totalDurationMs - a.totalDurationMs ||
-        b.total - a.total ||
-        b.requests - a.requests ||
-        a.familyHash.localeCompare(b.familyHash),
-    )
-    .slice(0, options.topN);
+  const nPlusOne = rankNPlusOne([...hotspots.values()], options);
 
   // Slow-route hotspots: aggregate request durations per route family entirely
   // from content-less columns. The route IS the familyHash (also the label).
@@ -411,13 +416,7 @@ export function aggregatePulse(
   // always worth surfacing — so they rank by p99 over the min-count gate only.
   const slowJobs = toJobHotspots(jobDurations, options);
   // Load-by-user: top users by total request time spent serving them.
-  const loadByUser = [...userLoad.entries()]
-    .map(([user, load]) => ({ user, count: load.count, totalDurationMs: load.totalDurationMs }))
-    .sort(
-      (a, b) =>
-        b.totalDurationMs - a.totalDurationMs || b.count - a.count || a.user.localeCompare(b.user),
-    )
-    .slice(0, options.topN);
+  const loadByUser = rankUserLoad(userLoad, options);
 
   return {
     windowStart,
@@ -439,6 +438,53 @@ export function aggregatePulse(
   };
 }
 
+/** The top-N slowest candidates, longest first, ties by id. */
+export function rankSlowest(candidates: SlowCandidate[], options: PulseOptions): SlowCandidate[] {
+  return [...candidates]
+    .sort((a, b) => b.durationMs - a.durationMs || a.id.localeCompare(b.id))
+    .slice(0, options.topN);
+}
+
+/** The top-N N+1 families: most time wasted first, then repetitions. */
+export function rankNPlusOne(
+  hotspots: NPlusOneAccumulator[],
+  options: PulseOptions,
+): NPlusOneAccumulator[] {
+  return [...hotspots]
+    .sort(
+      (a, b) =>
+        b.totalDurationMs - a.totalDurationMs ||
+        b.total - a.total ||
+        b.requests - a.requests ||
+        a.familyHash.localeCompare(b.familyHash),
+    )
+    .slice(0, options.topN);
+}
+
+/** The top-N users by total request time. */
+export function rankUserLoad(
+  load: Map<string, { count: number; totalDurationMs: number }>,
+  options: PulseOptions,
+): UserLoad[] {
+  return [...load.entries()]
+    .map(([user, entry]) => ({ user, count: entry.count, totalDurationMs: entry.totalDurationMs }))
+    .sort(
+      (a, b) =>
+        b.totalDurationMs - a.totalDurationMs || b.count - a.count || a.user.localeCompare(b.user),
+    )
+    .slice(0, options.topN);
+}
+
+/** The top-N exception families by count, ties by family. */
+export function rankExceptionFamilies<T extends { familyHash: string; count: number }>(
+  groups: T[],
+  options: PulseOptions,
+): T[] {
+  return [...groups]
+    .sort((a, b) => b.count - a.count || a.familyHash.localeCompare(b.familyHash))
+    .slice(0, options.topN);
+}
+
 /**
  * Rank job families by p99 over a min-count gate (no slow-ms threshold — the
  * slowest jobs are always worth showing). Shares the {@link SlowRouteHotspot}
@@ -448,23 +494,22 @@ function toJobHotspots(
   durationsByFamily: Map<string, number[]>,
   options: PulseOptions,
 ): SlowRouteHotspot[] {
-  return [...durationsByFamily.entries()]
-    .map(([route, durations]) => {
-      const sorted = [...durations].sort((a, b) => a - b);
-      return {
-        route,
-        count: sorted.length,
-        p99: percentile(sorted, 0.99),
-        p50: percentile(sorted, 0.5),
-      };
-    })
+  return rankJobHotspots(familyStats(durationsByFamily), options);
+}
+
+/** Rank job families already reduced to count/p99/p50 (min-count gate only). */
+export function rankJobHotspots(
+  stats: SlowRouteHotspot[],
+  options: PulseOptions,
+): SlowRouteHotspot[] {
+  return stats
     .filter((hotspot) => hotspot.count >= options.slowRouteMinCount)
     .sort((a, b) => b.p99 - a.p99 || b.count - a.count || a.route.localeCompare(b.route))
     .slice(0, options.topN);
 }
 
 /** Extract the user id from a `user:<id>` tag, or `null` when none is present. */
-function userFromTags(tags: string[]): string | null {
+export function userFromTags(tags: string[]): string | null {
   for (const tag of tags) {
     if (tag.startsWith('user:')) return tag.slice('user:'.length);
   }

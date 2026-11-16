@@ -52,10 +52,29 @@ Each captured entry has type `redis` and `RedisContent`:
 ```ts
 {
   command: string;          // uppercased command name, e.g. 'GET'
-  args: unknown[];          // command arguments (redacted by the Recorder)
+  args: unknown[];          // keys and shaping arguments; values are '[REDACTED]'
   durationMs: number | null; // round-trip time, null when unmeasurable
 }
 ```
+
+## Values are redacted by default
+
+An entry keeps the command, its keys and the arguments that only shape it (TTLs,
+flags, ranges, counts); every value is recorded as `[REDACTED]` in its place, and
+replies are never recorded. `SET sess:abc <session json> EX 7200` is recorded as
+`['sess:abc', '[REDACTED]', 'EX', 7200]`; `AUTH`, `HELLO`, `CONFIG` and `MIGRATE`
+have every argument redacted.
+
+To record values verbatim:
+
+```ts
+new RedisCommandWatcher(ioredisClient, { recordValues: true });
+```
+
+> **Warning:** with `recordValues: true`, whatever your app keeps in redis lands
+> in the telemetry as is: sessions (csrf secrets, refresh tokens), cached user
+> records, one-time codes. The core's key-based redaction cannot help, since
+> redis arguments are bare strings with no key names.
 
 ## Caveat: shared clients
 

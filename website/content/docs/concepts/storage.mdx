@@ -25,9 +25,12 @@ interface StorageProvider {
   pruneScopedBatch?(input: BoundedPruneScope): Promise<BoundedPruneResult>; // optional: bounded deletes
   tryAcquireLease?(key, owner, ttlMs, nowMs): Promise<boolean>; // optional: cross-process prune lock
   releaseLease?(key, owner): Promise<void>;
+  aggregate?(request: EntryAggregation): Promise<EntryAggregateResult>; // optional: pulse/timeseries in the store
   clear(): Promise<void>;
 }
 ```
+
+The SQL stores (SQLite, MikroORM on SQLite/MySQL/PostgreSQL, ClickHouse) implement `aggregate`: Pulse and the timeseries read a window as a few `GROUP BY`s in the database, with no scan cap, instead of paging up to 50 000 entries into Node. The other stores (Redis, in-memory, tiered/Parquet) and third-party ones keep the scan, with the same results.
 
 Reads are **keyset-paginated newest-first** (`createdAt DESC, id DESC`), so paging resumes correctly even after older entries are pruned out from under the cursor.
 

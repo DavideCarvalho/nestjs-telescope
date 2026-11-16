@@ -8,6 +8,7 @@ import {
   Injectable,
   Logger,
   type OnApplicationBootstrap,
+  Optional,
 } from '@nestjs/common';
 import { TelescopeFleet } from '../fleet/fleet.service.js';
 import {
@@ -19,6 +20,7 @@ import { TelescopeService } from '../nest/telescope.service.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { type ResolvedTopology, resolveTopology } from './config.js';
 import { type IngestHandler, createIngestHandler } from './ingest.js';
+import { TelescopeKnownApps } from './known-apps.js';
 import type { TelescopeTransport, TransportListener } from './transport.js';
 
 const MAX_RETRY_MS = 30_000;
@@ -38,9 +40,10 @@ export class TelescopeIngest implements OnApplicationBootstrap, BeforeApplicatio
     @Inject(TelescopeService) private readonly service: TelescopeService,
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
     @Inject(TelescopeFleet) private readonly fleet: TelescopeFleet,
+    @Optional() @Inject(TelescopeKnownApps) private readonly knownApps?: TelescopeKnownApps,
   ) {
     this.topology = resolveTopology(options);
-    this.handler =
+    const handler =
       this.topology.kind === 'control-plane'
         ? createIngestHandler({
             verifyTenant: this.topology.verifyTenant,
@@ -49,6 +52,15 @@ export class TelescopeIngest implements OnApplicationBootstrap, BeforeApplicatio
             heartbeat: (app, heartbeat) => this.fleet.heartbeat(app, heartbeat),
           })
         : null;
+    // Every stored batch names its app: the App picker lists it without counting tags.
+    this.handler =
+      handler === null
+        ? null
+        : async (delivery) => {
+            const outcome = await handler(delivery);
+            if (outcome.status === 'stored') this.knownApps?.note(outcome.app);
+            return outcome;
+          };
   }
 
   /** The ids among `ids` the store already holds. */

@@ -1,9 +1,15 @@
 // packages/core/src/pulse/pulse.service.ts
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
-import { type PulseSummary, aggregatePulse, finalizePulse } from './pulse-summary.js';
+import { aggregatePulseInStore } from './pulse-from-store.js';
+import {
+  type PulseAggregates,
+  type PulseSummary,
+  aggregatePulse,
+  finalizePulse,
+} from './pulse-summary.js';
 
 const DEFAULT_TOP_N = 5;
 const DEFAULT_N_PLUS_ONE_THRESHOLD = 5;
@@ -50,6 +56,7 @@ export class PulseService {
   private readonly nPlusOneThreshold: number;
   private readonly slowRouteMinCount: number;
   private readonly slowRouteMs: number;
+  private readonly logger = new Logger('TelescopePulse');
 
   constructor(
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
@@ -70,24 +77,15 @@ export class PulseService {
     const windowEnd = new Date();
     const windowStart = new Date(windowEnd.getTime() - windowMs);
 
-    // Pass 1: scan the whole window over content-less columns only. This is the
-    // heavy loop (every entry in the window), so omitting the content blob is
-    // where the time is saved.
-    const { entries, scanned, truncated } = await collectEntriesInWindow(
-      this.storage,
-      { after: windowStart, omitContent: true },
-      {
-        ...(this.pageSize !== undefined ? { pageSize: this.pageSize } : {}),
-        ...(this.scanCap !== undefined ? { scanCap: this.scanCap } : {}),
-      },
-    );
-
-    const aggregates = aggregatePulse(entries, windowStart, windowEnd, {
+    const pulseOptions = {
       topN: this.topN,
       nPlusOneThreshold: this.nPlusOneThreshold,
       slowRouteMinCount: this.slowRouteMinCount,
       slowRouteMs: this.slowRouteMs,
-    });
+    };
+    const { aggregates, scanned, truncated } =
+      (await this.fromStore(windowStart, windowEnd, pulseOptions)) ??
+      (await this.fromScan(windowStart, windowEnd, pulseOptions));
 
     // Pass 2: hydrate content for ONLY the handful of displayed rows — the top-N
     // slowest, one representative per reported exception family, and one per
@@ -97,6 +95,54 @@ export class PulseService {
       contentById.has(id) ? contentById.get(id) : undefined,
     );
     return { ...summary, scanned, truncated };
+  }
+
+  /**
+   * Pass 1 in the store, when it aggregates (a SQL store): a few GROUP BYs, nothing capped.
+   * `null` when it does not, or when the aggregation failed (then the window is scanned).
+   */
+  private async fromStore(
+    windowStart: Date,
+    windowEnd: Date,
+    options: Parameters<typeof aggregatePulse>[3],
+  ): Promise<{ aggregates: PulseAggregates; scanned: number; truncated: boolean } | null> {
+    const storage = this.storage;
+    if (typeof storage.aggregate !== 'function') return null;
+    try {
+      const { aggregates, scanned } = await aggregatePulseInStore(
+        { aggregate: storage.aggregate.bind(storage), get: storage.get.bind(storage) },
+        windowStart,
+        windowEnd,
+        options,
+      );
+      return { aggregates, scanned, truncated: false };
+    } catch (error) {
+      this.logger.warn(
+        `the store could not aggregate pulse, scanning instead: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  /** Pass 1 by scanning the whole window over content-less columns (bounded by `scanCap`). */
+  private async fromScan(
+    windowStart: Date,
+    windowEnd: Date,
+    options: Parameters<typeof aggregatePulse>[3],
+  ): Promise<{ aggregates: PulseAggregates; scanned: number; truncated: boolean }> {
+    const { entries, scanned, truncated } = await collectEntriesInWindow(
+      this.storage,
+      { after: windowStart, omitContent: true },
+      {
+        ...(this.pageSize !== undefined ? { pageSize: this.pageSize } : {}),
+        ...(this.scanCap !== undefined ? { scanCap: this.scanCap } : {}),
+      },
+    );
+    return {
+      aggregates: aggregatePulse(entries, windowStart, windowEnd, options),
+      scanned,
+      truncated,
+    };
   }
 
   /** Fetch content for the deduplicated set of ids the pulse output displays. */

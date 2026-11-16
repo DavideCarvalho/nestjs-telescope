@@ -149,4 +149,4 @@ authorize: (ctx) => {
 
 The limit applies to every read: entries, traces, metrics, Pulse, exceptions, the live tail, the ⌘K search and the MCP tools. An `?app=` outside the viewer's apps answers empty (and is logged), never with another app's data. Global actions (clearing entries, pruning, queue and schedule controls, Prometheus metrics) are refused to a viewer limited to some apps, as they are to a viewer limited to some organizations.
 
-The App picker is hidden while no entry carries an app, so a standalone app's console looks as before. The entries table shows an **App** column when entries of several apps are in view.
+The App picker is hidden while no entry carries an app, so a standalone app's console looks as before. It lists the apps the control plane has stored entries of, kept in memory as batches arrive and reconciled with the store every five minutes, so opening the console never counts the tags of the whole table. The entries table shows an **App** column when entries of several apps are in view.

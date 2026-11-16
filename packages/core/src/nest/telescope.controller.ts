@@ -1,4 +1,3 @@
-// packages/core/src/nest/telescope.controller.ts
 import {
   BadGatewayException,
   BadRequestException,
@@ -72,6 +71,8 @@ import {
   withTenantView,
   withoutTenantView,
 } from '../storage/tenant-scoped-storage.js';
+// packages/core/src/nest/telescope.controller.ts
+import { TelescopeKnownApps } from '../topology/known-apps.js';
 import { APP_TAG_PREFIX } from '../topology/wire.js';
 import {
   type ConsoleAppsInfo,
@@ -326,6 +327,15 @@ export class TelescopeController {
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
   ) {}
+
+  /** The known-apps index (absent when a host serves this controller without it). */
+  private get knownApps(): TelescopeKnownApps | null {
+    try {
+      return this.moduleRef.get(TelescopeKnownApps, { strict: false }) ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   /** The context accessor when `@dudousxd/nestjs-context` provides one (else the global slot is read). */
   private get contextAccessor(): unknown {
@@ -816,10 +826,16 @@ export class TelescopeController {
         granted: tenant?.scope ? { tenants: tenant.scope.tenants } : {},
         requested: tenant?.selection.kind === 'tenant' ? { tenant: tenant.selection.id } : {},
       });
-      const rows = await withTenantView(view, () =>
-        this.storage.tags(prefix, { limit: MAX_LABEL_SCAN }),
-      );
-      ids = rows.map((row) => row.tag.slice(prefix.length)).filter((id) => id !== '');
+      const known = view === null ? this.knownApps : null;
+      if (known !== null) {
+        // Every organization: the apps the control plane has seen, without counting tags.
+        ids = (await known.list()).slice(0, MAX_LABEL_SCAN);
+      } else {
+        const rows = await withTenantView(view, () =>
+          this.storage.tags(prefix, { limit: MAX_LABEL_SCAN }),
+        );
+        ids = rows.map((row) => row.tag.slice(prefix.length)).filter((id) => id !== '');
+      }
     } else {
       ids = granted;
     }

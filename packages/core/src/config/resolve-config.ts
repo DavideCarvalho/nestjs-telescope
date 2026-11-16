@@ -163,5 +163,8 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
   if (options.filter !== undefined) {
     resolved.filter = options.filter;
   }
+  if (options.ignoreQueries !== undefined && options.ignoreQueries.length > 0) {
+    resolved.ignoreQueries = [...options.ignoreQueries];
+  }
   return resolved;
 }

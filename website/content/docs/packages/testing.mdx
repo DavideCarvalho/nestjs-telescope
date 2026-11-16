@@ -75,5 +75,5 @@ describeStorageProvider('MyStorageProvider', () => new MyStorageProvider(), {
 });
 ```
 
-It covers `store`/`find`/`get` with every `EntryQuery` filter, newest-first keyset paging `(createdAt DESC, id DESC)` including ties, concurrent inserts and cursors whose entry is gone, `batch`, `tags` (order, prefix, search, paging), `update`, `prune` with `keepLast`, and — only when the provider has them — `pruneScoped`, `pruneScopedBatch`, the lease pair, `markFamilySeen` and `RollupStore`. `makeEntry(over?)` from the same subpath builds a complete `Entry` for your own tests.
+It covers `store`/`find`/`get` with every `EntryQuery` filter, newest-first keyset paging `(createdAt DESC, id DESC)` including ties, concurrent inserts and cursors whose entry is gone, `batch`, `tags` (order, prefix, search, paging), `update`, `prune` with `keepLast`, and — only when the provider has them — `pruneScoped`, `pruneScopedBatch`, the lease pair, `markFamilySeen`, `RollupStore` and `aggregate` (Pulse and the timeseries through it must equal the scan; `describeStorageAggregation` runs that part alone). `makeEntry(over?)` from the same subpath builds a complete `Entry` for your own tests.
 
