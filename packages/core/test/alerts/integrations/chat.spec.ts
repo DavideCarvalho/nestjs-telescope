@@ -35,6 +35,33 @@ describe('discordChannel', () => {
   });
 });
 
+describe('discordMessage limits', () => {
+  it("keeps the whole embed within Discord's 6000-character total", async () => {
+    const { fetch, calls } = mockFetch();
+    const base = exceptionAlert();
+    const alert = {
+      ...base,
+      app: 'a'.repeat(900),
+      diagnosis: 'd'.repeat(5000),
+      exception: {
+        ...base.exception!,
+        stack: 's'.repeat(5000),
+        route: `/${'r'.repeat(2000)}`,
+        user: 'u'.repeat(2000),
+      },
+    };
+    await discordChannel({ url: 'https://d.example', fetch }).send(alert);
+    const embed = (calls[0]!.json as any).embeds[0];
+    const total =
+      embed.title.length +
+      (embed.description?.length ?? 0) +
+      embed.fields.reduce((n: number, f: any) => n + f.name.length + f.value.length, 0) +
+      embed.footer.text.length;
+    expect(total).toBeLessThanOrEqual(6000);
+    expect(embed.fields.every((f: any) => f.value.length >= 1)).toBe(true);
+  });
+});
+
 describe('teamsChannel', () => {
   it('posts an Adaptive Card attachment with facts and a link', async () => {
     const { fetch, calls } = mockFetch();

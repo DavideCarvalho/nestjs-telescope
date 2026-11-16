@@ -1,4 +1,5 @@
 // packages/core/src/alerts/integrations/incident.ts
+import { createHash } from 'node:crypto';
 import type { AlertChannel } from '../alert-channel.js';
 import type { AlertPayload, AlertRule, AlertSeverity } from '../alert-rule.js';
 
@@ -73,6 +74,19 @@ export function incidentKey(alert: AlertPayload): string {
   const family = alert.exception?.familyHash;
   if (family !== undefined) parts.push(family);
   return parts.join(':');
+}
+
+/**
+ * {@link incidentKey} capped at `max` characters for providers with a key
+ * limit (PagerDuty `dedup_key` 255, Opsgenie `alias` 512). An over-long key
+ * keeps its head and ends in a hash of the whole key, so it stays unique and
+ * the trigger and the resolve still compute the same value.
+ */
+export function boundedIncidentKey(alert: AlertPayload, max: number): string {
+  const key = incidentKey(alert);
+  if (key.length <= max) return key;
+  const digest = createHash('sha256').update(key).digest('hex').slice(0, 16);
+  return `${key.slice(0, Math.max(0, max - digest.length - 1))}:${digest}`;
 }
 
 function formatValue(value: number): string {

@@ -74,6 +74,32 @@ describe('pagerDutyChannel', () => {
   });
 });
 
+describe('provider key limits', () => {
+  it('caps the PagerDuty dedup_key at 255 and keeps trigger/resolve and apps distinct', async () => {
+    const { fetch, calls } = mockFetch();
+    const channel = pagerDutyChannel({ routingKey: 'k', fetch });
+    const longApp = 'a'.repeat(400);
+    await channel.send({ ...metricAlert(), app: longApp });
+    await channel.send({ ...metricAlert('resolved'), app: longApp });
+    await channel.send({ ...metricAlert(), app: `${longApp}b` });
+    const keys = calls.map((c) => (c.json as { dedup_key: string }).dedup_key);
+    expect(keys.every((k) => k.length <= 255)).toBe(true);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+
+  it('caps the Opsgenie alias at 512 on create and close', async () => {
+    const { fetch, calls } = mockFetch();
+    const channel = opsgenieChannel({ apiKey: 'k', fetch });
+    const alert = { ...metricAlert(), app: 'x'.repeat(800) };
+    await channel.send(alert);
+    await channel.send({ ...alert, status: 'resolved' });
+    const alias = (calls[0]?.json as { alias: string }).alias;
+    expect(alias.length).toBeLessThanOrEqual(512);
+    expect(calls[1]?.url).toContain(`/v2/alerts/${encodeURIComponent(alias)}/close`);
+  });
+});
+
 describe('fail closed at boot', () => {
   it('names the missing field, never a value', () => {
     expect(() => pagerDutyChannel({ routingKey: ' ' })).toThrow(

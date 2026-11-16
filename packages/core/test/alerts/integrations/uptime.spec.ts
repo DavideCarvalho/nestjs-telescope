@@ -203,6 +203,18 @@ describe('HeartbeatMonitor', () => {
     expect(logs.join()).not.toContain('not a url');
   });
 
+  it("an unknown provider is that target's error, never a rejected tick", async () => {
+    const { fetch, calls } = mockFetch();
+    const monitor = new HeartbeatMonitor({
+      heartbeats: [{ provider: 'nope' as never, url: 'https://x.example/hb', signalStart: true }],
+      source: () => [],
+      fetch,
+      logger: () => {},
+    });
+    await expect(monitor.tick(0)).resolves.toEqual({ nope: 'error' });
+    expect(calls).toHaveLength(0);
+  });
+
   it('`checks` limits which checks count', async () => {
     const { fetch } = mockFetch();
     const monitor = new HeartbeatMonitor({
@@ -327,6 +339,78 @@ describe('StatusPageSync', () => {
       status: 'resolved',
       components: { cPg: 'operational' },
     });
+  });
+
+  it('folds components that fail after the incident opened into it and into the resolve', async () => {
+    let states: CheckState[] = [down('redis'), up('postgres')];
+    const { fetch, calls } = mockFetch([{ status: 200, json: { id: 'inc-9' } }]);
+    let now = 0;
+    const sync = new StatusPageSync({
+      statusPages: [
+        {
+          provider: 'statuspage',
+          apiKey: 'k',
+          pageId: 'P',
+          components: { redis: 'cRedis', postgres: 'cPg' },
+          incidents: true,
+          every: '30s',
+        },
+      ],
+      source: () => states,
+      fetch,
+      now: () => now,
+    });
+    await sync.tick(); // opens with cRedis
+    now = 30_000;
+    states = [down('redis'), down('postgres')];
+    await sync.tick();
+    const update = calls.find(
+      (c) =>
+        c.url.endsWith('/incidents/inc-9') && (c.json as any).incident.status === 'investigating',
+    );
+    expect((update?.json as any).incident).toMatchObject({
+      component_ids: ['cRedis', 'cPg'],
+      components: { cRedis: 'major_outage', cPg: 'major_outage' },
+    });
+    now = 60_000;
+    await sync.tick(); // unchanged: no further update
+    const before = calls.length;
+    now = 90_000;
+    states = [up('redis'), up('postgres')];
+    await sync.tick();
+    const resolve = calls.slice(before).find((c) => c.url.endsWith('/incidents/inc-9'));
+    expect((resolve?.json as any).incident).toMatchObject({
+      status: 'resolved',
+      components: { cRedis: 'operational', cPg: 'operational' },
+    });
+  });
+
+  it('Instatus: posts an incident update when another component fails', async () => {
+    let states: CheckState[] = [down('redis'), up('postgres')];
+    const { fetch, calls } = mockFetch([{ status: 200, json: { id: 'i-1' } }]);
+    let now = 0;
+    const sync = new StatusPageSync({
+      statusPages: [
+        {
+          provider: 'instatus',
+          apiKey: 'k',
+          pageId: 'P',
+          components: { redis: 'cR', postgres: 'cP' },
+          incidents: true,
+          every: '30s',
+        },
+      ],
+      source: () => states,
+      fetch,
+      now: () => now,
+    });
+    await sync.tick();
+    now = 30_000;
+    states = [down('redis'), down('postgres')];
+    await sync.tick();
+    const update = calls.at(-1);
+    expect(update?.url).toBe('https://api.instatus.com/v1/P/incidents/i-1/incident-updates');
+    expect(update?.json).toMatchObject({ status: 'INVESTIGATING', components: ['cR', 'cP'] });
   });
 
   it('Instatus: PUTs component status and opens/resolves an incident', async () => {

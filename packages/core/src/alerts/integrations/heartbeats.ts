@@ -125,6 +125,10 @@ export function heartbeatRequests(
         fail: failUrl !== undefined ? { method: 'GET', url: failUrl } : null,
         start: null,
       };
+    default:
+      // Unreachable for typed configs (boot validation rejects it too); the
+      // monitor turns this into that target's logged error.
+      throw new Error('unknown heartbeat provider');
   }
 }
 
@@ -321,6 +325,15 @@ export class HeartbeatMonitor {
   }
 }
 
+const HEARTBEAT_PROVIDERS: readonly string[] = [
+  'healthchecks',
+  'betterstack',
+  'cronitor',
+  'uptime-kuma',
+  'uptimerobot',
+  'url',
+] satisfies readonly HeartbeatProvider[];
+
 /**
  * Boot-time validation (fails closed, like the rest of `alerts`): a heartbeat
  * needs a `url` or `apps`, every URL must parse, and `every` must be a valid
@@ -329,6 +342,9 @@ export class HeartbeatMonitor {
  */
 export function validateHeartbeat(config: HeartbeatConfig): void {
   const label = config.name ?? config.provider;
+  if (!HEARTBEAT_PROVIDERS.includes(config.provider)) {
+    throw new Error(`Telescope heartbeat '${label}': unknown provider`);
+  }
   const appUrls = Object.entries(config.apps ?? {});
   if (config.url === undefined && appUrls.length === 0) {
     throw new Error(`Telescope heartbeat '${label}' needs a url or apps`);

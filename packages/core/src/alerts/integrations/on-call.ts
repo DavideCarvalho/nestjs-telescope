@@ -5,6 +5,7 @@ import { type HttpDeps, deliver } from './http.js';
 import {
   type ChannelRouting,
   appOf,
+  boundedIncidentKey,
   clip,
   detailsOf,
   incidentKey,
@@ -50,7 +51,8 @@ export function pagerDutyEvent(
   alert: AlertPayload,
   options: Pick<PagerDutyOptions, 'routingKey' | 'source' | 'component' | 'group'>,
 ): Record<string, unknown> {
-  const dedupKey = incidentKey(alert);
+  // PagerDuty rejects a dedup_key over 255 characters.
+  const dedupKey = boundedIncidentKey(alert, 255);
   if (statusOf(alert) === 'resolved') {
     return { routing_key: options.routingKey, event_action: 'resolve', dedup_key: dedupKey };
   }
@@ -118,7 +120,7 @@ export function opsgenieAlert(
   const severity = severityOf(alert);
   return {
     message: clip(titleOf(alert), 130),
-    alias: clip(incidentKey(alert), 512),
+    alias: boundedIncidentKey(alert, 512),
     description: clip(summaryLines(alert).join('\n'), 15000),
     priority: OPSGENIE_PRIORITY[severity],
     source: 'Telescope',
@@ -144,7 +146,7 @@ export function opsgenieChannel(options: OpsgenieOptions): AlertChannel {
   const headers = { authorization: `GenieKey ${options.apiKey}` };
   return integrationChannel('opsgenie', options, async (alert) => {
     if (statusOf(alert) === 'resolved') {
-      const alias = encodeURIComponent(clip(incidentKey(alert), 512));
+      const alias = encodeURIComponent(boundedIncidentKey(alert, 512));
       await deliver(
         {
           url: `${base}/v2/alerts/${alias}/close?identifierType=alias`,

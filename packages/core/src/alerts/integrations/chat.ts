@@ -79,6 +79,24 @@ export interface DiscordOptions extends ChatOptions {
   avatarUrl?: string;
 }
 
+/** Discord rejects an embed whose title, description, fields and footer exceed 6000 characters. */
+const DISCORD_EMBED_TOTAL = 6000;
+
+/** The combined length Discord counts toward {@link DISCORD_EMBED_TOTAL}. */
+function discordEmbedLength(embed: {
+  title: string;
+  description?: string | undefined;
+  fields: Array<{ name: string; value: string }>;
+  footer: { text: string };
+}): number {
+  return (
+    embed.title.length +
+    (embed.description?.length ?? 0) +
+    embed.fields.reduce((sum, field) => sum + field.name.length + field.value.length, 0) +
+    embed.footer.text.length
+  );
+}
+
 /** The Discord execute-webhook body (one embed, mentions disabled). */
 export function discordMessage(
   alert: AlertPayload,
@@ -86,25 +104,48 @@ export function discordMessage(
 ): Record<string, unknown> {
   const link = linkOf(alert);
   const body = bodyText(alert);
+  const embed: {
+    title: string;
+    url?: string;
+    color: number;
+    description?: string | undefined;
+    fields: Array<{ name: string; value: string; inline: boolean }>;
+    timestamp: string;
+    footer: { text: string };
+  } = {
+    title: clip(titleOf(alert), 256),
+    ...(link !== null ? { url: link } : {}),
+    color: colorOf(alert),
+    ...(body !== null ? { description: clip(`\`\`\`\n${body}\n\`\`\``, 4000) } : {}),
+    fields: factsOf(alert).map(([name, value]) => ({
+      name,
+      value: clip(value, 1024),
+      inline: true,
+    })),
+    timestamp: alert.firedAt,
+    footer: { text: 'Telescope' },
+  };
+  // Per-field clips can still add up past Discord's combined limit: shorten
+  // the description (the stack / diagnosis) first, then the field values.
+  let over = discordEmbedLength(embed) - DISCORD_EMBED_TOTAL;
+  if (over > 0 && embed.description !== undefined) {
+    const keep = embed.description.length - over;
+    // `undefined` drops the key when the body is serialized.
+    embed.description = keep > 10 ? clip(embed.description, keep) : undefined;
+    over = discordEmbedLength(embed) - DISCORD_EMBED_TOTAL;
+  }
+  for (const field of embed.fields) {
+    if (over <= 0) break;
+    const keep = Math.max(1, field.value.length - over);
+    const before = field.value.length;
+    field.value = clip(field.value, keep);
+    over -= before - field.value.length;
+  }
   return {
     ...(options.username !== undefined ? { username: options.username } : {}),
     ...(options.avatarUrl !== undefined ? { avatar_url: options.avatarUrl } : {}),
     allowed_mentions: { parse: [] },
-    embeds: [
-      {
-        title: clip(titleOf(alert), 256),
-        ...(link !== null ? { url: link } : {}),
-        color: colorOf(alert),
-        ...(body !== null ? { description: clip(`\`\`\`\n${body}\n\`\`\``, 4000) } : {}),
-        fields: factsOf(alert).map(([name, value]) => ({
-          name,
-          value: clip(value, 1024),
-          inline: true,
-        })),
-        timestamp: alert.firedAt,
-        footer: { text: 'Telescope' },
-      },
-    ],
+    embeds: [embed],
   };
 }
 

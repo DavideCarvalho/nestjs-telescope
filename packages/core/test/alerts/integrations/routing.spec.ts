@@ -177,6 +177,12 @@ describe('resolveAlerts with integrations', () => {
     expect(message).toBe("Telescope heartbeat 'url': invalid url");
   });
 
+  it('fails closed on an unknown heartbeat provider', () => {
+    expect(() =>
+      resolveAlerts({ heartbeats: [{ provider: 'pingdom' as never, url: 'https://x.example' }] }),
+    ).toThrow("Telescope heartbeat 'pingdom': unknown provider");
+  });
+
   it('fails closed on a status page without its key', () => {
     expect(() =>
       resolveAlerts({

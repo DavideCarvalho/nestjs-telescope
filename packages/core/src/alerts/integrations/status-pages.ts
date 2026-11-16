@@ -176,6 +176,28 @@ export const statusPageRequests = {
         },
       };
     },
+    updateIncident(
+      config: AtlassianStatuspageConfig,
+      incidentId: string,
+      statuses: Map<string, HealthStatus>,
+      message: string,
+    ): HttpRequest {
+      return {
+        method: 'PATCH',
+        url: `${base(config.baseUrl, 'https://api.statuspage.io')}/v1/pages/${enc(config.pageId)}/incidents/${enc(incidentId)}`,
+        headers: { authorization: `OAuth ${config.apiKey}` },
+        body: {
+          incident: {
+            status: 'investigating',
+            body: message,
+            component_ids: [...statuses.keys()],
+            components: Object.fromEntries(
+              [...statuses].map(([id, status]) => [id, STATUSPAGE_STATUS[status]]),
+            ),
+          },
+        },
+      };
+    },
     resolveIncident(
       config: AtlassianStatuspageConfig,
       incidentId: string,
@@ -217,6 +239,27 @@ export const statusPageRequests = {
         headers: { authorization: `Bearer ${config.apiKey}` },
         body: {
           name: config.incidentName ?? 'Service disruption',
+          message,
+          components: [...statuses.keys()],
+          started: startedAt,
+          status: 'INVESTIGATING',
+          notify: true,
+          statuses: [...statuses].map(([id, status]) => ({ id, status: INSTATUS_STATUS[status] })),
+        },
+      };
+    },
+    updateIncident(
+      config: InstatusConfig,
+      incidentId: string,
+      statuses: Map<string, HealthStatus>,
+      message: string,
+      startedAt: string,
+    ): HttpRequest {
+      return {
+        method: 'POST',
+        url: `${base(config.baseUrl, 'https://api.instatus.com')}/v1/${enc(config.pageId)}/incidents/${enc(incidentId)}/incident-updates`,
+        headers: { authorization: `Bearer ${config.apiKey}` },
+        body: {
           message,
           components: [...statuses.keys()],
           started: startedAt,
@@ -449,6 +492,36 @@ export class StatusPageSync {
       page.incidentId = readId(result.json) ?? '';
       page.incidentStartedAt = startedAt;
       page.incidentStatuses = new Map(unhealthy);
+    } else if (unhealthy.size > 0 && page.incidentId !== null) {
+      // Open incident: fold in components that failed since it opened (and
+      // components that moved), so updates and the resolve cover all of them.
+      const affected = new Map(page.incidentStatuses);
+      for (const [id, status] of statuses) {
+        if (status !== 'up' || affected.has(id)) affected.set(id, status);
+      }
+      const changed = [...affected].some(
+        ([id, status]) => page.incidentStatuses.get(id) !== status,
+      );
+      if (!changed) return;
+      if (page.incidentId !== '') {
+        await this.send(
+          config.provider === 'statuspage'
+            ? statusPageRequests.statuspage.updateIncident(
+                config,
+                page.incidentId,
+                affected,
+                message,
+              )
+            : statusPageRequests.instatus.updateIncident(
+                config,
+                page.incidentId,
+                affected,
+                message,
+                page.incidentStartedAt ?? new Date(nowMs).toISOString(),
+              ),
+        );
+      }
+      page.incidentStatuses = affected;
     } else if (unhealthy.size === 0 && page.incidentId === '') {
       page.incidentId = null;
       page.incidentStartedAt = null;
