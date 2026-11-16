@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-bullmq
 
+## 3.1.0
+
+### Minor Changes
+
+- [#204](https://github.com/DavideCarvalho/nestjs-telescope/pull/204) [`fc6c857`](https://github.com/DavideCarvalho/nestjs-telescope/commit/fc6c857c7443c825f5403493dff9ddae60d70e9a) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - With a core that has tracing across apps (`propagation`), a job added inside a trace carries it in its own `opts.telemetry.metadata` and the worker runs it in that trace, in whichever app it lives; the job entry names the dispatching span (`content.parentSpanId`). A queue with BullMQ `telemetry`, or a job that already carries a trace, is left alone. Inert with an older core.
+
 ## 3.0.1
 
 ### Patch Changes

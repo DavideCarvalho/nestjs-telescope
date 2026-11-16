@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 5.5.0
+
+### Minor Changes
+
+- [#204](https://github.com/DavideCarvalho/nestjs-telescope/pull/204) [`fc6c857`](https://github.com/DavideCarvalho/nestjs-telescope/commit/fc6c857c7443c825f5403493dff9ddae60d70e9a) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Tracing across apps. `propagation: { targets, incoming, nodeHttp, queue }` adds `traceparent` (and the caller's `tracestate`) to outgoing calls to the listed origins: every `@nestjs/axios` `HttpService` in the app (found on its own; more axios instances through `propagation.axios`), `fetch`, and `node:http` with `nodeHttp`, never twice, never on Telescope's own calls, and not at all while an OpenTelemetry propagator is registered. The request middleware continues an incoming `traceparent` (default on for a tenant and a control plane, and for any app that sets `propagation`); a standalone app that configures nothing is unchanged. Request entries name the caller's span (`content.parentSpanId`), so the waterfall nests a request under the call another app made. Waterfalls carry `apps` and a per-span `app`, trace summaries carry `apps`, and a viewer limited to some apps sees only their spans plus `hiddenSpans`. A global slot (`TELESCOPE_TRACING_KEY`) lets the BullMQ watcher carry the trace through jobs.
+
 ## 5.4.0
 
 ### Minor Changes

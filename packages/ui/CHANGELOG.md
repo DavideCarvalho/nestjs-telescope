@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 5.4.0
+
+### Minor Changes
+
+- [#204](https://github.com/DavideCarvalho/nestjs-telescope/pull/204) [`fc6c857`](https://github.com/DavideCarvalho/nestjs-telescope/commit/fc6c857c7443c825f5403493dff9ddae60d70e9a) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Cross-app traces: the waterfall shows an App column and "Across shop → billing" when a trace crossed apps, plus "N spans in other apps hidden" for a viewer limited to some apps; the Traces list gets an Apps column. App labels come from the App picker.
+
 ## 5.3.0
 
 ### Minor Changes
