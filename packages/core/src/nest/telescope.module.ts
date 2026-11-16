@@ -40,6 +40,7 @@ import { resolveTopology } from '../topology/config.js';
 import { TelescopeIngestController } from '../topology/ingest.controller.js';
 import { TelescopeIngest } from '../topology/ingest.service.js';
 import { RemoteTelescopeStore } from '../topology/remote-store.js';
+import { TelescopeTracing } from '../tracing/tracing.service.js';
 import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { UseConsoleAuthorize } from './console-authorize.guard.js';
@@ -184,6 +185,8 @@ const SHARED_PROVIDERS: Provider[] = [
   TelescopeIngest,
   // Checks, heartbeats and (control plane, or `fleet: true`) the fleet; idle when off.
   TelescopeFleet,
+  // Tracing across apps (`propagation`); installs nothing when nothing is configured.
+  TelescopeTracing,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 
@@ -212,6 +215,7 @@ const TELESCOPE_EXPORTS = [
   ScheduleManagerRegistry,
   TelescopeIngest,
   TelescopeFleet,
+  TelescopeTracing,
 ];
 
 @Module({})

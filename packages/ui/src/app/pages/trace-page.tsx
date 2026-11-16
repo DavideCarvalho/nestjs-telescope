@@ -3,9 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { PageBody } from '../../aviary-kit/shell/app-shell';
 import { downloadJson } from '../../react/components/export-json.js';
 import { WaterfallView } from '../../react/components/waterfall-view.js';
-import { EntriesTable, useEntries, useWaterfall } from '../../react/index.js';
+import { EntriesTable, useApps, useEntries, useWaterfall } from '../../react/index.js';
 
 type View = 'waterfall' | 'entries';
+
+/** The App picker's labels by app id (a control plane), for the waterfall's app column. */
+export function useAppLabels(): Record<string, string> {
+  const { data } = useApps();
+  const labels: Record<string, string> = {};
+  for (const app of data?.apps ?? []) labels[app.id] = app.label;
+  return labels;
+}
 
 export function TracePage(): React.JSX.Element {
   const { traceId = '' } = useParams();
@@ -15,6 +23,7 @@ export function TracePage(): React.JSX.Element {
   const { data, isLoading } = useEntries({ traceId });
   const entries = data?.data ?? [];
   const { data: waterfall, isLoading: waterfallLoading } = useWaterfall(traceId);
+  const appLabels = useAppLabels();
 
   return (
     <PageBody>
@@ -75,7 +84,11 @@ export function TracePage(): React.JSX.Element {
         ) : waterfall === undefined || waterfall.spans.length === 0 ? (
           <p className="text-muted-foreground">No spans in this trace</p>
         ) : (
-          <WaterfallView waterfall={waterfall} onSelect={(id) => navigate(`/entries/view/${id}`)} />
+          <WaterfallView
+            waterfall={waterfall}
+            appLabels={appLabels}
+            onSelect={(id) => navigate(`/entries/view/${id}`)}
+          />
         )
       ) : isLoading ? (
         <p className="text-muted-foreground">Loading…</p>

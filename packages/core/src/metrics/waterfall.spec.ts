@@ -333,3 +333,61 @@ describe('buildWaterfall', () => {
     });
   });
 });
+
+describe('buildWaterfall across apps', () => {
+  it('hangs a job and another app’s request under their callers, whatever the clocks say', () => {
+    const wf = buildWaterfall([
+      entry({
+        id: 'shop',
+        type: 'request',
+        createdAt: new Date(1000),
+        durationMs: 50,
+        spanId: 'aaaaaaaaaaaaaaaa',
+        tags: ['app:shop'],
+        content: { method: 'POST', uri: '/orders' },
+      }),
+      // Billing's clock runs 200 ms ahead: containment alone would leave it a root.
+      entry({
+        id: 'billing',
+        type: 'request',
+        createdAt: new Date(1220),
+        durationMs: 20,
+        spanId: 'bbbbbbbbbbbbbbbb',
+        tags: ['app:billing'],
+        content: { method: 'POST', uri: '/charges', parentSpanId: 'aaaaaaaaaaaaaaaa' },
+      }),
+      // A job billing dispatched, run later by a worker: under billing's request.
+      entry({
+        id: 'job',
+        type: 'job',
+        createdAt: new Date(1400),
+        durationMs: 10,
+        spanId: 'cccccccccccccccc',
+        tags: ['app:billing'],
+        content: { queue: 'mail', name: 'receipt', parentSpanId: 'bbbbbbbbbbbbbbbb' },
+      }),
+      // Recorded inside the job's span: under the job.
+      entry({
+        id: 'q',
+        type: 'query',
+        createdAt: new Date(1402),
+        durationMs: 1,
+        spanId: 'cccccccccccccccc',
+        tags: ['app:billing'],
+        content: { sql: 'insert' },
+      }),
+    ]);
+    expect(wf?.apps).toEqual(['shop', 'billing']);
+    expect(wf?.spans.map((s) => s.id)).toEqual(['shop']);
+    const billing = wf?.spans[0]?.children[0];
+    expect(billing).toMatchObject({ id: 'billing', app: 'billing', depth: 1 });
+    expect(billing?.children[0]).toMatchObject({ id: 'job', depth: 2 });
+    expect(billing?.children[0]?.children[0]).toMatchObject({ id: 'q', depth: 3 });
+  });
+
+  it('has no apps for an app recording for itself', () => {
+    const wf = buildWaterfall([entry({ type: 'request', createdAt: new Date(0) })]);
+    expect(wf).not.toHaveProperty('apps');
+    expect(wf?.spans[0]).not.toHaveProperty('app');
+  });
+});

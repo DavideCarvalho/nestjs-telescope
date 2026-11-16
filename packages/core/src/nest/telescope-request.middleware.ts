@@ -5,6 +5,9 @@ import { markCoveredByTelescope } from '../otel/telescope-runtime.js';
 import type { ProfileHandle } from '../profiling/profiler.service.js';
 import { ProfilerService } from '../profiling/profiler.service.js';
 import { normalizeRoute } from '../query/normalize-route.js';
+import { currentSpanLinks, isTracingActive, traceScopeForRequest } from '../tracing/runtime.js';
+import { type TraceScope, enterTraceScope, runInTraceScope } from '../tracing/scope.js';
+import { TelescopeTracing } from '../tracing/tracing.service.js';
 import { normalizeRequest } from './platform-request.js';
 import {
   type RequestCaptureOptions,
@@ -201,6 +204,11 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     @Optional()
     @Inject(TELESCOPE_OPTIONS)
     moduleOptions: TelescopeModuleOptions | undefined = undefined,
+    // This app's tracing across apps (`propagation`). Absent on the manual
+    // `telescopeRequestCapture` path, which then follows the process-wide setting.
+    @Optional()
+    @Inject(TelescopeTracing)
+    private readonly tracing: TelescopeTracing | undefined = undefined,
   ) {
     this.captureConfig = resolveRequestCapture(moduleOptions?.requestCapture);
     // Incoming requests are recorded here, so the span processor skips the HTTP server spans.
@@ -218,6 +226,22 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
       next();
       return;
     }
+
+    // Continue the caller's trace (`traceparent`), or start one when `propagation` is configured,
+    // so this request's entries, outgoing calls and jobs carry it. `undefined` (nothing configured,
+    // or OpenTelemetry owns the request's span): the request runs exactly as before.
+    let scope: TraceScope | undefined;
+    try {
+      scope =
+        this.tracing === undefined
+          ? traceScopeForRequest(request.headers)
+          : this.tracing.active
+            ? traceScopeForRequest(request.headers, this.tracing.config)
+            : undefined;
+    } catch {
+      scope = undefined;
+    }
+    if (scope !== undefined) enterTraceScope(scope);
 
     // Open the request batch for the whole downstream async execution.
     this.service.beginBatch('http');
@@ -241,32 +265,9 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
 
     if (response) {
       response.once('finish', () => {
-        this.service.record({
-          type: EntryType.Request,
-          // A readable normalized route (e.g. "GET /api/base/:id/mel") groups
-          // request entries by endpoint via the indexed family_hash column and
-          // doubles as the human label — no content hydration needed.
-          familyHash: route,
-          ...(isReplay ? { tags: ['replay'] } : {}),
-          content: {
-            method: request.method,
-            uri: request.url,
-            headers: request.headers,
-            // `req.body` is parsed by the host body-parser and `req.user` set by
-            // guards before this finish callback fires. The body first passes
-            // through the `requestCapture` gates (content-type/size/predicate) —
-            // a skipped body never reaches the Recorder's synchronous redaction
-            // walk. What does get through is still redacted (masking passwords/
-            // tokens) like any other content.
-            payload: gateRequestPayload(req, request, this.captureConfig),
-            user: readUser(req, this.service.resolveUser),
-            ip: request.ip,
-            statusCode: response.statusCode,
-          },
-          durationMs: Date.now() - startedAt,
-          // Recorded on finish: anchor createdAt to when the request arrived.
-          startedAt: new Date(startedAt),
-        });
+        const record = () => this.recordRequest(request, req, response, route, startedAt, isReplay);
+        if (scope === undefined) record();
+        else runInTraceScope(scope, record);
         // Stop + record the profile within the same async context so its
         // `cpu_profile` entry shares this request's batchId/traceId. Fire-and-
         // forget: `end` never throws and never blocks the response.
@@ -277,6 +278,47 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     }
 
     next();
+  }
+
+  private recordRequest(
+    request: ReturnType<typeof normalizeRequest>,
+    req: unknown,
+    response: FinishableResponse,
+    route: string,
+    startedAt: number,
+    isReplay: boolean,
+  ): void {
+    // In a propagated trace, the span this request is and the caller's span: the waterfall hangs
+    // this request under the call that made it, in whichever app that was.
+    const tracing = this.tracing === undefined ? isTracingActive() : this.tracing.active;
+    const links = tracing ? currentSpanLinks() : null;
+    this.service.record({
+      type: EntryType.Request,
+      // A readable normalized route (e.g. "GET /api/base/:id/mel") groups
+      // request entries by endpoint via the indexed family_hash column and
+      // doubles as the human label — no content hydration needed.
+      familyHash: route,
+      ...(isReplay ? { tags: ['replay'] } : {}),
+      content: {
+        method: request.method,
+        uri: request.url,
+        headers: request.headers,
+        // `req.body` is parsed by the host body-parser and `req.user` set by
+        // guards before this finish callback fires. The body first passes
+        // through the `requestCapture` gates (content-type/size/predicate) —
+        // a skipped body never reaches the Recorder's synchronous redaction
+        // walk. What does get through is still redacted (masking passwords/
+        // tokens) like any other content.
+        payload: gateRequestPayload(req, request, this.captureConfig),
+        user: readUser(req, this.service.resolveUser),
+        ip: request.ip,
+        statusCode: response.statusCode,
+        ...(links?.parentSpanId ? { parentSpanId: links.parentSpanId } : {}),
+      },
+      durationMs: Date.now() - startedAt,
+      // Recorded on finish: anchor createdAt to when the request arrived.
+      startedAt: new Date(startedAt),
+    });
   }
 }
 

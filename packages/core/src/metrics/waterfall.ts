@@ -1,6 +1,7 @@
 // packages/core/src/metrics/waterfall.ts
 import { EntryType } from '../entry/entry.js';
 import type { Entry } from '../entry/entry.js';
+import { APP_TAG_PREFIX } from '../topology/wire.js';
 
 /**
  * A single node in a trace/batch waterfall. Offsets are relative to the trace's
@@ -20,6 +21,8 @@ export interface WaterfallSpan {
   depth: number;
   /** Stable record order within the batch (the entry's `sequence`). */
   sequence: number;
+  /** The app that recorded it (its `app:<id>` tag) on a control plane; absent on a single app. */
+  app?: string;
   children: WaterfallSpan[];
 }
 
@@ -30,6 +33,25 @@ export interface Waterfall {
   totalDurationMs: number;
   /** Root spans (no parent in the trace), ordered by start then sequence. */
   spans: WaterfallSpan[];
+  /**
+   * The apps the spans come from (their `app:<id>` tags), the one that started first first.
+   * Absent when no entry carries one (an app recording for itself).
+   */
+  apps?: string[];
+  /**
+   * Spans of this trace recorded by apps the viewer may not see: counted, never shown. Present only
+   * for a viewer limited to some apps.
+   */
+  hiddenSpans?: number;
+}
+
+/** The app an entry was recorded by (`app:<id>`, on a control plane), or `undefined`. */
+export function appOfTraceEntry(entry: Pick<Entry, 'tags'>): string | undefined {
+  const prefix = `${APP_TAG_PREFIX}:`;
+  for (const tag of entry.tags) {
+    if (tag.startsWith(prefix) && tag.length > prefix.length) return tag.slice(prefix.length);
+  }
+  return undefined;
 }
 
 interface Interval {
@@ -71,7 +93,11 @@ function labelFor(entry: Entry): string {
 
 /** Whether the entry represents its own `spanId` (rather than being recorded inside it). */
 function ownsSpan(entry: Entry): boolean {
-  return entry.type === EntryType.Span || entry.type === EntryType.Request;
+  return (
+    entry.type === EntryType.Span ||
+    entry.type === EntryType.Request ||
+    entry.type === EntryType.Job
+  );
 }
 
 /** The parent span id an entry names (span entries carry `content.parentSpanId`), or null. */
@@ -115,7 +141,10 @@ export function buildWaterfall(entries: Entry[]): Waterfall | null {
   );
 
   const nodes = new Map<Interval, WaterfallSpan>();
+  const apps: string[] = [];
   for (const interval of ordered) {
+    const app = appOfTraceEntry(interval.entry);
+    if (app !== undefined && !apps.includes(app)) apps.push(app);
     nodes.set(interval, {
       id: interval.entry.id,
       type: interval.entry.type,
@@ -124,6 +153,7 @@ export function buildWaterfall(entries: Entry[]): Waterfall | null {
       durationMs: interval.durationMs,
       depth: 0,
       sequence: interval.entry.sequence,
+      ...(app !== undefined ? { app } : {}),
       children: [],
     });
   }
@@ -227,7 +257,12 @@ export function buildWaterfall(entries: Entry[]): Waterfall | null {
     }
   }
 
-  return { traceStartMs, totalDurationMs, spans: roots };
+  return {
+    traceStartMs,
+    totalDurationMs,
+    spans: roots,
+    ...(apps.length > 0 ? { apps } : {}),
+  };
 }
 
 /** True when `outer` strictly encloses `inner` — it contains the interval AND is

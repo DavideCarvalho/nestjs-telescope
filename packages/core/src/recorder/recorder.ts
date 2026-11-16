@@ -19,6 +19,7 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
 import { runTaggers } from '../tagging/tagger.js';
 import type { TraceContext, TraceContextProvider } from '../trace/trace-context-provider.js';
+import { currentTraceScope } from '../tracing/scope.js';
 
 export type DropReason = 'overflow' | 'store-failed' | 'record-error';
 
@@ -626,7 +627,17 @@ export class Recorder {
     // envelope) states it and is never second-guessed. Absent that, OTel wins;
     // the context traceId is only a FALLBACK when neither yielded one — never
     // clobber an OTel trace id.
-    const traceId = input.traceId ?? trace?.traceId ?? ctx.traceId;
+    // A trace telescope keeps itself (an incoming `traceparent` it continued, or one it started
+    // with `propagation`) sits between them: the caller's trace id before the context's, the one
+    // telescope minted after it. No scope: exactly the order above.
+    const scope = currentTraceScope();
+    const traceId =
+      input.traceId ??
+      trace?.traceId ??
+      scope?.upstreamTraceId ??
+      ctx.traceId ??
+      scope?.fallbackTraceId ??
+      null;
     const base: Entry = {
       id: this.options.idFactory(),
       batchId,
@@ -641,7 +652,7 @@ export class Recorder {
       origin: batch?.origin ?? 'manual',
       instanceId: this.options.instanceId,
       traceId,
-      spanId: input.spanId ?? trace?.spanId ?? null,
+      spanId: input.spanId ?? trace?.spanId ?? scope?.spanId ?? null,
       createdAt: input.startedAt ?? new Date(this.now()),
     };
     // Swap in the tagger-enriched tags IN PLACE rather than cloning the whole

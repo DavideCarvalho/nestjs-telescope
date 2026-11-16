@@ -1,6 +1,7 @@
 // packages/core/src/metrics/traces.ts
 import { EntryType } from '../entry/entry.js';
 import type { Entry } from '../entry/entry.js';
+import { appOfTraceEntry } from './waterfall.js';
 
 export interface TraceSummary {
   traceId: string;
@@ -16,6 +17,11 @@ export interface TraceSummary {
   totalDurationMs: number;
   /** The request entry's "METHOD uri" label, when the trace has one. */
   rootLabel?: string;
+  /**
+   * The apps the trace crossed (their `app:<id>` tags), the one that started first first. Absent
+   * when no entry carries one (an app recording for itself).
+   */
+  apps?: string[];
 }
 
 export interface SummarizeTracesOptions {
@@ -42,6 +48,8 @@ interface TraceAccumulator {
   lastAt: Date;
   totalDurationMs: number;
   rootLabel?: string;
+  /** Each app's earliest entry (epoch ms): the list is ordered by it. */
+  apps: Map<string, number>;
 }
 
 /** Groups window entries by `traceId` (null trace ids skipped) into a summary
@@ -66,11 +74,18 @@ export function summarizeTraces(
         firstAt: entry.createdAt,
         lastAt: entry.createdAt,
         totalDurationMs: 0,
+        apps: new Map(),
       };
       byTrace.set(traceId, accumulator);
     }
 
     accumulator.entryCount += 1;
+    const app = appOfTraceEntry(entry);
+    if (app !== undefined) {
+      const at = entry.createdAt.getTime();
+      const seen = accumulator.apps.get(app);
+      if (seen === undefined || at < seen) accumulator.apps.set(app, at);
+    }
     accumulator.types.add(entry.type);
     if (entry.createdAt.getTime() < accumulator.firstAt.getTime()) {
       accumulator.firstAt = entry.createdAt;
@@ -97,6 +112,9 @@ export function summarizeTraces(
       lastAt: accumulator.lastAt,
       totalDurationMs: accumulator.totalDurationMs,
       ...(accumulator.rootLabel !== undefined ? { rootLabel: accumulator.rootLabel } : {}),
+      ...(accumulator.apps.size > 0
+        ? { apps: [...accumulator.apps].sort((a, b) => a[1] - b[1]).map(([app]) => app) }
+        : {}),
     });
   }
 

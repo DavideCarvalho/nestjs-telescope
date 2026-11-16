@@ -1,5 +1,6 @@
 // packages/core/src/metrics/traces.service.ts
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { Entry } from '../entry/entry.js';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import type { EntryQuery, StorageProvider } from '../storage/storage-provider.js';
 import { collectEntriesInWindow } from './collect-window.js';
@@ -67,7 +68,12 @@ export class TracesService {
    * trace has no entries (e.g. unknown / pruned trace id).
    */
   async getWaterfall(traceId: string): Promise<Waterfall | null> {
+    return buildWaterfall(await this.getTraceEntries(traceId));
+  }
+
+  /** The entries of one trace (up to 500), with content, as the store shows them to this call. */
+  async getTraceEntries(traceId: string): Promise<Entry[]> {
     const page = await this.storage.get({ traceId, limit: MAX_LIMIT });
-    return buildWaterfall(page.data);
+    return page.data;
   }
 }

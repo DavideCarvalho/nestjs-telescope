@@ -1,4 +1,3 @@
-// packages/core/src/nest/telescope.service.ts
 import {
   Inject,
   Injectable,
@@ -34,6 +33,8 @@ import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { type TenantView, intersectViews, tenantViewOf } from '../storage/tenant-scoped-storage.js';
+// packages/core/src/nest/telescope.service.ts
+import { isTracingActive } from '../tracing/runtime.js';
 import { appOfEntry, appViewOf } from './console-app-scope.js';
 import { type ExceptionCaptureDetails, captureException } from './exception-capture.js';
 import {
@@ -447,7 +448,9 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
           ? [...this.watcherTypes, EntryType.Span]
           : [...this.watcherTypes],
       traceLink: this.config.traceLink ?? null,
-      tracesEnabled: this.config.traceContext !== undefined,
+      // Also on with tracing across apps (`propagation`, a tenant, a control plane): telescope
+      // then keeps trace ids itself.
+      tracesEnabled: this.config.traceContext !== undefined || isTracingActive(),
       retention: this.config.prune
         ? {
             afterMs: this.config.prune.afterMs,

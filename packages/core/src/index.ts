@@ -134,4 +134,6 @@ export { TelescopeFleet, type ReadinessReport } from './fleet/fleet.service.js';
 export { TelescopeProbesController, type ProbeAnswer } from './fleet/probes.controller.js';
 export * from './alerts/fleet-rules.js';
 
+export * from './tracing/index.js';
+
 export const TELESCOPE_VERSION = '0.0.0';

@@ -17,6 +17,7 @@ import {
   instrumentProcessor,
   isInstrumentedProcessor,
 } from './processor-instrumentation.js';
+import { installQueuePropagation, jobParentSpanId, runInJobTrace } from './trace-propagation.js';
 
 export interface BullMqJobWatcherOptions {
   /** Jobs whose processing time is >= this (ms) get a 'slow' tag. Default 1000. */
@@ -114,7 +115,10 @@ export class BullMqJobWatcher implements Watcher {
   }
 
   async register(ctx: WatcherContext): Promise<void> {
-    const runner: JobRunner = (job, invoke) => this.runJob(ctx, job, invoke);
+    // A job dispatched inside a trace (any app's) runs in it: see trace-propagation.ts.
+    await installQueuePropagation();
+    const runner: JobRunner = (job, invoke) =>
+      runInJobTrace(job, () => this.runJob(ctx, job, invoke));
     const processors = this.discoverProcessors(ctx);
     const host = this.resolveSeamHost(ctx);
 
@@ -273,7 +277,10 @@ export class BullMqJobWatcher implements Watcher {
   ): void {
     const durationMs = this.clock.now() - startedAt;
     try {
-      const content = buildJobContent(toJobLike(job), status, error, this.includeJobData);
+      const built = buildJobContent(toJobLike(job), status, error, this.includeJobData);
+      // In a propagated trace, the span that dispatched it: the waterfall hangs the job there.
+      const parentSpanId = jobParentSpanId(job);
+      const content = parentSpanId === null ? built : { ...built, parentSpanId };
       const familyHash = [content.queue, content.name].filter(Boolean).join(':') || null;
 
       const tags: string[] = [];

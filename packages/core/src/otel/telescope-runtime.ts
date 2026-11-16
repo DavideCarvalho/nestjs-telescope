@@ -211,6 +211,64 @@ function activeTraceId(): string | null {
   }
 }
 
+/** The registered `@opentelemetry/api` globals, highest major first. */
+function otelApiGlobals(): Record<string, unknown>[] {
+  const found: { major: number; api: Record<string, unknown> }[] = [];
+  for (const key of Object.getOwnPropertySymbols(globalSlot)) {
+    const match = OTEL_API_KEY_PATTERN.exec(key.description ?? '');
+    if (match === null || Symbol.for(key.description ?? '') !== key) continue;
+    const api = globalSlot[key];
+    if (typeof api === 'object' && api !== null) {
+      found.push({ major: Number(match[1]), api: api as Record<string, unknown> });
+    }
+  }
+  return found.sort((a, b) => b.major - a.major).map((f) => f.api);
+}
+
+/**
+ * Whether an OpenTelemetry propagator is registered in this process (`NodeSDK`, or
+ * `provider.register()`). Its instrumentations then own `traceparent` on outgoing calls, so
+ * telescope injects nothing of its own and a call never carries two.
+ */
+export function isOtelPropagationActive(): boolean {
+  try {
+    return otelApiGlobals().some((api) => api.propagation !== undefined);
+  } catch {
+    return false;
+  }
+}
+
+/** The active OpenTelemetry span's ids, or `undefined` without an SDK or outside any span. */
+export function activeOtelSpan():
+  | { traceId: string; spanId: string; parentSpanId: string | null }
+  | undefined {
+  try {
+    const span = globalContextManager()?.active().getValue?.(ACTIVE_SPAN_KEY) as
+      | {
+          spanContext?: () => { traceId?: unknown; spanId?: unknown };
+          parentSpanContext?: { spanId?: unknown };
+          parentSpanId?: unknown;
+        }
+      | undefined;
+    const context = span?.spanContext?.();
+    const traceId = context?.traceId;
+    const spanId = context?.spanId;
+    if (typeof traceId !== 'string' || !/^[0-9a-f]{32}$/.test(traceId) || /^0+$/.test(traceId)) {
+      return undefined;
+    }
+    if (typeof spanId !== 'string' || !/^[0-9a-f]{16}$/.test(spanId)) return undefined;
+    // The SDK span's parent (`parentSpanContext` in SDK 2, `parentSpanId` before); the API hides it.
+    const parent = span?.parentSpanContext?.spanId ?? span?.parentSpanId;
+    return {
+      traceId,
+      spanId,
+      parentSpanId: typeof parent === 'string' && parent !== '' ? parent : null,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Tell the span processor whether sampling kept an entry a covering watcher recorded, so it
  * shows the matching OpenTelemetry span only when the entry was dropped. Called by the

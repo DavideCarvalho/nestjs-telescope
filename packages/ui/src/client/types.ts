@@ -577,6 +577,8 @@ export interface TraceSummary {
   lastAt: string;
   totalDurationMs: number;
   rootLabel?: string;
+  /** The apps the trace crossed, the one that started first first (control plane only). */
+  apps?: string[];
 }
 export interface TracesResult {
   data: TraceSummary[];
@@ -593,6 +595,8 @@ export interface WaterfallSpan {
   durationMs: number;
   depth: number;
   sequence: number;
+  /** The app that recorded it (control plane only). */
+  app?: string;
   children: WaterfallSpan[];
 }
 
@@ -601,6 +605,10 @@ export interface Waterfall {
   traceStartMs: number;
   totalDurationMs: number;
   spans: WaterfallSpan[];
+  /** The apps the spans come from, in start order (control plane only). */
+  apps?: string[];
+  /** Spans of this trace in apps the viewer may not see (a viewer limited to some apps). */
+  hiddenSpans?: number;
 }
 
 export interface LatencyStats {
