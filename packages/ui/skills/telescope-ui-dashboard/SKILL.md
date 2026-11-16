@@ -7,11 +7,12 @@ description: >-
   async form, as are decorators and routes; the path must match
   TelescopeModule); without authorize the page answers 403 in production.
   call the headless API from any frontend with createTelescopeClient({ baseUrl?,
-  fetch?, onAccessDenied?, tenant? }) from the /client subpath (with tenancy on
-  it sends the page's `?tenant=` on every call; read the scope with
-  client.tenancy()); build a custom console with the React
+  fetch?, onAccessDenied?, tenant?, app? }) from the /client subpath (it sends the page's `?tenant=`
+  and `?app=` on every call; read the scopes with client.tenancy() /
+  client.apps()); build a custom console with the React
   components, hooks (TelescopeProvider, useTelescopeClient, useEntries, usePulse,
-  useTimeseries, useTenancy) from the /react subpath. Use for "show the Telescope dashboard",
+  useTimeseries, useTenancy, useApps) from the /react subpath. Client
+  exports include pageApp, withConsoleScope, NO_APPS, TelescopeClient.apps() and useApps(). Use for "show the Telescope dashboard",
   "custom path", "call the Telescope API from React", "embed Telescope components".
 license: MIT
 metadata:
@@ -95,12 +96,19 @@ Source: `packages/ui/src/server/telescope-ui.module.ts`,
 JSON API, usable in any frontend. `baseUrl` defaults to
 `window.__TELESCOPE_BASE__ + '/api'`, else `/telescope/api`. `onAccessDenied`
 runs when `authorize` refuses a call (default: follow `redirectTo`, else show
-the access-denied screen). With tenancy on, every call carries the page's
-`?tenant=` (override with the `tenant` option, `() => string | undefined`);
+the access-denied screen). Every call carries the page's `?tenant=` and `?app=`
+(override with the `tenant` / `app` options, `() => string | undefined`);
 `client.tenancy(search?)` reads the viewer's organizations from
-`GET <api>/tenancy` (`{ enabled: false }` on older servers), and the dashboard
+`GET <api>/tenancy` (`{ enabled: false }` on older servers),
+`client.apps(search?)` reads the viewer's apps from `GET <api>/apps` (`NO_APPS`,
+`{ enabled: false }`, on a standalone app or older servers), and the dashboard
 header shows an "Organization" control (chip for one, searchable picker for
-several or all).
+several or all) plus an "App" control on a control plane receiving several
+apps' entries (hidden otherwise; labels from `apps.labels`). The entries table
+shows an App column when several apps are in view. `pageApp()` reads the page's
+`?app=` (like `pageTenant()`); `withConsoleScope(url)` adds the console's
+`?tenant=` / `?app=` to a URL the browser opens itself, such as the live tail's
+`EventSource`.
 
 ```ts
 import { createTelescopeClient } from '@dudousxd/nestjs-telescope-ui/client';

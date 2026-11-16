@@ -51,7 +51,8 @@ Results: `true`/`{ allowed: true }` allow; `false` → 403 `{ error: 'forbidden'
 (the page gets an "Access denied" HTML page); `{ allowed: false, reason:
 'unauthenticated' }` → 401; `{ redirectTo: '/login' }` → 302 for a page
 navigation, 401 `{ error: 'unauthenticated', redirectTo }` for the API (the
-dashboard follows it). A throw denies (403).
+dashboard follows it). A throw denies (403) and is logged with its stack.
+`authorizeByToken({ token })` also takes `apps` for the same app grant.
 
 With tenancy on (`tenancy` option, default `'inherit'`), `{ allowed: true,
 tenants: '*' | string[] }` scopes the viewer to those organizations (`'*'`
@@ -60,6 +61,16 @@ organization, and with none an empty console (with `tenancy: { required: true }`
 no tenant and no grant instead answers the context's 403). Every API call takes
 `?tenant=<id>`, kept within that scope; a `tenant` outside it answers empty
 and is logged.
+
+On a control plane (a console receiving several apps' entries), `{ allowed:
+true, apps: '*' | string[] }` scopes the viewer to those apps (`'*'`, the
+default when omitted, is every app). Every read (entries, traces, metrics,
+Pulse, live tail, ⌘K search, MCP tools) follows `?app=`, kept within that
+grant; an `app` outside it answers empty and is logged. `GET <path>/api/apps`
+lists the apps the viewer may see (labels from `apps.labels`); a viewer limited
+to some apps cannot run the console's global actions (they answer 403). Inside
+an organization or app view rollups are not read (they are not tagged), so
+latency percentiles come from the view's own entries.
 
 The page is a full-page navigation (cookies, no `Authorization` header), so its
 check must read a cookie session. `decorators` (e.g.
@@ -92,7 +103,7 @@ export class OpsModule {}
 
 `@UseConsoleAuthorize()` runs `TelescopeModule.forRoot({ authorize })`;
 `@UseConsoleAuthorize({ authorize })` runs its own check. It also applies the
-tenant interceptor (a no-op with tenancy off). With `routes: false`
+tenant interceptor (a no-op with tenancy off and no app grant). With `routes: false`
 the module still logs the "no `authorize`" boot warning when it is omitted.
 `StreamController`, `ClientErrorController` and
 `TelescopeUiController` (from the UI package; it answers denied page
@@ -111,10 +122,11 @@ use Pattern 2 and override those methods with an extra `@Can(...)`
 (re-declare the route decorators on the override).
 
 With tenancy on, clearing entries, `Prune now` and extension row actions are only for a viewer of
-every organization (403 otherwise); live queues and schedules answer empty,
+every organization (403 otherwise); on a control plane they are also only for a viewer of
+every app (403 for an app-limited viewer); live queues and schedules answer empty,
 per-driver queue routes and extension data answer 404, and the Prometheus
 scrape (`GET <path>/api/metrics`) answers 404. The SSE live feed only ticks
-for the viewer's organization, and AI diagnoses are per organization. Each extension action run writes a `TelescopeAudit` log line with the caller.
+for the viewer's organization and app, and AI diagnoses are per organization and app. Each extension action run writes a `TelescopeAudit` log line with the caller.
 
 ### Pattern 4 — the MCP tools (`/mcp/aviary`)
 
@@ -133,8 +145,8 @@ An agent sends `Authorization: Bearer <key>`, not the dashboard's cookie, so
 `authorize`.
 
 With tenancy on telescope's own dev tools run inside the caller's organization
-view. Extension-contributed dev tools instead span every organization, so a
-caller limited to some organizations is refused instead of running. Extension
+and app view. Extension-contributed dev tools instead span every organization, so a
+caller limited to some organizations or apps is refused instead of running. Extension
 tools of kind `action` (for example `telescope_resilience_reset_circuit`) are
 console mutations: they are served only with `mutations: true`, and each run
 writes a `TelescopeAudit` log line.
