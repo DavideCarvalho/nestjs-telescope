@@ -36,12 +36,25 @@ export class TelescopeIngestController {
   async receive(
     @Body() body: unknown,
     @Headers('authorization') authorization: unknown,
-  ): Promise<{ stored: number; duplicate: number }> {
+  ): Promise<{ stored: number; duplicate: number; relayed?: number; rejected?: number }> {
     const handler = this.ingest.handler;
     if (handler === null) throw new NotFoundException();
     const outcome = await handler({ token: bearerToken(authorization), body });
     if (outcome.status === 'stored') {
-      return { stored: outcome.stored, duplicate: outcome.duplicate };
+      if (outcome.rejected > 0) {
+        this.logger.warn(
+          `refused ${outcome.rejected} relayed ${outcome.rejected === 1 ? 'entry' : 'entries'} from ${outcome.app}: an app its token may not relay for, or an ambiguous one`,
+        );
+      }
+      // `relayed` / `rejected` only when the batch relayed (or tried to): the answer is unchanged
+      // for every other sender.
+      return {
+        stored: outcome.stored,
+        duplicate: outcome.duplicate,
+        ...(outcome.relayed > 0 || outcome.rejected > 0
+          ? { relayed: outcome.relayed, rejected: outcome.rejected }
+          : {}),
+      };
     }
     if ('reason' in outcome) this.logger.warn(`refused a batch: ${outcome.reason}`);
     throw new HttpException({ error: outcome.status }, ingestHttpStatus(outcome));

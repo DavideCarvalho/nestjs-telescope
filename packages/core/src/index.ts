@@ -119,6 +119,7 @@ export * from './topology/tenant-auth.js';
 export * from './topology/wire.js';
 export * from './topology/ingest.js';
 export * from './topology/transport.js';
+export * from './topology/server-url.js';
 export * from './topology/remote-store.js';
 export * from './topology/config.js';
 export { TelescopeIngestController, bearerToken } from './topology/ingest.controller.js';

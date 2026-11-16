@@ -1,6 +1,6 @@
 // packages/official/src/index.ts
 export * from './channels.js';
-export { ChannelWatcher, type ChannelMapper } from './channel-watcher.js';
+export { ChannelWatcher, type ChannelMapper, appOfEvent } from './channel-watcher.js';
 export { NestResilienceWatcher, resilienceEntry } from './resilience.watcher.js';
 export { NestWorkflowsWatcher, workflowEntry } from './workflows.watcher.js';
 export {

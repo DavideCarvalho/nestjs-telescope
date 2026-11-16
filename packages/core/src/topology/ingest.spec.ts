@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Entry } from '../entry/entry.js';
-import { TELESCOPE_INGEST_CAPABILITY, createIngestHandler, ingestHttpStatus } from './ingest.js';
+import {
+  TELESCOPE_INGEST_CAPABILITY,
+  TELESCOPE_RELAY_CAPABILITY,
+  canRelayFor,
+  createIngestHandler,
+  ingestHttpStatus,
+  relayScope,
+} from './ingest.js';
 import { hmacTenantVerifier, signTenantToken } from './tenant-auth.js';
 import {
   MAX_FUTURE_SKEW_MS,
@@ -58,7 +65,15 @@ describe('createIngestHandler', () => {
       // The sender claims another app with its own tag: dropped.
       body: wire([entry('e1', ['app:billing', 'user:1'])]),
     });
-    expect(outcome).toEqual({ status: 'stored', app: 'shop', stored: 1, duplicate: 0 });
+    expect(outcome).toEqual({
+      status: 'stored',
+      app: 'shop',
+      stored: 1,
+      duplicate: 0,
+      relayed: 0,
+      rejected: 0,
+      apps: ['shop'],
+    });
     expect(stored[0]?.tags).toEqual(['user:1', 'app:shop']);
     expect(stored[0]?.createdAt).toEqual(new Date(NOW - 1_000));
     expect(stored[0]?.id).toBe('e1');
@@ -190,5 +205,108 @@ describe('wire', () => {
   it('parses a batch it built', () => {
     const parsed = parseIngestBatch(wire([entry('e1')]));
     expect(parsed.ok).toBe(true);
+  });
+});
+
+describe('relaying entries for other apps', () => {
+  const token = (tenant: string) => signTenantToken(tenant, SECRET);
+  /** A verifier granting per-app capabilities (absent: no capabilities listed). */
+  function relaySetup(grants: Record<string, string[] | undefined>) {
+    return setup({
+      verifyTenant: async ({ token: presented }) => {
+        const verified = await hmacTenantVerifier(SECRET)({ token: presented });
+        if (verified === null) return null;
+        const capabilities = grants[verified.tenant];
+        return capabilities === undefined ? verified : { ...verified, capabilities };
+      },
+    });
+  }
+
+  it('stores an entry tagged app:<name> as that app, with via:<relayer>', async () => {
+    const { stored, handler } = relaySetup({ durable: [TELESCOPE_RELAY_CAPABILITY] });
+    const outcome = await handler({
+      token: token('durable'),
+      body: wire([entry('r1', ['workflow:charge', 'app:shop']), entry('r2', ['workflow:own'])]),
+    });
+    expect(outcome).toMatchObject({ status: 'stored', app: 'durable', stored: 2, relayed: 1 });
+    expect(outcome.status === 'stored' && [...outcome.apps].sort()).toEqual(['durable', 'shop']);
+    expect(stored.find((e) => e.id === 'r1')?.tags).toEqual([
+      'workflow:charge',
+      'app:shop',
+      'via:durable',
+    ]);
+    expect(stored.find((e) => e.id === 'r2')?.tags).toEqual(['workflow:own', 'app:durable']);
+  });
+
+  it('never relays without the capability: a token without capabilities, or with ingest only', async () => {
+    const { stored, handler } = relaySetup({
+      plain: undefined,
+      scoped: [TELESCOPE_INGEST_CAPABILITY],
+    });
+    for (const tenant of ['plain', 'scoped']) {
+      await handler({
+        token: token(tenant),
+        body: wire([entry(`${tenant}-1`, ['app:shop', 'via:x'])]),
+      });
+    }
+    expect(stored.map((e) => e.tags)).toEqual([['app:plain'], ['app:scoped']]);
+  });
+
+  it('honours a relay scoped to some apps, rejecting the others one by one', async () => {
+    const { stored, handler } = relaySetup({ durable: [`${TELESCOPE_RELAY_CAPABILITY}:shop`] });
+    const outcome = await handler({
+      token: token('durable'),
+      body: wire([
+        entry('ok', ['app:shop']),
+        entry('no', ['app:billing']),
+        entry('two', ['app:shop', 'app:billing']),
+        entry('bad', ['app:not valid']),
+        entry('own', ['app:durable']),
+      ]),
+    });
+    expect(outcome).toMatchObject({
+      status: 'stored',
+      stored: 2,
+      relayed: 1,
+      rejected: 3,
+      duplicate: 0,
+    });
+    expect(stored.map((e) => e.id).sort()).toEqual(['ok', 'own']);
+    expect(stored.find((e) => e.id === 'own')?.tags).toEqual(['app:durable']);
+  });
+
+  it('dedupes a relay retry, and never lets a relay overwrite the app or another relay', async () => {
+    const { stored, handler } = relaySetup({
+      durable: [TELESCOPE_RELAY_CAPABILITY],
+      other: ['telescope:*'],
+    });
+    const body = wire([entry('same', ['app:shop'])]);
+    await handler({ token: token('durable'), body });
+    expect(await handler({ token: token('durable'), body })).toMatchObject({ stored: 0 });
+    // The app itself and another relayer sending the same id: the stored entry is kept as is.
+    await handler({ token: token('shop'), body: wire([entry('same', ['mine'])]) });
+    await handler({ token: token('other'), body: wire([entry('same', ['app:shop', 'theirs'])]) });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.tags).toEqual(['app:shop', 'via:durable']);
+  });
+
+  it('reads relay scopes', () => {
+    expect(relayScope(undefined)).toBeNull();
+    expect(relayScope(['telescope:ingest'])).toBeNull();
+    expect(relayScope(['telescope:*'])).toBe('*');
+    expect(relayScope([TELESCOPE_RELAY_CAPABILITY])).toBe('*');
+    expect(
+      relayScope([`${TELESCOPE_RELAY_CAPABILITY}:a`, `${TELESCOPE_RELAY_CAPABILITY}:a`]),
+    ).toEqual(['a']);
+    expect(canRelayFor(['a'], 'a')).toBe(true);
+    expect(canRelayFor(['a'], 'b')).toBe(false);
+    expect(canRelayFor(null, 'a')).toBe(false);
+  });
+
+  it('lets a relay-only token send its own entries', async () => {
+    const { stored, handler } = relaySetup({ durable: [`${TELESCOPE_RELAY_CAPABILITY}:shop`] });
+    const outcome = await handler({ token: token('durable'), body: wire([entry('mine')]) });
+    expect(outcome.status).toBe('stored');
+    expect(stored[0]?.tags).toEqual(['app:durable']);
   });
 });

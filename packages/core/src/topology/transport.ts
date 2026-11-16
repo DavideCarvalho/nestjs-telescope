@@ -3,6 +3,7 @@
 // How a tenant's batches reach the control plane. HTTP is the default; broker drivers carry the
 // same batch in an envelope with the token.
 import type { IngestHandler } from './ingest.js';
+import { ServerUrl, type TelescopeServerUrlSource, assertServerUrlSource } from './server-url.js';
 import type { IngestBatch } from './wire.js';
 
 /**
@@ -72,9 +73,11 @@ export async function importPeer<T>(name: string, driver: string): Promise<T> {
 export interface HttpTransportOptions {
   /**
    * The control plane's telescope URL: where its console is mounted (e.g.
-   * `https://telescope.internal/telescope`). Batches go to `POST <url>/api/ingest`.
+   * `https://telescope.internal/telescope`). Batches go to `POST <url>/api/ingest`. A function
+   * (optionally with `refresh()`) is looked up on the first send, not at boot, and again when the
+   * URL stops answering; a {@link ServerUrl} shares one lookup with discovery.
    */
-  url: string;
+  url: TelescopeServerUrlSource | ServerUrl;
   /** The `fetch` to use. Default: the global one. */
   fetch?: typeof fetch;
   /** Abort a send after this long; it is retried. Default 10 000 ms. */
@@ -86,39 +89,81 @@ export function ingestUrl(url: string): string {
   return `${url.replace(/\/+$/, '')}/api/ingest`;
 }
 
-/** Sends each batch as `POST <url>/api/ingest` with `Authorization: Bearer <token>`. */
-export function httpTransport(options: HttpTransportOptions): TenantTransport {
-  if (typeof options.url !== 'string' || options.url.trim() === '') {
-    throw new Error('telescope transports.http: `url` is required.');
-  }
-  const endpoint = ingestUrl(options.url.trim());
+/** A transport's {@link ServerUrl}, when it sends over HTTP to one. */
+export const SERVER_URL = Symbol.for('@dudousxd/nestjs-telescope:serverUrl');
+
+/**
+ * Sends each batch as `POST <url>/api/ingest` with `Authorization: Bearer <token>`. With a looked-up
+ * URL, a failed lookup is a `retry` (the batch stays buffered), and a send that cannot connect or
+ * gets a 404 looks the URL up again and, when it moved, sends once more to the new one.
+ */
+export function httpTransport(
+  options: HttpTransportOptions,
+): TenantTransport & { [SERVER_URL]: ServerUrl } {
+  const url = options.url;
+  if (!(url instanceof ServerUrl)) assertServerUrlSource(url, 'transports.http `url`');
+  const server = url instanceof ServerUrl ? url : new ServerUrl(url);
   const timeoutMs = options.timeoutMs ?? 10_000;
+
+  const post = async (
+    endpoint: string,
+    batch: IngestBatch,
+    token: string,
+  ): Promise<{ result: SendResult; moved: boolean }> => {
+    const doFetch = options.fetch ?? globalThis.fetch;
+    let response: Response;
+    try {
+      response = await doFetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify(batch),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      return {
+        result: {
+          status: 'retry',
+          reason: `POST ${endpoint} failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        moved: true,
+      };
+    }
+    // The body is not needed; release the connection.
+    await response.body?.cancel().catch(() => undefined);
+    if (response.ok) return { result: { status: 'sent' }, moved: false };
+    const reason = `POST ${endpoint} answered ${response.status}`;
+    // 400 (malformed) and 413 (too large) never succeed; everything else may (401: the token may
+    // be re-minted; 404: the control plane may not be up yet, or it moved; 5xx).
+    if (response.status === 400 || response.status === 413) {
+      return { result: { status: 'drop', reason }, moved: false };
+    }
+    return { result: { status: 'retry', reason }, moved: response.status === 404 };
+  };
+
   return {
     kind: 'http',
+    [SERVER_URL]: server,
     async send(batch, { token }) {
-      const doFetch = options.fetch ?? globalThis.fetch;
-      let response: Response;
+      let base: string;
       try {
-        response = await doFetch(endpoint, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-          body: JSON.stringify(batch),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
+        base = await server.get();
       } catch (error) {
         return {
           status: 'retry',
-          reason: `POST ${endpoint} failed: ${error instanceof Error ? error.message : String(error)}`,
+          reason: `cannot resolve the control plane URL: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
-      // The body is not needed; release the connection.
-      await response.body?.cancel().catch(() => undefined);
-      if (response.ok) return { status: 'sent' };
-      const reason = `POST ${endpoint} answered ${response.status}`;
-      // 400 (malformed) and 413 (too large) never succeed; everything else may (401: the token may
-      // be re-minted; 404: the control plane may not be up yet; 5xx).
-      if (response.status === 400 || response.status === 413) return { status: 'drop', reason };
-      return { status: 'retry', reason };
+      const first = await post(ingestUrl(base), batch, token);
+      if (!first.moved || !server.lazy) return first.result;
+      // Unreachable, or not a telescope there: look the URL up again, and resend once if it moved.
+      let next: string;
+      try {
+        next = await server.refresh();
+      } catch {
+        return first.result;
+      }
+      if (next === base) return first.result;
+      return (await post(ingestUrl(next), batch, token)).result;
     },
   };
 }

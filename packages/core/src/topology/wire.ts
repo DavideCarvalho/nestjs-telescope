@@ -136,15 +136,22 @@ export function isEntryId(id: unknown): id is string {
 
 /**
  * The entry the control plane stores for a wire entry from `partition`: tagged `app:<partition>`
- * (an `app:` tag the sender set itself is dropped, so it cannot claim another app), with its own
- * time kept within {@link MAX_FUTURE_SKEW_MS}. `null` for an entry whose id is unusable.
+ * (an `app:` or `via:` tag the sender set itself is dropped, so it cannot claim another app), with
+ * its own time kept within {@link MAX_FUTURE_SKEW_MS}. `via` (a relayed entry) adds `via:<via>`.
+ * `null` for an entry whose id is unusable.
  */
-export function fromWireEntry(wire: WireEntry, partition: string, now: number): Entry | null {
+export function fromWireEntry(
+  wire: WireEntry,
+  partition: string,
+  now: number,
+  via?: string,
+): Entry | null {
   if (!isEntryId(wire.id)) return null;
   const appPrefix = `${APP_TAG_PREFIX}:`;
   const tags = [
-    ...new Set(wire.tags.filter((tag) => !tag.startsWith(appPrefix))),
+    ...new Set(wire.tags.filter((tag) => !tag.startsWith(appPrefix) && !tag.startsWith('via:'))),
     `${appPrefix}${partition}`,
+    ...(via !== undefined ? [`via:${via}`] : []),
   ];
   return {
     id: wire.id,

@@ -61,6 +61,10 @@ refresh tokens, refused magic links, failed session touches, denials and failed 
 grouped (`familyHash`) by `event:policy`, by workflow name, by auth event (a denial by
 `Policy.ability`), and by mail class.
 
+### The app an event is about
+
+When an event names the app it is about (the `app` of a `@dudousxd/nestjs-diagnostics` envelope, else an `app` in its payload, `[A-Za-z0-9_.-]{1,64}`), its entry is tagged `app:<name>`, unless the mapper already set an `app:` tag. The App picker then lists that app, and a [relaying tenant](/docs/concepts/topologies#relaying-for-other-apps) gets the entry stored as that app on its control plane. The envelope is read structurally, so no particular diagnostics version is needed.
+
 ### What each entry holds
 
 - **`resilience`**: `event`, `policy`, `source` (the entrypoint), and the fields of the type:

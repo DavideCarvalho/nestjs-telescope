@@ -52,7 +52,7 @@ Watchers, redaction, sampling, filters and tags run in the tenant as usual, so t
 
 | `tenant` option | Default | What it does |
 |-----------------|---------|--------------|
-| `url` | | The control plane's console URL. Shorthand for `transport: transports.http({ url })`. |
+| `url` | | The control plane's console URL, or a function returning it (see [Finding the control plane lazily](#finding-the-control-plane-lazily)). Shorthand for `transport: transports.http({ url })`. |
 | `transport` | HTTP to `url` | How batches reach the control plane. See [Transports](#transports). |
 | `partition` | | The app this tenant is. The token must be minted for it. |
 | `token` | | A string, or a function called before each send (to re-mint a short-lived token). |
@@ -61,12 +61,49 @@ Watchers, redaction, sampling, filters and tags run in the tenant as usual, so t
 | `batchSize` | `200` | Entries per batch. |
 | `maxBatchBytes` | `64000` | A larger batch is split; a single larger entry is dropped. |
 | `intervalMs` | `1000` | How often waiting entries are sent. |
+| `relay` | `false` | This app sends entries for other apps. See [Relaying for other apps](#relaying-for-other-apps). |
 
 A failed send is retried with the same batch (backoff up to 30 s), so a control plane that was down receives everything once it is back, up to `bufferSize`. On shutdown the tenant keeps sending for up to 5 seconds.
 
 <Callout type="warn">
 Express parses JSON bodies up to 100 KB by default, which is why `maxBatchBytes` defaults to 64 000. If you raise `maxBatchBytes`, raise the control plane's body limit too.
 </Callout>
+
+### Finding the control plane lazily
+
+`url` can be a function, for a control plane found through a discovery source rather than set in the environment. It is called on the first send, not at boot, and the result is cached:
+
+```ts
+const lookup = Object.assign(async () => (await registry.find('telescope')).url, {
+  // Optional: called instead when the URL stops answering.
+  refresh: async () => (await registry.find('telescope', { fresh: true })).url,
+});
+
+TelescopeModule.forRoot({
+  topology: 'tenant',
+  tenant: { url: lookup, partition: 'shop', token: process.env.TELESCOPE_TENANT_TOKEN! },
+});
+```
+
+- A lookup that throws, or returns something other than an absolute http(s) URL, fails that send: the entries stay buffered and the next send looks it up again.
+- A send that cannot connect, or gets a 404, looks the URL up again (`refresh()`, else the function). When it moved, the batch is sent once more to the new URL right away.
+- Service discovery (`/api/discovery`) shares the same lookup.
+
+### Relaying for other apps
+
+Some apps record events about other apps: a workflow server running jobs for `shop` and `billing`, a gateway. With `relay: true` on that tenant, and a token allowed to relay, the control plane stores each such entry as the app it is about:
+
+```ts
+TelescopeModule.forRoot({
+  topology: 'tenant',
+  tenant: { url, partition: 'durable', token: process.env.TELESCOPE_TENANT_TOKEN!, relay: true },
+});
+```
+
+- An entry tagged `app:<name>` (for instance by a watcher reading the `app` of a diagnostics event) is stored as `<name>`'s and tagged `via:durable`. The relayer's own entries are tagged `app:durable`, both on the wire and in `local`, so its own console's App picker lists itself and the apps it relays for.
+- The token decides. Only a token whose `capabilities` include `telescope:ingest:relay` (every app), `telescope:ingest:relay:<app>` (that app, repeatable) or `telescope:*` may relay; each implies `telescope:ingest`. A token without capabilities never relays. Without the capability, every entry stays the sender's app, as before: an `app:` tag never lets a sender write as another app.
+- An entry a relayer may not relay (an app outside its scope, an invalid name, several `app:` tags) is refused on its own and counted; the rest of the batch is stored. The ingest answer then carries `relayed` and `rejected` counts, and the control plane logs the refusal.
+- A relayed entry is deduped under its relayer and app, so a relay's retry is stored once, and an id the store already holds (the app's own, or another relay's) is never overwritten. `via:` is reserved: a sender's own `via:` tags are dropped.
 
 ## Tokens
 
@@ -81,7 +118,7 @@ signTenantToken('shop', secret, { ttlMs: 24 * 3600_000 }); // expires in a day
 
 Pass a list (`hmacTenantVerifier([next, current])`) to rotate the secret without downtime. The format is the same as `@dudousxd/nestjs-durable`'s tenant tokens.
 
-With an identity provider, write your own `verifyTenant`: it gets `{ token }` and returns `{ tenant: '<partition>' }`, or `null` to refuse. If it returns `capabilities`, they must include `telescope:ingest`. A verifier that throws (the provider is down) makes the tenant retry.
+With an identity provider, write your own `verifyTenant`: it gets `{ token }` and returns `{ tenant: '<partition>' }`, or `null` to refuse. If it returns `capabilities`, they must include `telescope:ingest` (or a relay capability, see [Relaying for other apps](#relaying-for-other-apps)). A verifier that throws (the provider is down) makes the tenant retry.
 
 ```ts
 verifyTenant: async ({ token }) => {

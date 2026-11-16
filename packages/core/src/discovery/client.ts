@@ -7,13 +7,17 @@ import { readFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { runAsTelescopeWork } from '../otel/telescope-runtime.js';
+import { ServerUrl } from '../topology/server-url.js';
 import { type TenantTokenSource, resolveTenantToken } from '../topology/tenant-auth.js';
 import type { DiscoveryMap, ServiceDirectory } from './directory.js';
 
 /** Options of {@link DiscoveryClient}. */
 export interface DiscoveryClientOptions {
-  /** The control plane's telescope URL (`https://telescope.internal/telescope`). */
-  url: string;
+  /**
+   * The control plane's telescope URL (`https://telescope.internal/telescope`), or the tenant's
+   * {@link ServerUrl} (looked up on the first poll, and again after an error or a 404).
+   */
+  url: string | ServerUrl;
   token: TenantTokenSource;
   /** This app (advisory: the token decides). Stamps the snapshot. */
   partition: string;
@@ -80,10 +84,14 @@ export class DiscoveryClient {
   private readonly fetchImpl: typeof fetch;
   /** Whose snapshot it is: this control plane and this app. */
   private readonly scope: string;
+  private readonly server: ServerUrl;
 
   constructor(private readonly options: DiscoveryClientOptions) {
     this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
-    this.scope = `${discoveryUrl(options.url)}#${options.partition}`;
+    this.server = options.url instanceof ServerUrl ? options.url : new ServerUrl(options.url);
+    // A looked-up URL is unknown at boot: its snapshot is scoped to the app alone.
+    const known = this.server.lazy ? null : this.server.current;
+    this.scope = `${known !== null ? discoveryUrl(known) : 'lazy'}#${options.partition}`;
   }
 
   /** Load the snapshot (synchronously, before the first request), then start polling. */
@@ -113,16 +121,27 @@ export class DiscoveryClient {
     const timer = setTimeout(() => controller.abort(), waitMs + 10_000);
     timer.unref?.();
     try {
+      const base = await this.server.get();
       // Telescope's own work: no trace header, no rewrite, no OpenTelemetry span.
-      const response = await runAsTelescopeWork(async () => {
-        const token = await resolveTenantToken(this.options.token);
-        return this.fetchImpl(`${discoveryUrl(this.options.url)}?${params}`, {
-          headers: { authorization: `Bearer ${token}` },
-          signal: controller.signal,
+      let response: Response;
+      try {
+        response = await runAsTelescopeWork(async () => {
+          const token = await resolveTenantToken(this.options.token);
+          return this.fetchImpl(`${discoveryUrl(base)}?${params}`, {
+            headers: { authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
         });
-      });
+      } catch (error) {
+        // Unreachable: a looked-up URL is looked up again before the next poll.
+        if (!this.stopped && this.server.lazy) await this.server.refresh().catch(() => undefined);
+        throw error;
+      }
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);
+        if (response.status === 404 && this.server.lazy) {
+          await this.server.refresh().catch(() => undefined);
+        }
         this.options.onError?.(`the control plane answered ${response.status} to /api/discovery`);
         return false;
       }
