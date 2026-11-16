@@ -11,6 +11,7 @@ import type { ScheduleManager } from '../schedule/schedule-manager.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { TelescopeTenantOptions, TelescopeTopology } from '../topology/config.js';
 import type { TenantVerifier } from '../topology/tenant-auth.js';
+import type { TelescopeTransport } from '../topology/transport.js';
 import type { TelescopeAppsOptions } from './console-app-scope.js';
 import type { ConsoleAuthorize } from './console-authorize.js';
 import type { Watcher } from './watcher.js';
@@ -450,6 +451,12 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * `hmacTenantVerifier(secret)` checks tokens from `signTenantToken(partition, secret)`.
    */
   verifyTenant?: TenantVerifier;
+  /**
+   * Control plane only: a broker it also consumes tenant batches from (`transports.bullmq(...)`,
+   * `transports.redis(...)`), the same driver the tenants set as `tenant.transport`. The HTTP
+   * ingest route stays on, so a fleet can mix HTTP and broker tenants.
+   */
+  transport?: TelescopeTransport;
   /** Tenant only: the control plane to send entries to, as which app, with which token. */
   tenant?: TelescopeTenantOptions;
   /** The App picker of a control plane's console: labels for app ids. */

@@ -148,10 +148,12 @@ describe('TagAutocomplete', () => {
     const { onSelect } = renderAutocomplete();
     fireEvent.change(screen.getByLabelText('Filter by tag'), { target: { value: 'slow' } });
 
-    const option = await screen.findByText('slow-query');
-    fireEvent.mouseDown(option);
-
-    expect(onSelect).toHaveBeenCalledWith('slow-query');
+    // The list re-renders while its search settles: retry the press on the option as rendered now,
+    // so a press on a row that was just replaced does not make the test flaky on a busy runner.
+    await waitFor(() => {
+      fireEvent.mouseDown(screen.getByText('slow-query'));
+      expect(onSelect).toHaveBeenCalledWith('slow-query');
+    });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 

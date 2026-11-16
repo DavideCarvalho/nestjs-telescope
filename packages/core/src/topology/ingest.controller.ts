@@ -15,15 +15,8 @@ import {
   NotFoundException,
   Post,
 } from '@nestjs/common';
-import {
-  TELESCOPE_OPTIONS,
-  TELESCOPE_STORAGE,
-  type TelescopeModuleOptions,
-} from '../nest/telescope.options.js';
-import { TelescopeService } from '../nest/telescope.service.js';
-import type { StorageProvider } from '../storage/storage-provider.js';
-import { resolveTopology } from './config.js';
-import { type IngestHandler, createIngestHandler, ingestHttpStatus } from './ingest.js';
+import { ingestHttpStatus } from './ingest.js';
+import { TelescopeIngest } from './ingest.service.js';
 
 /** The bearer token of an `Authorization` header. */
 export function bearerToken(header: unknown): string | undefined {
@@ -35,34 +28,8 @@ export function bearerToken(header: unknown): string | undefined {
 @Controller('telescope/api/ingest')
 export class TelescopeIngestController {
   private readonly logger = new Logger('TelescopeIngest');
-  private handler: IngestHandler | null | undefined;
 
-  constructor(
-    @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
-    @Inject(TelescopeService) private readonly service: TelescopeService,
-    @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
-  ) {}
-
-  /** The ids among `ids` the store already holds. */
-  private async existing(ids: string[]): Promise<Set<string>> {
-    const page = await this.storage.get({ ids, omitContent: true, limit: ids.length });
-    return new Set(page.data.map((entry) => entry.id));
-  }
-
-  /** The control plane's handler; `null` on any other topology. */
-  private ingest(): IngestHandler | null {
-    if (this.handler !== undefined) return this.handler;
-    const topology = resolveTopology(this.options);
-    this.handler =
-      topology.kind === 'control-plane'
-        ? createIngestHandler({
-            verifyTenant: topology.verifyTenant,
-            store: (entries) => this.service.storeIngested(entries),
-            existing: (ids) => this.existing(ids),
-          })
-        : null;
-    return this.handler;
-  }
+  constructor(@Inject(TelescopeIngest) private readonly ingest: TelescopeIngest) {}
 
   @Post()
   @HttpCode(202)
@@ -70,7 +37,7 @@ export class TelescopeIngestController {
     @Body() body: unknown,
     @Headers('authorization') authorization: unknown,
   ): Promise<{ stored: number; duplicate: number }> {
-    const handler = this.ingest();
+    const handler = this.ingest.handler;
     if (handler === null) throw new NotFoundException();
     const outcome = await handler({ token: bearerToken(authorization), body });
     if (outcome.status === 'stored') {

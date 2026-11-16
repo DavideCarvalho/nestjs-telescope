@@ -92,9 +92,40 @@ verifyTenant: async ({ token }) => {
 
 ## Transports
 
-| Driver | Tenant sends |
-|--------|--------------|
-| `transports.http({ url, fetch?, timeoutMs? })` (default) | `POST <url>/api/ingest` with `Authorization: Bearer <token>`. `timeoutMs` defaults to 10 000. |
+HTTP is the default. A fleet that already runs Redis can send batches through a broker instead. Set the same driver on the tenant (`tenant.transport`) and on the control plane (`transport`):
+
+```ts
+import { TelescopeModule, transports } from '@dudousxd/nestjs-telescope';
+
+const broker = transports.bullmq({ connection: { host: 'redis', port: 6379, maxRetriesPerRequest: null } });
+
+// control plane
+TelescopeModule.forRoot({ topology: 'control-plane', verifyTenant, transport: broker });
+
+// a tenant
+TelescopeModule.forRoot({
+  topology: 'tenant',
+  tenant: { partition: 'shop', token: process.env.TELESCOPE_TENANT_TOKEN!, transport: broker },
+});
+```
+
+| Driver | Tenant sends | Control plane reads | Dead letters | Peer (loaded only when used) |
+|--------|--------------|---------------------|--------------|------------------------------|
+| `transports.http({ url, fetch?, timeoutMs? })` (default) | `POST <url>/api/ingest` | the ingest route | none: the tenant drops a batch answered 400/413 | none |
+| `transports.bullmq({ connection, queue?, prefix?, attempts?, concurrency? })` | one job per batch on `telescope-ingest` | a BullMQ worker | BullMQ's failed set (last `keepFailed`, 10 000) | `bullmq` |
+| `transports.redis({ connection \| client, prefix?, group?, maxAttempts?, minIdleMs? })` | `XADD <prefix>:ingest` (capped with `MAXLEN ~ maxLen`) | a consumer group, non-blocking reads | `<prefix>:ingest:dead` | `ioredis` (unless you pass `client`) |
+
+The same rules hold whatever the transport:
+
+- **Every message is verified.** A broker message carries the batch and the tenant's token. The control plane runs `verifyTenant` on each one, takes the app from the token, and dedupes by `<app>:<id>`. One handler serves the HTTP route and the broker, so a batch that arrives both ways is stored once.
+- **Refused messages are dead-lettered, not retried.** That covers a bad or expired token, a malformed batch, and a message larger than `maxMessageBytes` (1 MiB).
+- **Transient failures are retried.** When the store or the verifier is down, BullMQ retries up to `attempts` (default 5) with exponential backoff. A Redis stream message stays pending and is taken over after `minIdleMs` (30 s), up to `maxAttempts` (5).
+- **The tenant behaves the same.** A broker that is down keeps entries in the tenant's buffer and retries them; shutdown flushes to the broker.
+- **Browsers always stay on HTTP.** That covers the console, the live tail and the client-error beacon. A control plane on a broker keeps its `/api/ingest` route, so a fleet can mix HTTP and broker tenants.
+
+<Callout type="warn">
+A broker message keeps the token it was sent with. If a message waits longer than the token's lifetime (a control plane down for a day, with tokens minted with `ttlMs`), it is refused and dead-lettered. Give tokens a lifetime longer than the outages you want to survive.
+</Callout>
 
 ## Who sees which app
 

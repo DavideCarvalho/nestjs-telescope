@@ -2,6 +2,7 @@
 //
 // How a tenant's batches reach the control plane. HTTP is the default; broker drivers carry the
 // same batch in an envelope with the token.
+import type { IngestHandler } from './ingest.js';
 import type { IngestBatch } from './wire.js';
 
 /**
@@ -13,13 +14,58 @@ import type { IngestBatch } from './wire.js';
  */
 export type SendResult = { status: 'sent' } | { status: 'retry' | 'drop'; reason: string };
 
-/** The tenant side of a transport. */
+/** Where a broker consumer reports what it refused. */
+export interface TransportLogger {
+  warn(message: string): void;
+}
+
+/** A running broker consumer on the control plane. */
+export interface TransportListener {
+  /** Stops taking messages; resolves once the one being handled is done. */
+  stop(): Promise<void>;
+}
+
+/**
+ * A transport: the tenant side sends, the control plane side (brokers only) consumes. The same
+ * driver is configured on both: `tenant.transport` on a tenant, `transport` on the control plane.
+ */
 export interface TenantTransport {
   /** `http`, or the broker's name, for logs and status. */
   readonly kind: string;
   send(batch: IngestBatch, credentials: { token: string; partition: string }): Promise<SendResult>;
+  /**
+   * Control plane: consume the broker's messages, handing each to `handler` (which verifies the
+   * token, dedupes and stores). Acknowledge `stored`; dead-letter `invalid`, `unauthenticated` and
+   * `forbidden` (a message's token never changes); leave `unavailable` for a retry, dead-lettered
+   * after the driver's attempts. HTTP has no consumer: tenants post to the ingest route.
+   */
+  listen?(handler: IngestHandler, logger: TransportLogger): Promise<TransportListener>;
   /** Releases connections at shutdown, after the last send. */
   close?(): Promise<void>;
+}
+
+/** Any transport driver. */
+export type TelescopeTransport = TenantTransport;
+
+/** Whether an ingest outcome must never be retried from a broker (it is dead-lettered). */
+export function isDeadLetter(status: string): boolean {
+  return status === 'invalid' || status === 'unauthenticated' || status === 'forbidden';
+}
+
+/**
+ * Imports an optional peer by a variable specifier, so bundlers and the type checker never require
+ * it unless the driver is selected.
+ */
+export async function importPeer<T>(name: string, driver: string): Promise<T> {
+  try {
+    return (await import(name)) as T;
+  } catch (error) {
+    throw new Error(
+      `telescope transports.${driver} needs \`${name}\` installed (npm i ${name}): ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 /** Options of {@link httpTransport}. */
@@ -76,8 +122,3 @@ export function httpTransport(options: HttpTransportOptions): TenantTransport {
     },
   };
 }
-
-/** The transport drivers. Each `tenant` and its control plane choose one. */
-export const transports = {
-  http: httpTransport,
-};
