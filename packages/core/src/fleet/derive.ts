@@ -21,6 +21,8 @@ export interface InstanceRecord {
   intervalMs: number;
   checks: CheckState[];
   shipping: HeartbeatShipping | null;
+  /** The URL the instance said other apps reach it at, or `null`. Absent from older rows. */
+  url?: string | null;
 }
 
 /** What the fleet says about an instance right now. */

@@ -33,6 +33,7 @@ export class FleetRegistry {
   private readonly retentionMs: number;
   private readonly firstSeen = new Map<string, number>();
   private pruneTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly listeners = new Set<() => void>();
 
   constructor(
     readonly store: FleetStore,
@@ -74,12 +75,28 @@ export class FleetRegistry {
       intervalMs: heartbeat.intervalMs,
       checks: heartbeat.checks,
       shipping: heartbeat.shipping,
+      url: heartbeat.url ?? null,
     };
     try {
       await this.store.upsert(record);
     } catch (error) {
       this.options.onError?.(error);
     }
+    for (const listener of [...this.listeners]) {
+      try {
+        listener();
+      } catch {
+        // A listener's failure is its own.
+      }
+    }
+  }
+
+  /** Called after every heartbeat is stored (service discovery re-checks its held callers). */
+  onBeat(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   /** The instance rows of `apps` (`null`: every app) within the retention. */
@@ -119,6 +136,8 @@ export interface InstanceReporterOptions {
   checks?: HealthChecks | null;
   /** The shipping stats of a tenant's buffer, or `null`. */
   shipping?: () => HeartbeatShipping | null;
+  /** The URL other apps reach this one at (`fleet.url`), or `null`. */
+  url?: string | null;
   /** Where a heartbeat goes: the tenant's buffer, or the local registry. */
   send: (heartbeat: InstanceHeartbeat) => Promise<void> | void;
   instanceId?: string;
@@ -197,6 +216,7 @@ export class InstanceReporter {
       intervalMs: this.options.intervalMs,
       checks,
       shipping: this.options.shipping?.() ?? null,
+      ...(this.options.url ? { url: this.options.url } : {}),
     };
   }
 

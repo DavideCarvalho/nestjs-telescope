@@ -120,6 +120,7 @@ export class TelescopeFleet
       version: () => resolveVersion(this.config.version),
       checks: this.checks.size > 0 ? this.checks : null,
       shipping: tenantStore ? () => shippingOf(tenantStore.stats()) : () => null,
+      url: this.config.url,
       send: (heartbeat) => {
         if (tenantStore) tenantStore.setHeartbeat(heartbeat);
         else if (this.registry && this.selfApp) return this.registry.beat(this.selfApp, heartbeat);
