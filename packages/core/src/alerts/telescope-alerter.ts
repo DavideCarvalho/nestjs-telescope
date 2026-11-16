@@ -15,6 +15,14 @@ import type {
   ExceptionAlertContext,
   ResolvedAlerts,
 } from './alert-rule.js';
+import {
+  type CheckStateSource,
+  type UptimeCheckState,
+  publishedCheckStates,
+} from './integrations/check-states.js';
+import { HeartbeatMonitor } from './integrations/heartbeats.js';
+import { routesTo } from './integrations/incident.js';
+import { StatusPageSync } from './integrations/status-pages.js';
 import { DEFAULT_MAX_FAMILIES, NewExceptionTracker } from './new-exception-tracker.js';
 
 /**
@@ -68,7 +76,8 @@ export interface TelescopeAlerterDeps {
  *     just-stored exception entries, so a brand-new error family pages within a
  *     flush interval rather than waiting a full evaluation interval.
  *
- * Every fired alert fans out to ALL configured channels concurrently; one channel
+ * Every fired alert fans out to the channels it routes to (all of them unless a
+ * rule names `channels` or a channel sets `minSeverity`) concurrently; one channel
  * failing never blocks the others. NEVER throws into the host: a channel failure
  * is warn-logged (rate-limited per channel) and otherwise swallowed.
  */
@@ -78,6 +87,16 @@ export class TelescopeAlerter {
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Per-rule last-fired wall time (index-keyed; rules are a fixed array). */
   private readonly lastFiredAt = new Map<number, number>();
+  /**
+   * Interval rules currently firing (index → the last firing payload), so the
+   * evaluation that finds the rule no longer crossing sends ONE `resolved`
+   * notification to the channels that accept it.
+   */
+  private readonly active = new Map<number, AlertPayload>();
+  /** Push uptime monitors, when `alerts.heartbeats` is configured. */
+  private readonly heartbeats: HeartbeatMonitor | null;
+  /** Status page sync, when `alerts.statusPages` is configured. */
+  private readonly statusPages: StatusPageSync | null;
   /**
    * Per-family last-fired wall time for the flush-driven exception rules. Keyed
    * by `${ruleType}|${familyHash}` so a `new-exception` and an `every-exception`
@@ -117,10 +136,28 @@ export class TelescopeAlerter {
         (rule): rule is { type: 'every-exception'; window?: string } =>
           rule.type === 'every-exception',
       ) ?? null;
+    const warn = (message: string) => this.logger.warn(message);
+    // The configured source, else whatever is published at read time; with
+    // neither, no states (an app-wide heartbeat is then a dead man's switch).
+    const configured = deps.alerts.checkStates ?? null;
+    const source: CheckStateSource =
+      configured ??
+      ((): UptimeCheckState[] | Promise<UptimeCheckState[]> => {
+        const published = publishedCheckStates();
+        return published === null ? [] : published();
+      });
+    const heartbeats = deps.alerts.heartbeats ?? [];
+    const statusPages = deps.alerts.statusPages ?? [];
+    this.heartbeats =
+      heartbeats.length > 0 ? new HeartbeatMonitor({ heartbeats, source, logger: warn }) : null;
+    this.statusPages =
+      statusPages.length > 0 ? new StatusPageSync({ statusPages, source, logger: warn }) : null;
   }
 
-  /** Start the unref'd evaluation interval. Idempotent. */
+  /** Start the unref'd evaluation interval and the uptime integrations. Idempotent. */
   start(): void {
+    this.heartbeats?.start();
+    this.statusPages?.start();
     if (this.timer !== null) return;
     this.timer = setInterval(() => {
       this.evaluate().catch((error: unknown) => {
@@ -130,8 +167,10 @@ export class TelescopeAlerter {
     this.timer.unref?.();
   }
 
-  /** Stop the interval (shutdown). Idempotent. */
+  /** Stop the interval and the uptime integrations (shutdown). Idempotent. */
   stop(): void {
+    this.heartbeats?.stop();
+    this.statusPages?.stop();
     if (this.timer !== null) {
       clearInterval(this.timer);
       this.timer = null;
@@ -152,10 +191,25 @@ export class TelescopeAlerter {
         continue;
       }
       const outcome = await this.measure(rule);
-      if (outcome === null) continue;
+      if (outcome === null) {
+        // Was firing, no longer crosses: one `resolved` to the channels that
+        // take it (on-call integrations close the incident by its key).
+        const firing = this.active.get(index);
+        if (firing !== undefined) {
+          this.active.delete(index);
+          await this.dispatch({
+            ...firing,
+            status: 'resolved',
+            firedAt: new Date(this.now()).toISOString(),
+          });
+        }
+        continue;
+      }
       if (this.inCooldown(index)) continue;
       this.lastFiredAt.set(index, this.now());
-      await this.dispatch(this.buildRatePayload(rule, outcome.value, outcome.threshold));
+      const payload = this.buildRatePayload(rule, outcome.value, outcome.threshold);
+      this.active.set(index, payload);
+      await this.dispatch(payload);
     }
   }
 
@@ -437,7 +491,14 @@ export class TelescopeAlerter {
       ...(this.deps.alerts.dashboardUrl !== null
         ? { dashboardUrl: this.deps.alerts.dashboardUrl }
         : {}),
+      ...this.appField(),
     };
+  }
+
+  /** `{ app }` when `alerts.app` is set, else nothing (payloads stay v1-shaped). */
+  private appField(): { app?: string } {
+    const app = this.deps.alerts.app;
+    return typeof app === 'string' && app !== '' ? { app } : {};
   }
 
   /**
@@ -482,6 +543,7 @@ export class TelescopeAlerter {
         ? { dashboardUrl: this.deps.alerts.dashboardUrl }
         : {}),
       ...(diagnosis !== null ? { diagnosis } : {}),
+      ...this.appField(),
     };
   }
 
@@ -612,12 +674,13 @@ export class TelescopeAlerter {
    * persistently-down destination doesn't flood the logs. Never rejects.
    */
   private async dispatch(payload: AlertPayload): Promise<void> {
-    const results = await Promise.allSettled(
-      this.deps.alerts.channels.map((channel) => channel.send(payload)),
-    );
+    // Per-rule `channels`, per-channel `minSeverity` and `acceptsResolved` pick
+    // the destinations.
+    const channels = this.deps.alerts.channels.filter((channel) => routesTo(payload, channel));
+    const results = await Promise.allSettled(channels.map((channel) => channel.send(payload)));
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        this.warnChannelFailure(this.deps.alerts.channels[index], result.reason);
+        this.warnChannelFailure(channels[index], result.reason);
       }
     });
   }

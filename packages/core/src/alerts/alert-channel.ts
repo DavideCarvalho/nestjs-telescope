@@ -1,5 +1,5 @@
 // packages/core/src/alerts/alert-channel.ts
-import type { AlertPayload } from './alert-rule.js';
+import type { AlertPayload, AlertSeverity } from './alert-rule.js';
 import { type SlackChannelOptions, formatSlackMessage } from './slack-format.js';
 
 /**
@@ -18,6 +18,18 @@ export interface AlertChannel {
   name: string;
   /** Deliver the payload. Rejecting is fine — the alerter isolates + logs it. */
   send(alert: AlertPayload): Promise<void>;
+  /**
+   * Only alerts at or above this severity are sent here (e.g. `'critical'` on a
+   * paging channel). Omit to receive every alert.
+   */
+  minSeverity?: AlertSeverity;
+  /**
+   * Receive `status: 'resolved'` notifications when a firing interval rule stops
+   * crossing its threshold. Off unless set, so existing channels (Slack, raw
+   * webhook, custom) see exactly the alerts they always did; the on-call, chat
+   * and email integrations set it.
+   */
+  acceptsResolved?: boolean;
 }
 
 /**

@@ -1,0 +1,186 @@
+---
+title: Alert integrations
+description: Send Telescope alerts to PagerDuty, Opsgenie, Better Stack, incident.io, Grafana OnCall, Discord, Teams, Telegram, Google Chat or email; route by rule and severity; ping heartbeat monitors; keep a status page in step; expose an uptime endpoint.
+icon: Siren
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The [alerts](/docs/dashboard#alerts) you already configure can go to on-call, chat and email services, and the same `alerts` block can drive uptime monitors and status pages. Every integration is a factory that returns an `AlertChannel`, so it sits next to `slackChannel` / `webhookChannel` / `customChannel` in `channels`.
+
+```ts
+import {
+  TelescopeModule,
+  discordChannel,
+  emailChannel,
+  pagerDutyChannel,
+} from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  alerts: {
+    app: 'checkout-api', // incident keys and titles; set it when replicas share a store
+    dashboardUrl: 'https://telescope.example.com/telescope/',
+    channels: [
+      pagerDutyChannel({ routingKey: process.env.PAGERDUTY_ROUTING_KEY!, minSeverity: 'critical' }),
+      discordChannel({ url: process.env.DISCORD_WEBHOOK_URL! }),
+      emailChannel({ to: 'oncall@example.com', transport: mailTransporter }),
+    ],
+    rules: [
+      { type: 'new-exception', window: '1h', channels: ['discord', 'email'] },
+      { type: 'exception-rate', window: '5m', threshold: 50 }, // critical → also pages
+      { type: 'metric-threshold', metric: 'request-p95-ms', window: '5m', comparator: 'gte', threshold: 800 },
+    ],
+  },
+});
+```
+
+## Channels
+
+| Factory | Sends | Resolves |
+| --- | --- | --- |
+| `pagerDutyChannel({ routingKey, url?, source?, component?, group? })` | Events API v2 `trigger` with `dedup_key` | `resolve` with the same `dedup_key` |
+| `opsgenieChannel({ apiKey, region?, responders?, tags? })` | create alert with `alias` and `P1`–`P5` (`region: 'eu'` for `api.eu.opsgenie.com`) | close by alias |
+| `betterStackIncidentChannel({ apiToken, requesterEmail, teamName?, notify? })` | Uptime incident (email + push; call + SMS for `critical`) | resolve by incident id (remembered per process) |
+| `incidentIoChannel({ alertSourceConfigId, token })` | HTTP alert source event, `status: 'firing'`, `deduplication_key` | `status: 'resolved'` |
+| `grafanaOnCallChannel({ url })` | formatted webhook, `state: 'alerting'`, `alert_uid` | `state: 'ok'` |
+| `discordChannel({ url, username?, avatarUrl? })` | one embed, colour by severity, mentions disabled | green "resolved" embed |
+| `teamsChannel({ url })` | Teams Workflows webhook with an Adaptive Card | resolved card |
+| `telegramChannel({ botToken, chatId, messageThreadId? })` | Bot API `sendMessage`, HTML | resolved message |
+| `googleChatChannel({ url, threaded? })` | space webhook card, threaded per app + rule | reply in the thread |
+| `emailChannel({ to, transport, from?, subjectPrefix? })` | text + HTML email through your mailer | resolved email |
+
+Every factory also takes:
+
+- `name`: what a rule's `channels` list refers to and what failure logs say. Defaults to the type (`'pagerduty'`, `'discord'`, …).
+- `minSeverity`: only alerts at or above it reach the channel.
+- `notifyResolved`: set `false` to skip resolved notifications on this channel.
+- `retries` (default `2`), `backoffMs` (default `500`) and `timeoutMs` (default `5000`): each request has a 5 s timeout and is retried on network errors, timeouts, 408, 425, 429 and 5xx with exponential backoff. A numeric `Retry-After` is honoured, up to 30 s.
+
+A required option that's missing or empty (an unset env var, say) throws at boot with the channel and field name. Error messages and logs never include a URL, header or token.
+
+### Email
+
+Telescope doesn't ship a mail library. Pass anything with a nodemailer-style `sendMail(message)` (a nodemailer transporter, `MailerService` from `@nestjs-modules/mailer`) or a function:
+
+```ts
+emailChannel({ to: ['oncall@example.com'], from: 'telescope@example.com', transport: transporter });
+
+// or reach a DI service lazily
+emailChannel({ to: 'oncall@example.com', transport: (message) => mailer.sendMail(message) });
+```
+
+The message is `{ to: string[], from?, subject, text, html }`.
+
+## Severity and routing
+
+Each alert has a severity: `info`, `warning`, `error` or `critical`. The defaults are `critical` for `exception-rate`, `error` for `new-exception` and `every-exception`, and `warning` for `slow-request-rate`, `dropped-entries` and `metric-threshold`. Set `severity` on a rule to change it. PagerDuty uses the same four names; Opsgenie maps them to `P1`, `P2`, `P3` and `P5`.
+
+- `channels: ['pagerduty']` on a rule sends it only to channels with those names. A name no channel has is a boot error.
+- `minSeverity: 'critical'` on a channel keeps everything below it out.
+
+## Resolved notifications and incident keys
+
+When an interval rule (`exception-rate`, `slow-request-rate`, `dropped-entries`, `metric-threshold`) was firing and stops crossing its threshold, Telescope sends one `resolved` notification. Only channels that accept it get it: all the integrations above do. `slackChannel`, `webhookChannel` and `customChannel` don't, so they see the same alerts as before. A hand-built channel can opt in with `acceptsResolved: true` and read `alert.status === 'resolved'`.
+
+The firing and resolved notifications share an incident key, `telescope:<app>:<rule>[:<exception family>]`. It's PagerDuty's `dedup_key`, Opsgenie's `alias`, incident.io's `deduplication_key` and Grafana OnCall's `alert_uid`, so a re-notify after the cooldown joins the open incident instead of opening a new one. `<app>` is `alerts.app`, else the instance id (the hostname). With several replicas, set `app` so they share one incident.
+
+Exception rules (`new-exception`, `every-exception`) only fire. Close those incidents in the provider.
+
+## Heartbeats
+
+A heartbeat is a dead man's switch: Telescope pings the provider on a timer while the app is healthy, and the provider alerts when the pings stop or a fail signal arrives.
+
+```ts
+alerts: {
+  heartbeats: [
+    { provider: 'healthchecks', url: process.env.HC_PING_URL!, every: '60s', signalStart: true },
+    { provider: 'uptime-kuma', url: 'https://kuma.example.com/api/push/abc123' },
+  ],
+  checkStates: () => healthCache.states(), // optional, see below
+},
+```
+
+| `provider` | Ping | When unhealthy |
+| --- | --- | --- |
+| `healthchecks` | `POST <url>` (body = details) | `POST <url>/fail`; `signalStart` sends `/start` |
+| `betterstack` | `GET <url>` | `POST <url>/fail` |
+| `cronitor` | `?state=complete` | `?state=fail&message=…`; `signalStart` sends `state=run` |
+| `uptime-kuma` | `?status=up&msg=OK` | `?status=down&msg=…` |
+| `uptimerobot` | `GET <url>` | skips (no fail signal) |
+| `url` | `GET <url>` | `GET <failUrl>` when set, else skips |
+
+Options: `every` (default `'60s'`; keep it under the provider's grace period), `onUnhealthy: 'fail' | 'skip'`, `checks` (only these check names count), `name` (for logs), and `apps: { name: url }` to ping one URL per app when your check-state source reports several apps.
+
+A heartbeat-only setup needs no `rules` or `channels`. A malformed URL is a boot error that names the heartbeat but not the URL.
+
+### Check states
+
+Telescope doesn't run health checks. Heartbeats, status pages and the uptime endpoint read check states from `alerts.checkStates`, or from a source you publish with `publishCheckStates(source)`. Without either, a heartbeat pings as long as the process is alive.
+
+```ts
+import type { UptimeCheckState } from '@dudousxd/nestjs-telescope';
+
+// e.g. from a cached @nestjs/terminus result
+checkStates: (): UptimeCheckState[] => [
+  { name: 'postgres', status: 'ok' },
+  { name: 'redis', status: 'down', message: 'PING timed out after 2s' },
+  { name: 'mailer', status: 'warn', critical: false },
+],
+```
+
+`status` is `ok`, `warn` (degraded), `down` or `unknown` (not run yet, ignored). A check with `critical: false` moves its status page component but never fails a heartbeat or the uptime endpoint. The source is called on every tick, so return a cached result.
+
+## Status pages
+
+Telescope keeps status page components in step with your check states and can open an incident while something is down.
+
+```ts
+alerts: {
+  checkStates: () => healthCache.states(),
+  statusPages: [
+    {
+      provider: 'statuspage', // or 'instatus' | 'betterstack'
+      apiKey: process.env.STATUSPAGE_API_KEY!,
+      pageId: 'abc123',
+      components: { postgres: 'cmp_db', redis: 'cmp_cache', '*': 'cmp_api' },
+      incidents: true,
+    },
+  ],
+},
+```
+
+- `components` maps a key to the provider's component id. A key is a check name (`'redis'`), `'app:<name>'` (every check of an app), `'<app>/<check>'`, or `'*'` (every check). A key with no matching checks is left alone.
+- Only changes are sent. A failed update is retried on the next tick.
+- `incidents: true` opens an incident (`incidentName`, default `'Service disruption'`) while a mapped component isn't up and resolves it when everything is back.
+- Atlassian Statuspage takes `apiKey` and `pageId`. Instatus takes `apiKey` and `pageId`. Better Stack takes `apiToken` and `statusPageId`, with status-page resource ids as component ids. It always works through status reports.
+- `every` defaults to `'60s'`; `baseUrl` overrides the API host.
+
+## Uptime endpoint
+
+For pull monitors (UptimeRobot, Better Stack, Uptime Kuma), `uptimeHandler()` returns a status code and body. You mount it in your own controller:
+
+```ts
+import { Controller, Get, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { uptimeHandler } from '@dudousxd/nestjs-telescope';
+
+const uptime = uptimeHandler({ token: process.env.UPTIME_TOKEN, source: () => healthCache.states() });
+
+@Controller()
+export class UptimeController {
+  @Get('uptime')
+  async check(@Req() req: Request, @Res() res: Response) {
+    const { statusCode, body } = await uptime(req);
+    res.status(statusCode).set('cache-control', 'no-store').json(body);
+  }
+}
+```
+
+- `up` → 200, `degraded` → 200 (`degradedStatusCode` to change it), `down` → 503. The body is `{"status":"up"|"degraded"|"down", …}`, so keyword monitors can match on it.
+- With `token`, a request needs `?token=` or the `x-telescope-health-token` header, otherwise 401. Check details are shown only when a token is set (or `details: true`).
+- `?app=<name>` answers for one app. An app with no checks is `down`.
+- A source that throws gives 503. With no source configured or published, it answers 200 while the process is up.
+
+<Callout type="info">
+Heartbeats and status pages run on unref'd timers, start with the alerter and stop on shutdown. They never run on the request path, and a failing provider is logged once until it recovers.
+</Callout>

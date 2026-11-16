@@ -95,6 +95,7 @@ export * from './alerts/new-exception-tracker.js';
 export * from './alerts/resolve-alerts.js';
 export * from './alerts/slack-format.js';
 export * from './alerts/telescope-alerter.js';
+export * from './alerts/integrations/index.js';
 
 export * from './ai/diagnoser.js';
 export * from './ai/diagnose-context-builder.js';

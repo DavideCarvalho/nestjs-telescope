@@ -1,5 +1,8 @@
 // packages/core/src/alerts/alert-rule.ts
 import type { AlertChannel } from './alert-channel.js';
+import type { CheckStateSource } from './integrations/check-states.js';
+import type { HeartbeatConfig } from './integrations/heartbeats.js';
+import type { StatusPageConfig } from './integrations/status-pages.js';
 
 /**
  * A single alerting rule. Each rule is evaluated on every tick of the alerter,
@@ -37,28 +40,51 @@ import type { AlertChannel } from './alert-channel.js';
  *                         — e.g. request p95 latency, or cache hit-rate — so you
  *                         can page on "p95 > 800ms" or "hit-rate < 0.8".
  */
-export type AlertRule =
-  | { type: 'exception-rate'; window: string; threshold: number }
-  | { type: 'slow-request-rate'; window: string; thresholdMs: number; count: number }
-  | { type: 'dropped-entries'; threshold: number }
-  | { type: 'new-exception'; window: string }
-  | { type: 'every-exception'; window?: string }
-  | {
-      type: 'metric-threshold';
-      /** The computed metric to evaluate (see {@link AlertMetric}). */
-      metric: AlertMetric;
-      /** Trailing window to aggregate over (e.g. `'5m'`). */
-      window: string;
-      /** `gte` fires when value >= threshold; `lte` when value <= threshold. */
-      comparator: 'gte' | 'lte';
-      /** The threshold the metric is compared against. */
-      threshold: number;
-      /**
-       * Minimum samples in the window before the rule can fire. Guards against a
-       * single slow request tripping a p95 page on a quiet host. Default 1.
-       */
-      minSamples?: number;
-    };
+export type AlertRule = AlertRuleRouting &
+  (
+    | { type: 'exception-rate'; window: string; threshold: number }
+    | { type: 'slow-request-rate'; window: string; thresholdMs: number; count: number }
+    | { type: 'dropped-entries'; threshold: number }
+    | { type: 'new-exception'; window: string }
+    | { type: 'every-exception'; window?: string }
+    | {
+        type: 'metric-threshold';
+        /** The computed metric to evaluate (see {@link AlertMetric}). */
+        metric: AlertMetric;
+        /** Trailing window to aggregate over (e.g. `'5m'`). */
+        window: string;
+        /** `gte` fires when value >= threshold; `lte` when value <= threshold. */
+        comparator: 'gte' | 'lte';
+        /** The threshold the metric is compared against. */
+        threshold: number;
+        /**
+         * Minimum samples in the window before the rule can fire. Guards against a
+         * single slow request tripping a p95 page on a quiet host. Default 1.
+         */
+        minSamples?: number;
+      }
+  );
+
+/**
+ * How urgent an alert is. Paging channels map it to their own scale (PagerDuty
+ * `severity`, Opsgenie `P1`–`P5`, …) and a channel's `minSeverity` filters on it.
+ * Ordered `info` < `warning` < `error` < `critical`.
+ */
+export type AlertSeverity = 'info' | 'warning' | 'error' | 'critical';
+
+/**
+ * Optional routing fields every rule accepts.
+ *
+ * - `severity` overrides the rule kind's default (`exception-rate` → `critical`;
+ *   `new-exception` / `every-exception` → `error`; `slow-request-rate`,
+ *   `dropped-entries`, `metric-threshold` → `warning`).
+ * - `channels` sends this rule's alerts ONLY to the channels with these names
+ *   (a channel's `name`). Omit to send to every channel — the default.
+ */
+export interface AlertRuleRouting {
+  severity?: AlertSeverity;
+  channels?: string[];
+}
 
 /**
  * The metrics a `metric-threshold` rule can evaluate. Each is derived from the
@@ -117,7 +143,7 @@ export interface AlertsOptions {
    * helpers: `slackChannel(url)`, `webhookChannel(url)`, `customChannel(fn)`.
    * Must hold at least one channel.
    */
-  channels: AlertChannel[];
+  channels?: AlertChannel[];
   /**
    * The host's EXTERNAL Telescope dashboard URL (e.g.
    * `https://telescope.example.com/telescope/`). When set, channels that support
@@ -134,8 +160,36 @@ export interface AlertsOptions {
   every?: string;
   /** Re-notify suppression per rule, as a duration string. Default `'15m'`. */
   cooldown?: string;
-  /** Rules to evaluate. Must be non-empty when `alerts` is set. */
-  rules: AlertRule[];
+  /**
+   * Rules to evaluate. Must be non-empty unless `heartbeats` or `statusPages`
+   * is configured (an uptime-only setup needs no rules or channels).
+   */
+  rules?: AlertRule[];
+  /**
+   * The service name used in incident keys and alert titles (PagerDuty
+   * `dedup_key`, Opsgenie `alias`, …). Defaults to the reporting `instanceId`
+   * (the hostname), so set it when several replicas share one store: every
+   * replica then folds into ONE incident instead of paging once per pod.
+   */
+  app?: string;
+  /**
+   * Push uptime monitors (dead man's switches): healthchecks.io, Better Stack,
+   * Cronitor, Uptime Kuma, UptimeRobot or any URL, pinged on a timer only while
+   * the checks from `checkStates` are healthy. See {@link HeartbeatConfig}.
+   */
+  heartbeats?: HeartbeatConfig[];
+  /**
+   * Status pages (Atlassian Statuspage, Instatus, Better Stack) whose components
+   * follow the checks from `checkStates`. See {@link StatusPageConfig}.
+   */
+  statusPages?: StatusPageConfig[];
+  /**
+   * Where heartbeats and status pages read the current health-check states
+   * (e.g. a cached `@nestjs/terminus` result mapped to `UptimeCheckState[]`).
+   * Without one, a heartbeat is a plain dead man's switch (it pings while the
+   * process runs) and status pages have nothing to sync.
+   */
+  checkStates?: CheckStateSource;
 }
 
 /** Boot-resolved, validated alerting config (durations normalized to ms). */
@@ -149,6 +203,14 @@ export interface ResolvedAlerts {
   rules: AlertRule[];
   /** Host IP→geo resolver, or `null` when unconfigured. */
   geoLookup: GeoLookup | null;
+  /** Service name for incident keys/titles, or `null` (falls back to `instanceId`). */
+  app?: string | null;
+  /** Push uptime monitors (validated). Empty/absent when none are configured. */
+  heartbeats?: HeartbeatConfig[];
+  /** Status page sync targets (validated). Empty/absent when none are configured. */
+  statusPages?: StatusPageConfig[];
+  /** Where heartbeats and status pages read check states from, or `null`. */
+  checkStates?: CheckStateSource | null;
 }
 
 /**
@@ -259,4 +321,13 @@ export interface AlertPayload {
    * "Probable cause (AI)" section.
    */
   diagnosis?: string;
+  /**
+   * `'resolved'` when this notifies that a previously firing interval rule
+   * stopped crossing its threshold; absent on a firing alert. Resolved
+   * notifications only reach channels that set `acceptsResolved` (the on-call,
+   * chat and email integrations do; `slackChannel`/`webhookChannel` don't).
+   */
+  status?: 'firing' | 'resolved';
+  /** The service name from `alerts.app`, when set (incident keys and titles use it). */
+  app?: string;
 }

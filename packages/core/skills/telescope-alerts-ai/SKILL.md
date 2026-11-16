@@ -2,7 +2,10 @@
 name: telescope-alerts-ai
 description: >-
   Alerting and AI exception diagnosis in nestjs-telescope. Configure alerts with
-  channel helpers (slackChannel, webhookChannel, customChannel) and rules
+  channel helpers (slackChannel, webhookChannel, customChannel, plus
+  pagerDutyChannel/opsgenieChannel/discordChannel/teamsChannel/emailChannel and
+  the other integrations), per-rule severity/channels routing, heartbeats and
+  status pages, and rules
   (new-exception, exception-rate, slow-request-rate, dropped-entries,
   metric-threshold); understand the default that 4xx HttpExceptions are NOT
   recorded as exception entries (exceptions.captureHttp4xx restores it); wire AI
@@ -27,7 +30,8 @@ exception. Both are `forRoot` options.
 ## Setup
 
 Fan alerts to one or more channels; `rules` selects what fires. A configured
-`alerts` with no destination or empty `rules` is a fail-closed boot error.
+`alerts` with no destination or empty `rules` is a fail-closed boot error,
+unless `heartbeats`/`statusPages` make it an uptime-only setup.
 
 ```ts
 import { TelescopeModule, slackChannel } from '@dudousxd/nestjs-telescope';
@@ -63,7 +67,18 @@ rules: [
 ];
 ```
 
-Source: `packages/core/src/alerts/alert-rule.ts` (`AlertRule`).
+Every rule also takes `severity` (`info` | `warning` | `error` | `critical`) and
+`channels` (names of the channels it goes to); every channel takes
+`minSeverity`. On-call, chat and email integrations (`pagerDutyChannel`,
+`opsgenieChannel`, `betterStackIncidentChannel`, `incidentIoChannel`,
+`grafanaOnCallChannel`, `discordChannel`, `teamsChannel`, `telegramChannel`,
+`googleChatChannel`, `emailChannel({ to, transport })`) also get a `resolved`
+notification when an interval rule stops firing, keyed by `alerts.app` + rule.
+`alerts.heartbeats` / `alerts.statusPages` and `uptimeHandler()` read
+`alerts.checkStates` or `publishCheckStates()`.
+
+Source: `packages/core/src/alerts/alert-rule.ts` (`AlertRule`),
+`packages/core/src/alerts/integrations/`.
 
 ### Pattern 2 — AI exception diagnosis
 
@@ -152,7 +167,7 @@ TelescopeModule.forRoot({
 ```
 
 Mechanism: a configured `alerts` with no `channels` or empty `rules` throws at boot rather than silently never
-alerting. Source: `packages/core/src/alerts/alert-rule.ts` (`AlertsOptions`).
+alerting, unless `heartbeats`/`statusPages` make it an uptime-only setup. Source: `packages/core/src/alerts/resolve-alerts.ts`.
 
 ### Mistake 3 — hand-rolling a Slack POST instead of the channel helper
 
