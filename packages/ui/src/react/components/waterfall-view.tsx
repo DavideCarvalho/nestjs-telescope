@@ -28,6 +28,8 @@ interface RowProps {
   span: WaterfallSpan;
   totalDurationMs: number;
   onSelect?: ((id: string) => void) | undefined;
+  /** The app column's label for an app id; absent when the trace stays in one app. */
+  appLabel?: ((id: string) => string) | undefined;
 }
 
 /** A flattened list of spans in depth-first order, preserving nesting via depth. */
@@ -43,7 +45,7 @@ function flatten(spans: WaterfallSpan[]): WaterfallSpan[] {
   return out;
 }
 
-function WaterfallRow({ span, totalDurationMs, onSelect }: RowProps): React.JSX.Element {
+function WaterfallRow({ span, totalDurationMs, onSelect, appLabel }: RowProps): React.JSX.Element {
   // Guard against a zero-width trace (all instant spans) so bars stay visible.
   const span100 = totalDurationMs > 0 ? totalDurationMs : 1;
   const leftPct = Math.min(100, (span.offsetMs / span100) * 100);
@@ -55,6 +57,15 @@ function WaterfallRow({ span, totalDurationMs, onSelect }: RowProps): React.JSX.
       data-testid="waterfall-row"
       className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[11px] hover:bg-panel-2"
     >
+      {appLabel ? (
+        <span
+          data-testid="waterfall-app"
+          className="w-20 flex-shrink-0 truncate text-muted-foreground"
+          title={span.app}
+        >
+          {span.app ? appLabel(span.app) : ''}
+        </span>
+      ) : null}
       <span
         className="min-w-0 flex-shrink-0 truncate font-mono text-foreground"
         style={{ width: '40%', paddingLeft: `${span.depth * 12}px` }}
@@ -80,6 +91,8 @@ function WaterfallRow({ span, totalDurationMs, onSelect }: RowProps): React.JSX.
 export interface WaterfallViewProps {
   waterfall: Waterfall;
   onSelect?: ((id: string) => void) | undefined;
+  /** Labels for app ids (the App picker's); default the id itself. */
+  appLabels?: Record<string, string> | undefined;
 }
 
 /**
@@ -88,15 +101,31 @@ export interface WaterfallViewProps {
  * depth (Sentry/Tempo style). The bars are derived entirely from the headless
  * `/traces/:id/waterfall` payload.
  */
-export function WaterfallView({ waterfall, onSelect }: WaterfallViewProps): React.JSX.Element {
+export function WaterfallView({
+  waterfall,
+  onSelect,
+  appLabels,
+}: WaterfallViewProps): React.JSX.Element {
   const rows = flatten(waterfall.spans);
   if (rows.length === 0) {
     return <p className="text-muted-foreground">No spans in this trace</p>;
   }
+  const apps = waterfall.apps ?? [];
+  // An app column only when the trace crossed apps: one app shows the same waterfall as before.
+  const appLabel = apps.length > 1 ? (id: string) => appLabels?.[id] ?? id : undefined;
+  const hidden = waterfall.hiddenSpans ?? 0;
   return (
     <div className="space-y-0.5">
+      {appLabel ? (
+        <p data-testid="waterfall-across" className="mb-1 text-[11px] text-muted-foreground">
+          Across {apps.map(appLabel).join(' → ')}
+        </p>
+      ) : null}
       <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-faint">
-        <span>Span</span>
+        <span className="flex gap-2">
+          {appLabel ? <span className="w-20">App</span> : null}
+          <span>Span</span>
+        </span>
         <span>Total {formatMs(waterfall.totalDurationMs)}</span>
       </div>
       {rows.map((span) => (
@@ -105,8 +134,14 @@ export function WaterfallView({ waterfall, onSelect }: WaterfallViewProps): Reac
           span={span}
           totalDurationMs={waterfall.totalDurationMs}
           onSelect={onSelect}
+          appLabel={appLabel}
         />
       ))}
+      {hidden > 0 ? (
+        <p data-testid="waterfall-hidden" className="pt-1 text-[11px] text-muted-foreground">
+          {hidden} {hidden === 1 ? 'span' : 'spans'} in other apps hidden
+        </p>
+      ) : null}
     </div>
   );
 }

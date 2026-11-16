@@ -43,7 +43,7 @@ import type { StatsResult } from '../metrics/stats.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
 import { type TracesResult, TracesService } from '../metrics/traces.service.js';
-import type { Waterfall } from '../metrics/waterfall.js';
+import { type Waterfall, buildWaterfall } from '../metrics/waterfall.js';
 import { CPU_PROFILE_ENTRY_TYPE, ProfilerService } from '../profiling/profiler.service.js';
 import type { CpuProfileContent } from '../profiling/types.js';
 import { type PulseResult, PulseService } from '../pulse/pulse.service.js';
@@ -73,9 +73,18 @@ import {
   withoutTenantView,
 } from '../storage/tenant-scoped-storage.js';
 import { APP_TAG_PREFIX } from '../topology/wire.js';
-import type { ConsoleAppsInfo } from './console-app-scope.js';
+import {
+  type ConsoleAppsInfo,
+  appViewOf,
+  restrictsApps,
+  selectConsoleApp,
+} from './console-app-scope.js';
 import type { ConsoleTenancyInfo } from './console-tenant-scope.js';
-import { consoleAppCallOf, consoleTenantCallOf } from './console-tenant.interceptor.js';
+import {
+  consoleAppCallOf,
+  consoleTenantCallOf,
+  consoleTenantViewOf,
+} from './console-tenant.interceptor.js';
 import { resolveConsoleView } from './console-view.js';
 import { auditExtensionAction, consoleCallerOf } from './extension-audit.js';
 import { createExtensionContext } from './extension-context.factory.js';
@@ -467,9 +476,31 @@ export class TelescopeController {
 
   // Nested span waterfall for ONE trace. Returns 404 when the trace has no
   // entries (unknown / pruned) so the dashboard can render an empty state.
+  //
+  // A trace crosses apps, so `?app=` does not cut it: a viewer of every app sees all of it. A
+  // viewer limited to some apps sees only their spans, plus `hiddenSpans` (the others, counted
+  // within the viewer's organizations), and a trace with none of theirs is still a 404.
   @Get('traces/:traceId/waterfall')
-  async waterfall(@Param('traceId') traceId: string): Promise<Waterfall> {
-    const waterfall = await this.tracesService.getWaterfall(traceId);
+  async waterfall(@Param('traceId') traceId: string, @Req() request?: unknown): Promise<Waterfall> {
+    const app = consoleAppCallOf(request);
+    let waterfall: Waterfall | null;
+    if (app === undefined || app.selection.kind === 'all') {
+      waterfall = await this.tracesService.getWaterfall(traceId);
+    } else {
+      const tenantView = consoleTenantViewOf(request) ?? null;
+      const entries = await withTenantView(tenantView, () =>
+        this.tracesService.getTraceEntries(traceId),
+      );
+      if (!restrictsApps(app.apps)) {
+        waterfall = buildWaterfall(entries);
+      } else {
+        const view = appViewOf(selectConsoleApp(app.apps, undefined));
+        const visible = view === null ? entries : entries.filter((entry) => view.accept(entry));
+        waterfall = buildWaterfall(visible);
+        const hidden = entries.length - visible.length;
+        if (waterfall !== null && hidden > 0) waterfall.hiddenSpans = hidden;
+      }
+    }
     if (waterfall === null) {
       throw new NotFoundException(`No entries for trace ${traceId}.`);
     }

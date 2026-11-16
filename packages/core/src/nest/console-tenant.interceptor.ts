@@ -13,7 +13,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
-import { openTenantView } from '../storage/tenant-scoped-storage.js';
+import { type TenantView, openTenantView } from '../storage/tenant-scoped-storage.js';
 import { type ConsoleAppSelection, consoleAppsFor, requestedApp } from './console-app-scope.js';
 import { type ConsoleTenantSelection, consoleTenantsFor } from './console-tenant-scope.js';
 import {
@@ -58,6 +58,16 @@ const calls = new WeakMap<object, ConsoleViewCall>();
 /** The organization scope and selection of this console request (tenancy off or not seen: `undefined`). */
 export function consoleTenantCallOf(request: unknown): ConsoleTenantCall | undefined {
   return typeof request === 'object' && request !== null ? calls.get(request)?.tenant : undefined;
+}
+
+/**
+ * The organization view of this console request alone, without its app part (`null`: every
+ * organization; not seen: `undefined`). A trace's waterfall reads across apps inside it.
+ */
+export function consoleTenantViewOf(request: unknown): TenantView | null | undefined {
+  return typeof request === 'object' && request !== null
+    ? calls.get(request)?.tenantView
+    : undefined;
 }
 
 /** The app grant and selection of this console request (not seen: `undefined`). */

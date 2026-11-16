@@ -66,7 +66,11 @@ On a control plane (a console receiving several apps' entries), `{ allowed:
 true, apps: '*' | string[] }` scopes the viewer to those apps (`'*'`, the
 default when omitted, is every app). Every read (entries, traces, metrics,
 Pulse, live tail, ⌘K search, MCP tools) follows `?app=`, kept within that
-grant; an `app` outside it answers empty and is logged. `GET <path>/api/apps`
+grant; an `app` outside it answers empty and is logged — except the trace
+waterfall (`GET <path>/api/traces/:traceId/waterfall`), which a trace crosses:
+`?app=` does not cut it, a viewer of every app sees every span, a viewer
+limited to some apps sees only theirs plus `hiddenSpans`, and a trace with none
+of theirs answers 404. `GET <path>/api/apps`
 lists the apps the viewer may see (labels from `apps.labels`); a viewer limited
 to some apps cannot run the console's global actions (they answer 403). Inside
 an organization or app view rollups are not read (they are not tagged), so

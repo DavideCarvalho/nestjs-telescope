@@ -5,6 +5,7 @@
 // filters and tags already ran on every entry it sends.
 import { Logger } from '@nestjs/common';
 import type { Entry } from '../entry/entry.js';
+import { runAsTelescopeWork } from '../otel/telescope-runtime.js';
 import type {
   BoundedPruneResult,
   BoundedPruneScope,
@@ -178,10 +179,14 @@ export class RemoteTelescopeStore implements StorageProvider {
       let result: Awaited<ReturnType<TenantTransport['send']>>;
       try {
         const token = await resolveTenantToken(this.options.token);
-        result = await this.options.transport.send(inflight.batch, {
-          token,
-          partition: this.options.partition,
-        });
+        // Telescope's own work: the send never picks up an app's trace (no `traceparent` on the
+        // HTTP ingest call, no trace context on a broker job) and makes no OpenTelemetry spans.
+        result = await runAsTelescopeWork(() =>
+          this.options.transport.send(inflight.batch, {
+            token,
+            partition: this.options.partition,
+          }),
+        );
       } catch (error) {
         result = {
           status: 'retry',

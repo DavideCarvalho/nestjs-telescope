@@ -3,13 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import type { TraceSummary } from '../../client/index.js';
 import { WindowSelect, dotForType, relativeTime, useTraces } from '../../react/index.js';
 import { PageEmpty, RowsSkeleton, TelescopePage } from '../page-chrome.js';
+import { useAppLabels } from './trace-page.js';
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
-function TraceRow({ trace }: { trace: TraceSummary }): React.JSX.Element {
+function TraceRow({
+  trace,
+  showApps,
+  appLabels,
+}: {
+  trace: TraceSummary;
+  showApps: boolean;
+  appLabels: Record<string, string>;
+}): React.JSX.Element {
   const navigate = useNavigate();
   const label = trace.rootLabel ?? trace.traceId;
   return (
@@ -26,6 +35,15 @@ function TraceRow({ trace }: { trace: TraceSummary }): React.JSX.Element {
       <span className="mono min-w-0 flex-1 truncate text-xs text-fg" title={label}>
         {label}
       </span>
+      {showApps ? (
+        <span
+          data-testid="trace-apps"
+          className="hidden w-40 shrink-0 truncate text-xs text-fg-2 sm:inline"
+          title={(trace.apps ?? []).join(' → ')}
+        >
+          {(trace.apps ?? []).map((id) => appLabels[id] ?? id).join(' → ')}
+        </span>
+      ) : null}
       <span className="hidden shrink-0 text-xs text-dim sm:inline">
         {trace.entryCount} {trace.entryCount === 1 ? 'entry' : 'entries'}
       </span>
@@ -43,6 +61,9 @@ export function TracesPage(): React.JSX.Element {
   const [window, setWindow] = useState('1h');
   const { data, isLoading } = useTraces(window);
   const traces = data?.data ?? [];
+  const appLabels = useAppLabels();
+  // An Apps column once a trace in the window carries apps (a control plane).
+  const showApps = traces.some((trace) => (trace.apps?.length ?? 0) > 0);
 
   return (
     <TelescopePage
@@ -55,12 +76,12 @@ export function TracesPage(): React.JSX.Element {
       ) : traces.length === 0 ? (
         <PageEmpty
           title="No traces in this window"
-          description="Traces appear once a traceContext provider tags entries with a trace id."
+          description="Traces appear once a traceContext provider or `propagation` tags entries with a trace id."
         />
       ) : (
         <div className="aviary-surface overflow-hidden rounded-lg border border-border">
           {traces.map((trace) => (
-            <TraceRow key={trace.traceId} trace={trace} />
+            <TraceRow key={trace.traceId} trace={trace} showApps={showApps} appLabels={appLabels} />
           ))}
         </div>
       )}

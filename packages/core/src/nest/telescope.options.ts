@@ -1,4 +1,3 @@
-// packages/core/src/nest/telescope.options.ts
 import type { DynamicModule } from '@nestjs/common';
 import type { TelescopeAiOptions } from '../ai/diagnoser.js';
 import type { AlertsOptions } from '../alerts/alert-rule.js';
@@ -14,6 +13,8 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import type { TelescopeTenantOptions, TelescopeTopology } from '../topology/config.js';
 import type { TenantVerifier } from '../topology/tenant-auth.js';
 import type { TelescopeTransport } from '../topology/transport.js';
+// packages/core/src/nest/telescope.options.ts
+import type { PropagationOptions } from '../tracing/config.js';
 import type { TelescopeAppsOptions } from './console-app-scope.js';
 import type { ConsoleAuthorize } from './console-authorize.js';
 import type { Watcher } from './watcher.js';
@@ -479,6 +480,13 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * checks. Bodies carry names and statuses only.
    */
   health?: { probes?: boolean };
+  /**
+   * Tracing across apps. `targets` lists the origins outgoing `fetch` calls carry the trace to
+   * (`traceparent`); an incoming `traceparent` is continued (`incoming`, default on); BullMQ jobs
+   * carry it with the BullMQ watcher (`queue`). Omitted: a standalone app is unchanged, and a
+   * tenant or a control plane only continues incoming traces.
+   */
+  propagation?: PropagationOptions;
   /** The App picker of a control plane's console: labels for app ids. */
   apps?: TelescopeAppsOptions;
   /**

@@ -36,6 +36,8 @@ export interface ConsoleViewCall {
   app: ConsoleAppCall;
   /** What the call reads: `null` for everything. */
   view: TenantView | null;
+  /** The organization part of {@link view} alone (`null`: every organization, or tenancy off). */
+  tenantView: TenantView | null;
 }
 
 export interface ConsoleViewInput {
@@ -64,5 +66,6 @@ export function resolveConsoleView(input: ConsoleViewInput): ConsoleViewCall {
     tenant,
     app: { apps: input.granted.apps, selection: appSelection },
     view: intersectViews(tenantView, appViewOf(appSelection)),
+    tenantView,
   };
 }

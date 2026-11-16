@@ -1,0 +1,132 @@
+---
+title: Tracing across apps
+description: One trace when your apps call each other. A request in shop that calls billing, or adds a job billing's worker runs, shows as one waterfall with an app per span.
+icon: Route
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+When `shop` calls `billing` with a plain `fetch`, Telescope sends the trace along in the W3C `traceparent` header and `billing` continues it. On the [control plane](/docs/concepts/topologies), the request and everything it caused, in both apps, show up as **one trace**.
+
+## Turn it on
+
+In each app that makes calls, list the apps a call may carry the trace to:
+
+```ts title="shop: app.module.ts"
+TelescopeModule.forRoot({
+  topology: 'tenant',
+  tenant: { url: process.env.TELESCOPE_URL, partition: 'shop', token: process.env.TELESCOPE_TOKEN },
+  propagation: {
+    targets: [process.env.BILLING_URL, /\.internal$/],
+  },
+});
+```
+
+Your code stays the same. Calls through `@nestjs/axios`'s `HttpService` carry the trace:
+
+```ts title="shop: billing.client.ts"
+import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
+import { firstValueFrom } from 'rxjs';
+
+@Injectable()
+export class BillingClient {
+  constructor(private readonly http: HttpService) {}
+
+  async charge(orderId: number) {
+    const { data } = await firstValueFrom(
+      this.http.post(`${process.env.BILLING_URL}/charges`, { orderId }),
+    );
+    return data;
+  }
+}
+```
+
+Telescope finds every `HttpService` in the app on its own: the one from `HttpModule`, and each one a module gets from `HttpModule.register(...)`. So does a plain `fetch`:
+
+```ts
+const response = await fetch(`${process.env.BILLING_URL}/charges`, {
+  method: 'POST',
+  body: JSON.stringify({ orderId }),
+});
+```
+
+The app being called needs nothing more: a tenant or a control plane continues an incoming `traceparent` by default. A standalone app continues it once it sets `propagation` (even `propagation: {}`).
+
+<Callout type="warn" title="Only the targets get the header">
+A call to an origin that is not in `targets` (Stripe, an email API) carries no trace header. `targets: 'all'` sends it everywhere, third parties included.
+</Callout>
+
+## Options
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `targets` | `[]` | Origins (`https://billing.internal`; a URL is read for its origin), `RegExp`s tested against the origin, or `'all'`. Calls to them carry `traceparent` and the caller's `tracestate`. |
+| `incoming` | `true` | Continue the `traceparent` a request arrives with. Set `false` on an app the public calls directly if callers must not choose its trace ids. |
+| `nodeHttp` | `false` | Also add the headers to `http.request` / `https.request` (axios, got). `fetch` is always covered. |
+| `queue` | `true` | Carry the trace in BullMQ jobs (with `BullMqJobWatcher`). |
+| `axios` | every `HttpService` | More axios instances to cover (a bare `axios.create()`, or a `CustomAxiosSource` that resolves one), or `false` for none. See below. |
+
+```ts
+propagation: {
+  targets: [/\.internal$/],
+  nodeHttp: true,
+  incoming: false,
+}
+```
+
+`nodeHttp` is not needed for `HttpService`: its calls are covered through axios interceptors, and with `nodeHttp` on too a call still carries one header.
+
+### Other axios instances
+
+`HttpService` instances created at startup are found on their own. A request-scoped provider's `HttpService`, a bare axios instance, or one your code builds later is not, so hand it over:
+
+```ts
+import axios from 'axios';
+
+export const payments = axios.create({ baseURL: process.env.PAYMENTS_URL });
+
+TelescopeModule.forRoot({
+  propagation: {
+    targets: [process.env.PAYMENTS_URL],
+    axios: [
+      payments,
+      // Resolved once the app is up: anything you can reach from the ModuleRef.
+      { instrument: (attach, ctx) => attach(ctx.moduleRef.get(PaymentsClient, { strict: false }).axios) },
+    ],
+  },
+});
+```
+
+A header your code sets itself is never replaced, and Telescope's own calls (sending batches to the control plane) never carry one.
+
+With `propagation` set, a request no caller sent a trace for starts one, so its entries share a trace id even without OpenTelemetry. Without it, a standalone app records exactly as before.
+
+## BullMQ jobs
+
+With [`BullMqJobWatcher`](/docs/packages/queue-managers#job-watcher), a job added during a request runs in that request's trace, whichever app's worker runs it:
+
+```ts title="orders.controller.ts"
+@Post()
+async create(@Body() body: CreateOrder) {
+  const order = await this.orders.create(body);
+  await this.receipts.add('send', { orderId: order.id });
+  return order;
+}
+```
+
+In the waterfall, the job sits under `POST /orders`, with its queries under it. The trace travels in the job's own `opts.telemetry.metadata`, the field BullMQ's OpenTelemetry integration uses, so a queue configured with BullMQ `telemetry` keeps its own.
+
+## In the console
+
+On the control plane:
+
+- **Traces** has an **Apps** column: `Shop → Billing` for a trace that crossed both, the app that started first first.
+- The **waterfall** shows every span of the trace with the app that recorded it. A request `billing` received hangs under the `shop` request that made the call, even when the two clocks disagree.
+- A trace is not cut by the App picker: a viewer of every app sees all of it. A viewer limited to some apps (`authorize` returning `apps`) sees only those apps' spans, and a note such as *3 spans in other apps hidden*.
+
+An app running Telescope on its own shows the same waterfall without the app column.
+
+## With OpenTelemetry
+
+When the app registers an OpenTelemetry propagator (`NodeSDK`, or `provider.register()`), OpenTelemetry's instrumentations already send `traceparent` and continue the incoming one. Telescope then adds no header of its own, so a call never carries two, and the request's entry names the OpenTelemetry caller span as its parent. Wire `traceContext: new OtelTraceContextProvider()` (from [`@dudousxd/nestjs-telescope-otel`](/docs/packages/otel)) so entries use OpenTelemetry's ids. `targets` does not limit OpenTelemetry's headers: configure that in your OpenTelemetry setup.
