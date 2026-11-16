@@ -75,7 +75,7 @@ function loadAppGetAdapter(): GetAdapter | null {
 }
 
 /** The function axios would call for `config.adapter`, or `undefined` when it can't be resolved. */
-function resolveAxiosAdapter(
+export function resolveAxiosAdapter(
   instance: AxiosInterceptorLike,
   config: AxiosRequestConfigLike,
 ): AxiosAdapter | undefined {

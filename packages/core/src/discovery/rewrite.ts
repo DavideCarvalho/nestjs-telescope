@@ -4,6 +4,7 @@ import https from 'node:https';
 import { syncBuiltinESMExports } from 'node:module';
 import { isTelescopeWork, runAsTelescopeWork } from '../otel/telescope-runtime.js';
 import type { ServiceDirectory } from './directory.js';
+import { isResolvedByDiscovery } from './handled.js';
 
 /**
  * `fetch('http://billing/invoices/1')` → `https://billing.internal/invoices/1`.
@@ -144,7 +145,8 @@ export function discoveryInterceptor(
       if (origin.replace(/\/+$/, '') === PROBE_ORIGIN) {
         return failRequest(handler, new DiscoveryProbeAnswer());
       }
-      if (isTelescopeWork()) return dispatch(opts, handler);
+      // Telescope's own call, or one the axios interceptor already resolved.
+      if (isTelescopeWork() || isResolvedByDiscovery()) return dispatch(opts, handler);
       let target: RewriteTarget | null;
       try {
         target = rewriteTarget(directory, options, origin);
@@ -330,7 +332,7 @@ export function installNodeHttpRewrite(
               : originals.httpRequest;
         return (fn as (...a: unknown[]) => unknown)(...callArgs);
       };
-      if (isTelescopeWork()) return call(protocol, args);
+      if (isTelescopeWork() || isResolvedByDiscovery()) return call(protocol, args);
       const parsed = requestUrl(protocol, args);
       let target: RewriteTarget | null;
       try {

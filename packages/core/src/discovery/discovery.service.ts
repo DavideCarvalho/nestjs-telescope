@@ -13,14 +13,19 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { TelescopeFleet } from '../fleet/fleet.service.js';
+import { forEachAxiosInstance } from '../http/axios-instances.js';
 import {
   TELESCOPE_CONFIG,
   TELESCOPE_OPTIONS,
   type TelescopeModuleOptions,
 } from '../nest/telescope.options.js';
+import { TelescopeService } from '../nest/telescope.service.js';
+import { createWatcherContext } from '../nest/watcher-context.factory.js';
 import { type ResolvedTopology, resolveTopology } from '../topology/config.js';
+import { attachDiscoveryToAxios } from './axios.js';
 import { DiscoveryClient } from './client.js';
 import { type ResolvedDiscovery, defaultSnapshotPath, resolveDiscovery } from './config.js';
 import { ServiceDirectory, publishDirectory } from './directory.js';
@@ -50,6 +55,8 @@ export class TelescopeDiscovery
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
     @Inject(TELESCOPE_CONFIG) private readonly core: ResolvedCoreConfig,
     @Inject(TelescopeFleet) private readonly fleet: TelescopeFleet,
+    @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
+    @Inject(TelescopeService) private readonly service: TelescopeService,
   ) {
     this.config = resolveDiscovery(options.discovery);
     this.topology = resolveTopology(options);
@@ -117,6 +124,13 @@ export class TelescopeDiscovery
       failFast: this.config.failFast,
       strict: this.config.strict,
     };
+    // `@nestjs/axios`'s HttpService (every one in the app) and the instances the app handed over.
+    forEachAxiosInstance(
+      this.options.discovery === false ? false : this.options.discovery?.axios,
+      this.moduleRef,
+      () => createWatcherContext(this.service, this.core, this.moduleRef),
+      (instance) => this.stops.push(attachDiscoveryToAxios(instance, directory, rewriteOptions)),
+    );
     this.rewrite = await installFetchRewrite(directory, rewriteOptions);
     if (this.rewrite === null) {
       this.logger.warn(

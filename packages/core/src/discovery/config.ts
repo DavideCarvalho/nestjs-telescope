@@ -3,6 +3,7 @@
 // `discovery` in `TelescopeModule.forRoot()`: reach your apps by name, `fetch('http://billing/…')`.
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AxiosSourceOption } from '../http/axios-instances.js';
 
 /** `discovery` in `TelescopeModule.forRoot()`. */
 export interface DiscoveryOptions {
@@ -37,6 +38,12 @@ export interface DiscoveryOptions {
    * (`https://telescope.internal/telescope`). A tenant on HTTP uses `tenant.url`.
    */
   serverUrl?: string;
+  /**
+   * axios instances whose calls resolve app names, besides every `HttpService` of `@nestjs/axios`,
+   * which is found on its own: an instance, a `CustomAxiosSource` (`{ instrument(attach, ctx) }`),
+   * or a list. `false` instruments no axios instance.
+   */
+  axios?: AxiosSourceOption | AxiosSourceOption[] | false;
 }
 
 /** {@link DiscoveryOptions} with defaults. */

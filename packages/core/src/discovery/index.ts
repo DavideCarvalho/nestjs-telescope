@@ -22,6 +22,7 @@ export {
   ServiceDirectory,
   publishDirectory,
 } from './directory.js';
+export { attachDiscoveryToAxios, rewriteAxiosConfig } from './axios.js';
 export { TelescopeDiscoveryController } from './discovery.controller.js';
 export { TelescopeDiscovery } from './discovery.service.js';
 export {

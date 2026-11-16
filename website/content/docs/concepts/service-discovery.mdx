@@ -20,19 +20,31 @@ TelescopeModule.forRoot({
 });
 ```
 
-A tenant on HTTP needs nothing more. Call the app by its name:
+A tenant on HTTP needs nothing more. Call the app by its name, through `@nestjs/axios`'s `HttpService`:
 
 ```ts title="shop: billing.client.ts"
+import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
+import { firstValueFrom } from 'rxjs';
+
 @Injectable()
 export class BillingClient {
+  constructor(private readonly http: HttpService) {}
+
   async invoice(id: number) {
-    const response = await fetch(`http://billing/invoices/${id}`);
-    return response.json();
+    const { data } = await firstValueFrom(this.http.get(`http://billing/invoices/${id}`));
+    return data;
   }
 }
 ```
 
-The call goes to `https://billing.internal/invoices/1`. A base path in the registered URL (`https://gateway.internal/billing`) is kept in front of the call's path.
+Every `HttpService` in the app is covered on its own, including a module's `HttpModule.register({ baseURL: 'http://billing/v2' })`. So is a plain `fetch`:
+
+```ts
+const response = await fetch(`http://billing/invoices/${id}`);
+```
+
+Both calls go to `https://billing.internal/invoices/1`. A base path in the registered URL (`https://gateway.internal/billing`) is kept in front of the call's path.
 
 ## Standalone apps and local development
 
@@ -57,8 +69,19 @@ TelescopeModule.forRoot({
 | `passthrough` | `[]` | With `strict`: single-label hosts that are not apps (`minio`). `localhost` always passes. |
 | `nodeHttp` | `false` | Also resolve names in `http.request` / `https.request` (axios, got). `fetch` is always covered. |
 | `serverUrl` | `tenant.url` | A tenant on a broker transport: the control plane's telescope URL to read the map from. |
+| `axios` | every `HttpService` | More axios instances that resolve names (a bare `axios.create()`, or a `CustomAxiosSource` that resolves one), or `false` for none. |
 
 `discovery: false` turns it off.
+
+`HttpService` instances created at startup are found on their own; a request-scoped provider's `HttpService` or a bare axios instance is not, so hand it over:
+
+```ts
+discovery: {
+  axios: [payments, { instrument: (attach, ctx) => attach(ctx.moduleRef.get(PaymentsClient, { strict: false }).axios) }],
+}
+```
+
+With `HttpService` a name that cannot be resolved (`strict`, `failFast`) rejects the call with `DiscoveryError` itself; with `fetch` it is the rejection's `cause`. `nodeHttp` is not needed for `HttpService`, and with it on a call is still resolved once.
 
 ## What gets rewritten
 
