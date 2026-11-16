@@ -1,5 +1,0 @@
----
-'@dudousxd/nestjs-telescope-ui': minor
----
-
-Console kit r3. ⌘K now navigates: it lists every page of the sidebar (also found by words such as "errors", "flamegraphs", "cron"; the watcher pages once something is typed) and every other Aviary console you can open ("Go to Workflows", found by "durable" too), matched case- and accent-insensitively and forgiving plural endings, before the cross-console search hits. Telescope's own ⌘K list keeps only "Queue metrics" (the one page with no sidebar item); entry types are reached through the watcher pages. ⌘K keeps working for pages and consoles when the app doesn't serve `/consoles/search`; the trigger is then labelled "Search". The sidebar spacing matches the authkit admin console (32px nav rows, 69px brand header, left-aligned theme toggle). The kit also gains charts on TanStack Charts (`aviary-kit/charts`); the console's charts stay on recharts for now (the published `react` components expose it as a peer), so nothing changes on screen and the console bundle stays the same.
