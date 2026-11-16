@@ -97,6 +97,7 @@ describe('telescope dev tools registration', () => {
       'telescope_get_waterfall',
       'telescope_get_health',
       'telescope_diagnose_exception',
+      'telescope_get_fleet',
     ]);
     expect(telescope()?.tools.every((t) => t.kind === 'read')).toBe(true);
     await app?.close();

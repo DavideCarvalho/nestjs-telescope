@@ -123,4 +123,15 @@ export { TelescopeIngestController, bearerToken } from './topology/ingest.contro
 export { TelescopeIngest } from './topology/ingest.service.js';
 export * from './topology/transports/index.js';
 
+export * from './fleet/checks.js';
+export * from './fleet/config.js';
+export * from './fleet/derive.js';
+export * from './fleet/heartbeat.js';
+export * from './fleet/registry.js';
+export * from './fleet/store.js';
+export * from './fleet/view.js';
+export { TelescopeFleet, type ReadinessReport } from './fleet/fleet.service.js';
+export { TelescopeProbesController, type ProbeAnswer } from './fleet/probes.controller.js';
+export * from './alerts/fleet-rules.js';
+
 export const TELESCOPE_VERSION = '0.0.0';

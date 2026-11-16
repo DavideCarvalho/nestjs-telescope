@@ -73,16 +73,18 @@ The message is `{ to: string[], from?, subject, text, html }`.
 
 ## Severity and routing
 
-Each alert has a severity: `info`, `warning`, `error` or `critical`. The defaults are `critical` for `exception-rate`, `error` for `new-exception` and `every-exception`, and `warning` for `slow-request-rate`, `dropped-entries` and `metric-threshold`. Set `severity` on a rule to change it. PagerDuty uses the same four names; Opsgenie maps them to `P1`, `P2`, `P3` and `P5`.
+Each alert has a severity: `info`, `warning`, `error` or `critical`. The defaults are `critical` for `exception-rate`, `error` for `new-exception` and `every-exception`, and `warning` for `slow-request-rate`, `dropped-entries` and `metric-threshold`. The [fleet rules](/docs/concepts/fleet#alerts) default to `critical` for `instances-up` and `check-down`, `error` for `restart-loop` and `warning` for `entries-dropped`. Set `severity` on a rule to change it. PagerDuty uses the same four names; Opsgenie maps them to `P1`, `P2`, `P3` and `P5`.
 
 - `channels: ['pagerduty']` on a rule sends it only to channels with those names. A name no channel has is a boot error.
 - `minSeverity: 'critical'` on a channel keeps everything below it out.
 
 ## Resolved notifications and incident keys
 
-When an interval rule (`exception-rate`, `slow-request-rate`, `dropped-entries`, `metric-threshold`) was firing and stops crossing its threshold, Telescope sends one `resolved` notification. Only channels that accept it get it: all the integrations above do. `slackChannel`, `webhookChannel` and `customChannel` don't, so they see the same alerts as before. A hand-built channel can opt in with `acceptsResolved: true` and read `alert.status === 'resolved'`.
+When an interval rule (`exception-rate`, `slow-request-rate`, `dropped-entries`, `metric-threshold`) or a fleet rule subject was firing and stops crossing its threshold, Telescope sends one `resolved` notification. Only channels that accept it get it: all the integrations above do. `slackChannel`, `webhookChannel` and `customChannel` don't, so they see the same alerts as before. A hand-built channel can opt in with `acceptsResolved: true` and read `alert.status === 'resolved'`.
 
 The firing and resolved notifications share an incident key, `telescope:<app>:<rule>[:<exception family>]`. It's PagerDuty's `dedup_key`, Opsgenie's `alias`, incident.io's `deduplication_key` and Grafana OnCall's `alert_uid`, so a re-notify after the cooldown joins the open incident instead of opening a new one. `<app>` is `alerts.app`, else the instance id (the hostname). With several replicas, set `app` so they share one incident.
+
+A fleet rule alert is about a fleet app, so its key is `telescope:<fleet app>:<rule>[:<check>][:<host>]`. Each app, each app's check and each looping host is its own incident, and its resolve closes that incident and no other.
 
 Exception rules (`new-exception`, `every-exception`) only fire. Close those incidents in the provider.
 
@@ -115,7 +117,14 @@ A heartbeat-only setup needs no `rules` or `channels`. A malformed URL is a boot
 
 ### Check states
 
-Telescope doesn't run health checks. Heartbeats, status pages and the uptime endpoint read check states from `alerts.checkStates`, or from a source you publish with `publishCheckStates(source)`. Without either, a heartbeat pings as long as the process is alive.
+Heartbeats, status pages and the uptime endpoint read check states from `alerts.checkStates`, or from the published source (`publishCheckStates(source)`). Without either, a heartbeat pings as long as the process is alive.
+
+Telescope's own [health checks and fleet](/docs/concepts/fleet) publish that source for you:
+
+- **A control plane, or `fleet: true`.** One state per app and check: the check's worst status on that app's live instances. Each app also gets an `instances` check, which is down while the app has no instance up or starting. With `apps: { shop: url }` on a heartbeat, or `app:shop` status page components, each app is watched on its own, and a fleet whose instances are all gone fails its heartbeat.
+- **`checks` without a fleet** (a tenant, or a standalone app). This process's checks.
+
+`alerts.checkStates` still wins when you set it.
 
 ```ts
 import type { UptimeCheckState } from '@dudousxd/nestjs-telescope';

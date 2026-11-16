@@ -19,6 +19,8 @@ import { normalizeTelescopePath } from '../config/normalize-path.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { resolveConfig } from '../config/resolve-config.js';
 import { ExtensionRegistry } from '../extension/registry.js';
+import { TelescopeFleet } from '../fleet/fleet.service.js';
+import { TelescopeProbesController } from '../fleet/probes.controller.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
 import { ServerStatsService } from '../metrics/server-stats.service.js';
 import { StatsService } from '../metrics/stats.service.js';
@@ -180,6 +182,8 @@ const SHARED_PROVIDERS: Provider[] = [
   ScheduleManagerRegistry,
   // A control plane's ingest handler (HTTP route and broker consumer); idle elsewhere.
   TelescopeIngest,
+  // Checks, heartbeats and (control plane, or `fleet: true`) the fleet; idle when off.
+  TelescopeFleet,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 
@@ -207,6 +211,7 @@ const TELESCOPE_EXPORTS = [
   QueueManagerRegistry,
   ScheduleManagerRegistry,
   TelescopeIngest,
+  TelescopeFleet,
 ];
 
 @Module({})
@@ -325,6 +330,8 @@ export class TelescopeModule implements NestModule {
       // Where tenant apps send their entries (a 404 unless `topology: 'control-plane'`). Public
       // like the beacon: the tenant's token is checked by `verifyTenant`, not by `authorize`.
       dynamicController(TelescopeIngestController, `${path}/api/ingest`),
+      // Readiness / liveness probes (a 404 unless `health: { probes: true }`), public like the beacon.
+      dynamicController(TelescopeProbesController, `${path}/api/probes`),
       dynamicController(TelescopeConsolesController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(TelescopeController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(StreamController, `${path}/api`, [...decorators, consoleAccess]),

@@ -10,6 +10,7 @@ import { EntriesPage } from './pages/entries-page.js';
 import { EntryPage } from './pages/entry-page.js';
 import { ExportsPage } from './pages/exports-page.js';
 import { ExtensionDashboardPage } from './pages/extension-dashboard-page.js';
+import { FleetPage } from './pages/fleet-page.js';
 import { ProfilesPage } from './pages/profiles-page.js';
 import { PrunesPage } from './pages/prunes-page.js';
 import { PulsePage } from './pages/pulse-page.js';
@@ -34,6 +35,7 @@ function Dashboard(): React.JSX.Element {
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/traces/:traceId" element={<TracePage />} />
           <Route path="/pulse" element={<PulsePage />} />
+          <Route path="/fleet" element={<FleetPage />} />
           <Route path="/ai" element={<AiPage />} />
           <Route path="/queues" element={<QueuesShell />}>
             <Route index element={<QueueManagerPage />} />

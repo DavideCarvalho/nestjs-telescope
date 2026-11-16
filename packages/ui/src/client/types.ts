@@ -288,6 +288,8 @@ export interface TelescopeMeta {
   actions?: ExtensionActionInfo[];
   /** Whether mutations are on; row action buttons only show when they are. Absent from older servers. */
   mutations?: boolean;
+  /** Whether the server keeps a fleet (the Fleet page). Absent from older servers. */
+  fleet?: boolean;
   /**
    * CPU flamegraph profiling state. `enabled` gates the Profiles nav item;
    * `sampleRate` is shown as a read-only badge.
@@ -805,3 +807,104 @@ export type ConsoleTenancyInfo =
       /** Organizations to pick from, narrowed by the search. */
       options: { id: string; label: string }[];
     };
+
+/** A health check's last state (`GET fleet`). */
+export interface FleetCheckState {
+  name: string;
+  status: 'ok' | 'warn' | 'down' | 'unknown';
+  message: string | null;
+  /** Epoch ms since the check has been in this status. */
+  since: number;
+  checkedAt: number;
+  durationMs: number | null;
+  critical: boolean;
+  meta?: Record<string, string | number | boolean | null>;
+}
+
+export type FleetInstanceStatus = 'up' | 'starting' | 'draining' | 'gone';
+
+/** One instance of an app (`GET fleet`). Times are epoch ms. */
+export interface FleetInstance {
+  app: string;
+  instanceId: string;
+  host: string;
+  pid: number;
+  version: string | null;
+  bootedAt: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  state: 'starting' | 'ready' | 'draining';
+  intervalMs: number;
+  checks: FleetCheckState[];
+  shipping: {
+    buffered: number;
+    dropped: number;
+    sent: number;
+    failures: number;
+    lagMs: number;
+    lastError: string | null;
+  } | null;
+  status: FleetInstanceStatus;
+  uptimeMs: number;
+  health: FleetCheckState['status'];
+}
+
+/** A version change across an app's instances. */
+export interface FleetDeploy {
+  version: string | null;
+  previous: string | null;
+  startedAt: number;
+  live: number;
+  total: number;
+  progress: number;
+  complete: boolean;
+}
+
+export interface FleetRestartLoop {
+  host: string;
+  restarts: number;
+  since: number;
+  lastBootAt: number;
+}
+
+/** A check that is not ok on a live instance, with the exception families recorded since. */
+export interface FleetIncident {
+  name: string;
+  status: FleetCheckState['status'];
+  since: number;
+  message: string | null;
+  affected: number;
+  of: number;
+  critical: boolean;
+  exceptions: {
+    familyHash: string | null;
+    class: string;
+    message: string;
+    count: number;
+    entryId: string;
+  }[];
+}
+
+export interface FleetApp {
+  app: string;
+  counts: Record<FleetInstanceStatus, number>;
+  versions: { version: string | null; instances: number }[];
+  instances: FleetInstance[];
+  deploys: FleetDeploy[];
+  restartLoops: FleetRestartLoop[];
+  checks: FleetIncident[];
+  shipping: { buffered: number; dropped: number; maxLagMs: number } | null;
+}
+
+/** What `GET fleet` answers: the Fleet page. */
+export interface FleetView {
+  /** Whether this telescope keeps a fleet. */
+  enabled: boolean;
+  /** Why the fleet is empty when it is not kept, or hidden from this viewer. */
+  notice: string | null;
+  /** Epoch ms the view was derived at. */
+  now: number;
+  apps: FleetApp[];
+  /** This process, when it reports. */
+  self: { instanceId: string; state: string; checks: FleetCheckState[] } | null;
+}

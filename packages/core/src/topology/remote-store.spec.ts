@@ -161,6 +161,38 @@ describe('RemoteTelescopeStore', () => {
   });
 });
 
+describe('RemoteTelescopeStore heartbeats', () => {
+  it('a heartbeat rides the next batch, or goes alone; only the newest is kept', async () => {
+    const { store, transport } = remote();
+    store.setHeartbeat({ n: 1 });
+    store.setHeartbeat({ n: 2 });
+    await store.ship();
+    expect(transport.sent.map((s) => [s.batch.entries.length, s.batch.heartbeat])).toEqual([
+      [0, { n: 2 }],
+    ]);
+    await store.store([entry('a')]);
+    store.setHeartbeat({ n: 3 });
+    await store.ship();
+    expect(transport.sent[1]?.batch.entries.map((e) => e.id)).toEqual(['a']);
+    expect(transport.sent[1]?.batch.heartbeat).toEqual({ n: 3 });
+    await store.ship();
+    expect(transport.sent).toHaveLength(2);
+    expect(store.stats()).toMatchObject({ sent: 1, dropped: 0, lagMs: 0 });
+  });
+
+  it('reports how long the oldest waiting entry has waited', async () => {
+    const transport = fakeTransport([{ status: 'retry', reason: 'down' }]);
+    const { store, advance } = remote({
+      transport,
+      now: () => Date.parse('2026-11-16T12:00:05.000Z'),
+    });
+    await store.store([entry('a')]);
+    await store.ship();
+    advance(0);
+    expect(store.stats()).toMatchObject({ buffered: 1, consecutiveFailures: 1, lagMs: 5_000 });
+  });
+});
+
 describe('transports.http', () => {
   it('posts to <url>/api/ingest with the bearer token', async () => {
     const fetch = vi.fn(async () => new Response('{}', { status: 202 }));

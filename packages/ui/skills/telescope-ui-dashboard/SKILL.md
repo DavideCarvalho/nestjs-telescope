@@ -9,9 +9,9 @@ description: >-
   call the headless API from any frontend with createTelescopeClient({ baseUrl?,
   fetch?, onAccessDenied?, tenant?, app? }) from the /client subpath (it sends the page's `?tenant=`
   and `?app=` on every call; read the scopes with client.tenancy() /
-  client.apps()); build a custom console with the React
+  client.apps(), the fleet with client.fleet()); build a custom console with the React
   components, hooks (TelescopeProvider, useTelescopeClient, useEntries, usePulse,
-  useTimeseries, useTenancy, useApps) from the /react subpath. Use for "show the Telescope dashboard",
+  useTimeseries, useTenancy, useApps, useFleet) from the /react subpath. Use for "show the Telescope dashboard",
   "custom path", "call the Telescope API from React", "embed Telescope components".
 license: MIT
 metadata:
@@ -116,6 +116,7 @@ const client = createTelescopeClient({ baseUrl: '/observability/api' });
 const page = await client.entries({ type: 'exception' });
 const detail = await client.entry(page.data[0].id); // entry + its correlated batch
 const pulse = await client.pulse('1h');
+const fleet = await client.fleet(); // Fleet page data (`GET fleet`; `useFleet()` re-reads it every 15 s)
 ```
 
 Source: `packages/ui/src/client/telescope-client.ts` (`createTelescopeClient`,

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { v7 } from 'uuid';
 import { DiagnosisCoordinator } from '../ai/diagnosis-coordinator.js';
+import type { FleetSource } from '../alerts/fleet-rules.js';
 import { resolveAlerts } from '../alerts/resolve-alerts.js';
 import { TelescopeAlerter } from '../alerts/telescope-alerter.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
@@ -103,6 +104,8 @@ export interface TelescopeMeta {
   actions: ExtensionActionInfo[];
   /** Whether mutations (queue actions, prune, extension actions…) are on (`mutations: true`). */
   mutations: boolean;
+  /** Whether this telescope keeps a fleet (a control plane, or `fleet: true`): the Fleet page. */
+  fleet: boolean;
 }
 
 /**
@@ -218,6 +221,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
         storage: this.storage,
         instanceId: this.config.instanceId,
         droppedCount: () => this.recorder.droppedCount,
+        // The fleet rules read the fleet once `TelescopeFleet` hands it over.
+        fleet: () => this.fleetSource,
         // In auto-mode, let a firing new-exception alert briefly await the AI
         // diagnosis and attach it. on-demand / off → no hook, no enrichment.
         ...(this.diagnosis?.isAuto
@@ -256,6 +261,14 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
    * the Recorder and correlated to the active batch automatically. Prefer the
    * free `telescopeDump()` at call sites that don't already inject this service.
    */
+  /** The fleet the fleet alert rules read (set by `TelescopeFleet`). */
+  private fleetSource: FleetSource | null = null;
+
+  /** @internal Hands the fleet to the alerter's fleet rules. */
+  setFleetSource(source: FleetSource | null): void {
+    this.fleetSource = source;
+  }
+
   dump(value: unknown, label?: string): void {
     this.record({ type: EntryType.Dump, content: { label: label ?? null, value } });
   }
@@ -471,6 +484,7 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       })),
       actions: this.extensions.actions(),
       mutations: this.options.mutations === true,
+      fleet: this.fleetSource !== null,
     };
   }
 

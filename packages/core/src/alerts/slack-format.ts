@@ -92,7 +92,9 @@ function severityEmoji(rule: AlertPayload['rule']): string {
   ) {
     return ':rotating_light:';
   }
-  if (rule.type === 'dropped-entries') return ':warning:';
+  if (rule.type === 'dropped-entries' || rule.type === 'entries-dropped') return ':warning:';
+  if (rule.type === 'instances-up' || rule.type === 'check-down') return ':rotating_light:';
+  if (rule.type === 'restart-loop') return ':repeat:';
   return ':snail:';
 }
 
@@ -111,6 +113,14 @@ function ruleLabel(rule: AlertPayload['rule']): string {
       return 'Dropped entries';
     case 'metric-threshold':
       return `Metric threshold (${rule.metric})`;
+    case 'instances-up':
+      return 'Instances up';
+    case 'restart-loop':
+      return 'Restart loop';
+    case 'check-down':
+      return 'Health check down';
+    case 'entries-dropped':
+      return 'Entries dropped';
   }
 }
 
@@ -237,12 +247,22 @@ export function formatSlackMessage(
       : payload.exception.isNew
         ? ' · 🆕 New'
         : ' · 🔁 Recurring';
-  const headerText = `${emoji} ${label}${badge}`;
+  const headerText =
+    payload.status === 'resolved'
+      ? `:white_check_mark: Resolved: ${label}`
+      : `${emoji} ${label}${badge}`;
 
   const contextFields: SlackTextObject[] = [
     field('Instance', payload.instanceId),
     field('Observed', `${payload.value} (threshold ${payload.threshold})`),
   ];
+
+  if (payload.fleet !== undefined) {
+    contextFields.push(field('App', payload.fleet.app));
+    if (payload.fleet.host !== undefined) contextFields.push(field('Host', payload.fleet.host));
+    if (payload.fleet.check !== undefined) contextFields.push(field('Check', payload.fleet.check));
+    contextFields.push(field('Detail', payload.fleet.detail));
+  }
 
   const exception = payload.exception;
   if (exception !== undefined) {

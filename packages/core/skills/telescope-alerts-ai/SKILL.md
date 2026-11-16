@@ -7,7 +7,7 @@ description: >-
   the other integrations), per-rule severity/channels routing, heartbeats and
   status pages, and rules
   (new-exception, exception-rate, slow-request-rate, dropped-entries,
-  metric-threshold); understand the default that 4xx HttpExceptions are NOT
+  metric-threshold, instances-up, restart-loop, check-down, entries-dropped); understand the default that 4xx HttpExceptions are NOT
   recorded as exception entries (exceptions.captureHttp4xx restores it); wire AI
   diagnosis with ai.{diagnoser,mode} + createAiSdkDiagnoser({ model }) from
   @dudousxd/nestjs-telescope-ai over any Vercel AI SDK model (Bedrock/OpenAI/
@@ -77,8 +77,28 @@ notification when an interval rule stops firing, keyed by `alerts.app` + rule.
 `alerts.heartbeats` / `alerts.statusPages` and `uptimeHandler()` read
 `alerts.checkStates` or `publishCheckStates()`.
 
-Source: `packages/core/src/alerts/alert-rule.ts` (`AlertRule`),
-`packages/core/src/alerts/integrations/`.
+
+Fleet rules (a control plane, or a standalone app with `fleet` on): one subject
+per app / check / host, raised once and resolved once per subject (`payload.fleet`; the clear is a
+`status: 'resolved'` payload, so it reaches the channels with `acceptsResolved`
+and closes the incident keyed `telescope:<app>:<rule>[:<check>][:<host>]`).
+They take `severity` / `channels` too; default severity `critical` for
+`instances-up` / `check-down`, `error` for `restart-loop`, `warning` for
+`entries-dropped`. With a fleet (or `checks`), the fleet publishes its check
+states with `publishCheckStates()` (per app, plus an `instances` check), so
+`alerts.heartbeats`, `alerts.statusPages` and `uptimeHandler()` follow it:
+
+```ts
+rules: [
+  { type: 'instances-up', below: 2 },                      // fewer than 2 up, held for `for` (default '1m')
+  { type: 'restart-loop' },                                // a host rebooted `fleet.restartLoop` times in its window
+  { type: 'check-down', check: 'redis', for: '5m' },       // a check down for `for` (`check` else any)
+  { type: 'entries-dropped', window: '5m', threshold: 1 }, // a tenant dropped >= threshold entries in `window`
+];
+```
+
+Source: `packages/core/src/alerts/alert-rule.ts` (`AlertRule`, `FleetAlertRule`),
+`packages/core/src/alerts/integrations/`, `packages/core/src/fleet/fleet.service.ts`.
 
 ### Pattern 2 — AI exception diagnosis
 

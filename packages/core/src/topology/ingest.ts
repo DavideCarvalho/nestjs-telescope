@@ -38,6 +38,11 @@ export interface IngestHandlerOptions {
   verifyTenant: TenantVerifier;
   /** Stores entries; the handler answers `stored` only once this resolves. */
   store(entries: Entry[]): Promise<void>;
+  /**
+   * Takes the heartbeat a batch carries, for the verified `app` (never one named in the body).
+   * Best effort: a throw is ignored and never refuses the batch.
+   */
+  heartbeat?(app: string, heartbeat: unknown): void | Promise<void>;
   /** The ids among `ids` the store already holds (a redelivery after a restart). */
   existing?(ids: string[]): Promise<Set<string>>;
   /** Default 50 000 per kind. */
@@ -104,6 +109,13 @@ export function createIngestHandler(options: IngestHandlerOptions): IngestHandle
     const app = verified.tenant;
     const parsed = parseIngestBatch(body);
     if (!parsed.ok) return { status: 'invalid', reason: parsed.reason };
+    if (parsed.batch.heartbeat !== undefined && options.heartbeat) {
+      try {
+        await options.heartbeat(app, parsed.batch.heartbeat);
+      } catch {
+        // The fleet is best effort; the entries are what the batch is for.
+      }
+    }
     const batchKey = `${app}:${parsed.batch.id}`;
     if (batches.has(batchKey)) {
       return { status: 'stored', app, stored: 0, duplicate: parsed.batch.entries.length };

@@ -13,8 +13,12 @@ import type {
   AlertPayload,
   AlertRule,
   ExceptionAlertContext,
+  FleetAlertContext,
+  FleetAlertRule,
   ResolvedAlerts,
 } from './alert-rule.js';
+import { isFleetRule } from './alert-rule.js';
+import { FleetRuleEvaluator, type FleetSource } from './fleet-rules.js';
 import {
   type CheckStateSource,
   type UptimeCheckState,
@@ -47,6 +51,9 @@ const DEFAULT_EVERY_WINDOW = '1h';
  */
 const MAX_PENDING_FLUSH_ENTRIES = 10_000;
 
+/** The most fleet alert subjects (raised, and resolved within their cooldown) kept at once. */
+const MAX_FLEET_SUBJECTS = 10_000;
+
 export interface TelescopeAlerterDeps {
   alerts: ResolvedAlerts;
   storage: StorageProvider;
@@ -66,6 +73,11 @@ export interface TelescopeAlerterDeps {
    * alert fires either way. Never blocks the alert beyond the hook's own cap.
    */
   diagnosisFor?: (familyHash: string, entry: Entry) => Promise<string | null>;
+  /**
+   * The fleet the fleet rules read (`null` while there is none: a tenant, or a standalone app
+   * without `fleet`). Read at each evaluation, so it may be set after the alerter is built.
+   */
+  fleet?: () => FleetSource | null;
 }
 
 /**
@@ -120,6 +132,12 @@ export class TelescopeAlerter {
   /** Exception entries enqueued on {@link flushQueue} and not yet evaluated. */
   private pendingFlushEntries = 0;
   private warnedFlushBacklog = false;
+  private fleetEvaluator: FleetRuleEvaluator | null = null;
+  /** `<rule index>\0<subject>` → when the fleet alert was raised. */
+  private readonly fleetRaised = new Map<string, FleetAlertContext>();
+  /** `<rule index>\0<subject>` → when it last resolved (re-raising waits out the cooldown). */
+  private readonly fleetResolved = new Map<string, number>();
+  private warnedNoFleet = false;
 
   constructor(private readonly deps: TelescopeAlerterDeps) {
     this.logger = deps.logger ?? new Logger(TelescopeAlerter.name);
@@ -188,6 +206,10 @@ export class TelescopeAlerter {
       // `new-exception` and `every-exception` are flush-driven (see evaluateFlush),
       // never evaluated on the interval timer.
       if (rule === undefined || rule.type === 'new-exception' || rule.type === 'every-exception') {
+        continue;
+      }
+      if (isFleetRule(rule)) {
+        await this.evaluateFleetRule(rule, index);
         continue;
       }
       const outcome = await this.measure(rule);
@@ -327,7 +349,10 @@ export class TelescopeAlerter {
 
   /** Returns `{ value, threshold }` when an interval rule is firing, else `null`. */
   private async measure(
-    rule: Exclude<AlertRule, { type: 'new-exception' } | { type: 'every-exception' }>,
+    rule: Exclude<
+      AlertRule,
+      { type: 'new-exception' } | { type: 'every-exception' } | FleetAlertRule
+    >,
   ): Promise<{ value: number; threshold: number } | null> {
     if (rule.type === 'exception-rate') {
       const value = await this.countInWindow(rule.window, EntryType.Exception);
@@ -478,6 +503,80 @@ export class TelescopeAlerter {
     const last = this.lastFiredFamily.get(this.cooldownKey(ruleType, familyHash));
     if (last === undefined) return false;
     return nowMs - last < this.deps.alerts.cooldownMs;
+  }
+
+  /**
+   * One fleet rule: raise each subject that crosses (once, until it clears), resolve each raised
+   * subject that no longer does. A subject that resolved is not raised again within the cooldown.
+   */
+  private async evaluateFleetRule(rule: FleetAlertRule, index: number): Promise<void> {
+    const source = this.deps.fleet?.() ?? null;
+    if (source === null) {
+      if (!this.warnedNoFleet) {
+        this.warnedNoFleet = true;
+        this.logger.warn(
+          `Telescope alert rule '${rule.type}' needs a fleet: a control plane, or \`fleet: true\`.`,
+        );
+      }
+      return;
+    }
+    this.fleetEvaluator ??= new FleetRuleEvaluator({ view: (apps) => source.view(apps) });
+    const now = this.now();
+    const outcomes = await this.fleetEvaluator.evaluate(rule, String(index), now);
+    const crossing = new Set<string>();
+    for (const outcome of outcomes) {
+      if (!outcome.crosses) continue;
+      const key = `${index}\u0000${outcome.key}`;
+      crossing.add(key);
+      if (this.fleetRaised.has(key)) continue;
+      const resolvedAt = this.fleetResolved.get(key);
+      if (resolvedAt !== undefined && now - resolvedAt < this.deps.alerts.cooldownMs) continue;
+      this.fleetRaised.set(key, outcome.fleet);
+      this.boundFleetState(now);
+      await this.dispatch({
+        ...this.buildRatePayload(rule, outcome.value, outcome.threshold),
+        fleet: outcome.fleet,
+      });
+    }
+    const details = new Map(outcomes.map((o) => [`${index}\u0000${o.key}`, o]));
+    for (const [key, raised] of [...this.fleetRaised]) {
+      if (!key.startsWith(`${index}\u0000`) || crossing.has(key)) continue;
+      this.fleetRaised.delete(key);
+      // Re-inserted, so the map stays ordered by resolution time (oldest first).
+      this.fleetResolved.delete(key);
+      this.fleetResolved.set(key, now);
+      this.boundFleetState(now);
+      const outcome = details.get(key);
+      // The same app / check / host as the firing one, so the resolve closes that incident.
+      await this.dispatch({
+        ...this.buildRatePayload(rule, outcome?.value ?? 0, outcome?.threshold ?? 0),
+        fleet: {
+          ...raised,
+          detail:
+            outcome?.fleet.detail ??
+            (rule.type === 'restart-loop' ? `${raised.host ?? raised.app} settled` : 'cleared'),
+        },
+        status: 'resolved',
+      });
+    }
+  }
+
+  /**
+   * Keeps the fleet alert state bounded: subjects carry sender-chosen hosts and check names, so a
+   * tenant rotating them must not grow it forever. A resolved subject is forgotten once its
+   * cooldown is over; past {@link MAX_FLEET_SUBJECTS}, the oldest raised subject is dropped
+   * (it then resolves silently).
+   */
+  private boundFleetState(now: number): void {
+    for (const [key, at] of this.fleetResolved) {
+      if (now - at < this.deps.alerts.cooldownMs && this.fleetResolved.size <= MAX_FLEET_SUBJECTS) {
+        break;
+      }
+      this.fleetResolved.delete(key);
+    }
+    while (this.fleetRaised.size > MAX_FLEET_SUBJECTS) {
+      this.fleetRaised.delete(this.fleetRaised.keys().next().value as string);
+    }
   }
 
   /** Build the v1-compatible payload for an interval (rate) rule. */

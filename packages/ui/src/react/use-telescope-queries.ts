@@ -423,6 +423,23 @@ export function useTenancy(search = '') {
     staleTime: 30_000,
   });
 }
+/** How often the Fleet page re-reads: heartbeats arrive every 15 s by default. */
+const FLEET_REFETCH_MS = 15_000;
+
+/** The fleet (`GET fleet`), re-read every 15 s while live. */
+export function useFleet() {
+  const client = useTelescopeClient();
+  const paused = usePaused();
+  return useQuery({
+    queryKey: ['telescope', 'fleet'],
+    queryFn: () => {
+      if (!client.fleet) throw new Error('This client cannot read the fleet.');
+      return client.fleet();
+    },
+    refetchInterval: intervalWhenLive(FLEET_REFETCH_MS, paused),
+  });
+}
+
 /** The console's apps (`GET apps`, a control plane), narrowed by `search`. */
 export function useApps(search = '') {
   const client = useTelescopeClient();
