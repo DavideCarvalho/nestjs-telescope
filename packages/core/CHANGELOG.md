@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 5.1.0
+
+### Minor Changes
+
+- [#200](https://github.com/DavideCarvalho/nestjs-telescope/pull/200) [`3947914`](https://github.com/DavideCarvalho/nestjs-telescope/commit/39479148eded49534fa1e1972f32bf1ee3e4cc3e) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Alert integrations: on-call (`pagerDutyChannel`, `opsgenieChannel`, `betterStackIncidentChannel`, `incidentIoChannel`, `grafanaOnCallChannel`), chat (`discordChannel`, `teamsChannel`, `telegramChannel`, `googleChatChannel`) and `emailChannel` (bring your own nodemailer-style transport). Rules take `severity` and `channels`, channels take `minSeverity`, and an interval rule that stops firing sends one `resolved` notification to the channels that accept it, sharing an incident key with the trigger (`alerts.app` names the service). New `alerts.heartbeats` (healthchecks.io, Better Stack, Cronitor, Uptime Kuma, UptimeRobot, any URL), `alerts.statusPages` (Atlassian Statuspage, Instatus, Better Stack) and `uptimeHandler()` read check states from `alerts.checkStates` or `publishCheckStates()`. Slack, webhook and custom channels behave as before.
+
 ## 5.0.2
 
 ### Patch Changes
