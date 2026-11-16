@@ -36,6 +36,7 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import { asTenantScopedStorage } from '../storage/tenant-scoped-storage.js';
 import { resolveTopology } from '../topology/config.js';
 import { TelescopeIngestController } from '../topology/ingest.controller.js';
+import { TelescopeIngest } from '../topology/ingest.service.js';
 import { RemoteTelescopeStore } from '../topology/remote-store.js';
 import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
@@ -177,6 +178,8 @@ const SHARED_PROVIDERS: Provider[] = [
   TelescopeOverloadGuard,
   QueueManagerRegistry,
   ScheduleManagerRegistry,
+  // A control plane's ingest handler (HTTP route and broker consumer); idle elsewhere.
+  TelescopeIngest,
   { provide: APP_INTERCEPTOR, useClass: TelescopeExceptionInterceptor },
 ];
 
@@ -203,6 +206,7 @@ const TELESCOPE_EXPORTS = [
   ProfilerService,
   QueueManagerRegistry,
   ScheduleManagerRegistry,
+  TelescopeIngest,
 ];
 
 @Module({})

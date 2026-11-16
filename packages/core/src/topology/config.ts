@@ -39,7 +39,12 @@ export interface TelescopeTenantOptions {
 
 export type ResolvedTopology =
   | { kind: 'standalone' }
-  | { kind: 'control-plane'; verifyTenant: TenantVerifier }
+  | {
+      kind: 'control-plane';
+      verifyTenant: TenantVerifier;
+      /** A broker the control plane also consumes (its HTTP ingest route stays on). */
+      transport: TenantTransport | undefined;
+    }
   | {
       kind: 'tenant';
       transport: TenantTransport;
@@ -53,6 +58,7 @@ interface TopologyInput {
   verifyTenant?: TenantVerifier | undefined;
   tenant?: TelescopeTenantOptions | undefined;
   storage?: StorageProvider | undefined;
+  transport?: TenantTransport | undefined;
 }
 
 /** Validates `topology` and its options; throws at boot on a mistake. */
@@ -61,6 +67,9 @@ export function resolveTopology(options: TopologyInput): ResolvedTopology {
   if (topology === 'standalone') {
     if (options.tenant !== undefined) {
       throw new Error("telescope: `tenant` is set but `topology` is not 'tenant'.");
+    }
+    if (options.transport !== undefined) {
+      throw new Error("telescope: `transport` is set but `topology` is not 'control-plane'.");
     }
     return { kind: 'standalone' };
   }
@@ -73,7 +82,16 @@ export function resolveTopology(options: TopologyInput): ResolvedTopology {
     if (options.tenant !== undefined) {
       throw new Error("telescope: `tenant` is set but `topology` is 'control-plane'.");
     }
-    return { kind: 'control-plane', verifyTenant: options.verifyTenant };
+    if (options.transport !== undefined && typeof options.transport.listen !== 'function') {
+      throw new Error(
+        `telescope: transports.${options.transport.kind} has no consumer; a control plane always takes HTTP batches on its ingest route.`,
+      );
+    }
+    return {
+      kind: 'control-plane',
+      verifyTenant: options.verifyTenant,
+      transport: options.transport,
+    };
   }
   if (topology !== 'tenant') {
     throw new Error(
@@ -94,6 +112,9 @@ export function resolveTopology(options: TopologyInput): ResolvedTopology {
     (typeof tenant.token !== 'string' || tenant.token === '')
   ) {
     throw new Error('telescope: `tenant.token` is empty; set it (e.g. from an env var).');
+  }
+  if (options.transport !== undefined) {
+    throw new Error('telescope: on a tenant, set the transport as `tenant.transport`.');
   }
   if (options.storage !== undefined) {
     throw new Error(
