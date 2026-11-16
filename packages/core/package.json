@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope",
-  "version": "5.5.0",
+  "version": "5.6.0",
   "description": "Laravel Telescope-style observability console for NestJS — core: watchers, recorder, correlation, SQLite store, headless API.",
   "license": "MIT",
   "repository": {
