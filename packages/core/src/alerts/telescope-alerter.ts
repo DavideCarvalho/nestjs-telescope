@@ -17,6 +17,8 @@ import type {
   FleetAlertRule,
   ResolvedAlerts,
 } from './alert-rule.js';
+import { isFleetRule } from './alert-rule.js';
+import { FleetRuleEvaluator, type FleetSource } from './fleet-rules.js';
 import {
   type CheckStateSource,
   type UptimeCheckState,
@@ -25,8 +27,6 @@ import {
 import { HeartbeatMonitor } from './integrations/heartbeats.js';
 import { routesTo } from './integrations/incident.js';
 import { StatusPageSync } from './integrations/status-pages.js';
-import { isFleetRule } from './alert-rule.js';
-import { FleetRuleEvaluator, type FleetSource } from './fleet-rules.js';
 import { DEFAULT_MAX_FAMILIES, NewExceptionTracker } from './new-exception-tracker.js';
 
 /**
@@ -578,7 +578,6 @@ export class TelescopeAlerter {
       this.fleetRaised.delete(this.fleetRaised.keys().next().value as string);
     }
   }
-
 
   /** Build the v1-compatible payload for an interval (rate) rule. */
   private buildRatePayload(rule: AlertRule, value: number, threshold: number): AlertPayload {

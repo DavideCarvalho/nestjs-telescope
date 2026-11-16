@@ -154,7 +154,7 @@ TelescopeModule.forRoot({
 - `exception-rate` — `>= threshold` exceptions in `window`.
 - `slow-request-rate` — `>= count` requests slower than `thresholdMs` in `window`.
 - `dropped-entries` — Recorder `droppedCount` grew by `>= threshold` since the last evaluation.
-- Fleet rules (a control plane, or `fleet: true`; see [Fleet](/docs/concepts/fleet)). Each is raised once per subject and sends one **resolved** notification (`resolved: true` on the payload) when it clears; after that, the subject is not raised again within `cooldown`. The payload carries `fleet: { app, check?, host?, detail }`.
+- Fleet rules (a control plane, or `fleet: true`; see [Fleet](/docs/concepts/fleet)). Each is raised once per subject and sends one **resolved** notification (`status: 'resolved'`, to the channels with `acceptsResolved`) when it clears; after that, the subject is not raised again within `cooldown`. The payload carries `fleet: { app, check?, host?, detail }`. Fleet rules take `severity` and `channels` like every rule.
   - `instances-up` `{ app?, below, for? }` — fewer than `below` instances up, including 0 and an app never seen. The condition must hold for `for` (default `1m`), so a rolling deploy does not page.
   - `restart-loop` `{ app? }` — a host booted `fleet.restartLoop.restarts` times within its window. Each looping host is its own alert.
   - `check-down` `{ check?, app?, for }` — a health check has been down on an app's instance for `for`.

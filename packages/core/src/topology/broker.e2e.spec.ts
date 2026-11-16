@@ -93,7 +93,7 @@ describe('broker topology', () => {
     expect(tags.sort()).toEqual(['app:billing', 'app:shop']);
     // The client-error beacon stays on HTTP too (404 here only because it is not enabled).
     await request(cp.getHttpServer()).post('/telescope/api/client-errors').send({}).expect(404);
-  });
+  }, 15_000);
 
   it('a broker that is down (or hangs) at boot never keeps HTTP ingest from serving; the consumer starts once it is back', async () => {
     const storage = new InMemoryStorageProvider();

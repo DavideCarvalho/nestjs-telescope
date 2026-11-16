@@ -79,3 +79,26 @@ Monitor → **Fleet** (also in ⌘K) re-reads every 15 s and shows, for each app
 - A viewer limited to some organizations sees nothing. Instances are shared by every organization, so the page explains that instead.
 
 The Fleet item appears in the sidebar only where a fleet is kept.
+
+## Alerts
+
+The fleet rules (`instances-up`, `restart-loop`, `check-down`, `entries-dropped`; see [Alerts](/docs/dashboard#rules)) work like every rule:
+
+- **Routing.** They take `severity` and `channels`. The default severity is `critical` for `instances-up` and `check-down`, `error` for `restart-loop` and `warning` for `entries-dropped`.
+- **One subject at a time.** Each subject (an app, an app's check, a looping host) is raised once and cleared once.
+- **Clears close the incident.** The clear is a `status: 'resolved'` payload. It reaches the on-call, chat and email [integrations](/docs/recipes/alert-integrations), which close the incident keyed `telescope:<app>:<rule>[:<check>][:<host>]`.
+
+```ts
+alerts: {
+  app: 'ops',
+  channels: [pagerDutyChannel({ routingKey: process.env.PD_KEY!, minSeverity: 'critical' }), slackChannel(url)],
+  rules: [
+    { type: 'instances-up', below: 2 },
+    { type: 'check-down', check: 'redis', for: '5m' },
+    { type: 'restart-loop', channels: ['slack'] },
+  ],
+  heartbeats: [{ provider: 'healthchecks', url: process.env.HC_URL!, apps: { shop: process.env.HC_SHOP_URL! } }],
+},
+```
+
+The fleet also publishes its check states (`publishCheckStates()`): one state per app and check, plus an `instances` check per app. `alerts.heartbeats`, `alerts.statusPages` and `uptimeHandler()` therefore follow the fleet with no `checkStates` of their own. See [Check states](/docs/recipes/alert-integrations#check-states).

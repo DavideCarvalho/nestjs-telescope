@@ -69,8 +69,7 @@ function harness(rules: AlertRule[], cooldown = '1m') {
   };
 }
 
-const states = (sent: AlertPayload[]) =>
-  sent.map((p) => `${p.status ?? 'firing'}:${p.fleet?.app}`);
+const states = (sent: AlertPayload[]) => sent.map((p) => `${p.status ?? 'firing'}:${p.fleet?.app}`);
 
 describe('instances-up', () => {
   it('fires when an app has fewer than `below` up for `for`, resolves when they are back', async () => {
@@ -214,15 +213,16 @@ describe('restart-loop', () => {
     await loop('web-1', [9, 8, 7]);
     await loop('web-2', [3, 2, 1]);
     await h.service.evaluateOnce();
-    expect(
-      h.sent.map((p) => `${p.status ?? 'firing'}:${p.fleet?.host}`).sort(),
-    ).toEqual(['firing:web-1', 'firing:web-2']);
+    expect(h.sent.map((p) => `${p.status ?? 'firing'}:${p.fleet?.host}`).sort()).toEqual([
+      'firing:web-1',
+      'firing:web-2',
+    ]);
     // web-1's boots leave the 10 min window first; web-2 keeps looping.
     h.advance(4 * MIN);
     await h.service.evaluateOnce();
-    expect(
-      h.sent.slice(2).map((p) => `${p.status ?? 'firing'}:${p.fleet?.host}`),
-    ).toEqual(['resolved:web-1']);
+    expect(h.sent.slice(2).map((p) => `${p.status ?? 'firing'}:${p.fleet?.host}`)).toEqual([
+      'resolved:web-1',
+    ]);
   });
 });
 

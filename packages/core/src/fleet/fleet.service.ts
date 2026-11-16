@@ -11,6 +11,11 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import {
+  type UptimeCheckState,
+  publishCheckStates,
+  publishedCheckStates,
+} from '../alerts/integrations/check-states.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import {
   TELESCOPE_CONFIG,
@@ -19,11 +24,6 @@ import {
   type TelescopeModuleOptions,
 } from '../nest/telescope.options.js';
 import { TelescopeService } from '../nest/telescope.service.js';
-import {
-  type UptimeCheckState,
-  publishCheckStates,
-  publishedCheckStates,
-} from '../alerts/integrations/check-states.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { resolveTopology } from '../topology/config.js';
 import type { ShippingStats } from '../topology/remote-store.js';

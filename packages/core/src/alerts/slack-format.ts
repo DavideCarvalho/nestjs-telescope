@@ -247,9 +247,10 @@ export function formatSlackMessage(
       : payload.exception.isNew
         ? ' · 🆕 New'
         : ' · 🔁 Recurring';
-  const headerText = payload.status === 'resolved'
-    ? `:white_check_mark: Resolved: ${label}`
-    : `${emoji} ${label}${badge}`;
+  const headerText =
+    payload.status === 'resolved'
+      ? `:white_check_mark: Resolved: ${label}`
+      : `${emoji} ${label}${badge}`;
 
   const contextFields: SlackTextObject[] = [
     field('Instance', payload.instanceId),
