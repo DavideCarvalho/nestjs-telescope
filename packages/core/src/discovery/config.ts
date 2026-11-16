@@ -54,13 +54,29 @@ export interface ResolvedDiscovery {
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,63}$/;
 
-/** An app's base URL: an absolute http(s) URL, without credentials, query, hash or trailing slash. */
+/**
+ * Whether `name` can be an app name: one DNS label (A-Z a-z 0-9 _ -) that is not all digits (an
+ * all-digit host is never rewritten) and is not an object prototype key.
+ */
+export function isAppName(name: string): boolean {
+  return (
+    NAME_RE.test(name) &&
+    !/^\d+$/.test(name) &&
+    !['__proto__', 'constructor', 'prototype'].includes(name.toLowerCase())
+  );
+}
+
+/**
+ * An app's base URL: an absolute http(s) URL without a trailing slash. `null` for anything else,
+ * including a URL with credentials, a query or a hash (never silently dropped).
+ */
 export function normalizeAppUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2048) return null;
   try {
     const url = new URL(value);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
     if (url.username !== '' || url.password !== '') return null;
+    if (url.search !== '' || url.hash !== '' || /[?#]/.test(value)) return null;
     return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
   } catch {
     return null;
@@ -75,16 +91,18 @@ export function defaultSnapshotPath(partition: string): string {
 /** Resolve `discovery`. Throws on a malformed app name or URL. */
 export function resolveDiscovery(options: DiscoveryOptions | false | undefined): ResolvedDiscovery {
   const raw = options === false ? {} : (options ?? {});
-  const apps: Record<string, string> = {};
+  const apps: Record<string, string> = Object.create(null);
   for (const [name, value] of Object.entries(raw.apps ?? {})) {
-    if (!NAME_RE.test(name)) {
+    if (!isAppName(name)) {
       throw new Error(
-        `telescope: discovery.apps.${name}: an app name is one DNS label (A-Z a-z 0-9 _ -), so it can be a URL host.`,
+        `telescope: discovery.apps.${name}: an app name is one DNS label (A-Z a-z 0-9 _ -), not all digits, so it can be a URL host.`,
       );
     }
     const url = normalizeAppUrl(value);
     if (url === null) {
-      throw new Error(`telescope: discovery.apps.${name} must be an absolute http(s) URL.`);
+      throw new Error(
+        `telescope: discovery.apps.${name} must be an absolute http(s) URL, without credentials, query or hash.`,
+      );
     }
     apps[name.toLowerCase()] = url;
   }

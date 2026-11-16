@@ -242,7 +242,9 @@ export async function installFetchRewrite(
         // the origin is no longer an app name.
         const ours = current.compose(interceptor);
         slot[key] = ours;
-        installed.set(key, { original: entry?.original ?? current, ours });
+        // Restore point: the dispatcher composed onto now, so uninstalling keeps the layers others
+        // added since; our older layer stays a pass-through (`state.active`).
+        installed.set(key, { original: current, ours });
       }
     },
     selfCheck: probeFetchRewrite,

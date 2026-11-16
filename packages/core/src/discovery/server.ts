@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { type FleetDeriveOptions, type InstanceRecord, instanceStatus } from '../fleet/derive.js';
 import type { VerifiedTenant } from '../topology/tenant-auth.js';
+import { isAppName } from './config.js';
 import type { DiscoveredApp, DiscoveryMap } from './directory.js';
 
 /** The capability that lets a token read the whole discovery map. */
@@ -34,8 +35,6 @@ function scopeKey(scope: DiscoveryScope): string {
   return scope === '*' ? '*' : [...scope].sort().join(',');
 }
 
-const NAME_RE = /^[a-z0-9_-]{1,63}$/;
-
 /** The map a caller with `scope` sees, at `now`. */
 export function buildDiscoveryMap(
   instances: readonly InstanceRecord[],
@@ -49,7 +48,7 @@ export function buildDiscoveryMap(
   >();
   for (const instance of instances) {
     const name = instance.app.toLowerCase();
-    if (!NAME_RE.test(name) || typeof instance.url !== 'string' || instance.url === '') continue;
+    if (!isAppName(name) || typeof instance.url !== 'string' || instance.url === '') continue;
     if (scope !== '*' && !scope.has(name)) continue;
     const up = instanceStatus(instance, now, goneAfterIntervals) === 'up';
     const seen = byApp.get(name);
@@ -70,7 +69,7 @@ export function buildDiscoveryMap(
       seen.liveUrl = up;
     }
   }
-  const apps: Record<string, DiscoveredApp> = {};
+  const apps: Record<string, DiscoveredApp> = Object.create(null);
   for (const name of [...byApp.keys()].sort()) {
     const app = byApp.get(name) as { url: string; live: number };
     apps[name] = { url: app.url, live: app.live };

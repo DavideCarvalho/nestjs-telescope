@@ -3,6 +3,7 @@
 // The map of app name → URL this process resolves `http://<app>/…` with, and the contract other
 // libraries read it through. Two sources, the static one winning: `discovery.apps`, and the map
 // the control plane keeps from its fleet (by the URL each app's heartbeat carries).
+import { isAppName } from './config.js';
 
 /** One app as the control plane describes it. */
 export interface DiscoveredApp {
@@ -57,14 +58,17 @@ function originOf(url: string): string | null {
 /** The map this process resolves names with. */
 export class ServiceDirectory implements DiscoveryContract {
   private readonly listeners = new Set<() => void>();
-  private registry: Record<string, DiscoveredApp> = {};
+  private registry: Record<string, DiscoveredApp> = Object.create(null);
   private registryVersion: string | null = null;
   private byOrigin = new Map<string, string>();
+  private readonly staticApps: Record<string, string>;
 
   constructor(
-    private readonly staticApps: Record<string, string> = {},
+    staticApps: Record<string, string> = {},
     private readonly options: { failFast?: boolean } = {},
   ) {
+    // Null-prototype copies: no app name (`__proto__`) can reach an object prototype.
+    this.staticApps = Object.assign(Object.create(null), staticApps);
     this.reindex();
   }
 
@@ -83,9 +87,14 @@ export class ServiceDirectory implements DiscoveryContract {
   /** Replace the control plane's map with `map`. */
   update(map: DiscoveryMap): void {
     if (map.version === this.registryVersion) return;
-    const next: Record<string, DiscoveredApp> = {};
+    const next: Record<string, DiscoveredApp> = Object.create(null);
     for (const [name, app] of Object.entries(map.apps)) {
-      if (app !== null && typeof app === 'object' && typeof app.url === 'string') {
+      if (
+        isAppName(name) &&
+        app !== null &&
+        typeof app === 'object' &&
+        typeof app.url === 'string'
+      ) {
         next[name.toLowerCase()] = { url: app.url, live: Math.max(0, Number(app.live) || 0) };
       }
     }
@@ -104,9 +113,9 @@ export class ServiceDirectory implements DiscoveryContract {
   /** How `name` resolves. */
   lookup(name: string): Resolution {
     const key = name.toLowerCase();
-    const fixed = this.staticApps[key];
+    const fixed = Object.hasOwn(this.staticApps, key) ? this.staticApps[key] : undefined;
     if (fixed !== undefined) return { kind: 'url', url: fixed };
-    const app = this.registry[key];
+    const app = Object.hasOwn(this.registry, key) ? this.registry[key] : undefined;
     if (app === undefined) return { kind: 'unknown' };
     return app.live > 0 ? { kind: 'url', url: app.url } : { kind: 'down', url: app.url };
   }

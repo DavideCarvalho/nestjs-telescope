@@ -11,10 +11,11 @@ import { resolveDiscovery } from './config.js';
 import {
   DISCOVERY_SLOT,
   type DiscoveryContract,
+  type DiscoveryMap,
   ServiceDirectory,
   publishDirectory,
 } from './directory.js';
-import { DiscoveryError, isAppHost, rewriteTarget } from './rewrite.js';
+import { DiscoveryError, installFetchRewrite, isAppHost, rewriteTarget } from './rewrite.js';
 import { DiscoveryPublisher, buildDiscoveryMap, discoveryScopeOf } from './server.js';
 
 const NOW = 1_000_000;
@@ -47,6 +48,15 @@ describe('discovery config', () => {
     expect(() => resolveDiscovery({ apps: { 'billing.v2': 'http://x' } })).toThrow(/one DNS label/);
     expect(() => resolveDiscovery({ apps: { billing: 'ftp://x' } })).toThrow(/http\(s\) URL/);
     expect(() => resolveDiscovery({ apps: { billing: 'http://u:p@x' } })).toThrow(/http\(s\) URL/);
+    expect(() => resolveDiscovery({ apps: { billing: 'http://x/?token=1' } })).toThrow(
+      /query or hash/,
+    );
+    expect(() => resolveDiscovery({ apps: { billing: 'http://x/#a' } })).toThrow(/query or hash/);
+    expect(() => resolveDiscovery({ apps: { '12345': 'http://x' } })).toThrow(/not all digits/);
+    expect(() => resolveDiscovery({ apps: { __proto__x: 'http://x' } })).not.toThrow();
+    expect(() =>
+      resolveDiscovery({ apps: JSON.parse('{"__proto__":"http://x"}') as Record<string, string> }),
+    ).toThrow(/one DNS label/);
   });
 
   it('carries the app URL in a heartbeat, refusing credentials', () => {
@@ -85,6 +95,30 @@ describe('the directory', () => {
     const strict = new ServiceDirectory({}, { failFast: true });
     strict.update({ version: 'v1', apps: { mail: { url: 'https://mail.internal', live: 0 } } });
     expect(strict.resolve('mail')).toBeUndefined();
+  });
+
+  it('never lets an app name reach an object prototype', () => {
+    const directory = new ServiceDirectory();
+    directory.update(
+      JSON.parse(
+        '{"version":"v1","apps":{"__proto__":{"url":"http://evil:1","live":1},"billing":{"url":"http://b:1","live":1}}}',
+      ) as DiscoveryMap,
+    );
+    expect(directory.resolve('__proto__')).toBeUndefined();
+    expect(directory.resolve('constructor')).toBeUndefined();
+    expect(directory.resolve('toString')).toBeUndefined();
+    expect(directory.resolve('billing')).toBe('http://b:1');
+    expect(Object.keys(directory.map?.apps ?? {})).toEqual(['billing']);
+    const map = buildDiscoveryMap(
+      [
+        instance({ app: '__proto__', instanceId: 'p' }),
+        instance({ app: '12345', instanceId: 'n' }),
+      ],
+      '*',
+      NOW,
+      3,
+    );
+    expect(Object.keys(map.apps)).toEqual([]);
   });
 
   it('publishes the contract on the Aviary slot and announces changes', () => {
@@ -244,5 +278,42 @@ describe('the snapshot', () => {
     expect(readSnapshot(path, 'cp#shop')).toEqual(map);
     expect(readSnapshot(path, 'cp#billing')).toBeNull();
     expect(readSnapshot(join(dir, 'missing.json'), 'cp#shop')).toBeNull();
+  });
+});
+
+describe('installing the rewrite', () => {
+  /** A composable dispatcher, as undici's is: `compose` returns a new one wrapping this. */
+  interface Fake {
+    name: string;
+    compose(...interceptors: unknown[]): Fake;
+  }
+  function fake(name: string): Fake {
+    return { name, compose: () => fake(`${name}+`) };
+  }
+
+  it('restores what it was composed onto last, keeping layers added in between', async () => {
+    const slot = globalThis as Record<symbol, unknown>;
+    const keys = [Symbol.for('undici.globalDispatcher.2'), Symbol.for('undici.globalDispatcher.1')];
+    const saved = keys.map((key) => slot[key]);
+    const key = keys[0] as symbol;
+    try {
+      slot[keys[1] as symbol] = undefined;
+      slot[key] = fake('base');
+      const rewrite = await installFetchRewrite(new ServiceDirectory(), {
+        passthrough: new Set(),
+        failFast: false,
+      });
+      // Another library composes on top during boot; telescope goes back on top.
+      const other = fake('other');
+      slot[key] = other;
+      rewrite?.reassert();
+      expect((slot[key] as Fake).name).toBe('other+');
+      rewrite?.uninstall();
+      expect(slot[key]).toBe(other);
+    } finally {
+      keys.forEach((k, i) => {
+        slot[k] = saved[i];
+      });
+    }
   });
 });
