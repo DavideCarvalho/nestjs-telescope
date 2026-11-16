@@ -81,7 +81,7 @@ notification when an interval rule stops firing, keyed by `alerts.app` + rule.
 Fleet rules (a control plane, or a standalone app with `fleet` on): one subject
 per app / check / host and role (a looping host and its role), raised once and resolved once per subject (`payload.fleet`; the clear is a
 `status: 'resolved'` payload, so it reaches the channels with `acceptsResolved`
-and closes the incident keyed `telescope:<app>:<rule>[:<check>][:<host>]`).
+and closes the incident keyed `telescope:<app>:<rule>[:<check>][:<host>][:<worker role>]` (a web subject keeps its key from before roles)).
 They take `severity` / `channels` too; default severity `critical` for
 `instances-up` / `check-down`, `error` for `restart-loop`, `warning` for
 `entries-dropped`. With a fleet (or `checks`), the fleet publishes its check
