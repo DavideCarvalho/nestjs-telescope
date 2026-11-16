@@ -47,12 +47,16 @@ export {
 export {
   ConsoleSearch,
   filterCommands,
+  groupCommands,
+  matchScore,
+  normalizeSearchText,
   type SearchCommand,
   SearchTrigger,
   useSearchShortcut,
   useServedSearch,
 } from './shell/console-search';
 export { ConsoleSwitcher, type CurrentConsole, useConsoles } from './shell/console-switcher';
+export { consoleCommands, pageCommands } from './shell/navigation';
 export { UserFooter } from './shell/user-footer';
 export {
   type AviaryShellConfig,

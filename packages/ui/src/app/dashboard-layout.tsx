@@ -58,6 +58,21 @@ const NAV: TopNavItem[] = [
   { to: '/prunes', label: 'Prunes', end: false },
 ];
 
+/** More words ⌘K finds a fixed page by (the kit lists every nav page in ⌘K). */
+const KEYWORDS_OF: Record<string, string[]> = {
+  '/': ['triage', 'dashboard'],
+  '/pulse': ['health', 'throughput'],
+  '/entries/exception': ['errors', 'grouped by class'],
+  '/entries': ['live tail', 'logs', 'requests'],
+  '/traces': ['waterfall', 'spans', 'n+1'],
+  '/ai': ['spend', 'agent runs', 'llm'],
+  '/profiles': ['cpu profiles', 'flamegraphs'],
+  '/queues': ['jobs', 'bullmq', 'queue manager'],
+  '/schedules': ['cron', 'scheduled tasks'],
+  '/exports': ['json', 'csv', 'download'],
+  '/prunes': ['retention', 'cleanup'],
+};
+
 /**
  * Which fixed nav items to show given `meta.tracesEnabled`. The Traces page
  * (`#/traces`) only has content when the host wired a `traceContext` provider —
@@ -212,17 +227,26 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
 
   const watchersOpen = activeNavId(pathname)?.startsWith('watcher:') ?? false;
   const nav: NavSection[] = (() => {
-    const link = (id: string, label: string, to: string, icon: ReactNode): NavItem => ({
+    const link = (
+      id: string,
+      label: string,
+      to: string,
+      icon: ReactNode,
+      keywords: string[] = [],
+    ): NavItem => ({
       id,
       label,
       icon,
+      keywords,
       href: `${hrefPrefix}${to}`,
       onSelect: () => navigate(to),
     });
     const fixed = (section: string) =>
       topNav
         .filter((item) => SECTION_OF[item.to] === section)
-        .map((item) => link(pageId(item.to), item.label, item.to, ICON_OF[item.to]));
+        .map((item) =>
+          link(pageId(item.to), item.label, item.to, ICON_OF[item.to], KEYWORDS_OF[item.to]),
+        );
     return [
       { section: 'Monitor', items: fixed('Monitor') },
       { section: 'Explore', items: fixed('Explore') },
@@ -230,7 +254,7 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
       {
         section: 'Dashboards',
         items: dashboards.map((d) =>
-          link(`dashboard:${d.id}`, d.label, `/ext/${d.id}`, <DashboardIcon />),
+          link(`dashboard:${d.id}`, d.label, `/ext/${d.id}`, <DashboardIcon />, ['dashboard']),
         ),
       },
       {
@@ -245,6 +269,7 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
             <span className="grid size-[15px] place-items-center" aria-hidden="true">
               <span className={cn('size-[7px] rounded-full', type.dot)} />
             </span>,
+            [type.id, 'entries', 'watcher'],
           ),
         ),
       },
@@ -252,20 +277,9 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
     ];
   })();
 
-  // ⌘K: this console's pages and entry types, listed above the cross-console hits.
+  // ⌘K: the kit already lists every nav page (watchers once something is typed) and the other
+  // consoles; only the page that has no nav item of its own is added here.
   const commands: SearchCommand[] = [
-    ...nav
-      .filter((section) => section.section !== 'Watchers')
-      .flatMap((section) =>
-        section.items.map((item) => ({
-          id: `page:${item.id}`,
-          label: item.label,
-          group: 'Pages',
-          icon: item.icon,
-          keywords: [section.section],
-          onSelect: () => item.onSelect?.(),
-        })),
-      ),
     {
       id: 'page:queue-metrics',
       label: 'Queue metrics',
@@ -274,18 +288,6 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
       keywords: ['Operations', 'queues'],
       onSelect: () => navigate('/queues/metrics'),
     },
-    ...entryTypes.map((type) => ({
-      id: `type:${type.id}`,
-      label: type.label,
-      group: 'Entry types',
-      icon: (
-        <span className="grid size-4 place-items-center" aria-hidden="true">
-          <span className={cn('size-[7px] rounded-full', type.dot)} />
-        </span>
-      ),
-      keywords: [type.id, 'watcher'],
-      onSelect: () => navigate(`/entries/${type.id}`),
-    })),
   ];
 
   const activeId = activeNavId(pathname);

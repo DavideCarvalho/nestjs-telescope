@@ -29,8 +29,8 @@ import { Kbd } from '../ui/kbd';
 import { Skeleton } from '../ui/skeleton';
 
 /**
- * A console-local ⌘K entry (a page, a filter, a view), matched in the browser on its label and
- * keywords and listed above the cross-console hits. `onSelect` runs in-app (no navigation).
+ * One ⌘K entry matched in the browser on its label and keywords: a page of this console, another
+ * console, or a console-local command (a filter, a view). `onSelect` runs in-app.
  */
 export interface SearchCommand {
   id: string;
@@ -41,16 +41,92 @@ export interface SearchCommand {
   /** A 16px icon or a colour dot. */
   icon?: ReactNode;
   keywords?: string[];
+  /** Listed only once something is typed (a long secondary list such as watchers). */
+  hideUntilTyped?: boolean;
   onSelect: () => void;
 }
 
-/** Case-insensitive substring match on label + keywords; an empty query keeps everything. */
+/** Lower case, accents stripped, whitespace collapsed: "Agêntes " → "agentes". */
+export function normalizeSearchText(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function wordsOf(text: string): string[] {
+  return text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/** "agents" → "agent", "queues" → "queu": enough for "agente" to reach "Agents". */
+function stem(word: string): string {
+  return word.replace(/(es|s)$/, '');
+}
+
+/** A typed word reaches a word: as its prefix, or as the word's stem plus a short ending. */
+function wordMatches(token: string, word: string): boolean {
+  if (word.startsWith(token)) return true;
+  const root = stem(word);
+  return root.length >= 4 && token.startsWith(root) && token.length - root.length <= 2;
+}
+
+/**
+ * How well `query` matches `label` / `keywords` (lower is better), or `undefined` for no match.
+ * Case- and accent-insensitive: exact label, label prefix, a label word's prefix, label substring,
+ * then the same on keywords, then every typed word reaching some word (with plural/gender endings
+ * forgiven). An empty query matches everything with score 0.
+ */
+export function matchScore(
+  query: string,
+  label: string,
+  keywords: readonly string[] = [],
+): number | undefined {
+  const q = normalizeSearchText(query);
+  if (q === '') return 0;
+  const l = normalizeSearchText(label);
+  if (l === q) return 0;
+  if (l.startsWith(q)) return 1;
+  const labelWords = wordsOf(l);
+  if (labelWords.some((w) => w.startsWith(q))) return 2;
+  if (l.includes(q)) return 3;
+  const keys = keywords.map(normalizeSearchText);
+  if (keys.some((k) => k === q || k.startsWith(q))) return 4;
+  if (keys.some((k) => wordsOf(k).some((w) => w.startsWith(q)) || k.includes(q))) return 5;
+  const tokens = wordsOf(q);
+  const words = [...labelWords, ...keys.flatMap(wordsOf)];
+  if (tokens.length > 0 && tokens.every((t) => words.some((w) => wordMatches(t, w)))) return 6;
+  return undefined;
+}
+
+/**
+ * The commands matching `q` on label + keywords, best match first (ties keep their order). An
+ * empty query keeps everything except `hideUntilTyped` entries.
+ */
 export function filterCommands(commands: readonly SearchCommand[], q: string): SearchCommand[] {
-  const query = q.trim().toLowerCase();
-  if (query === '') return [...commands];
-  return commands.filter((c) =>
-    [c.label, ...(c.keywords ?? [])].some((text) => text.toLowerCase().includes(query)),
-  );
+  if (normalizeSearchText(q) === '') return commands.filter((c) => !c.hideUntilTyped);
+  return commands
+    .map((command, index) => ({
+      command,
+      index,
+      score: matchScore(q, command.label, command.keywords),
+    }))
+    .filter(
+      (m): m is { command: SearchCommand; index: number; score: number } => m.score !== undefined,
+    )
+    .sort((a, b) => a.score - b.score || a.index - b.index)
+    .map((m) => m.command);
+}
+
+/**
+ * `commands` grouped by `group` (groups keep their first-seen order), each group filtered and
+ * ranked by {@link filterCommands}; groups left empty are dropped.
+ */
+export function groupCommands(
+  commands: readonly SearchCommand[],
+  q: string,
+): [string, SearchCommand[]][] {
+  const groups = new Map<string, SearchCommand[]>();
+  for (const c of commands) groups.set(c.group, [...(groups.get(c.group) ?? []), c]);
+  return [...groups.entries()]
+    .map(([group, items]): [string, SearchCommand[]] => [group, filterCommands(items, q)])
+    .filter(([, items]) => items.length > 0);
 }
 
 /**
@@ -87,13 +163,22 @@ export function useSearchShortcut(
 }
 
 /** The topbar's search button ("Search ⌘K"). */
-export function SearchTrigger({ onOpen, className }: { onOpen: () => void; className?: string }) {
+export function SearchTrigger({
+  onOpen,
+  className,
+  label = 'Search all consoles',
+}: {
+  onOpen: () => void;
+  className?: string;
+  /** Match the palette it opens: "Search" when no console search is served. */
+  label?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-keyshortcuts="Control+K Meta+K"
-      aria-label="Search all consoles"
+      aria-label={label}
       className={cn(
         'flex h-[26px] items-center gap-2 rounded-[6px] px-2.5 text-[11px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
         className,
@@ -179,10 +264,11 @@ const IDLE: SearchState = {
 };
 
 /**
- * ⌘K: one query across every console the viewer may open, grouped by console (shadcn `Command`
- * on cmdk, server-filtered). Enter or click follows the hit (a same-origin link). A console may
- * add its own `commands` (local jumps, filtered in the browser, listed first); without a `config`
- * only those are searched.
+ * ⌘K (shadcn `Command` on cmdk): `navigation` (this console's pages, then the other consoles) and
+ * the console's own `commands` are matched in the browser and listed first, in that order; then one
+ * query across every console the viewer may open (`config`), grouped by console. Enter or click
+ * runs the entry or follows the hit (a same-origin link). Before anything is typed the navigation
+ * and commands are listed (minus `hideUntilTyped` ones). Without a `config` nothing is fetched.
  *
  * aviary: when the endpoint answers per console (`config.self`), each console is asked on its own
  * and its group streams in as soon as it answers ("Searching N consoles…" counts the rest). Else
@@ -194,20 +280,24 @@ const IDLE: SearchState = {
  * with a retry.
  *
  * aviary: an endpoint that answers 404/405/501 isn't served by this app: the dialog says so once
- * ("Search isn't enabled in this app."), never asks it again, and keeps only the local `commands`.
- * The shell then hides the trigger and the shortcut (see {@link useServedSearch}).
+ * ("Search isn't enabled in this app."), never asks it again, and keeps only the navigation and
+ * `commands`. The shell then hides the trigger and the shortcut unless it has those (see
+ * {@link useServedSearch}).
  */
 export function ConsoleSearch({
   config,
   switcher,
+  navigation,
   commands,
   open,
   onOpenChange,
-  placeholder = 'Search runs, workflows, media…',
+  placeholder,
 }: {
   config?: SearchConfig | undefined;
   /** aviary: the switcher's list endpoint, for the per-console mode. */
   switcher?: SwitcherConfig | undefined;
+  /** Pages and consoles to jump to (AppShell builds them from the nav and the switcher). */
+  navigation?: readonly SearchCommand[] | undefined;
   commands?: readonly SearchCommand[] | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -223,12 +313,20 @@ export function ConsoleSearch({
     if (!open) setQ('');
   }, [open]);
 
-  const local = useMemo(() => filterCommands(commands ?? [], q), [commands, q]);
-  const localGroups = useMemo(() => {
-    const byGroup = new Map<string, SearchCommand[]>();
-    for (const c of local) byGroup.set(c.group, [...(byGroup.get(c.group) ?? []), c]);
-    return [...byGroup.entries()];
-  }, [local]);
+  // Navigation first (pages of this console, then consoles), then the console's own commands.
+  // `local:` keeps their cmdk values apart from the server hits.
+  const localGroups = useMemo(
+    () => [
+      ...groupCommands(navigation ?? [], q).map(
+        ([group, items]): [string, string, SearchCommand[]] => [`nav:${group}`, group, items],
+      ),
+      ...groupCommands(commands ?? [], q).map(
+        ([group, items]): [string, string, SearchCommand[]] => [`cmd:${group}`, group, items],
+      ),
+    ],
+    [navigation, commands, q],
+  );
+  const localCount = localGroups.reduce((n, [, , items]) => n + items.length, 0);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-runs the search (Retry)
   useEffect(() => {
@@ -306,10 +404,10 @@ export function ConsoleSearch({
   const pending = remote && phase === 'loading';
   const stale = pending && !fresh && groups.length > 0;
   const shown = remote ? groups : [];
-  const hitCount = shown.reduce((n, g) => n + g.hits.length, 0) + local.length;
+  const hitCount = shown.reduce((n, g) => n + g.hits.length, 0) + localCount;
   const nothing =
     query !== '' &&
-    local.length === 0 &&
+    localCount === 0 &&
     shown.length === 0 &&
     !unserved &&
     (!remote || phase === 'done');
@@ -325,7 +423,11 @@ export function ConsoleSearch({
       open={open}
       onOpenChange={onOpenChange}
       title={label}
-      description={served ? 'Search every console you can open' : 'Jump to a page'}
+      description={
+        served
+          ? 'Jump to a page or console, or search every console you can open'
+          : 'Jump to a page or console'
+      }
       className="sm:max-w-xl"
     >
       <Command shouldFilter={false} label={label}>
@@ -333,7 +435,10 @@ export function ConsoleSearch({
           <CommandInput
             value={q}
             onValueChange={setQ}
-            placeholder={placeholder}
+            placeholder={
+              placeholder ??
+              (served ? 'Jump to a page, or search runs, workflows, media…' : 'Jump to a page…')
+            }
             aria-label={label}
             className="pr-7"
           />
@@ -345,10 +450,10 @@ export function ConsoleSearch({
           {pending ? 'Searching…' : query !== '' && phase !== 'error' ? `${hitCount} results` : ''}
         </output>
         <CommandList className="max-h-[60vh]" aria-busy={pending}>
-          {query === '' && local.length === 0 && !unserved && (
+          {query === '' && localCount === 0 && !unserved && (
             <p className="px-3 py-6 text-center text-[13px] text-dim">Type to search.</p>
           )}
-          {unserved && local.length === 0 && (
+          {unserved && localCount === 0 && (
             <p
               data-aviary-search-unavailable=""
               className="px-3 py-6 text-center text-[13px] text-dim"
@@ -361,15 +466,15 @@ export function ConsoleSearch({
               Nothing found.
             </p>
           )}
-          {localGroups.map(([group, items]) => (
+          {localGroups.map(([key, group, items]) => (
             <CommandGroup
-              key={`local:${group}`}
+              key={key}
               heading={<span className="uppercase tracking-[0.14em]">{group}</span>}
             >
               {items.map((c) => (
                 <CommandItem
                   key={c.id}
-                  value={`local:${c.id}`}
+                  value={`local:${key}:${c.id}`}
                   onSelect={() => {
                     onOpenChange(false);
                     c.onSelect();

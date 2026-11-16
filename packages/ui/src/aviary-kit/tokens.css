@@ -375,3 +375,38 @@ html.light .aviary-tile,
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Charts (charts/*, TanStack Charts). Tick labels in mono, the series palette from the tokens, the
+   tooltip as a kit popover. The tooltip variables live on its own class: the portal can re-parent
+   it under <body>, where the chart's inherited variables don't reach. */
+.aviary-chart {
+  color: var(--aviary-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  --ts-chart-1: var(--aviary-accent);
+  --ts-chart-2: var(--aviary-info);
+  --ts-chart-3: var(--aviary-good);
+  --ts-chart-4: var(--aviary-warn);
+  --ts-chart-5: var(--aviary-violet);
+  --ts-chart-6: var(--aviary-teal);
+}
+.aviary-chart svg {
+  overflow: visible;
+  border-radius: 6px;
+}
+.aviary-chart svg:focus-visible {
+  outline: 2px solid var(--aviary-accent-ink);
+  outline-offset: 2px;
+}
+.aviary-chart-tooltip {
+  --ts-chart-tooltip-background: var(--aviary-panel-2);
+  --ts-chart-tooltip-color: var(--aviary-text);
+  --ts-chart-tooltip-border: 1px solid var(--aviary-line-strong);
+  --ts-chart-tooltip-border-radius: 8px;
+  --ts-chart-tooltip-shadow: var(--aviary-shadow);
+  --ts-chart-tooltip-padding: 7px 10px;
+  --ts-chart-tooltip-max-width: 280px;
+  --ts-chart-tooltip-font: 500 11.5px / 1.45 var(--font-sans);
+  --ts-chart-tooltip-active-row-background: var(--aviary-accent-soft);
+  font-variant-numeric: tabular-nums;
+}
