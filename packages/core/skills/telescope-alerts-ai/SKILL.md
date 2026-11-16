@@ -2,7 +2,10 @@
 name: telescope-alerts-ai
 description: >-
   Alerting and AI exception diagnosis in nestjs-telescope. Configure alerts with
-  channel helpers (slackChannel, webhookChannel, customChannel) and rules
+  channel helpers (slackChannel, webhookChannel, customChannel, plus
+  pagerDutyChannel/opsgenieChannel/discordChannel/teamsChannel/emailChannel and
+  the other integrations), per-rule severity/channels routing, heartbeats and
+  status pages, and rules
   (new-exception, exception-rate, slow-request-rate, dropped-entries,
   metric-threshold); understand the default that 4xx HttpExceptions are NOT
   recorded as exception entries (exceptions.captureHttp4xx restores it); wire AI
@@ -63,7 +66,17 @@ rules: [
 ];
 ```
 
-Source: `packages/core/src/alerts/alert-rule.ts` (`AlertRule`).
+Every rule also takes `severity` (`info` | `warning` | `error` | `critical`) and
+`channels` (names of the channels it goes to); every channel takes
+`minSeverity`. On-call, chat and email integrations (`pagerDutyChannel`,
+`opsgenieChannel`, `betterStackIncidentChannel`, `incidentIoChannel`,
+`grafanaOnCallChannel`, `discordChannel`, `teamsChannel`, `telegramChannel`,
+`googleChatChannel`, `emailChannel({ to, transport })`) also get a `resolved`
+notification when an interval rule stops firing, keyed by `alerts.app` + rule.
+`alerts.heartbeats` / `alerts.statusPages` read `alerts.checkStates`.
+
+Source: `packages/core/src/alerts/alert-rule.ts` (`AlertRule`),
+`packages/core/src/alerts/integrations/`.
 
 ### Pattern 2 — AI exception diagnosis
 

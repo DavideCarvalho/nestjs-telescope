@@ -163,6 +163,8 @@ The two per-flush rules run **behind** the flush, not inside it. Each flush's ex
 - **`webhookChannel(url)`** — POSTs the raw `AlertPayload` JSON. This is the v1 behavior unchanged; existing relays that parse the raw body keep working.
 - **`customChannel(fn, name?)`** — calls your async `fn(alert)` for anything else (email, SNS, PagerDuty, a DB row). Throwing is safe — the alerter isolates and logs it.
 
+On-call, chat and email integrations (PagerDuty, Opsgenie, Better Stack, incident.io, Grafana OnCall, Discord, Teams, Telegram, Google Chat, email), per-rule routing and severity, resolved notifications, heartbeats, status pages and an uptime endpoint are covered in [Alert integrations](/docs/recipes/alert-integrations).
+
 ### Slack recipe
 
 1. Create a Slack [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel you want alerts in and copy its URL.

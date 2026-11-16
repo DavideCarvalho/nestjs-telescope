@@ -256,6 +256,14 @@ A configured `alerts` with no `channels` or empty `rules` is a
 
 `meta.alerts` reports `{ enabled, ruleCount }`.
 
+More channels ship as factories: `pagerDutyChannel`, `opsgenieChannel`,
+`betterStackIncidentChannel`, `incidentIoChannel`, `grafanaOnCallChannel`,
+`discordChannel`, `teamsChannel`, `telegramChannel`, `googleChatChannel` and
+`emailChannel` (bring your own nodemailer-style transport). Rules take
+`severity` and `channels`; channels take `minSeverity`. `alerts.heartbeats`,
+`alerts.statusPages` and `uptimeHandler()` cover uptime monitoring. See
+[Alert integrations](https://davidecarvalho.github.io/aviary/docs/telescope/recipes/alert-integrations).
+
 ## Overload protection
 
 Telescope watches the process event-loop lag (`perf_hooks.monitorEventLoopDelay`)
