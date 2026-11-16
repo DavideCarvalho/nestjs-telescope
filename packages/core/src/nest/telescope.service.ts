@@ -279,13 +279,16 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     // the windowed analytics scans (pulse/timeseries/stats) get slower over time.
     // Warn once at boot so hosts opt into a retention window (and/or `sampling`
     // for noisy request floods) rather than discovering the slowdown in prod.
-    if (this.config.prune === undefined) {
+    // A tenant without a local copy keeps nothing: retention is the control plane's.
+    const keepsNothing =
+      this.options.topology === 'tenant' && this.options.tenant?.local === undefined;
+    if (this.config.prune === undefined && !keepsNothing) {
       this.logger.warn(
         'No `prune` configured — Telescope entries accumulate without bound, ' +
           'slowing analytics over time. Set e.g. `prune: { after: "1h" }` ' +
           '(and/or `sampling` to down-sample noisy request volume).',
       );
-    } else if (Object.keys(this.config.sampling).length === 0) {
+    } else if (!keepsNothing && Object.keys(this.config.sampling).length === 0) {
       // Retention is set, but with no `sampling` every captured entry is kept —
       // the retained working set is `prune.after × ingest rate × entry size`.
       // High-volume streams (cache hits especially) dominate that product, so
@@ -359,6 +362,14 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
    * so a caller on its own failure path can call this immediately before
    * re-throwing the host's error without any risk of replacing it.
    */
+  /**
+   * Stores entries a tenant app sent (a control plane): already redacted and sampled there, kept
+   * with their own ids and times. Rejects when the store fails, so the tenant retries.
+   */
+  async storeIngested(entries: Entry[]): Promise<void> {
+    await this.recorder.storeRecorded(entries);
+  }
+
   recordException(error: unknown, details?: ExceptionCaptureDetails): void {
     if (!this.config.enabled) return;
     captureException(

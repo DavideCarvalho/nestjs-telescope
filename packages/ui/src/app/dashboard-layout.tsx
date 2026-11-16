@@ -23,6 +23,7 @@ import {
   useMeta,
   visibleEntryTypes,
 } from '../react/index.js';
+import { AppPicker } from './app-picker.js';
 import {
   AiIcon,
   DashboardIcon,
@@ -315,6 +316,7 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
       actions={
         <>
           <OrganizationPicker />
+          <AppPicker />
           <span className="hidden lg:flex">
             <RetentionIndicator />
           </span>

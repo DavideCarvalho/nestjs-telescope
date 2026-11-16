@@ -16,6 +16,7 @@ import type {
   TagCount,
   TelescopeClient,
 } from '../client/index.js';
+import { NO_APPS } from '../client/index.js';
 import { usePaused, useTelescopeClient } from './telescope-context.js';
 
 export const REFETCH_MS = 3000;
@@ -419,6 +420,15 @@ export function useTenancy(search = '') {
     queryKey: ['telescope', 'tenancy', search],
     queryFn: () =>
       client.tenancy ? client.tenancy(search) : Promise.resolve({ enabled: false as const }),
+    staleTime: 30_000,
+  });
+}
+/** The console's apps (`GET apps`, a control plane), narrowed by `search`. */
+export function useApps(search = '') {
+  const client = useTelescopeClient();
+  return useQuery({
+    queryKey: ['telescope', 'apps', search],
+    queryFn: () => (client.apps ? client.apps(search) : Promise.resolve(NO_APPS)),
     staleTime: 30_000,
   });
 }

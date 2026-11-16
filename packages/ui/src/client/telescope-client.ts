@@ -1,6 +1,7 @@
 import type {
   AiUsageReport,
   CachedDiagnosis,
+  ConsoleAppsInfo,
   ConsoleTenancyInfo,
   CpuProfileContent,
   CursorPage,
@@ -64,6 +65,11 @@ export interface TelescopeClientOptions {
    * `authorize` granted. Default: the page's own `?tenant=`.
    */
   tenant?: () => string | undefined;
+  /**
+   * The app every call asks for (a control plane), sent as `?app=`; the server keeps it within what
+   * `authorize` granted. Default: the page's own `?app=`.
+   */
+  app?: () => string | undefined;
 }
 
 /** A refusal from the console's `authorize`. */
@@ -110,11 +116,46 @@ export function pageTenant(): string | undefined {
   return search ? new URLSearchParams(search).get('tenant') || undefined : undefined;
 }
 
-/** Adds `tenant=<id>` to a URL string (a URL that already names one keeps it). */
-function withTenant(input: RequestInfo | URL, tenant: string | undefined): RequestInfo | URL {
-  if (tenant === undefined || typeof input !== 'string' || /[?&]tenant=/.test(input)) return input;
-  return `${input}${input.includes('?') ? '&' : '?'}tenant=${encodeURIComponent(tenant)}`;
+/** The page's `?app=`: the app the console shows (a control plane). */
+export function pageApp(): string | undefined {
+  const search = typeof window === 'undefined' ? undefined : window.location?.search;
+  return search ? new URLSearchParams(search).get('app') || undefined : undefined;
 }
+
+/** Adds `<name>=<value>` to a URL string (a URL that already names one keeps it). */
+function withParam<T extends RequestInfo | URL>(
+  input: T,
+  name: 'tenant' | 'app',
+  value: string | undefined,
+): T {
+  if (value === undefined || typeof input !== 'string' || new RegExp(`[?&]${name}=`).test(input)) {
+    return input;
+  }
+  return `${input}${input.includes('?') ? '&' : '?'}${name}=${encodeURIComponent(value)}` as T;
+}
+
+/**
+ * Adds the console's scope (`?tenant=`, `?app=`) to a URL the browser opens itself, such as the
+ * live tail's `EventSource`. Default: the page's own.
+ */
+export function withConsoleScope(
+  url: string,
+  scope: { tenant?: string | undefined; app?: string | undefined } = {
+    tenant: pageTenant(),
+    app: pageApp(),
+  },
+): string {
+  return withParam(withParam(url, 'tenant', scope.tenant), 'app', scope.app);
+}
+
+/** What a server without the App dimension (a standalone app, or an older one) answers. */
+export const NO_APPS: ConsoleAppsInfo = {
+  enabled: false,
+  tag: 'app',
+  all: true,
+  selected: null,
+  apps: [],
+};
 
 /** Derives the API base from the server-injected mount base, falling back to the default. */
 function defaultBaseUrl(): string {
@@ -168,6 +209,8 @@ export interface TelescopeClient {
   meta(): Promise<TelescopeMeta>;
   /** The console's organization scope (`GET tenancy`); `{ enabled: false }` from older servers. */
   tenancy?(search?: string): Promise<ConsoleTenancyInfo>;
+  /** The console's apps (`GET apps`, a control plane); `enabled: false` from older servers. */
+  apps?(search?: string): Promise<ConsoleAppsInfo>;
   /**
    * Fetches data for an extension dashboard panel from a registered provider:
    * `GET ext/:ext/data/:provider`. The optional `query` is serialized to the
@@ -259,10 +302,14 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
   const rawFetch = options.fetch ?? globalThis.fetch;
   const onAccessDenied = options.onAccessDenied ?? defaultOnAccessDenied;
   const tenant = options.tenant ?? pageTenant;
+  const app = options.app ?? pageApp;
   // Every call goes through here, so a refusal from the console's `authorize`
   // reaches `onAccessDenied` whichever endpoint hit it.
   const doFetch: typeof globalThis.fetch = async (input, init) => {
-    const response = await rawFetch(withTenant(input, tenant()), init);
+    const response = await rawFetch(
+      withParam(withParam(input, 'tenant', tenant()), 'app', app()),
+      init,
+    );
     const denial = await readAccessDenial(response);
     if (denial) onAccessDenied(denial);
     return response;
@@ -436,6 +483,14 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
       if (response.status === 404) return { enabled: false };
       if (!response.ok) throw new Error(`Telescope API /tenancy failed: ${response.status}`);
       return (await response.json()) as ConsoleTenancyInfo;
+    },
+    apps: async (search) => {
+      const qs = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+      const response = await rawGet(`/apps${qs}`);
+      // 404: a server without the App dimension.
+      if (response.status === 404) return NO_APPS;
+      if (!response.ok) throw new Error(`Telescope API /apps failed: ${response.status}`);
+      return (await response.json()) as ConsoleAppsInfo;
     },
     extData: (ext, provider, query) => {
       const qs =

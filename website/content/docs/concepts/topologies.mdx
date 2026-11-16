@@ -1,0 +1,121 @@
+---
+title: Deployment topologies
+description: Run one Telescope for many apps. Tenant apps send their entries to a central control plane, whose console shows each viewer the apps they may see.
+icon: Network
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+By default every app runs its own Telescope: it records, stores and shows its own entries. With `topology` you can instead run **one Telescope for several apps**: each app (a *tenant*) sends its entries to a central app (the *control plane*), and the control plane's console shows them all, with an **App** picker.
+
+| `topology` | What the app does |
+|------------|-------------------|
+| `'standalone'` (default) | Stores and shows its own entries, exactly as without this option. |
+| `'control-plane'` | Stores its own entries and the ones tenant apps send it. Its console gets the App picker. Needs `verifyTenant`. |
+| `'tenant'` | Sends its entries to a control plane. Keeps a local copy only with `tenant.local`. |
+
+## The control plane
+
+```ts
+import { TelescopeModule, hmacTenantVerifier } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  topology: 'control-plane',
+  verifyTenant: hmacTenantVerifier(process.env.TELESCOPE_TENANT_SECRET!),
+  authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isStaff === true,
+  apps: { labels: { shop: 'Shop', billing: 'Billing' } },
+});
+```
+
+Tenant apps send to `POST <path>/api/ingest` (`/telescope/api/ingest` by default). That route is not behind `authorize` or `decorators`: the tenant's token is its credential, checked by `verifyTenant`. On any other topology the route answers 404.
+
+Each entry the control plane receives is tagged `app:<partition>`, where the partition comes from the **verified token**, never from the request. A tenant cannot write as another app: an `app:` tag it sets itself is dropped.
+
+The control plane keeps each entry's own id and time (a time more than 5 minutes in the future becomes the arrival time). A redelivered batch, or an entry id the store already holds, stores nothing new, and an existing entry is never overwritten.
+
+## A tenant app
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+
+TelescopeModule.forRoot({
+  topology: 'tenant',
+  tenant: {
+    url: process.env.TELESCOPE_URL!, // the control plane's console URL, e.g. https://ops.example.com/telescope
+    partition: 'shop',
+    token: process.env.TELESCOPE_TENANT_TOKEN!, // signTenantToken('shop', secret), minted once
+  },
+});
+```
+
+Watchers, redaction, sampling, filters and tags run in the tenant as usual, so the control plane only receives what the tenant would have stored. Entries are buffered and sent in batches every second:
+
+| `tenant` option | Default | What it does |
+|-----------------|---------|--------------|
+| `url` | | The control plane's console URL. Shorthand for `transport: transports.http({ url })`. |
+| `transport` | HTTP to `url` | How batches reach the control plane. See [Transports](#transports). |
+| `partition` | | The app this tenant is. The token must be minted for it. |
+| `token` | | A string, or a function called before each send (to re-mint a short-lived token). |
+| `local` | none | Also keep entries in this store, for the app's own console. Without it, the tenant's console is empty. |
+| `bufferSize` | `10000` | Entries waiting to be sent. Beyond it the oldest is dropped. |
+| `batchSize` | `200` | Entries per batch. |
+| `maxBatchBytes` | `64000` | A larger batch is split; a single larger entry is dropped. |
+| `intervalMs` | `1000` | How often waiting entries are sent. |
+
+A failed send is retried with the same batch (backoff up to 30 s), so a control plane that was down receives everything once it is back, up to `bufferSize`. On shutdown the tenant keeps sending for up to 5 seconds.
+
+<Callout type="warn">
+Express parses JSON bodies up to 100 KB by default, which is why `maxBatchBytes` defaults to 64 000. If you raise `maxBatchBytes`, raise the control plane's body limit too.
+</Callout>
+
+## Tokens
+
+`hmacTenantVerifier(secret)` checks tokens made by `signTenantToken(partition, secret)`, a shared secret with no identity provider. Mint one token per app and give each app only its own:
+
+```ts
+import { signTenantToken } from '@dudousxd/nestjs-telescope';
+
+signTenantToken('shop', secret); // never expires
+signTenantToken('shop', secret, { ttlMs: 24 * 3600_000 }); // expires in a day
+```
+
+Pass a list (`hmacTenantVerifier([next, current])`) to rotate the secret without downtime. The format is the same as `@dudousxd/nestjs-durable`'s tenant tokens.
+
+With an identity provider, write your own `verifyTenant`: it gets `{ token }` and returns `{ tenant: '<partition>' }`, or `null` to refuse. If it returns `capabilities`, they must include `telescope:ingest`. A verifier that throws (the provider is down) makes the tenant retry.
+
+```ts
+verifyTenant: async ({ token }) => {
+  const claims = await verifyJwt(token); // your IdP
+  return claims ? { tenant: claims.client_id, capabilities: claims.scope.split(' ') } : null;
+},
+```
+
+## Transports
+
+| Driver | Tenant sends |
+|--------|--------------|
+| `transports.http({ url, fetch?, timeoutMs? })` (default) | `POST <url>/api/ingest` with `Authorization: Bearer <token>`. `timeoutMs` defaults to 10 000. |
+
+## Who sees which app
+
+On the control plane, the console's `authorize` can grant apps next to organizations:
+
+```ts
+authorize: (ctx) => {
+  const user = ctx.switchToHttp().getRequest().user;
+  if (user?.isStaff) return true; // every app
+  if (user?.team === 'payments') return { allowed: true, apps: ['billing'] };
+  return false;
+},
+```
+
+| `apps` | The viewer sees |
+|--------|-----------------|
+| omitted or `'*'` | Every app. **All apps** in the picker, or one picked app (`?app=`). |
+| `['billing', ...]` | Only these apps. |
+
+`authorizeByToken({ token, apps })` takes the same option. With [organizations](/docs/dashboard/organizations) on as well, an entry is visible only when both its organization and its app are granted.
+
+The limit applies to every read: entries, traces, metrics, Pulse, exceptions, the live tail, the ⌘K search and the MCP tools. An `?app=` outside the viewer's apps answers empty (and is logged), never with another app's data. Global actions (clearing entries, pruning, queue and schedule controls, Prometheus metrics) are refused to a viewer limited to some apps, as they are to a viewer limited to some organizations.
+
+The App picker is hidden while no entry carries an app, so a standalone app's console looks as before. The entries table shows an **App** column when entries of several apps are in view.

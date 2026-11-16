@@ -34,6 +34,9 @@ import { StreamController } from '../sse/stream.controller.js';
 import { SqliteStorageProvider } from '../storage/sqlite-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { asTenantScopedStorage } from '../storage/tenant-scoped-storage.js';
+import { resolveTopology } from '../topology/config.js';
+import { TelescopeIngestController } from '../topology/ingest.controller.js';
+import { RemoteTelescopeStore } from '../topology/remote-store.js';
 import { withStaticOptions } from './async-static-options.js';
 import { ClientErrorController } from './client-error.controller.js';
 import { UseConsoleAuthorize } from './console-authorize.guard.js';
@@ -58,6 +61,13 @@ import {
   type TelescopeModuleOptions,
 } from './telescope.options.js';
 import { TelescopeService } from './telescope.service.js';
+
+/** The defined keys of `source` among `keys`. */
+function pick<T extends object, K extends keyof T>(source: T, keys: K[]): Partial<Pick<T, K>> {
+  const out: Partial<Pick<T, K>> = {};
+  for (const key of keys) if (source[key] !== undefined) out[key] = source[key];
+  return out;
+}
 
 /** Logs the "no `authorize`" warning once at boot, mounted routes or not (`routes: false`). */
 const CONSOLE_AUTHORIZE_WARNING = Symbol('TELESCOPE_CONSOLE_AUTHORIZE_WARNING');
@@ -87,8 +97,26 @@ const SHARED_PROVIDERS: Provider[] = [
     // Every storage call runs as Telescope's own work: no OpenTelemetry spans for it in the
     // app's traces, and nothing it causes is ingested by the span processor.
     // With tenancy on, a console call's reads only see the organization it shows (a no-op otherwise).
+    // `topology: 'tenant'`: the store ships every entry to the control plane (innermost, so
+    // redaction, sampling and tags already ran), keeping a local copy only with `tenant.local`.
     useFactory: (options: TelescopeModuleOptions): StorageProvider => {
-      const storage = asTelescopeWorkStorage(options.storage ?? new SqliteStorageProvider());
+      const topology = resolveTopology(options);
+      const base =
+        topology.kind === 'tenant'
+          ? new RemoteTelescopeStore({
+              transport: topology.transport,
+              partition: topology.partition,
+              token: topology.token,
+              ...pick(topology.options, [
+                'local',
+                'bufferSize',
+                'batchSize',
+                'maxBatchBytes',
+                'intervalMs',
+              ]),
+            })
+          : (options.storage ?? new SqliteStorageProvider());
+      const storage = asTelescopeWorkStorage(base);
       return options.tenancy === false ? storage : asTenantScopedStorage(storage);
     },
     inject: [TELESCOPE_OPTIONS],
@@ -290,6 +318,9 @@ export class TelescopeModule implements NestModule {
       // takes NO `decorators` (only the Can.Anyone mark). It 404s while
       // `clientErrors.enabled` is off. Mounts before the catch-all controller.
       dynamicController(ClientErrorController, `${path}/api/client-errors`),
+      // Where tenant apps send their entries (a 404 unless `topology: 'control-plane'`). Public
+      // like the beacon: the tenant's token is checked by `verifyTenant`, not by `authorize`.
+      dynamicController(TelescopeIngestController, `${path}/api/ingest`),
       dynamicController(TelescopeConsolesController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(TelescopeController, `${path}/api`, [...decorators, consoleAccess]),
       dynamicController(StreamController, `${path}/api`, [...decorators, consoleAccess]),

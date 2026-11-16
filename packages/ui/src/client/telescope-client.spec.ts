@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LAST_PAGE_META } from '../testing/mock-telescope-client.js';
-import { createTelescopeClient } from './telescope-client.js';
+import { NO_APPS, createTelescopeClient, pageApp, withConsoleScope } from './telescope-client.js';
 
 function jsonResponse(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response;
@@ -428,5 +428,35 @@ describe('organization scope', () => {
       tenant: () => undefined,
     });
     expect(await client.tenancy?.()).toEqual({ enabled: false });
+  });
+});
+
+describe('app scope', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the page's ?app= with ?tenant= on every call, and on the live tail URL", async () => {
+    vi.stubGlobal('window', { location: { search: '?tenant=A&app=shop' } });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ data: [] }));
+    const client = createTelescopeClient({ baseUrl: '/t/api', fetch: fetchMock });
+    await client.meta();
+    expect(fetchMock.mock.calls[0]![0]).toBe('/t/api/meta?tenant=A&app=shop');
+    expect(withConsoleScope('/t/api/stream')).toBe('/t/api/stream?tenant=A&app=shop');
+    expect(pageApp()).toBe('shop');
+  });
+
+  it('reads GET apps, and a server without it (404) has no App control', async () => {
+    vi.stubGlobal('window', { location: { search: '' } });
+    const info = { enabled: true, tag: 'app', all: true, selected: null, apps: [] };
+    const ok = vi.fn<typeof globalThis.fetch>(async () => jsonResponse(info));
+    const client = createTelescopeClient({ baseUrl: '/t/api', fetch: ok });
+    expect(await client.apps?.('sh')).toEqual(info);
+    expect(ok.mock.calls[0]![0]).toBe('/t/api/apps?search=sh');
+    const old = createTelescopeClient({
+      baseUrl: '/t/api',
+      fetch: async () => statusResponse(404, {}),
+    });
+    expect(await old.apps?.()).toEqual(NO_APPS);
   });
 });

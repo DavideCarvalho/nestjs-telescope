@@ -4,8 +4,11 @@ export { telescopeConsoleUrl } from './console-url.js';
 
 export {
   TELESCOPE_ACCESS_DENIED_EVENT,
+  NO_APPS,
   createTelescopeClient,
+  pageApp,
   pageTenant,
+  withConsoleScope,
   readAccessDenial,
 } from './telescope-client.js';
 export type {

@@ -21,6 +21,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { HttpAdapterHost, ModuleRef } from '@nestjs/core';
+import { rememberConsoleApps } from './console-app-scope.js';
 import {
   CONSOLE_AUTHORIZE_MISSING_WARNING,
   type ConsoleAuthorize,
@@ -208,6 +209,7 @@ export class ConsoleAuthorizeGuard implements CanActivate, OnModuleInit {
       if (context.getType() === 'http') {
         const request = context.switchToHttp().getRequest();
         rememberConsoleTenants(request, decision.tenants);
+        rememberConsoleApps(request, decision.apps);
         // The audit line names an allowed caller without a user id `console-session`, not `anonymous`.
         if (this.configured) rememberConsoleCaller(request);
       }

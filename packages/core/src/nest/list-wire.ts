@@ -34,9 +34,9 @@ export function rejectRemovedParams(query: Query, removed: Record<string, string
 
 /**
  * Params the console client adds to every call, whatever the route: `tenant` (the organization the
- * console shows, read by the tenancy layer).
+ * console shows, read by the tenancy layer) and `app` (the app it shows, on a control plane).
  */
-const CONSOLE_PARAMS = ['tenant'] as const;
+const CONSOLE_PARAMS = ['tenant', 'app'] as const;
 
 /**
  * Rejects (400) any param a console list does not read, besides the console's own

@@ -7,16 +7,21 @@ import 'reflect-metadata';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { type ExecutionContext, Logger, type Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { type ConsoleApps, consoleAppsOf } from './console-app-scope.js';
 import { type ConsoleTenants, consoleTenantsOf } from './console-tenant-scope.js';
 import { rememberConsoleCaller } from './extension-audit.js';
 
 /**
  * `tenants` (with tenancy on) is what the viewer may see: `'*'` every organization and the data
  * of none, or these organization ids. Without it, the viewer's own organization.
+ *
+ * `apps` (a control plane receiving several apps' entries) is which apps the viewer sees: `'*'`
+ * (the default when omitted) or these app ids. A viewer limited to some apps cannot run the
+ * console's global actions (they answer 403).
  */
 export type ConsoleAuthorizeResult =
   | boolean
-  | { allowed: true; tenants?: ConsoleTenants }
+  | { allowed: true; tenants?: ConsoleTenants; apps?: ConsoleApps }
   | { allowed: false; reason?: 'unauthenticated' | 'forbidden' }
   | { redirectTo: string };
 
@@ -40,7 +45,7 @@ export type ConsoleAuthorize =
   | string; // registered gate name
 
 export type ConsoleDecision =
-  | { allowed: true; tenants?: ConsoleTenants }
+  | { allowed: true; tenants?: ConsoleTenants; apps?: ConsoleApps }
   | { allowed: false; reason: 'unauthenticated' | 'forbidden'; redirectTo?: string };
 
 /** What a resolved `authorize` is: called once per request, never throws. */
@@ -112,7 +117,13 @@ export function normalizeConsoleResult(result: unknown): ConsoleDecision {
   }
   if (result.allowed === true) {
     const tenants = consoleTenantsOf(result);
-    return tenants === undefined ? allow() : { allowed: true, tenants };
+    const apps = consoleAppsOf(result);
+    if (tenants === undefined && apps === undefined) return allow();
+    return {
+      allowed: true,
+      ...(tenants !== undefined ? { tenants } : {}),
+      ...(apps !== undefined ? { apps } : {}),
+    };
   }
   return result.reason === 'unauthenticated' ? unauthenticated() : forbidden();
 }
@@ -285,11 +296,11 @@ export async function resolveConsoleAuthorize(
     try {
       return await decide(context);
     } catch (error) {
-      logger.warn(
-        `console \`authorize\` threw, denying the request: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      // The stack too: a hook that throws (a bug, a database outage) otherwise reads like a
+      // missing role, and the denial alone says nothing about why.
+      const detail =
+        error instanceof Error ? (error.stack ?? `${error.name}: ${error.message}`) : String(error);
+      logger.warn(`console \`authorize\` threw, denying the request: ${detail}`);
       return forbidden();
     }
   };
@@ -302,10 +313,13 @@ const sha256 = (value: string): Buffer => createHash('sha256').update(value).dig
  * is `unauthenticated`. Header only: no query string, no custom header. Throws when `token` is
  * empty, so a missing env var fails at config time instead of opening the console.
  */
-export function authorizeByToken(options: { token: string | undefined }): (
-  context: ExecutionContext,
-) => ConsoleAuthorizeResult {
+export function authorizeByToken(options: {
+  token: string | undefined;
+  /** The apps the token grants (a control plane). Default: every app. */
+  apps?: ConsoleApps;
+}): (context: ExecutionContext) => ConsoleAuthorizeResult {
   const token = options.token;
+  const apps = options.apps;
   if (typeof token !== 'string' || token.length === 0) {
     throw new Error('authorizeByToken: `token` is empty; set it (e.g. from an env var).');
   }
@@ -314,7 +328,9 @@ export function authorizeByToken(options: { token: string | undefined }): (
     const header = context.switchToHttp().getRequest<{ headers?: Record<string, unknown> }>()
       ?.headers?.authorization;
     const match = typeof header === 'string' ? /^Bearer\s+(.+)$/i.exec(header.trim()) : null;
-    if (match?.[1] && timingSafeEqual(sha256(match[1]), expected)) return true;
+    if (match?.[1] && timingSafeEqual(sha256(match[1]), expected)) {
+      return apps === undefined ? true : { allowed: true, apps };
+    }
     return { allowed: false, reason: 'unauthenticated' };
   };
 }

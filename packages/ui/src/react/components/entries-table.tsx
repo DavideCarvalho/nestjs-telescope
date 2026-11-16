@@ -71,15 +71,24 @@ export function dumpValuePreview(value: unknown): string {
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
+/** The app an entry came from (`app:<id>`, set by a control plane), or `undefined`. */
+export function entryApp(entry: Pick<Entry, 'tags'>): string | undefined {
+  const tag = entry.tags.find((t) => t.startsWith('app:'));
+  return tag === undefined ? undefined : tag.slice('app:'.length);
+}
+
 export function EntriesTable({
   entries,
   onSelect,
 }: { entries: Entry[]; onSelect?: (id: string) => void }): React.JSX.Element {
+  // The App column shows when entries of several apps are in view (a control plane, all apps).
+  const showApp = new Set(entries.map(entryApp).filter((app) => app !== undefined)).size > 1;
   return (
     <Table className="text-left">
       <TableHeader>
         <TableRow>
           <TableHead className="py-2.5 pr-3 pl-4">Time</TableHead>
+          {showApp ? <TableHead className="px-3">App</TableHead> : null}
           <TableHead className="px-3">Type</TableHead>
           <TableHead className="px-3">Summary</TableHead>
           <TableHead className="px-3 text-right">Duration</TableHead>
@@ -89,7 +98,10 @@ export function EntriesTable({
       <TableBody>
         {entries.map((entry) => {
           const userTag = findUserTag(entry.tags);
-          const otherTags = entry.tags.filter((tag) => tag !== userTag);
+          const app = showApp ? entryApp(entry) : undefined;
+          const otherTags = entry.tags.filter(
+            (tag) => tag !== userTag && (app === undefined || tag !== `app:${app}`),
+          );
           return (
             <TableRow
               key={entry.id}
@@ -102,6 +114,11 @@ export function EntriesTable({
               <TableCell className="py-2 pr-3 pl-4 align-middle font-mono whitespace-nowrap tabular-nums text-faint">
                 {new Date(entry.createdAt).toLocaleTimeString()}
               </TableCell>
+              {showApp ? (
+                <TableCell className="px-3 py-2 align-middle font-mono whitespace-nowrap text-fg-2">
+                  {app ?? '—'}
+                </TableCell>
+              ) : null}
               <TableCell className="px-3 py-2 align-middle whitespace-nowrap text-fg-2">
                 <span className="inline-flex items-center gap-1.5">
                   <span

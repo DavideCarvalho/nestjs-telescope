@@ -30,6 +30,13 @@ export * from './nest/dynamic-controller.js';
 export * from './nest/console-authorize.js';
 export * from './nest/console-authorize.guard.js';
 export * from './nest/console-tenant-scope.js';
+export * from './nest/console-app-scope.js';
+export {
+  resolveConsoleView,
+  type ConsoleViewCall,
+  type ConsoleViewInput,
+  type ConsoleAppCall,
+} from './nest/console-view.js';
 export * from './nest/telescope.options.js';
 export * from './nest/telescope.service.js';
 export * from './nest/telescope.controller.js';
@@ -105,5 +112,13 @@ export * from './ai/diagnosis-coordinator.js';
 export * from './profiling/index.js';
 
 export * from './extension/index.js';
+
+export * from './topology/tenant-auth.js';
+export * from './topology/wire.js';
+export * from './topology/ingest.js';
+export * from './topology/transport.js';
+export * from './topology/remote-store.js';
+export * from './topology/config.js';
+export { TelescopeIngestController, bearerToken } from './topology/ingest.controller.js';
 
 export const TELESCOPE_VERSION = '0.0.0';

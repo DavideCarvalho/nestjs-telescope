@@ -13,15 +13,15 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
-import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
-import { openTenantView, tenantViewOf } from '../storage/tenant-scoped-storage.js';
+import { openTenantView } from '../storage/tenant-scoped-storage.js';
+import { type ConsoleAppSelection, consoleAppsFor, requestedApp } from './console-app-scope.js';
+import { type ConsoleTenantSelection, consoleTenantsFor } from './console-tenant-scope.js';
 import {
-  type ConsoleTenantScope,
-  type ConsoleTenantSelection,
-  consoleTenantsFor,
-  resolveConsoleTenantScope,
-  selectConsoleTenant,
-} from './console-tenant-scope.js';
+  type ConsoleAppCall,
+  type ConsoleTenantCall,
+  type ConsoleViewCall,
+  resolveConsoleView,
+} from './console-view.js';
 import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
 
 const logger = new Logger('TelescopeModule');
@@ -42,19 +42,33 @@ export function logForgedTenant(selection: ConsoleTenantSelection, where: string
   }
 }
 
-/** A console call's scope and selection, as the interceptor resolved them. */
-export interface ConsoleTenantCall {
-  scope: ConsoleTenantScope | null;
-  selection: ConsoleTenantSelection;
+/** Logs an `?app=` outside the viewer's apps: the call answers empty. */
+export function logForgedApp(selection: ConsoleAppSelection, where: string): void {
+  if (selection.kind === 'none' && selection.forged !== undefined) {
+    logger.warn(
+      `${where}: app "${selection.forged}" is outside the viewer's apps; answering with no data.`,
+    );
+  }
 }
 
-const calls = new WeakMap<object, ConsoleTenantCall>();
+export type { ConsoleAppCall, ConsoleTenantCall };
 
-/** The scope and selection of this console request (tenancy off or not seen: `undefined`). */
+const calls = new WeakMap<object, ConsoleViewCall>();
+
+/** The organization scope and selection of this console request (tenancy off or not seen: `undefined`). */
 export function consoleTenantCallOf(request: unknown): ConsoleTenantCall | undefined {
-  return typeof request === 'object' && request !== null ? calls.get(request) : undefined;
+  return typeof request === 'object' && request !== null ? calls.get(request)?.tenant : undefined;
 }
 
+/** The app grant and selection of this console request (not seen: `undefined`). */
+export function consoleAppCallOf(request: unknown): ConsoleAppCall | undefined {
+  return typeof request === 'object' && request !== null ? calls.get(request)?.app : undefined;
+}
+
+/**
+ * Runs each console call inside the view its viewer may see: the organizations (tenancy on) and
+ * the apps (`?app=`, within what `authorize` granted) it shows. With neither, the call runs untouched.
+ */
 @Injectable()
 export class ConsoleTenantInterceptor implements NestInterceptor {
   constructor(@Inject(ModuleRef) private readonly moduleRef: ModuleRef) {}
@@ -70,14 +84,18 @@ export class ConsoleTenantInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') return next.handle();
     const options = this.optional(TELESCOPE_OPTIONS) as TelescopeModuleOptions | undefined;
-    const tenancy = readTenancy(options?.tenancy, this.optional(CONTEXT_ACCESSOR));
-    if (!tenancy.enabled) return next.handle();
     const request = context.switchToHttp().getRequest<object>();
-    const scope = resolveConsoleTenantScope(tenancy, consoleTenantsFor(request));
-    const selection = selectConsoleTenant(scope, requestedTenant(request));
-    calls.set(request, { scope, selection });
-    logForgedTenant(selection, `${context.getClass().name}.${context.getHandler().name}`);
-    const view = tenantViewOf(selection, tenantTagPrefix(options?.tenancy), tenancy.nullRows);
+    const call = resolveConsoleView({
+      options,
+      accessor: this.optional(CONTEXT_ACCESSOR),
+      granted: { tenants: consoleTenantsFor(request), apps: consoleAppsFor(request) },
+      requested: { tenant: requestedTenant(request), app: requestedApp(request) },
+    });
+    calls.set(request, call);
+    const where = `${context.getClass().name}.${context.getHandler().name}`;
+    if (call.tenant) logForgedTenant(call.tenant.selection, where);
+    logForgedApp(call.app.selection, where);
+    const view = call.view;
     if (view === null) return next.handle();
     return new Observable((subscriber) => {
       const handle = openTenantView(view);

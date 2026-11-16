@@ -775,6 +775,22 @@ export interface AiUsageReport {
 }
 
 /**
+ * The console's apps (`GET apps`), for the header's "App" control on a control plane that receives
+ * several apps' entries. `enabled: false` on a standalone app: no control.
+ */
+export interface ConsoleAppsInfo {
+  enabled: boolean;
+  /** The tag prefix entries carry: `app`. */
+  tag: string;
+  /** Whether the viewer may see every app. */
+  all: boolean;
+  /** The app this view shows; `null` for every granted app. */
+  selected: string | null;
+  /** Apps to pick from, narrowed by the search. */
+  apps: { id: string; label: string }[];
+}
+
+/**
  * The console's organization scope (`GET tenancy`), for the header's "Organization" control.
  * `tenants: []` means the viewer has none: the console asks to choose an organization.
  */

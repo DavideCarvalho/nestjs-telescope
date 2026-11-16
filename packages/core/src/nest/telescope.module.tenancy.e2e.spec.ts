@@ -541,3 +541,76 @@ describe('the switcher search (telescopeConsoleSearch)', () => {
     expect(await search(viewer({ allowed: true, tenants: '*' }), 'User', 1)).toHaveLength(1);
   });
 });
+
+describe('apps (a control plane): organizations AND apps', () => {
+  beforeEach(async () => {
+    await storage.store([
+      entry('sa', ['tenant:A', 'app:shop']),
+      entry('ba', ['tenant:A', 'app:billing']),
+      entry('sb', ['tenant:B', 'app:shop']),
+    ]);
+  });
+
+  const grant = (value: ConsoleAuthorizeResult) => ({ 'x-grant': JSON.stringify(value) });
+
+  it('an entry must match a granted organization and a granted app', async () => {
+    await boot();
+    const shopOfA = grant({ allowed: true, tenants: ['A'], apps: ['shop'] });
+    expect(await ids('/telescope/api/entries', shopOfA)).toEqual(['sa']);
+    expect(await ids('/telescope/api/entries?app=billing', shopOfA)).toEqual([]);
+    const everyAppOfA = grant({ allowed: true, tenants: ['A'] });
+    expect(await ids('/telescope/api/entries?app=billing', everyAppOfA)).toEqual(['ba']);
+    // The App picker lists the apps seen within the viewer's organizations.
+    const res = await request(app?.getHttpServer())
+      .get('/telescope/api/apps?app=billing')
+      .set(grant({ allowed: true, tenants: ['B'] }))
+      .expect(200);
+    expect(res.body.apps).toEqual([{ id: 'shop', label: 'shop' }]);
+  });
+
+  it('tenancy off: apps alone scope the console', async () => {
+    tenancyEnabled = false;
+    await boot();
+    expect(
+      await ids('/telescope/api/entries', grant({ allowed: true, apps: ['billing'] })),
+    ).toEqual(['ba']);
+  });
+
+  it('dev tools and the switcher search keep to the granted apps', async () => {
+    tenancyEnabled = false;
+    await boot();
+    const lib = (
+      holder[DEV_TOOLS_SLOT] as {
+        libs: {
+          lib: string;
+          authorize(context: ExecutionContext): Promise<unknown>;
+          tools: TelescopeDevTool[];
+        }[];
+      }
+    ).libs.find((l) => l.lib === 'telescope');
+    const list = lib?.tools.find((t) => t.name === 'telescope_list_entries');
+    if (!lib || !list) throw new Error('no telescope dev tools');
+    const req = { headers: grant({ allowed: true, apps: ['billing'] }) };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => req, getResponse: () => ({}) }),
+      getType: () => 'http',
+      getHandler: () => () => undefined,
+      getClass: () => class {},
+    } as unknown as ExecutionContext;
+    await lib.authorize(context);
+    const listed = (await list.run(
+      {},
+      { context, caller: { id: 'x', via: 'open' }, limits: { maxRows: 50, maxBytes: 1e6 } },
+    )) as { items: { id: string }[] };
+    expect(listed.items.map((i) => i.id)).toEqual(['ba']);
+
+    const moduleRef = (app as INestApplication).get(ModuleRef);
+    const options = (app as INestApplication).get(TELESCOPE_OPTIONS) as TelescopeModuleOptions;
+    const decide = await resolveConsoleAuthorize(options.authorize, moduleRef, {
+      warnIfMissing: false,
+    });
+    const search = telescopeConsoleSearch(moduleRef, decide, '/telescope');
+    expect(await search(context, 'sa', 5)).toEqual([]);
+    expect((await search(context, 'ba', 5))[0]?.href).toBe('/telescope#/entries/view/ba');
+  });
+});

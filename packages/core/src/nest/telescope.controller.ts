@@ -65,9 +65,16 @@ import type {
   StorageProvider,
   TagCount,
 } from '../storage/storage-provider.js';
-import { activeTenantView, withoutTenantView } from '../storage/tenant-scoped-storage.js';
+import {
+  activeTenantView,
+  withTenantView,
+  withoutTenantView,
+} from '../storage/tenant-scoped-storage.js';
+import { APP_TAG_PREFIX } from '../topology/wire.js';
+import type { ConsoleAppsInfo } from './console-app-scope.js';
 import type { ConsoleTenancyInfo } from './console-tenant-scope.js';
-import { consoleTenantCallOf } from './console-tenant.interceptor.js';
+import { consoleAppCallOf, consoleTenantCallOf } from './console-tenant.interceptor.js';
+import { resolveConsoleView } from './console-view.js';
 import { auditExtensionAction, consoleCallerOf } from './extension-audit.js';
 import { createExtensionContext } from './extension-context.factory.js';
 import {
@@ -752,6 +759,64 @@ export class TelescopeController {
       selected: selection.kind === 'tenant' ? selection.id : null,
       options: options.slice(0, TENANT_OPTIONS),
     };
+  }
+
+  /**
+   * The header's "App" control (a control plane): the apps this viewer may see, within its
+   * organizations, the one this view shows, and the ones to pick from, narrowed by `search`. Off
+   * (`enabled: false`) while no entry carries an app and the viewer is not limited to some.
+   */
+  @Get('apps')
+  async apps(@Req() request: unknown, @Query('search') search?: string): Promise<ConsoleAppsInfo> {
+    const call = consoleAppCallOf(request);
+    const granted = call?.apps ?? '*';
+    const selection = call?.selection ?? { kind: 'all' };
+    const needle = search?.trim().toLowerCase() ?? '';
+    let ids: string[];
+    if (granted === '*') {
+      const prefix = `${APP_TAG_PREFIX}:`;
+      // The apps seen within the viewer's organizations, whatever `?app=` this view shows.
+      const tenant = consoleTenantCallOf(request);
+      const { view } = resolveConsoleView({
+        options: this.options,
+        accessor: this.contextAccessor,
+        granted: tenant?.scope ? { tenants: tenant.scope.tenants } : {},
+        requested: tenant?.selection.kind === 'tenant' ? { tenant: tenant.selection.id } : {},
+      });
+      const rows = await withTenantView(view, () =>
+        this.storage.tags(prefix, { limit: MAX_LABEL_SCAN }),
+      );
+      ids = rows.map((row) => row.tag.slice(prefix.length)).filter((id) => id !== '');
+    } else {
+      ids = granted;
+    }
+    const labels = await this.appLabels(ids.slice(0, MAX_LABEL_SCAN));
+    const apps = ids
+      .map((id) => ({ id, label: labels[id] ?? id }))
+      .filter(({ id, label }) => !needle || `${id} ${label}`.toLowerCase().includes(needle))
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .slice(0, TENANT_OPTIONS);
+    return {
+      enabled: granted !== '*' || ids.length > 0,
+      tag: APP_TAG_PREFIX,
+      all: granted === '*',
+      // An app outside the grant is never echoed back.
+      selected:
+        selection.kind === 'apps' && selection.ids.length === 1 ? (selection.ids[0] ?? null) : null,
+      apps,
+    };
+  }
+
+  /** Labels of the App picker: `apps.labels` (a map or a function), else the id. */
+  private async appLabels(ids: string[]): Promise<Record<string, string>> {
+    const labels = this.options.apps?.labels;
+    if (labels === undefined || ids.length === 0) return {};
+    if (typeof labels !== 'function') return labels;
+    try {
+      return (await labels(ids)) ?? {};
+    } catch {
+      return {};
+    }
   }
 
   @Get('meta')

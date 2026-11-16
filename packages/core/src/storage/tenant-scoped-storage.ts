@@ -54,6 +54,24 @@ export function tenantViewOf(
   return { empty: false, key: tag, tag, accept: (entry) => entry.tags.includes(tag) };
 }
 
+/**
+ * Both views at once (an organization and an app): an entry must pass each. `null` stands for no
+ * filtering. One tag is pushed down to the store (the organization's, else the app's); the other
+ * is matched here.
+ */
+export function intersectViews(a: TenantView | null, b: TenantView | null): TenantView | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  if (a.empty || b.empty) return { empty: true, key: '', accept: () => false };
+  const tag = a.tag ?? b.tag;
+  return {
+    empty: false,
+    key: `${a.key}|${b.key}`,
+    ...(tag !== undefined ? { tag } : {}),
+    accept: (entry) => a.accept(entry) && b.accept(entry),
+  };
+}
+
 /** The view of the running console call, if any. */
 export function activeTenantView(): TenantView | null {
   const state = views.getStore();
@@ -178,6 +196,11 @@ export function asTenantScopedStorage<T extends StorageProvider>(storage: T): T 
   };
   return new Proxy(storage, {
     get(target, prop) {
+      // Rollups are not tagged: inside a view the store answers as if it kept none, so the metrics
+      // fall back to scanning the view's entries.
+      if ((prop === 'queryRollups' || prop === 'recordRollups') && activeTenantView() !== null) {
+        return undefined;
+      }
       const read = typeof prop === 'string' && Object.hasOwn(reads, prop) ? reads[prop] : undefined;
       const view = read !== undefined ? activeTenantView() : null;
       if (read !== undefined && view !== null) return read(view);

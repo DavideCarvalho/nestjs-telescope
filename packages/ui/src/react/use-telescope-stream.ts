@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { withConsoleScope } from '../client/index.js';
 import { useTelescopeClient } from './telescope-context.js';
 
 export type StreamStatus = 'connecting' | 'live' | 'polling';
@@ -19,7 +20,7 @@ export function useTelescopeStream(): { status: StreamStatus } {
       setStatus('polling');
       return;
     }
-    const streamUrl = `${client.baseUrl}/stream`;
+    const streamUrl = withConsoleScope(`${client.baseUrl}/stream`);
     const es = new EventSource(streamUrl);
     es.onopen = () => setStatus('live');
     es.onerror = () => setStatus('polling');
