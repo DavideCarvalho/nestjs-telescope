@@ -140,17 +140,43 @@ describe('outgoing headers', () => {
     expect(request.headers).toEqual([]);
   });
 
-  it('adds nothing while an OpenTelemetry propagator is registered', () => {
+  /** Stand in for `@opentelemetry/api`'s global (`Symbol.for('opentelemetry.js.api.1')`). */
+  function otelGlobal(value: unknown): void {
     const key = Symbol.for('opentelemetry.js.api.1');
     const slot = globalThis as Record<symbol, unknown>;
     const previous = slot[key];
-    slot[key] = { version: '1.9.0', propagation: {} };
+    slot[key] = value;
     cleanups.push(() => {
       slot[key] = previous;
     });
+  }
+
+  function injected(): string[] {
     const request = undiciRequest('http://billing.internal');
     runInTraceScope(newTraceScope(), () => injectIntoUndiciRequest(config, request));
-    expect(request.headers).toEqual([]);
+    return headerValues(request.headers, 'traceparent');
+  }
+
+  it('adds nothing while an OpenTelemetry propagator writing traceparent is registered', () => {
+    // What `provider.register()` leaves: the W3C propagator, which lists its fields.
+    otelGlobal({
+      version: '1.9.0',
+      trace: {},
+      context: {},
+      propagation: { fields: () => ['traceparent', 'tracestate', 'baggage'] },
+    });
+    expect(injected()).toEqual([]);
+  });
+
+  it('still adds the header when OpenTelemetry registered no such propagator', () => {
+    // Only a meter provider (the API global exists, `propagation` does not).
+    otelGlobal({ version: '1.9.0', metrics: {} });
+    expect(injected()).toHaveLength(1);
+    // A propagator that never writes traceparent (B3 only, or the no-op one).
+    otelGlobal({ version: '1.9.0', propagation: { fields: () => ['x-b3-traceid'] } });
+    expect(injected()).toHaveLength(1);
+    otelGlobal({ version: '1.9.0', propagation: { fields: () => [] } });
+    expect(injected()).toHaveLength(1);
   });
 
   it('sets node:http headers unless the code set one', () => {
