@@ -5,6 +5,8 @@ import {
   type Watcher,
   type WatcherContext,
 } from '@dudousxd/nestjs-telescope';
+// Namespace import: `markFleetWorker` is new in core 5.7, so with an older core the call is skipped.
+import * as telescope from '@dudousxd/nestjs-telescope';
 import { WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
@@ -91,6 +93,8 @@ export class BullMqJobWatcher implements Watcher {
   private readonly includeJobData: boolean;
   private readonly clock: { now(): number };
   private readonly instrumentation: ProcessorInstrumentation;
+  /** Releases the `bullmq` fleet worker mark, once taken. */
+  private releaseWorker: (() => void) | null = null;
   /**
    * Processors the seam had already wrapped when `register()` ran. A non-zero
    * count is the machine-checkable proof that instrumentation preceded the
@@ -142,6 +146,15 @@ export class BullMqJobWatcher implements Watcher {
       return;
     }
     this.logger.log(`BullMqJobWatcher: watching ${processors.length} processor class(es).`);
+    // This process runs BullMQ workers: without an HTTP server, its fleet instance is `bullmq`.
+    const mark = (telescope as { markFleetWorker?: (name: string) => () => void }).markFleetWorker;
+    this.releaseWorker ??= mark?.('bullmq') ?? null;
+  }
+
+  /** Releases the fleet's worker mark. */
+  unregister(): void {
+    this.releaseWorker?.();
+    this.releaseWorker = null;
   }
 
   /** Every `WorkerHost` provider in the graph — used for the boot warning and,

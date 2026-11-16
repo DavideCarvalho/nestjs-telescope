@@ -199,7 +199,7 @@ describe('restart loops', () => {
     );
     const [app] = deriveFleet([...boots, instance({ host: 'web-2' })], NOW);
     expect(app?.restartLoops).toEqual([
-      { host: 'web-1', restarts: 3, since: NOW - 5 * MIN, lastBootAt: NOW - MIN },
+      { host: 'web-1', role: 'web', restarts: 3, since: NOW - 5 * MIN, lastBootAt: NOW - MIN },
     ]);
   });
 
@@ -335,5 +335,56 @@ describe('version', () => {
     };
     expect(await resolveVersion(null, root, {})).toBe(pkg.version);
     expect(await resolveVersion(null, '/nonexistent-telescope-root', {})).toBeNull();
+  });
+});
+
+describe('roles', () => {
+  it('counts per role, web first; a row without a role is web', () => {
+    const [shop] = deriveFleet(
+      [
+        instance({ role: 'durable' }),
+        instance(),
+        instance({ role: 'bullmq', lastSeenAt: NOW - 10 * MIN }),
+      ],
+      NOW,
+    );
+    expect(shop?.roles).toEqual([
+      { role: 'web', counts: { up: 1, starting: 0, draining: 0, gone: 0 } },
+      { role: 'bullmq', counts: { up: 0, starting: 0, draining: 0, gone: 1 } },
+      { role: 'durable', counts: { up: 1, starting: 0, draining: 0, gone: 0 } },
+    ]);
+    expect(shop?.instances.map((i) => i.role).sort()).toEqual(['bullmq', 'durable', 'web']);
+  });
+
+  it('a host booting its web process and a worker is not a restart loop', () => {
+    const boots = (role?: string) => ({
+      host: 'pod',
+      bootedAt: NOW - MIN,
+      ...(role ? { role } : {}),
+    });
+    expect(restartLoopsOf([boots(), boots('bullmq'), boots('durable')], NOW)).toEqual([]);
+    expect(restartLoopsOf([boots('bullmq'), boots('bullmq'), boots('bullmq')], NOW)).toEqual([
+      { host: 'pod', role: 'bullmq', restarts: 3, since: NOW - MIN, lastBootAt: NOW - MIN },
+    ]);
+  });
+
+  it('normalizes a heartbeat role: missing or junk is web', () => {
+    const raw = {
+      v: 1,
+      instanceId: 'i',
+      host: 'h',
+      pid: 1,
+      version: null,
+      bootedAt: new Date(NOW).toISOString(),
+      sentAt: new Date(NOW).toISOString(),
+      state: 'ready',
+      intervalMs: 15_000,
+      checks: [],
+      shipping: null,
+    };
+    expect(normalizeHeartbeat(raw)?.role).toBe('web');
+    expect(normalizeHeartbeat({ ...raw, role: 'durable:work' })?.role).toBe('durable:work');
+    expect(normalizeHeartbeat({ ...raw, role: 'x'.repeat(65) })?.role).toBe('web');
+    expect(normalizeHeartbeat({ ...raw, role: 7 })?.role).toBe('web');
   });
 });

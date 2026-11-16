@@ -10,7 +10,9 @@ import {
   type OnApplicationBootstrap,
   type OnModuleDestroy,
   type OnModuleInit,
+  Optional,
 } from '@nestjs/common';
+import { HttpAdapterHost } from '@nestjs/core';
 import {
   type UptimeCheckState,
   publishCheckStates,
@@ -34,10 +36,16 @@ import {
   resolveSelfApp,
   resolveVersion,
 } from './config.js';
-import { type HeartbeatShipping, normalizeHeartbeat } from './heartbeat.js';
+import {
+  type HeartbeatShipping,
+  type InstanceState,
+  WEB_ROLE,
+  normalizeHeartbeat,
+} from './heartbeat.js';
 import { FleetRegistry, InstanceReporter } from './registry.js';
 import { MemoryFleetStore } from './store.js';
 import { type FleetScope, type FleetView, readFleet } from './view.js';
+import { markedFleetWorkers } from './worker-marks.js';
 
 /** The tenant store's shipping counters, read through the storage proxies. */
 interface ShippingSource {
@@ -57,6 +65,8 @@ export interface ReadinessReport extends HealthReport {
   /** `false` while a critical check is down or the instance is draining. */
   ready: boolean;
   state: string;
+  /** `web`, or this worker's name. */
+  role: string;
 }
 
 @Injectable()
@@ -76,12 +86,19 @@ export class TelescopeFleet
   private draining = false;
   /** The check-state source this module published, if any. */
   private published: (() => Promise<UptimeCheckState[]>) | null = null;
+  /** Starts this process's reporter as `role` (set once the fleet is on). */
+  private startReporter: ((role: string, state: InstanceState) => void) | null = null;
+  /** A worker that is not marked waits `workerAfter` before reporting. */
+  private workerTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Signal listeners a worker added (removed at shutdown). */
+  private signalListeners: Array<[NodeJS.Signals, () => void]> = [];
 
   constructor(
     @Inject(TELESCOPE_OPTIONS) private readonly options: TelescopeModuleOptions,
     @Inject(TELESCOPE_CONFIG) private readonly core: ResolvedCoreConfig,
     @Inject(TELESCOPE_STORAGE) private readonly storage: StorageProvider,
     @Inject(TelescopeService) private readonly service: TelescopeService,
+    @Optional() @Inject(HttpAdapterHost) private readonly adapterHost?: HttpAdapterHost,
   ) {
     this.kind = resolveTopology(options).kind;
     this.config = resolveFleetConfig(options.fleet, this.kind !== 'standalone');
@@ -114,38 +131,112 @@ export class TelescopeFleet
     const tenantStore =
       this.kind === 'tenant' && isShippingSource(this.storage) ? this.storage : null;
     if (this.kind !== 'tenant') this.selfApp = await resolveSelfApp(this.config.app);
-    this.reporter = new InstanceReporter({
-      intervalMs: this.config.intervalMs,
-      host: this.config.host,
-      version: () => resolveVersion(this.config.version),
-      checks: this.checks.size > 0 ? this.checks : null,
-      shipping: tenantStore ? () => shippingOf(tenantStore.stats()) : () => null,
-      url: this.config.url,
-      send: (heartbeat) => {
-        if (tenantStore) tenantStore.setHeartbeat(heartbeat);
-        else if (this.registry && this.selfApp) return this.registry.beat(this.selfApp, heartbeat);
-      },
-      onError: (error) =>
-        this.logger.warn(`heartbeat: ${error instanceof Error ? error.message : String(error)}`),
-    });
     this.registry?.startPruning();
     this.service.setFleetSource(this.registry);
-    this.reporter.start();
+    this.startReporter = (role, state) => {
+      if (this.reporter !== null) return;
+      const worker = role !== WEB_ROLE;
+      this.reporter = new InstanceReporter({
+        intervalMs: this.config.intervalMs,
+        host: this.config.host,
+        version: () => resolveVersion(this.config.version),
+        checks: this.checks.size > 0 ? this.checks : null,
+        shipping: tenantStore ? () => shippingOf(tenantStore.stats()) : () => null,
+        // A worker serves no traffic: service discovery never routes to it.
+        url: worker ? null : this.config.url,
+        role,
+        initialState: state,
+        send: (heartbeat) => {
+          if (tenantStore) tenantStore.setHeartbeat(heartbeat);
+          else if (this.registry && this.selfApp)
+            return this.registry.beat(this.selfApp, heartbeat);
+        },
+        onError: (error) =>
+          this.logger.warn(`heartbeat: ${error instanceof Error ? error.message : String(error)}`),
+      });
+      if (worker) this.watchSignals();
+      this.reporter.start();
+    };
+    // An HTTP server reports from boot (`starting`, then `ready`). A process without one is
+    // decided once the app has booted (its workers are registered by then).
+    if (this.processKind() === 'web' && this.config.report.web) {
+      this.startReporter(this.config.role ?? WEB_ROLE, 'starting');
+    }
   }
 
-  /** The app has booted: `ready`. */
+  /** `web` when this process serves HTTP (or `fleet.role` is `web`), else `worker`. */
+  private processKind(): 'web' | 'worker' {
+    if (this.config.role !== null) return this.config.role === WEB_ROLE ? 'web' : 'worker';
+    return this.adapterHost?.httpAdapter ? 'web' : 'worker';
+  }
+
+  /**
+   * The app has booted: `ready`. A process without an HTTP server reports as a worker once it has
+   * run for `workerAfter` (so a short command never becomes an instance), named after what marked
+   * it (`bullmq`, `bullmq+durable`) or `worker`; with `fleet.role` it reports right away.
+   */
   async onApplicationBootstrap(): Promise<void> {
-    await this.reporter?.setState('ready');
+    if (this.reporter !== null) {
+      await this.reporter.setState('ready');
+      return;
+    }
+    const start = this.startReporter;
+    if (start === null || this.processKind() !== 'worker' || !this.config.report.worker) return;
+    if (this.config.role !== null) {
+      start(this.config.role, 'ready');
+      return;
+    }
+    this.workerTimer = setTimeout(() => {
+      this.workerTimer = null;
+      if (this.draining) return;
+      start(markedFleetWorkers().join('+').slice(0, 64) || 'worker', 'ready');
+    }, this.config.workerAfterMs);
+    this.workerTimer.unref?.();
+  }
+
+  /**
+   * A worker drains on SIGTERM / SIGINT even when the app does not enable Nest's shutdown hooks:
+   * the listener only observes (it runs first), and when it is the only one it re-raises the
+   * signal once removed, so the process exits as it would have without it.
+   */
+  private watchSignals(): void {
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+      const listener = (): void => {
+        const alone = process.listenerCount(signal) === 1;
+        this.unwatchSignals();
+        this.draining = true;
+        const beat = this.reporter?.setState('draining') ?? Promise.resolve();
+        if (alone) {
+          void beat.finally(() => {
+            this.reporter?.stop();
+            process.kill(process.pid, signal);
+          });
+        }
+      };
+      process.prependListener(signal, listener);
+      this.signalListeners.push([signal, listener]);
+    }
+  }
+
+  private unwatchSignals(): void {
+    for (const [signal, listener] of this.signalListeners) process.removeListener(signal, listener);
+    this.signalListeners = [];
   }
 
   /** Shutdown began: `draining` (readiness answers 503), sent before the final flush. */
   async beforeApplicationShutdown(): Promise<void> {
     this.draining = true;
+    if (this.workerTimer !== null) clearTimeout(this.workerTimer);
+    this.workerTimer = null;
+    this.unwatchSignals();
     await this.reporter?.setState('draining');
     this.reporter?.stop();
   }
 
   onModuleDestroy(): void {
+    if (this.workerTimer !== null) clearTimeout(this.workerTimer);
+    this.workerTimer = null;
+    this.unwatchSignals();
     this.reporter?.stop();
     this.registry?.stop();
     // Only unpublish our own source (another module may have published since).
@@ -176,14 +267,17 @@ export class TelescopeFleet
     }
     const states: UptimeCheckState[] = [];
     for (const app of await this.registry.view()) {
-      const serving = app.counts.up + app.counts.starting;
-      const known = serving + app.counts.draining + app.counts.gone;
+      // The web instances decide (a live worker must not hide a web outage); an app that only
+      // runs workers follows its workers.
+      const counts = app.roles.find((entry) => entry.role === WEB_ROLE)?.counts ?? app.counts;
+      const serving = counts.up + counts.starting;
+      const known = serving + counts.draining + counts.gone;
       states.push({
         name: 'instances',
         app: app.app,
         status: serving > 0 ? 'ok' : 'down',
         // The same count as the status: an instance still starting is serving (a deploy).
-        message: `${serving} of ${known} instance${known === 1 ? '' : 's'} up or starting`,
+        message: `${serving} of ${known} ${app.roles.some((entry) => entry.role === WEB_ROLE) ? '' : 'worker '}instance${known === 1 ? '' : 's'} up or starting`,
         critical: true,
       });
       const byName = new Map<string, UptimeCheckState>();
@@ -235,7 +329,12 @@ export class TelescopeFleet
   async readiness(): Promise<ReadinessReport> {
     const report = await this.checks.report();
     const state = this.draining ? 'draining' : (this.reporter?.currentState ?? 'ready');
-    return { ...report, ready: report.status !== 'down' && !this.draining, state };
+    return {
+      ...report,
+      ready: report.status !== 'down' && !this.draining,
+      state,
+      role: this.reporter?.role ?? this.config.role ?? WEB_ROLE,
+    };
   }
 
   /** The last known states of this process's checks, without running them. */

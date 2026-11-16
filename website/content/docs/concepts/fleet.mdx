@@ -57,20 +57,47 @@ An instance beats every `fleet.interval` (`15s`). Its state is `starting` until 
 | `retention` | `'7d'` | How long a gone instance is kept, along with its deploy and restart history. |
 | `restartLoop` | `{ restarts: 3, within: '10m' }` | What counts as a restart loop on one host. |
 | `store` | in memory | Where instances are kept: any `FleetStore` (`upsert`, `list`, `prune`). |
-| `url` | `APP_URL` | The URL other apps reach this one at, sent with each heartbeat for [service discovery](/docs/concepts/service-discovery). |
+| `url` | `APP_URL` | The URL other apps reach this one at, sent with each heartbeat for [service discovery](/docs/concepts/service-discovery). A worker never sends it. |
+| `role` | detected | What this process is: `'web'` or a worker's name. See [Workers](#workers). |
+| `report` | `['web', 'worker']` | Which kinds of process report. `['web']` keeps workers out of the fleet. |
+| `workerAfter` | `'30s'` | How long a process without an HTTP server runs before it reports as a worker. |
 
 <Callout type="warn">
 The default store is in memory. A control plane with several replicas behind a load balancer keeps one fleet per replica. Run one control plane replica, or pass a shared `FleetStore`.
 </Callout>
+
+## Workers
+
+Long-running processes that are not the HTTP server (a worker started with `NestFactory.createApplicationContext`, BullMQ processors, `@dudousxd/nestjs-durable` workers, a microservice) appear in the fleet next to the web instances, with a **role**:
+
+| Process | Role | Reports |
+|---------|------|---------|
+| `NestFactory.create` (an HTTP adapter) | `web` | from boot: `starting`, then `ready` |
+| No HTTP adapter (`createApplicationContext`, a microservice) | what marked it (`bullmq`, `bullmq+durable`), else `worker` | once it has run for `workerAfter` (`30s`), as `ready` |
+| No HTTP adapter, with `fleet.role` | `fleet.role` | right away, as `ready` |
+| A short command (a migration, a script) that exits before `workerAfter` | — | never |
+
+```ts
+// worker.ts: a dedicated worker process
+const app = await NestFactory.createApplicationContext(WorkerModule);
+app.enableShutdownHooks();
+// TelescopeModule.forRoot({ ..., fleet: { role: 'billing-consumer' } }) to name it and report at once
+```
+
+- **Naming.** The BullMQ watcher marks a process that has `@Processor` classes as `bullmq`. Any library or app code can do the same with `markFleetWorker('name')` (it returns the release), or structurally through the `Symbol.for('@dudousxd/nestjs-telescope:fleetWorkers')` map on `globalThis`, so a library needs no telescope dependency. A process serving HTTP stays `web` whatever runs in it.
+- **Lifecycle.** A worker goes through the same states: `ready`, `draining` on shutdown (`app.close()`, or SIGTERM/SIGINT even without `enableShutdownHooks()`: a listener that only observes, and re-raises the signal when it is the only one, so the process exits as before), then `gone`.
+- **Health checks** run in a worker and ride its heartbeat; there is no HTTP route to probe. It sends no `url`, so service discovery never routes to it.
+- **Compatibility.** The role is an additive heartbeat field. A heartbeat without one (an older tenant) is `web`, and an older control plane ignores it.
 
 ## What the Fleet page shows
 
 Monitor → **Fleet** (also in ⌘K) re-reads every 15 s and shows, for each app:
 
 - **Instance counts.** Up, starting, draining and gone, plus the tenant send buffer (waiting, dropped, lag).
-- **Every instance.** Host, status, version, uptime, when it was last seen, health, and its buffer.
+- **Every instance.** Host, role (`web` or a worker's name), status, version, uptime, when it was last seen, health, and its buffer.
+- **A role filter** (All roles, `web`, `bullmq`, …) once more than one role runs. It recounts the cards and narrows the instances and restart loops.
 - **Deploys.** Each version change with its rollout: `2/5 live`, `complete`, or `no live instances`. A draining instance on the old version keeps a rollout incomplete.
-- **Restart loops.** For example, `shop-worker-0 restarted 3 times in 7 min`.
+- **Restart loops.** Counted per host and role, so a container booting its web process and a worker is not two restarts. For example, `shop-worker-0 (bullmq) restarted 3 times in 7 min`.
 - **Failing checks.** For example, `Redis: down for 12 min on 4 of 4 instances`, with the exception families recorded since. Click one to open its entry.
 
 `GET <path>/api/fleet` follows the console's scope:
@@ -86,7 +113,8 @@ The Fleet item appears in the sidebar only where a fleet is kept.
 The fleet rules (`instances-up`, `restart-loop`, `check-down`, `entries-dropped`; see [Alerts](/docs/dashboard#rules)) work like every rule:
 
 - **Routing.** They take `severity` and `channels`. The default severity is `critical` for `instances-up` and `check-down`, `error` for `restart-loop` and `warning` for `entries-dropped`.
-- **One subject at a time.** Each subject (an app, an app's check, a looping host) is raised once and cleared once.
+- **One subject at a time.** Each subject (an app, an app's check, a looping host and role) is raised once and cleared once.
+- **Roles.** `instances-up` counts an app's web instances (an app that only runs workers counts its workers), so a live worker never hides a web outage. `role: 'bullmq'` checks that worker (only the apps running it, without `app`), `role: '*'` every instance. The `instances` check state the heartbeat integrations follow uses the same rule.
 - **Clears close the incident.** The clear is a `status: 'resolved'` payload. It reaches the on-call, chat and email [integrations](/docs/recipes/alert-integrations), which close the incident keyed `telescope:<app>:<rule>[:<check>][:<host>]`.
 
 ```ts

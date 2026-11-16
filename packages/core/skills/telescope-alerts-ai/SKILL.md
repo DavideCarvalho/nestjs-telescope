@@ -90,7 +90,7 @@ states with `publishCheckStates()` (per app, plus an `instances` check), so
 
 ```ts
 rules: [
-  { type: 'instances-up', below: 2 },                      // fewer than 2 up, held for `for` (default '1m')
+  { type: 'instances-up', below: 2 },                      // fewer than 2 web up, held for `for` (default '1m'); `role` for a worker or '*'
   { type: 'restart-loop' },                                // a host rebooted `fleet.restartLoop` times in its window
   { type: 'check-down', check: 'redis', for: '5m' },       // a check down for `for` (`check` else any)
   { type: 'entries-dropped', window: '5m', threshold: 1 }, // a tenant dropped >= threshold entries in `window`

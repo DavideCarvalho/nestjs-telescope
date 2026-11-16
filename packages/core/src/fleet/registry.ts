@@ -8,7 +8,13 @@ import {
   type InstanceRecord,
   deriveFleet,
 } from './derive.js';
-import type { HeartbeatShipping, InstanceHeartbeat, InstanceState } from './heartbeat.js';
+import {
+  type HeartbeatShipping,
+  type InstanceHeartbeat,
+  type InstanceState,
+  WEB_ROLE,
+  normalizeRole,
+} from './heartbeat.js';
 import type { FleetStore } from './store.js';
 
 /** Options of {@link FleetRegistry}. */
@@ -76,6 +82,7 @@ export class FleetRegistry {
       checks: heartbeat.checks,
       shipping: heartbeat.shipping,
       url: heartbeat.url ?? null,
+      role: normalizeRole(heartbeat.role),
     };
     try {
       await this.store.upsert(record);
@@ -138,10 +145,14 @@ export interface InstanceReporterOptions {
   shipping?: () => HeartbeatShipping | null;
   /** The URL other apps reach this one at (`fleet.url`), or `null`. */
   url?: string | null;
+  /** `web`, or a worker's name. Default `web` (and then not sent, like an older sender). */
+  role?: string;
   /** Where a heartbeat goes: the tenant's buffer, or the local registry. */
   send: (heartbeat: InstanceHeartbeat) => Promise<void> | void;
   instanceId?: string;
   bootedAt?: number;
+  /** The first state sent. Default `starting` (a worker starts `ready`: the app booted already). */
+  initialState?: InstanceState;
   now?: () => number;
   onError?: (error: unknown) => void;
 }
@@ -153,7 +164,7 @@ export interface InstanceReporterOptions {
 export class InstanceReporter {
   readonly instanceId: string;
   readonly bootedAt: number;
-  private state: InstanceState = 'starting';
+  private state: InstanceState;
   private version: string | null = null;
   private versionResolved = false;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -163,10 +174,16 @@ export class InstanceReporter {
 
   constructor(private readonly options: InstanceReporterOptions) {
     this.now = options.now ?? Date.now;
+    this.state = options.initialState ?? 'starting';
     this.bootedAt = options.bootedAt ?? this.now();
     const host = options.host.replace(/[^\x21-\x7e]/g, '-').slice(0, 64) || 'host';
     this.instanceId =
       options.instanceId ?? `${host}-${process.pid}-${randomUUID().slice(0, 8)}`.slice(0, 128);
+  }
+
+  /** `web`, or this worker's name. */
+  get role(): string {
+    return this.options.role ?? WEB_ROLE;
   }
 
   get currentState(): InstanceState {
@@ -217,6 +234,9 @@ export class InstanceReporter {
       checks,
       shipping: this.options.shipping?.() ?? null,
       ...(this.options.url ? { url: this.options.url } : {}),
+      ...(this.options.role !== undefined && this.options.role !== WEB_ROLE
+        ? { role: this.options.role }
+        : {}),
     };
   }
 

@@ -855,6 +855,8 @@ export interface FleetInstance {
   status: FleetInstanceStatus;
   uptimeMs: number;
   health: FleetCheckState['status'];
+  /** `web`, or a worker's name. Absent from older servers (every instance is web). */
+  role?: string;
 }
 
 /** A version change across an app's instances. */
@@ -870,6 +872,8 @@ export interface FleetDeploy {
 
 export interface FleetRestartLoop {
   host: string;
+  /** The role of the restarting processes. Absent from older servers (web). */
+  role?: string;
   restarts: number;
   since: number;
   lastBootAt: number;
@@ -902,6 +906,8 @@ export interface FleetApp {
   restartLoops: FleetRestartLoop[];
   checks: FleetIncident[];
   shipping: { buffered: number; dropped: number; maxLagMs: number } | null;
+  /** The counts per role, `web` first. Absent from older servers. */
+  roles?: { role: string; counts: Record<FleetInstanceStatus, number> }[];
 }
 
 /** What `GET fleet` answers: the Fleet page. */
@@ -914,5 +920,5 @@ export interface FleetView {
   now: number;
   apps: FleetApp[];
   /** This process, when it reports. */
-  self: { instanceId: string; state: string; checks: FleetCheckState[] } | null;
+  self: { instanceId: string; state: string; role?: string; checks: FleetCheckState[] } | null;
 }

@@ -1,6 +1,7 @@
 // packages/core/src/alerts/fleet-rules.ts
 import { durationToMs } from '../config/parse-duration.js';
 import type { FleetApp } from '../fleet/derive.js';
+import { WEB_ROLE } from '../fleet/heartbeat.js';
 import type { FleetAlertContext, FleetAlertRule } from './alert-rule.js';
 
 /** The read the fleet rules need: the derived fleet (`FleetRegistry` fits). */
@@ -17,6 +18,13 @@ export interface FleetOutcome {
   threshold: number;
   fleet: FleetAlertContext;
 }
+
+/** An app no instance reported for: nothing is up. */
+const EMPTY = {
+  app: '',
+  counts: { up: 0, starting: 0, draining: 0, gone: 0 },
+  roles: [],
+} as unknown as FleetApp;
 
 /** The most instances (and `instances-up` holds) the evaluator tracks at once. */
 const MAX_TRACKED = 20_000;
@@ -49,18 +57,23 @@ export class FleetRuleEvaluator {
       case 'restart-loop':
         // One subject per looping host (`<app>\u0000<host>`): two hosts looping at once page twice,
         // and each resolves on its own once it settles (the subject leaves the outcomes).
+        // Loops are per host and role; a web loop keeps its key from before roles.
         return fleet.flatMap((app) =>
-          app.restartLoops.map((loop) => ({
-            key: `${app.app}\u0000${loop.host}`,
-            crosses: true,
-            value: loop.restarts,
-            threshold: loop.restarts,
-            fleet: {
-              app: app.app,
-              host: loop.host,
-              detail: `${loop.host} restarted ${loop.restarts} times in ${minutes(Math.max(0, now - loop.since))}`,
-            },
-          })),
+          app.restartLoops.map((loop) => {
+            const role = loop.role ?? WEB_ROLE;
+            const worker = role !== WEB_ROLE;
+            return {
+              key: `${app.app}\u0000${loop.host}${worker ? `\u0000${role}` : ''}`,
+              crosses: true,
+              value: loop.restarts,
+              threshold: loop.restarts,
+              fleet: {
+                app: app.app,
+                host: loop.host,
+                detail: `${loop.host}${worker ? ` (${role})` : ''} restarted ${loop.restarts} times in ${minutes(Math.max(0, now - loop.since))}`,
+              },
+            };
+          }),
         );
       case 'check-down':
         return this.checkDown(rule, fleet, now);
@@ -76,10 +89,27 @@ export class FleetRuleEvaluator {
     now: number,
   ): FleetOutcome[] {
     const holdMs = durationToMs(rule.for ?? '1m');
+    const role = rule.role ?? WEB_ROLE;
+    // An app's up instances of the rule's role, or `null` when it runs none of them. Without a
+    // `role`, an app's web instances count, and an app that only runs workers counts its workers
+    // (as before roles existed). A fleet from a source without roles counts as web.
+    const upOf = (app: FleetApp): number | null => {
+      if (role === '*' || app.roles === undefined) return app.counts.up;
+      const counts = app.roles.find((entry) => entry.role === role)?.counts;
+      if (counts !== undefined) return counts.up;
+      if (rule.role === undefined && !app.roles.some((entry) => entry.role === WEB_ROLE)) {
+        return app.counts.up;
+      }
+      return null;
+    };
     const apps =
-      rule.app !== undefined && !fleet.some((a) => a.app === rule.app)
-        ? [{ app: rule.app, up: 0 }]
-        : fleet.map((a) => ({ app: a.app, up: a.counts.up }));
+      rule.app !== undefined
+        ? [{ app: rule.app, up: upOf(fleet.find((a) => a.app === rule.app) ?? EMPTY) ?? 0 }]
+        : fleet.flatMap((a) => {
+            // Without `app`: only the apps that run this role.
+            const up = upOf(a);
+            return up === null ? [] : [{ app: a.app, up }];
+          });
     return apps.map(({ app, up }) => {
       const below = up < rule.below;
       const holdKey = `${ruleKey}\u0000${app}`;
@@ -103,8 +133,8 @@ export class FleetRuleEvaluator {
           app,
           detail:
             up === 0
-              ? 'no instance is up'
-              : `${up} instance${up === 1 ? '' : 's'} up (expected at least ${rule.below})`,
+              ? `no ${role === '*' || role === WEB_ROLE ? '' : `${role} `}instance is up`
+              : `${up} ${role === '*' || role === WEB_ROLE ? '' : `${role} `}instance${up === 1 ? '' : 's'} up (expected at least ${rule.below})`,
         },
       };
     });

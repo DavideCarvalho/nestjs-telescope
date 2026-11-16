@@ -35,7 +35,7 @@ export interface FleetView {
   now: number;
   apps: FleetAppView[];
   /** This process: its instance id, state and checks (`null` when it does not report). */
-  self: { instanceId: string; state: string; checks: CheckState[] } | null;
+  self: { instanceId: string; state: string; role: string; checks: CheckState[] } | null;
 }
 
 /** What a fleet read is limited to. */
@@ -106,6 +106,7 @@ export async function readFleet(scope: FleetScope, options: ReadFleetOptions): P
       ? {
           instanceId: reporter.instanceId,
           state: reporter.currentState,
+          role: reporter.role,
           checks: options.selfChecks?.() ?? [],
         }
       : null;
