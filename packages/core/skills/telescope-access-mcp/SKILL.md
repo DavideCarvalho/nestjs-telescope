@@ -167,8 +167,9 @@ Same contract and default as the console. Prometheus sends the token via
 ### Mistake 1 — no `authorize` in production
 
 ```ts
-// Wrong — boots, but every console request answers 403 in production, and the
-// boot logs: "[@dudousxd/nestjs-telescope] console has no `authorize` configured…"
+// Wrong — boots, but every console request answers 403 in production (except the
+// unauthenticated probes `GET <path>/api/probes/ready|live`, a 404 unless
+// `health: { probes: true }`), and the boot logs: "[@dudousxd/nestjs-telescope] console has no `authorize` configured…"
 TelescopeModule.forRoot({ decorators: [UseGuards(AuthenticationGuard)] });
 
 // Correct

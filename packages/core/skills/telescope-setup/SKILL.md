@@ -93,7 +93,9 @@ Source: `packages/core/src/nest/telescope.module.ts` (`forRootAsync`).
 `ConsoleAuthorizer` class, a lazy import, `{ policy, ability }`
 (`@nestjs/authorization`) or a gate name (`@dudousxd/nestjs-authz`). Without
 it the console is open outside production; with `NODE_ENV === 'production'`
-every request answers 403 and one warning is logged at boot. `decorators`
+every request answers 403 (except the unauthenticated probes
+`GET <path>/api/probes/ready|live` — a 404 unless `health: { probes: true }`)
+and one warning is logged at boot. `decorators`
 (authentication etc.) run first but don't count on their own.
 
 ```ts
