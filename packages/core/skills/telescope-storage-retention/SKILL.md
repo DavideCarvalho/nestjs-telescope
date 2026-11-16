@@ -4,7 +4,7 @@ description: >-
   Storage, retention, redaction, and sampling in nestjs-telescope. Swap the default
   per-process SQLite store for a shared adapter (RedisStorageProvider) so a
   multi-instance deployment aggregates the whole cluster; implement the
-  StorageProvider SPI (store/get/find/batch/prune/pruneScoped?/markFamilySeen?);
+  StorageProvider SPI (store/get/find/batch/prune/pruneScoped?/markFamilySeen?/aggregate?);
   configure prune.after + prune.perType retention; export-before-prune with
   archive.{types,sink,batchSize}; mask sensitive data with redact.{keys,paths,mask};
   tail-sample with sampling rules that always keep errors/slow entries. Use for
