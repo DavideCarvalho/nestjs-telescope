@@ -205,14 +205,16 @@ describe('HeartbeatMonitor', () => {
 
   it("an unknown provider is that target's error, never a rejected tick", async () => {
     const { fetch, calls } = mockFetch();
+    const logs: string[] = [];
     const monitor = new HeartbeatMonitor({
       heartbeats: [{ provider: 'nope' as never, url: 'https://x.example/hb', signalStart: true }],
       source: () => [],
       fetch,
-      logger: () => {},
+      logger: (m) => logs.push(m),
     });
     await expect(monitor.tick(0)).resolves.toEqual({ nope: 'error' });
     expect(calls).toHaveLength(0);
+    expect(logs).toEqual(["Telescope heartbeat 'nope' failed: unknown heartbeat provider"]);
   });
 
   it('`checks` limits which checks count', async () => {

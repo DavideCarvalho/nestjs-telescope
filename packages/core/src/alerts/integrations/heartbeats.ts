@@ -54,6 +54,22 @@ export interface HeartbeatConfig {
   name?: string;
 }
 
+/** Thrown for a provider Telescope doesn't know. Its message carries no URL. */
+class UnknownProviderError extends Error {
+  constructor() {
+    super('unknown heartbeat provider');
+  }
+}
+
+/**
+ * The error logged when building a target's requests fails: an unknown provider
+ * keeps its own (URL-free) message; anything else is URL parsing, reported as
+ * `invalid ping URL` without echoing the URL.
+ */
+function buildError(error: unknown): Error {
+  return error instanceof UnknownProviderError ? error : new Error('invalid ping URL');
+}
+
 /** The three requests a provider can make. `null` = the provider has no such signal. */
 interface HeartbeatRequests {
   ok: HttpRequest;
@@ -128,7 +144,7 @@ export function heartbeatRequests(
     default:
       // Unreachable for typed configs (boot validation rejects it too); the
       // monitor turns this into that target's logged error.
-      throw new Error('unknown heartbeat provider');
+      throw new UnknownProviderError();
   }
 }
 
@@ -251,8 +267,8 @@ export class HeartbeatMonitor {
             let start: HttpRequest | null;
             try {
               start = heartbeatRequests(target.config.provider, target.url, '').start;
-            } catch {
-              throw new Error('invalid ping URL');
+            } catch (error: unknown) {
+              throw buildError(error);
             }
             if (start === null) return;
             await deliver(start, { ...this.deps, retries: 1 });
@@ -291,8 +307,8 @@ export class HeartbeatMonitor {
     let requests: HeartbeatRequests;
     try {
       requests = heartbeatRequests(config.provider, target.url, message, config.failUrl);
-    } catch {
-      this.warn(target, new Error('invalid ping URL'));
+    } catch (error: unknown) {
+      this.warn(target, buildError(error));
       return 'error';
     }
     let request: HttpRequest | null;
