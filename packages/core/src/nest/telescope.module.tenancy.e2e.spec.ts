@@ -19,6 +19,7 @@ import { telescopeConsoleSearch } from './console-search.js';
 import { DEV_TOOLS_SLOT, type TelescopeDevTool } from './dev-tools.js';
 import { TelescopeModule } from './telescope.module.js';
 import { TELESCOPE_OPTIONS, type TelescopeModuleOptions } from './telescope.options.js';
+import { TelescopeService } from './telescope.service.js';
 
 const SLOT = Symbol.for('@dudousxd/nestjs-diagnostics:accessor');
 const holder = globalThis as Record<symbol, unknown>;
@@ -308,6 +309,32 @@ describe('AI diagnosis', () => {
     );
     await cached('xb', { 'x-tenant': 'B' }).expect(204);
     await cached('xa', { 'x-tenant': 'A' }).expect(204);
+  });
+
+  it('auto mode on a control plane: a diagnosis per app, read only by viewers of that app', async () => {
+    tenancyEnabled = false;
+    await boot({ ai: { ...ai, mode: 'auto' } });
+    const service = (app as INestApplication).get(TelescopeService);
+    const shop = (id: string, message: string): Entry => ({
+      ...exception(id, 'A', message, `batch-${id}`),
+      tags: ['app:shop'],
+    });
+    await service.storeIngested([
+      shop('ys', 'shop broke'),
+      { ...shop('yb', 'billing broke'), tags: ['app:billing'] },
+    ]);
+    const forApps = (apps: string[]) => ({ 'x-grant': JSON.stringify({ allowed: true, apps }) });
+    for (let i = 0; i < 50 && seen.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    expect((await cached('ys', forApps(['shop'])).expect(200)).body.markdown).toContain(
+      'shop broke',
+    );
+    expect((await cached('yb', forApps(['billing'])).expect(200)).body.markdown).toContain(
+      'billing broke',
+    );
+    // Same family, other app: billing never reads shop's diagnosis.
+    expect((await cached('yb', forApps(['billing'])).expect(200)).body.markdown).not.toContain(
+      'shop',
+    );
   });
 
   it('tenancy off: one diagnosis per family, as before', async () => {
