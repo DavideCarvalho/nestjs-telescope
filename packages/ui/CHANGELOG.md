@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope-ui
 
+## 5.2.0
+
+### Minor Changes
+
+- [#201](https://github.com/DavideCarvalho/nestjs-telescope/pull/201) [`792e5ef`](https://github.com/DavideCarvalho/nestjs-telescope/commit/792e5ef121ca07081d8b15a21ec2a73c4cfd29b2) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - App picker in the console header (a control plane receiving several apps' entries; hidden otherwise), an App column in the entries table when several apps are in view, and `?app=` sent on every call. The live tail now sends the console's `?tenant=` / `?app=` too. New client exports: `pageApp`, `withConsoleScope`, `NO_APPS`, `TelescopeClient.apps()` and `useApps()`.
+
 ## 5.1.0
 
 ### Minor Changes
