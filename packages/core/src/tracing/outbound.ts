@@ -70,8 +70,8 @@ function clientRequestOrigin(request: ClientRequestLike): string | null {
   return originOf(`${protocol}//${host}`);
 }
 
-/** The headers for a call to `origin`, or `null` when it carries none. */
-function headersFor(config: ResolvedPropagation, origin: string | null) {
+/** The headers for a call to `origin`, or `null` when it carries none (shared by fetch, node:http and axios). */
+export function headersFor(config: ResolvedPropagation, origin: string | null) {
   if (isTelescopeWork()) return null;
   // Process-wide rather than per active span: OpenTelemetry's undici instrumentation injects even
   // outside a span, so stepping aside only inside one would send two headers outside it.

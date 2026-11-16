@@ -22,19 +22,33 @@ TelescopeModule.forRoot({
 });
 ```
 
-Your code stays the same:
+Your code stays the same. Calls through `@nestjs/axios`'s `HttpService` carry the trace:
 
 ```ts title="shop: billing.client.ts"
+import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
+import { firstValueFrom } from 'rxjs';
+
 @Injectable()
 export class BillingClient {
+  constructor(private readonly http: HttpService) {}
+
   async charge(orderId: number) {
-    const response = await fetch(`${process.env.BILLING_URL}/charges`, {
-      method: 'POST',
-      body: JSON.stringify({ orderId }),
-    });
-    return response.json();
+    const { data } = await firstValueFrom(
+      this.http.post(`${process.env.BILLING_URL}/charges`, { orderId }),
+    );
+    return data;
   }
 }
+```
+
+Telescope finds every `HttpService` in the app on its own: the one from `HttpModule`, and each one a module gets from `HttpModule.register(...)`. So does a plain `fetch`:
+
+```ts
+const response = await fetch(`${process.env.BILLING_URL}/charges`, {
+  method: 'POST',
+  body: JSON.stringify({ orderId }),
+});
 ```
 
 The app being called needs nothing more: a tenant or a control plane continues an incoming `traceparent` by default. A standalone app continues it once it sets `propagation` (even `propagation: {}`).
@@ -51,6 +65,7 @@ A call to an origin that is not in `targets` (Stripe, an email API) carries no t
 | `incoming` | `true` | Continue the `traceparent` a request arrives with. Set `false` on an app the public calls directly if callers must not choose its trace ids. |
 | `nodeHttp` | `false` | Also add the headers to `http.request` / `https.request` (axios, got). `fetch` is always covered. |
 | `queue` | `true` | Carry the trace in BullMQ jobs (with `BullMqJobWatcher`). |
+| `axios` | every `HttpService` | More axios instances to cover (a bare `axios.create()`, or a `CustomAxiosSource` that resolves one), or `false` for none. See below. |
 
 ```ts
 propagation: {
@@ -58,6 +73,29 @@ propagation: {
   nodeHttp: true,
   incoming: false,
 }
+```
+
+`nodeHttp` is not needed for `HttpService`: its calls are covered through axios interceptors, and with `nodeHttp` on too a call still carries one header.
+
+### Other axios instances
+
+`HttpService` instances created at startup are found on their own. A request-scoped provider's `HttpService`, a bare axios instance, or one your code builds later is not, so hand it over:
+
+```ts
+import axios from 'axios';
+
+export const payments = axios.create({ baseURL: process.env.PAYMENTS_URL });
+
+TelescopeModule.forRoot({
+  propagation: {
+    targets: [process.env.PAYMENTS_URL],
+    axios: [
+      payments,
+      // Resolved once the app is up: anything you can reach from the ModuleRef.
+      { instrument: (attach, ctx) => attach(ctx.moduleRef.get(PaymentsClient, { strict: false }).axios) },
+    ],
+  },
+});
 ```
 
 A header your code sets itself is never replaced, and Telescope's own calls (sending batches to the control plane) never carry one.

@@ -95,6 +95,8 @@ export * from './pulse/pulse-summary.js';
 export * from './pulse/pulse.service.js';
 
 export * from './http/http-client.watcher.js';
+export * from './http/axios-source.js';
+export * from './http/axios-instances.js';
 
 export * from './alerts/alert-channel.js';
 export * from './alerts/alert-rule.js';

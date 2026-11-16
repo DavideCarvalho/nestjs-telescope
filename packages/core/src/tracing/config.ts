@@ -1,6 +1,7 @@
 // packages/core/src/tracing/config.ts
 //
 // `propagation` in `TelescopeModule.forRoot()`: carry one trace across your apps.
+import type { AxiosSourceOption } from '../http/axios-instances.js';
 
 /** `propagation` in `TelescopeModule.forRoot()`. */
 export interface PropagationOptions {
@@ -25,6 +26,12 @@ export interface PropagationOptions {
    * inside a request runs in that request's trace, whichever app's worker runs it. Default `true`.
    */
   queue?: boolean;
+  /**
+   * axios instances whose calls carry the trace, besides every `HttpService` of `@nestjs/axios`,
+   * which is found on its own: an instance, a `CustomAxiosSource` (`{ instrument(attach, ctx) }`)
+   * that resolves one lazily, or a list. `false` instruments no axios instance at all.
+   */
+  axios?: AxiosSourceOption | AxiosSourceOption[] | false;
 }
 
 /** {@link PropagationOptions} with defaults. */

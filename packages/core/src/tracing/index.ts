@@ -6,6 +6,7 @@ export {
   resolvePropagation,
 } from './config.js';
 export { injectIntoClientRequest, injectIntoUndiciRequest } from './outbound.js';
+export { attachTracingToAxios, injectIntoAxiosConfig } from './axios.js';
 export {
   TELESCOPE_TRACING_KEY,
   type TelescopeTracingSlot,
