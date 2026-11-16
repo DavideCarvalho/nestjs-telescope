@@ -74,7 +74,8 @@ Every rule also takes `severity` (`info` | `warning` | `error` | `critical`) and
 `grafanaOnCallChannel`, `discordChannel`, `teamsChannel`, `telegramChannel`,
 `googleChatChannel`, `emailChannel({ to, transport })`) also get a `resolved`
 notification when an interval rule stops firing, keyed by `alerts.app` + rule.
-`alerts.heartbeats` / `alerts.statusPages` read `alerts.checkStates`.
+`alerts.heartbeats` / `alerts.statusPages` and `uptimeHandler()` read
+`alerts.checkStates` or `publishCheckStates()`.
 
 Source: `packages/core/src/alerts/alert-rule.ts` (`AlertRule`),
 `packages/core/src/alerts/integrations/`.
