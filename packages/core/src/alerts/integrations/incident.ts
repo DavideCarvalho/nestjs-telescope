@@ -75,6 +75,9 @@ function ruleIdentity(rule: AlertRule): string {
     'window',
     'below',
     'for',
+    // A fleet rule's filters: two `check-down` rules on different checks or apps are two incidents.
+    'app',
+    'check',
   ]) {
     const value = loose[field];
     if (typeof value === 'string' || typeof value === 'number') parts.push(String(value));

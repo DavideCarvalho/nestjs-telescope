@@ -121,7 +121,7 @@ describe('fleet rules through the alert integrations', () => {
     const keys = pager.sent.map(incidentKey);
     // One incident per app and check, never the reporting pod's.
     expect(new Set(keys).size).toBe(2);
-    expect(keys[0]).toMatch(/^telescope:(shop|billing):check-down:1m:redis$/);
+    expect(keys[0]).toMatch(/^telescope:(shop|billing):check-down:1m:redis:redis$/);
 
     await h.beat('shop', 'a', { checks: [{ ...down(h.now()), status: 'ok' }] });
     await h.beat('billing', 'b', { checks: [down(h.now() - 6 * MIN)] });
@@ -131,6 +131,18 @@ describe('fleet rules through the alert integrations', () => {
     expect(resolved[0]?.fleet).toMatchObject({ app: 'shop', check: 'redis' });
     expect(incidentKey(resolved[0] as AlertPayload)).toBe(keys.find((k) => k.includes(':shop:')));
     expect(slack.sent.every((p) => p.status === undefined)).toBe(true);
+  });
+
+  it('two check-down rules on different checks are two incidents', () => {
+    const payload = (check: string): AlertPayload => ({
+      rule: { type: 'check-down', check, for: '1m' },
+      value: 60,
+      threshold: 60,
+      firedAt: '2026-11-16T12:00:00.000Z',
+      instanceId: 'cp',
+      fleet: { app: 'shop', detail: 'x' },
+    });
+    expect(incidentKey(payload('redis'))).not.toBe(incidentKey(payload('db')));
   });
 
   it('a looping host is its own incident, keyed by host', async () => {
@@ -209,7 +221,7 @@ describe('the fleet publishes its check states', () => {
         name: 'instances',
         app: 'shop',
         status: 'ok',
-        message: '2 of 2 instances up',
+        message: '2 of 2 instances up or starting',
         critical: true,
       },
       expect.objectContaining({ name: 'redis', app: 'shop', status: 'down', message: 'OOM' }),

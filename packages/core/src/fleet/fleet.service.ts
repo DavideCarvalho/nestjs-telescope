@@ -181,7 +181,8 @@ export class TelescopeFleet
         name: 'instances',
         app: app.app,
         status: serving > 0 ? 'ok' : 'down',
-        message: `${app.counts.up} of ${known} instance${known === 1 ? '' : 's'} up`,
+        // The same count as the status: an instance still starting is serving (a deploy).
+        message: `${serving} of ${known} instance${known === 1 ? '' : 's'} up or starting`,
         critical: true,
       });
       const byName = new Map<string, UptimeCheckState>();
