@@ -30,7 +30,8 @@ exception. Both are `forRoot` options.
 ## Setup
 
 Fan alerts to one or more channels; `rules` selects what fires. A configured
-`alerts` with no destination or empty `rules` is a fail-closed boot error.
+`alerts` with no destination or empty `rules` is a fail-closed boot error,
+unless `heartbeats`/`statusPages` make it an uptime-only setup.
 
 ```ts
 import { TelescopeModule, slackChannel } from '@dudousxd/nestjs-telescope';
@@ -165,7 +166,7 @@ TelescopeModule.forRoot({
 ```
 
 Mechanism: a configured `alerts` with no `channels` or empty `rules` throws at boot rather than silently never
-alerting. Source: `packages/core/src/alerts/alert-rule.ts` (`AlertsOptions`).
+alerting, unless `heartbeats`/`statusPages` make it an uptime-only setup. Source: `packages/core/src/alerts/resolve-alerts.ts`.
 
 ### Mistake 3 — hand-rolling a Slack POST instead of the channel helper
 
