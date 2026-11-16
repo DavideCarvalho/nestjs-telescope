@@ -133,8 +133,14 @@ export function resolveFleetConfig(
     throw new Error(`${PREFIX} fleet.role must be 1-64 of A-Z a-z 0-9 _ . : @ / + -`);
   }
   const report = fleet.report ?? ['web', 'worker'];
-  if (!Array.isArray(report) || report.some((kind) => kind !== 'web' && kind !== 'worker')) {
-    throw new Error(`${PREFIX} fleet.report must list 'web' and/or 'worker'`);
+  if (
+    !Array.isArray(report) ||
+    report.length === 0 ||
+    report.some((kind) => kind !== 'web' && kind !== 'worker')
+  ) {
+    throw new Error(
+      `${PREFIX} fleet.report must list 'web' and/or 'worker' (turn the fleet off with fleet: false)`,
+    );
   }
   const restarts = fleet.restartLoop?.restarts ?? 3;
   if (!Number.isInteger(restarts) || restarts < 2) {

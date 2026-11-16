@@ -4,6 +4,8 @@
 // Kept on a global slot, so a library can mark its workers without depending on telescope (or on
 // the copy of it the app loaded): `globalThis[Symbol.for('@dudousxd/nestjs-telescope:fleetWorkers')]`.
 
+import { ROLE_RE } from './heartbeat.js';
+
 const SLOT = Symbol.for('@dudousxd/nestjs-telescope:fleetWorkers');
 
 type Marks = Map<string, number>;
@@ -24,6 +26,12 @@ function marks(): Marks {
  * several). Returns the release (call it when the worker stops); marks stack.
  */
 export function markFleetWorker(name: string): () => void {
+  // An invalid name would read back as `web`: refuse it where it is made.
+  if (typeof name !== 'string' || !ROLE_RE.test(name)) {
+    throw new Error(
+      `[@dudousxd/nestjs-telescope] markFleetWorker: the name must be 1-64 of A-Z a-z 0-9 _ . : @ / + - (got ${JSON.stringify(name)})`,
+    );
+  }
   const all = marks();
   all.set(name, (all.get(name) ?? 0) + 1);
   let released = false;

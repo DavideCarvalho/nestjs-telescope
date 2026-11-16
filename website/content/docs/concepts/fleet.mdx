@@ -95,7 +95,7 @@ Monitor → **Fleet** (also in ⌘K) re-reads every 15 s and shows, for each app
 
 - **Instance counts.** Up, starting, draining and gone, plus the tenant send buffer (waiting, dropped, lag).
 - **Every instance.** Host, role (`web` or a worker's name), status, version, uptime, when it was last seen, health, and its buffer.
-- **A role filter** (All roles, `web`, `bullmq`, …) once more than one role runs. It recounts the cards and narrows the instances and restart loops.
+- **A role filter** (All roles, `web`, `bullmq`, …) once more than one role runs. It recounts the cards and narrows the instances and restart loops; deploys, failing checks and the send buffer, which cover every role, are hidden while a role is picked.
 - **Deploys.** Each version change with its rollout: `2/5 live`, `complete`, or `no live instances`. A draining instance on the old version keeps a rollout incomplete.
 - **Restart loops.** Counted per host and role, so a container booting its web process and a worker is not two restarts. For example, `shop-worker-0 (bullmq) restarted 3 times in 7 min`.
 - **Failing checks.** For example, `Redis: down for 12 min on 4 of 4 instances`, with the exception families recorded since. Click one to open its entry.
@@ -115,7 +115,7 @@ The fleet rules (`instances-up`, `restart-loop`, `check-down`, `entries-dropped`
 - **Routing.** They take `severity` and `channels`. The default severity is `critical` for `instances-up` and `check-down`, `error` for `restart-loop` and `warning` for `entries-dropped`.
 - **One subject at a time.** Each subject (an app, an app's check, a looping host and role) is raised once and cleared once.
 - **Roles.** `instances-up` counts an app's web instances (an app that only runs workers counts its workers), so a live worker never hides a web outage. `role: 'bullmq'` checks that worker (only the apps running it, without `app`), `role: '*'` every instance. The `instances` check state the heartbeat integrations follow uses the same rule.
-- **Clears close the incident.** The clear is a `status: 'resolved'` payload. It reaches the on-call, chat and email [integrations](/docs/recipes/alert-integrations), which close the incident keyed `telescope:<app>:<rule>[:<check>][:<host>]`.
+- **Clears close the incident.** The clear is a `status: 'resolved'` payload. It reaches the on-call, chat and email [integrations](/docs/recipes/alert-integrations), which close the incident keyed `telescope:<app>:<rule>[:<check>][:<host>][:<worker role>]` (a web subject keeps its key from before roles).
 
 ```ts
 alerts: {

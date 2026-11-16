@@ -133,6 +133,10 @@ describe('workers in a standalone app', () => {
     await expect(
       context({ storage: new InMemoryStorageProvider(), fleet: { report: ['cli' as 'web'] } }),
     ).rejects.toThrow(/fleet.report/);
+    await expect(
+      context({ storage: new InMemoryStorageProvider(), fleet: { report: [] } }),
+    ).rejects.toThrow(/fleet.report/);
+    expect(() => markFleetWorker('has space')).toThrow(/markFleetWorker/);
   });
 });
 

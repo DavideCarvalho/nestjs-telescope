@@ -351,5 +351,16 @@ describe('workers', () => {
     await h.service.evaluateOnce();
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0]?.fleet?.detail).toMatch(/^pod-1 \(bullmq\) restarted 3 times/);
+    expect(h.sent[0]?.fleet?.role).toBe('bullmq');
+    const { incidentKey } = await import('../../src/alerts/integrations/incident.js');
+    const key = incidentKey(h.sent[0] as AlertPayload);
+    expect(key.endsWith(':pod-1:bullmq')).toBe(true);
+    // A web subject keeps its key from before roles.
+    expect(
+      incidentKey({
+        ...(h.sent[0] as AlertPayload),
+        fleet: { app: 'shop', host: 'pod-1', detail: '' },
+      }),
+    ).toBe(key.replace(/:bullmq$/, ''));
   });
 });

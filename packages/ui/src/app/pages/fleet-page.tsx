@@ -79,7 +79,9 @@ export function rolesOf(apps: FleetApp[]): string[] {
 
 /**
  * An app narrowed to one role: its instances and restart loops of that role, and the cards
- * recounted from them. `null` keeps the app as the server sent it.
+ * recounted from them. Deploys, failing checks and the send buffer are computed by the server over
+ * every role, so they are left out of a narrowed app rather than shown wrong. `null` keeps the
+ * app as the server sent it.
  */
 export function narrowToRole(app: FleetApp, role: string | null): FleetApp {
   if (role === null) return app;
@@ -91,6 +93,9 @@ export function narrowToRole(app: FleetApp, role: string | null): FleetApp {
     counts,
     instances,
     restartLoops: app.restartLoops.filter((loop) => roleOf(loop) === role),
+    deploys: [],
+    checks: [],
+    shipping: null,
   };
 }
 
@@ -393,6 +398,12 @@ function FleetApps({
             </button>
           ))}
         </fieldset>
+      )}
+      {selected !== null && (
+        <p className="text-xs text-faint">
+          Showing {selected} instances and restart loops. Deploys, failing checks and the send
+          buffer cover every role: pick All roles to see them.
+        </p>
       )}
       {apps.map((app) => (
         <AppFleet key={app.app} app={app} now={view.now} onOpenEntry={onOpenEntry} />

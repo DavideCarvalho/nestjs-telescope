@@ -70,6 +70,7 @@ export class FleetRuleEvaluator {
               fleet: {
                 app: app.app,
                 host: loop.host,
+                ...(worker ? { role } : {}),
                 detail: `${loop.host}${worker ? ` (${role})` : ''} restarted ${loop.restarts} times in ${minutes(Math.max(0, now - loop.since))}`,
               },
             };

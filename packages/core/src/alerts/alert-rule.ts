@@ -116,6 +116,8 @@ export interface FleetAlertContext {
   app: string;
   check?: string;
   host?: string;
+  /** The process role the subject is about, when it is a worker (absent for `web`). */
+  role?: string;
   /** One line: `Redis: down for 12 min on 4 of 4 instances`. */
   detail: string;
 }
