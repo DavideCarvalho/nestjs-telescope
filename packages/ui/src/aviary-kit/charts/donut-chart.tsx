@@ -77,7 +77,10 @@ export function DonutChart<T>({
         x: name,
         series: valueLabel,
         value: v,
-        color: color?.(row, index) ?? SERIES_COLORS[index % SERIES_COLORS.length] ?? '',
+        color:
+          color?.(row, index) ??
+          SERIES_COLORS[index % SERIES_COLORS.length] ??
+          'var(--aviary-accent)',
         row,
       });
     });
