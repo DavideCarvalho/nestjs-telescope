@@ -18,6 +18,9 @@ export interface FleetOutcome {
   fleet: FleetAlertContext;
 }
 
+/** The most instances (and `instances-up` holds) the evaluator tracks at once. */
+const MAX_TRACKED = 20_000;
+
 const minutes = (ms: number) => {
   if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))} s`;
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)} min`;
@@ -84,6 +87,9 @@ export class FleetRuleEvaluator {
       if (below) {
         const since = this.holding.get(holdKey) ?? now;
         this.holding.set(holdKey, since);
+        while (this.holding.size > MAX_TRACKED) {
+          this.holding.delete(this.holding.keys().next().value as string);
+        }
         crosses = now - since >= holdMs;
       } else {
         this.holding.delete(holdKey);
@@ -153,6 +159,8 @@ export class FleetRuleEvaluator {
         if (instance.shipping === null) continue;
         const key = `${app.app}\u0000${instance.instanceId}`;
         const samples = this.drops.get(key) ?? [];
+        // Re-insert: the map's order is least recently sampled first.
+        this.drops.delete(key);
         const last = samples[samples.length - 1];
         if (last === undefined || last.at !== instance.lastSeenAt) {
           samples.push({ at: instance.lastSeenAt, dropped: instance.shipping.dropped });
@@ -180,8 +188,12 @@ export class FleetRuleEvaluator {
         },
       });
     }
-    // Forget instances no longer in the fleet.
-    if (this.drops.size > 20_000) this.drops.clear();
+    // Bounded by evicting the least recently sampled instance: an instance still reporting is
+    // re-sampled every evaluation, so a sender rotating instance ids only evicts its own stale ones
+    // (never a wholesale clear, which would reset every app's baseline at once).
+    while (this.drops.size > MAX_TRACKED) {
+      this.drops.delete(this.drops.keys().next().value as string);
+    }
     return outcomes;
   }
 }

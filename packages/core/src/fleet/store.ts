@@ -18,17 +18,48 @@ const key = (app: string, instanceId: string) => `${app}\u0000${instanceId}`;
 /** Instances in this process (a standalone app, tests, or a control plane on the memory store). */
 export class MemoryFleetStore implements FleetStore {
   private readonly rows = new Map<string, InstanceRecord>();
+  /** Per app, its instance keys, least recently seen first. */
+  private readonly byApp = new Map<string, Set<string>>();
 
-  constructor(private readonly maxInstances = 5000) {}
+  /**
+   * `maxPerApp` bounds each app on its own: a tenant that rotates instance ids (a bug, or a
+   * hostile sender) only evicts its own rows, never another app's. `maxInstances` bounds the total.
+   */
+  constructor(
+    private readonly maxInstances = 5000,
+    private readonly maxPerApp = 500,
+  ) {}
 
   async upsert(record: InstanceRecord): Promise<void> {
     const id = key(record.app, record.instanceId);
     this.rows.delete(id);
     this.rows.set(id, structuredClone(record));
-    while (this.rows.size > this.maxInstances) {
-      // Evict the least recently seen (insertion order = last upsert).
-      this.rows.delete(this.rows.keys().next().value as string);
+    let own = this.byApp.get(record.app);
+    if (own === undefined) {
+      own = new Set();
+      this.byApp.set(record.app, own);
     }
+    own.delete(id);
+    own.add(id);
+    while (own.size > this.maxPerApp) this.remove(own.values().next().value as string);
+    while (this.rows.size > this.maxInstances) {
+      // Past the total, evict from the app with the most instances (its least recently seen).
+      let largest: Set<string> | undefined;
+      for (const keys of this.byApp.values())
+        if (!largest || keys.size > largest.size) largest = keys;
+      const oldest = largest?.values().next().value;
+      if (oldest === undefined) break;
+      this.remove(oldest);
+    }
+  }
+
+  private remove(id: string): void {
+    const row = this.rows.get(id);
+    this.rows.delete(id);
+    if (row === undefined) return;
+    const own = this.byApp.get(row.app);
+    own?.delete(id);
+    if (own?.size === 0) this.byApp.delete(row.app);
   }
 
   async list(
@@ -45,7 +76,7 @@ export class MemoryFleetStore implements FleetStore {
     let removed = 0;
     for (const [id, row] of this.rows) {
       if (row.lastSeenAt < before) {
-        this.rows.delete(id);
+        this.remove(id);
         removed += 1;
       }
     }

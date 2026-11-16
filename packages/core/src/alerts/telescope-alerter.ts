@@ -51,6 +51,9 @@ const DEFAULT_EVERY_WINDOW = '1h';
  */
 const MAX_PENDING_FLUSH_ENTRIES = 10_000;
 
+/** The most fleet alert subjects (raised, and resolved within their cooldown) kept at once. */
+const MAX_FLEET_SUBJECTS = 10_000;
+
 export interface TelescopeAlerterDeps {
   alerts: ResolvedAlerts;
   storage: StorageProvider;
@@ -529,6 +532,7 @@ export class TelescopeAlerter {
       const resolvedAt = this.fleetResolved.get(key);
       if (resolvedAt !== undefined && now - resolvedAt < this.deps.alerts.cooldownMs) continue;
       this.fleetRaised.set(key, outcome.fleet);
+      this.boundFleetState(now);
       await this.dispatch({
         ...this.buildRatePayload(rule, outcome.value, outcome.threshold),
         fleet: outcome.fleet,
@@ -541,6 +545,7 @@ export class TelescopeAlerter {
       // Re-inserted, so the map stays ordered by resolution time (oldest first).
       this.fleetResolved.delete(key);
       this.fleetResolved.set(key, now);
+      this.boundFleetState(now);
       const outcome = details.get(key);
       // The same app / check / host as the firing one, so the resolve closes that incident.
       await this.dispatch({
@@ -555,6 +560,25 @@ export class TelescopeAlerter {
       });
     }
   }
+
+  /**
+   * Keeps the fleet alert state bounded: subjects carry sender-chosen hosts and check names, so a
+   * tenant rotating them must not grow it forever. A resolved subject is forgotten once its
+   * cooldown is over; past {@link MAX_FLEET_SUBJECTS}, the oldest raised subject is dropped
+   * (it then resolves silently).
+   */
+  private boundFleetState(now: number): void {
+    for (const [key, at] of this.fleetResolved) {
+      if (now - at < this.deps.alerts.cooldownMs && this.fleetResolved.size <= MAX_FLEET_SUBJECTS) {
+        break;
+      }
+      this.fleetResolved.delete(key);
+    }
+    while (this.fleetRaised.size > MAX_FLEET_SUBJECTS) {
+      this.fleetRaised.delete(this.fleetRaised.keys().next().value as string);
+    }
+  }
+
 
   /** Build the v1-compatible payload for an interval (rate) rule. */
   private buildRatePayload(rule: AlertRule, value: number, threshold: number): AlertPayload {
