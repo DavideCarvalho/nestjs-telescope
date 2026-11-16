@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 5.4.0
+
+### Minor Changes
+
+- [#203](https://github.com/DavideCarvalho/nestjs-telescope/pull/203) [`9d38c4f`](https://github.com/DavideCarvalho/nestjs-telescope/commit/9d38c4fd4118bf4ad82f65fcdac2c6337742e047) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Health checks, instance heartbeats and the fleet. `checks: [checks.redis({ client }), checks.terminus(name, fn), checks.custom(name, run)]` (cached, single-flight, timed out); `health: { probes: true }` mounts unauthenticated `GET <path>/api/probes/ready` (503 while a critical check is down or the instance drains) and `/live`. Every instance beats every 15 s (`fleet`: on for a control plane and a tenant, off for a standalone app unless `fleet: true`); a tenant's heartbeat rides its batches over every transport. `GET <path>/api/fleet` and the `telescope_get_fleet` MCP tool show per app the instances (up / starting / draining / gone), deploys with rollout progress, restart loops and failing checks with the exception families recorded since, scoped like every other read. New alert rules `instances-up`, `restart-loop`, `check-down` and `entries-dropped` raise and resolve per subject and take `severity` / `channels` like every rule (defaults: `critical` for instances-up and check-down, `error` for restart-loop, `warning` for entries-dropped); their clears are `status: 'resolved'` payloads, so the on-call / chat / email integrations close the incident keyed `telescope:<app>:<rule>[:<check>][:<host>]`, and payloads carry `fleet`. The fleet publishes its health-check states with `publishCheckStates()` (per app, plus an `instances` check), so `alerts.heartbeats`, `alerts.statusPages` and `uptimeHandler()` follow it.
+
 ## 5.3.0
 
 ### Minor Changes
