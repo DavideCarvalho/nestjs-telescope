@@ -10,16 +10,12 @@ import {
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
-import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
 import type { ExtensionRegistry } from '../extension/registry.js';
-import { type TenantView, tenantViewOf, withTenantView } from '../storage/tenant-scoped-storage.js';
+import { type TenantView, withTenantView } from '../storage/tenant-scoped-storage.js';
+import { consoleAppsFor, rememberConsoleApps } from './console-app-scope.js';
 import { type ConsoleDecide, resolveConsoleAuthorize } from './console-authorize.js';
-import {
-  consoleTenantsFor,
-  rememberConsoleTenants,
-  resolveConsoleTenantScope,
-  selectConsoleTenant,
-} from './console-tenant-scope.js';
+import { consoleTenantsFor, rememberConsoleTenants } from './console-tenant-scope.js';
+import { resolveConsoleView } from './console-view.js';
 import { auditExtensionAction } from './extension-audit.js';
 import { type TelescopeToolArgs, TelescopeTools, isToolNotice } from './telescope-tools.js';
 import {
@@ -337,7 +333,9 @@ export function devToolsGate(decide: ConsoleDecide): DevToolsLib['authorize'] {
     try {
       const decision = await decide(context);
       if (decision.allowed && context.getType() === 'http') {
-        rememberConsoleTenants(context.switchToHttp().getRequest(), decision.tenants);
+        const request = context.switchToHttp().getRequest();
+        rememberConsoleTenants(request, decision.tenants);
+        rememberConsoleApps(request, decision.apps);
       }
       return decision;
     } catch {
@@ -366,15 +364,19 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     @Optional() @Inject(TELESCOPE_EXTENSIONS) private readonly extensions?: ExtensionRegistry,
   ) {}
 
-  /** The organization view of a dev-tools call: as the console's, with no `?tenant=`. */
+  /** The view of a dev-tools call: as the console's, with no `?tenant=` / `?app=`. */
   private viewFor(call?: DevToolCall): TenantView | null {
-    const tenancy = readTenancy(this.options.tenancy, this.accessor);
-    if (!tenancy.enabled) return null;
+    // A call without an HTTP context (a test harness, a stdio transport) has no grant: every app.
+    const context = call?.context;
     const request =
-      call?.context.getType() === 'http' ? call.context.switchToHttp().getRequest() : undefined;
-    const scope = resolveConsoleTenantScope(tenancy, consoleTenantsFor(request));
-    const selection = selectConsoleTenant(scope, undefined);
-    return tenantViewOf(selection, tenantTagPrefix(this.options.tenancy), tenancy.nullRows);
+      typeof context?.getType === 'function' && context.getType() === 'http'
+        ? context.switchToHttp().getRequest()
+        : undefined;
+    return resolveConsoleView({
+      options: this.options,
+      accessor: this.accessor,
+      granted: { tenants: consoleTenantsFor(request), apps: consoleAppsFor(request) },
+    }).view;
   }
 
   async onModuleInit(): Promise<void> {

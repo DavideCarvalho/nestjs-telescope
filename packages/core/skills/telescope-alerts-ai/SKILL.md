@@ -104,7 +104,8 @@ The diagnoser is provider-agnostic via the Vercel AI SDK (swap `openai(...)` for
 With console tenancy on, diagnoses are cached and built per organization: a
 viewer of one organization only gets one made from that organization's
 occurrences; a viewer of every organization reads the family's unscoped one.
-Source: `packages/ai/src/ai-sdk-diagnoser.ts` (`createAiSdkDiagnoser`),
+On a control plane the diagnosis is also per app: a viewer of one app only gets
+one made from that app's occurrences. Source: `packages/ai/src/ai-sdk-diagnoser.ts` (`createAiSdkDiagnoser`),
 `packages/core/src/ai/diagnoser.ts` (`TelescopeAiOptions`),
 `website/content/docs/recipes/ai-exception-diagnosis.mdx`.
 

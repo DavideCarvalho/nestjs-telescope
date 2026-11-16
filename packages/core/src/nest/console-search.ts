@@ -2,12 +2,11 @@
 import type { ExecutionContext } from '@nestjs/common';
 import type { ModuleRef } from '@nestjs/core';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
-import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
-import { type TenantView, tenantViewOf, withTenantView } from '../storage/tenant-scoped-storage.js';
+import { withTenantView } from '../storage/tenant-scoped-storage.js';
 import type { ConsoleDecide } from './console-authorize.js';
 import type { AviaryConsoleSearchHit } from './console-switcher.js';
-import { resolveConsoleTenantScope, selectConsoleTenant } from './console-tenant-scope.js';
+import { resolveConsoleView } from './console-view.js';
 import { summarizeEntry } from './telescope-tools.js';
 import {
   TELESCOPE_OPTIONS,
@@ -44,18 +43,13 @@ export function telescopeConsoleSearch(
     const storage = optional<StorageProvider>(moduleRef, TELESCOPE_STORAGE);
     if (storage === undefined || q === '' || limit <= 0) return [];
     const options = optional<TelescopeModuleOptions>(moduleRef, TELESCOPE_OPTIONS);
-    const tenancy = readTenancy(options?.tenancy, optional(moduleRef, CONTEXT_ACCESSOR));
-    let view: TenantView | null = null;
-    if (tenancy.enabled) {
-      const decision = await decide(context);
-      if (!decision.allowed) return [];
-      const scope = resolveConsoleTenantScope(tenancy, decision.tenants);
-      view = tenantViewOf(
-        selectConsoleTenant(scope, undefined),
-        tenantTagPrefix(options?.tenancy),
-        tenancy.nullRows,
-      );
-    }
+    const decision = await decide(context);
+    if (!decision.allowed) return [];
+    const { view } = resolveConsoleView({
+      options,
+      accessor: optional(moduleRef, CONTEXT_ACCESSOR),
+      granted: { tenants: decision.tenants, apps: decision.apps },
+    });
     return withTenantView(view, async () => {
       const hits: AviaryConsoleSearchHit[] = [];
       const found = await storage.find(q).catch(() => null);

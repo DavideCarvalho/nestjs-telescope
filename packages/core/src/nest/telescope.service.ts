@@ -32,7 +32,8 @@ import { setTelescopeRecordSink } from '../record/telescope-record.js';
 import { Recorder, type RecorderSelfMetrics } from '../recorder/recorder.js';
 import { EntryEvents } from '../sse/entry-events.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
-import { type TenantView, tenantViewOf } from '../storage/tenant-scoped-storage.js';
+import { type TenantView, intersectViews, tenantViewOf } from '../storage/tenant-scoped-storage.js';
+import { appOfEntry, appViewOf } from './console-app-scope.js';
 import { type ExceptionCaptureDetails, captureException } from './exception-capture.js';
 import {
   TELESCOPE_CONFIG,
@@ -279,13 +280,16 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     // the windowed analytics scans (pulse/timeseries/stats) get slower over time.
     // Warn once at boot so hosts opt into a retention window (and/or `sampling`
     // for noisy request floods) rather than discovering the slowdown in prod.
-    if (this.config.prune === undefined) {
+    // A tenant without a local copy keeps nothing: retention is the control plane's.
+    const keepsNothing =
+      this.options.topology === 'tenant' && this.options.tenant?.local === undefined;
+    if (this.config.prune === undefined && !keepsNothing) {
       this.logger.warn(
         'No `prune` configured — Telescope entries accumulate without bound, ' +
           'slowing analytics over time. Set e.g. `prune: { after: "1h" }` ' +
           '(and/or `sampling` to down-sample noisy request volume).',
       );
-    } else if (Object.keys(this.config.sampling).length === 0) {
+    } else if (!keepsNothing && Object.keys(this.config.sampling).length === 0) {
       // Retention is set, but with no `sampling` every captured entry is kept —
       // the retained working set is `prune.after × ingest rate × entry size`.
       // High-volume streams (cache hits especially) dominate that product, so
@@ -359,6 +363,14 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
    * so a caller on its own failure path can call this immediately before
    * re-throwing the host's error without any risk of replacing it.
    */
+  /**
+   * Stores entries a tenant app sent (a control plane): already redacted and sampled there, kept
+   * with their own ids and times. Rejects when the store fails, so the tenant retries.
+   */
+  async storeIngested(entries: Entry[]): Promise<void> {
+    await this.recorder.storeRecorded(entries);
+  }
+
   recordException(error: unknown, details?: ExceptionCaptureDetails): void {
     if (!this.config.enabled) return;
     captureException(
@@ -463,11 +475,24 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
+   * The view an entry's diagnosis is built and cached in: its organization (tenancy on) and its app
+   * (on a control plane), so a diagnosis never mixes occurrences of other organizations or apps.
+   * `null` for an entry with neither, as on a standalone app with tenancy off.
+   */
+  private tenantViewOfEntry(entry: Entry): TenantView | null {
+    const app = appOfEntry(entry);
+    return intersectViews(
+      this.organizationViewOfEntry(entry),
+      app === undefined ? null : appViewOf({ kind: 'apps', ids: [app] }),
+    );
+  }
+
+  /**
    * The organization view of an entry (tenancy on): the most specific organization its tenant
    * tags name (an entry carries one tag per level of its chain, root first).
    * `null` with tenancy off, or for an entry with no organization (or recorded for all of them).
    */
-  private tenantViewOfEntry(entry: Entry): TenantView | null {
+  private organizationViewOfEntry(entry: Entry): TenantView | null {
     const tenancy = readTenancy(lenientTenancy(this.options.tenancy), this.contextAccessor);
     if (!tenancy.enabled) return null;
     const prefix = `${tenantTagPrefix(this.options.tenancy)}:`;

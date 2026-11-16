@@ -381,6 +381,20 @@ export class Recorder {
     this.paused = false;
   }
 
+  /**
+   * Stores entries recorded elsewhere (a control plane taking a tenant's batch): no sampling,
+   * redaction or enrichment (the sender's recorder did those), straight to the store, then the
+   * same post-store hooks as a flush (rollups, live tail, alerts). Rejects when the store does, so
+   * the sender keeps the batch and retries.
+   */
+  async storeRecorded(entries: Entry[]): Promise<void> {
+    if (entries.length === 0) return;
+    const storage = this.options.storage;
+    await storage.store(entries);
+    await this.recordRollupsAfterStore(storage, entries);
+    await this.notifyFlushStored(entries);
+  }
+
   /** Synchronous, O(1), never throws into the caller. */
   record(input: RecordInput): void {
     // Complete-count metrics tap: fires before pause/sampling so counters never

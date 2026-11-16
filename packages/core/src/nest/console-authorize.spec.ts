@@ -62,6 +62,14 @@ describe('normalizeConsoleResult', () => {
     [{ redirectTo: '/login' }, { allowed: false, reason: 'unauthenticated', redirectTo: '/login' }],
     [undefined, { allowed: false, reason: 'forbidden' }],
     ['yes', { allowed: false, reason: 'forbidden' }],
+    [
+      { allowed: true, apps: ['shop', 'shop'] },
+      { allowed: true, apps: ['shop'] },
+    ],
+    [
+      { allowed: true, tenants: ['A'], apps: '*' },
+      { allowed: true, tenants: ['A'], apps: '*' },
+    ],
   ])('%j → %j', (result, decision) => {
     expect(normalizeConsoleResult(result)).toEqual(decision);
   });
@@ -256,6 +264,22 @@ describe('resolveConsoleAuthorize', () => {
     const classCheck = await resolveConsoleAuthorize(Throws, await moduleRefWith());
     expect(await classCheck(ctx)).toEqual({ allowed: false, reason: 'forbidden' });
   });
+
+  it('a throw is logged with its stack, so it does not read like a missing role', async () => {
+    const warn = vi.fn();
+    const check = await resolveConsoleAuthorize(
+      () => {
+        throw new Error('db down');
+      },
+      await moduleRefWith(),
+      { logger: { warn } as unknown as Logger },
+    );
+    expect(await check(ctx)).toEqual({ allowed: false, reason: 'forbidden' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = String(warn.mock.calls[0]?.[0]);
+    expect(line).toContain('db down');
+    expect(line).toMatch(/at .*console-authorize\.spec/);
+  });
 });
 
 describe('authorizeByToken', () => {
@@ -278,6 +302,14 @@ describe('authorizeByToken', () => {
       denied,
     );
     expect(check(contextFor({ headers: { 'x-telescope-token': 's3cret' } }))).toEqual(denied);
+  });
+
+  it('grants apps when given', () => {
+    const scoped = authorizeByToken({ token: 's3cret', apps: ['shop'] });
+    expect(scoped(contextFor({ headers: { authorization: 'Bearer s3cret' } }))).toEqual({
+      allowed: true,
+      apps: ['shop'],
+    });
   });
 
   it('throws at config time for an empty or missing token', () => {

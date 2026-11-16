@@ -9,6 +9,9 @@ import type { PulseServiceOptions } from '../pulse/pulse.service.js';
 import type { QueueManager } from '../queue/queue-manager.js';
 import type { ScheduleManager } from '../schedule/schedule-manager.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import type { TelescopeTenantOptions, TelescopeTopology } from '../topology/config.js';
+import type { TenantVerifier } from '../topology/tenant-auth.js';
+import type { TelescopeAppsOptions } from './console-app-scope.js';
 import type { ConsoleAuthorize } from './console-authorize.js';
 import type { Watcher } from './watcher.js';
 
@@ -434,6 +437,23 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    * tag and the console shows everything.
    */
   tenancy?: TelescopeTenancyOption;
+  /**
+   * Where entries go. `'standalone'` (default): this app stores and shows its own, as always.
+   * `'control-plane'`: this app also stores the entries tenant apps send it (`POST <path>/api/ingest`),
+   * each tagged `app:<partition>`, and its console gets an App picker; needs {@link verifyTenant}.
+   * `'tenant'`: this app sends its entries to a control plane (see {@link tenant}).
+   */
+  topology?: TelescopeTopology;
+  /**
+   * Control plane only: verifies the token a tenant sends with each batch and returns the app
+   * (partition) it may write as. The app always comes from here, never from the request.
+   * `hmacTenantVerifier(secret)` checks tokens from `signTenantToken(partition, secret)`.
+   */
+  verifyTenant?: TenantVerifier;
+  /** Tenant only: the control plane to send entries to, as which app, with which token. */
+  tenant?: TelescopeTenantOptions;
+  /** The App picker of a control plane's console: labels for app ids. */
+  apps?: TelescopeAppsOptions;
   /**
    * Class decorators applied to the console controllers this module mounts —
    * the API (`TelescopeController`) and the live feed (`StreamController`) —
