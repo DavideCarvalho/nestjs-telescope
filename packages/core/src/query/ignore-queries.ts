@@ -31,7 +31,11 @@ export function compileQueryIgnore(
 ): ((input: RecordInput) => boolean) | null {
   if (rules === undefined || rules.length === 0) return null;
   const needles = rules.filter((rule): rule is string => typeof rule === 'string').map(normalize);
-  const patterns = rules.filter((rule): rule is RegExp => rule instanceof RegExp);
+  // Copied without the stateful flags: a `g`/`y` RegExp's `test` would resume from `lastIndex`,
+  // and resetting it would throw on a frozen one.
+  const patterns = rules
+    .filter((rule): rule is RegExp => rule instanceof RegExp)
+    .map((rule) => new RegExp(rule.source, rule.flags.replace(/[gy]/g, '')));
   const predicates = rules.filter(
     (rule): rule is (sql: string, content: Record<string, unknown>) => boolean =>
       typeof rule === 'function',
@@ -49,7 +53,6 @@ export function compileQueryIgnore(
       if (needles.some((needle) => needle !== '' && normalized.includes(needle))) return true;
     }
     for (const pattern of patterns) {
-      pattern.lastIndex = 0;
       if (pattern.test(sql)) return true;
     }
     for (const predicate of predicates) {

@@ -385,7 +385,11 @@ export function aggregatePulse(
         existing.requests += 1;
         existing.total += insight.count;
         existing.totalDurationMs += loopDuration;
-        if (insight.count > existing.perRequest) {
+        // Ties go to the smallest batch id, as the store's aggregation resolves them.
+        if (
+          insight.count > existing.perRequest ||
+          (insight.count === existing.perRequest && batchId < existing.sampleBatchId)
+        ) {
           existing.perRequest = insight.count;
           existing.sampleBatchId = batchId;
         }

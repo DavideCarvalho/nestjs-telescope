@@ -20,8 +20,10 @@ describe('compileQueryIgnore', () => {
     expect(ignore(query('select * from users where id = ?'))).toBe(false);
   });
 
-  it('tests a RegExp, including a global one more than once', () => {
-    const ignore = compileQueryIgnore([/from "?durable_/g])!;
+  it('tests a RegExp, including a global or frozen one more than once', () => {
+    const ignore = compileQueryIgnore([/from "?durable_/g, Object.freeze(/^select 2$/y)])!;
+    expect(ignore(query('select 2'))).toBe(true);
+    expect(ignore(query('select 2'))).toBe(true);
     expect(ignore(query('select 1 from durable_runs'))).toBe(true);
     expect(ignore(query('select 1 from durable_runs'))).toBe(true);
     expect(ignore(query('select 1 from runs'))).toBe(false);

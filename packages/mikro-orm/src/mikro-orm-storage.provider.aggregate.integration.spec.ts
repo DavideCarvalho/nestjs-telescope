@@ -14,11 +14,21 @@ const docker = process.env.TELESCOPE_SKIP_DOCKER !== '1';
 
 let postgres: StartedPostgreSqlContainer | null = null;
 let mysql: StartedMySqlContainer | null = null;
+/** Why the suites are skipped, or `null` when the databases are up. */
+let skipReason: string | null = docker ? null : 'TELESCOPE_SKIP_DOCKER=1';
 if (docker) {
-  [postgres, mysql] = await Promise.all([
-    new PostgreSqlContainer('postgres:16-alpine').start(),
-    new MySqlContainer('mysql:8.4').start(),
-  ]);
+  try {
+    [postgres, mysql] = await Promise.all([
+      new PostgreSqlContainer('postgres:16-alpine').start(),
+      new MySqlContainer('mysql:8.4').start(),
+    ]);
+  } catch (error) {
+    // No Docker daemon: skip, saying why, rather than failing the file at import.
+    skipReason = `cannot start the databases: ${error instanceof Error ? error.message : String(error)}`;
+    await Promise.all([postgres?.stop(), mysql?.stop()]).catch(() => undefined);
+    postgres = null;
+    mysql = null;
+  }
 }
 
 const providers: MikroOrmStorageProvider[] = [];
@@ -38,7 +48,7 @@ afterAll(async () => {
   await Promise.all([postgres?.stop(), mysql?.stop()]);
 });
 
-const skip = docker ? {} : { skip: 'TELESCOPE_SKIP_DOCKER=1' };
+const skip = skipReason === null ? {} : { skip: skipReason };
 
 describeStorageAggregation(
   'MikroOrmStorageProvider (PostgreSQL)',

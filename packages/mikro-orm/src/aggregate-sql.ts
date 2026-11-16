@@ -244,12 +244,13 @@ export async function aggregateSql(
       const where = windowWhere(context, request.window, params);
       // A tag starting with the prefix: a space (the padding or the separator) then the prefix.
       params.push(`% ${escapeLike(request.tagPrefix)}%`);
-      // Grouped by the text form of the tag list; one list of each group is returned as is.
+      // Grouped by the text form of the tag list; one list of each group is returned as is
+      // (`max` over its text: MariaDB before 13.2 has no `any_value`, PostgreSQL no `max(jsonb)`).
       const anyTags =
         dialect === 'postgres'
           ? '(array_agg(tags))[1]'
           : dialect === 'mysql'
-            ? 'any_value(tags)'
+            ? 'max(cast(tags as char))'
             : 'min(tags)';
       const rows = await context.execute(
         `select ${anyTags} as tags, count(*) as cnt, coalesce(sum(duration_ms), 0) as duration_sum

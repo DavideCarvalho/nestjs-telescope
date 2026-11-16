@@ -847,6 +847,13 @@ export function describeStorageAggregation(
         expect(fromStore.loadByUser.length).toBeGreaterThan(0);
         expect(fromStore.topExceptions[0]?.class).toBe('TypeError');
         expect(fromStore.nPlusOne[0]?.sql).toContain('select');
+        expect(
+          fromStore.nPlusOne.find((hotspot) => hotspot.familyHash === 'comments-by-post'),
+        ).toMatchObject({
+          perRequest: 6,
+          requests: 2,
+          sampleBatchId: 'batch-007',
+        });
       });
 
       it('aggregates the timeseries exactly as the scan does, by type and by tag', async () => {
@@ -933,6 +940,19 @@ function aggregateDataset(base: number): Entry[] {
         durationMs: 1 + Math.floor(random() * 5),
         content: { sql: 'select * from posts where user_id = ?', bindings: [] },
       });
+    }
+    // A second N+1 family, tripped the same number of times in two batches: the sample batch is
+    // the tie-break both paths must agree on.
+    if (batch === 7 || batch === 22) {
+      for (let loop = 0; loop < 6; loop += 1) {
+        add({
+          batchId,
+          type: 'query',
+          familyHash: 'comments-by-post',
+          durationMs: 4,
+          content: { sql: 'select * from comments where post_id = ?', bindings: [] },
+        });
+      }
     }
     add({
       batchId,
