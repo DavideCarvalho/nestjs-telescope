@@ -79,7 +79,7 @@ notification when an interval rule stops firing, keyed by `alerts.app` + rule.
 
 
 Fleet rules (a control plane, or a standalone app with `fleet` on): one subject
-per app / check / host, raised once and resolved once per subject (`payload.fleet`; the clear is a
+per app / check / host and role (a looping host and its role), raised once and resolved once per subject (`payload.fleet`; the clear is a
 `status: 'resolved'` payload, so it reaches the channels with `acceptsResolved`
 and closes the incident keyed `telescope:<app>:<rule>[:<check>][:<host>]`).
 They take `severity` / `channels` too; default severity `critical` for
@@ -90,8 +90,8 @@ states with `publishCheckStates()` (per app, plus an `instances` check), so
 
 ```ts
 rules: [
-  { type: 'instances-up', below: 2 },                      // fewer than 2 web up, held for `for` (default '1m'); `role` for a worker or '*'
-  { type: 'restart-loop' },                                // a host rebooted `fleet.restartLoop` times in its window
+  { type: 'instances-up', below: 2 },                      // fewer than 2 web up (an app with only workers counts its workers), held for `for` (default '1m'); `role` for a worker or '*'
+  { type: 'restart-loop' },                                // a host rebooted `fleet.restartLoop` times in its window, per host and role
   { type: 'check-down', check: 'redis', for: '5m' },       // a check down for `for` (`check` else any)
   { type: 'entries-dropped', window: '5m', threshold: 1 }, // a tenant dropped >= threshold entries in `window`
 ];
