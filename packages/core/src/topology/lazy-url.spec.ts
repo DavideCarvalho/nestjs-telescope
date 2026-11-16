@@ -210,3 +210,13 @@ describe('tenant.relay', () => {
     ).toThrow(/tenant.relay` must be a boolean/);
   });
 });
+
+describe('one lookup per tenant', () => {
+  it('shares the derived transport (and its URL lookup) across resolutions', () => {
+    const tenant = { url: async () => 'http://cp', partition: 'shop', token: 't' };
+    const first = resolveTopology({ topology: 'tenant', tenant });
+    const second = resolveTopology({ topology: 'tenant', tenant });
+    if (first.kind !== 'tenant' || second.kind !== 'tenant') throw new Error('tenant expected');
+    expect(second.transport).toBe(first.transport);
+  });
+});

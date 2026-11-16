@@ -74,6 +74,9 @@ interface TopologyInput {
   transport?: TenantTransport | undefined;
 }
 
+/** The HTTP transport derived from a `tenant.url`, per `tenant` options object. */
+const derivedTransports = new WeakMap<TelescopeTenantOptions, TenantTransport>();
+
 /** Validates `topology` and its options; throws at boot on a mistake. */
 export function resolveTopology(options: TopologyInput): ResolvedTopology {
   const topology = options.topology ?? 'standalone';
@@ -144,8 +147,13 @@ export function resolveTopology(options: TopologyInput): ResolvedTopology {
   ) {
     throw new Error('telescope: `tenant` needs `url` (or a `transport`).');
   }
-  const transport =
-    tenant.transport ?? httpTransport({ url: tenant.url as TelescopeServerUrlSource });
+  // One transport per `tenant` object: every resolution (the store, discovery) shares it, and so
+  // shares one lookup of a lazy URL.
+  let transport = tenant.transport ?? derivedTransports.get(tenant);
+  if (transport === undefined) {
+    transport = httpTransport({ url: tenant.url as TelescopeServerUrlSource });
+    derivedTransports.set(tenant, transport);
+  }
   return {
     kind: 'tenant',
     transport,

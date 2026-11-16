@@ -24,9 +24,6 @@ export const TELESCOPE_INGEST_CAPABILITY = 'telescope:ingest';
  */
 export const TELESCOPE_RELAY_CAPABILITY = 'telescope:ingest:relay';
 
-/** The tag a relayed entry gets: `via:<relayer>`. Reserved: a sender's own `via:` tags are dropped. */
-export const VIA_TAG_PREFIX = 'via';
-
 /** An app name a relayer may name (`[A-Za-z0-9_.-]{1,64}`). */
 const RELAY_APP = /^[A-Za-z0-9_.-]{1,64}$/;
 
@@ -198,7 +195,7 @@ export function createIngestHandler(options: IngestHandlerOptions): IngestHandle
         // The fleet is best effort; the entries are what the batch is for.
       }
     }
-    const batchKey = `${app}:${parsed.batch.id}`;
+    const batchKey = `${app}\u0000${parsed.batch.id}`;
     if (batches.has(batchKey)) {
       return {
         status: 'stored',
@@ -223,10 +220,12 @@ export function createIngestHandler(options: IngestHandlerOptions): IngestHandle
       }
       const entry = fromWireEntry(wire, owner.app, at, owner.relayed ? app : undefined);
       if (entry === null) return { status: 'invalid', reason: 'invalid entry id' };
-      // A relayed entry is deduped under its relayer and its app (`<relayer>~<app>:<id>`; `~` is
-      // in neither name's syntax here), so one relay's retry is deduped, and it never collides
-      // with the app's own entries nor with another relay's.
-      const key = owner.relayed ? `${app}~${owner.app}:${entry.id}` : `${app}:${entry.id}`;
+      // A relayed entry is deduped under its relayer and its app, so one relay's retry is deduped,
+      // and it never collides with the app's own entries nor with another relay's. The parts are
+      // joined on NUL, which no partition, app or id can contain.
+      const key = owner.relayed
+        ? `relay\u0000${app}\u0000${owner.app}\u0000${entry.id}`
+        : `own\u0000${app}\u0000${entry.id}`;
       if (seen.has(entry.id) || entries.has(key)) continue;
       seen.add(entry.id);
       fresh.push({ entry, key, relayed: owner.relayed });

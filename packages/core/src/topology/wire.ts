@@ -21,6 +21,9 @@ export const MAX_FUTURE_SKEW_MS = 5 * 60_000;
 /** The tag every ingested entry gets: `app:<partition>`. */
 export const APP_TAG_PREFIX = 'app';
 
+/** The tag a relayed entry gets: `via:<relayer>`. Reserved: a sender's own `via:` tags are dropped. */
+export const VIA_TAG_PREFIX = 'via';
+
 /** An entry on the wire: an {@link Entry} whose `createdAt` is an ISO string. */
 export interface WireEntry extends Omit<Entry, 'createdAt'> {
   createdAt: string;
@@ -148,10 +151,11 @@ export function fromWireEntry(
 ): Entry | null {
   if (!isEntryId(wire.id)) return null;
   const appPrefix = `${APP_TAG_PREFIX}:`;
+  const viaPrefix = `${VIA_TAG_PREFIX}:`;
   const tags = [
-    ...new Set(wire.tags.filter((tag) => !tag.startsWith(appPrefix) && !tag.startsWith('via:'))),
+    ...new Set(wire.tags.filter((tag) => !tag.startsWith(appPrefix) && !tag.startsWith(viaPrefix))),
     `${appPrefix}${partition}`,
-    ...(via !== undefined ? [`via:${via}`] : []),
+    ...(via !== undefined ? [`${viaPrefix}${via}`] : []),
   ];
   return {
     id: wire.id,
