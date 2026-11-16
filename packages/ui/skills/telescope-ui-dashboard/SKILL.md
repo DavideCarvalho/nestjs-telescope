@@ -11,8 +11,7 @@ description: >-
   and `?app=` on every call; read the scopes with client.tenancy() /
   client.apps()); build a custom console with the React
   components, hooks (TelescopeProvider, useTelescopeClient, useEntries, usePulse,
-  useTimeseries, useTenancy, useApps) from the /react subpath. Client
-  exports include pageApp, withConsoleScope, NO_APPS, TelescopeClient.apps() and useApps(). Use for "show the Telescope dashboard",
+  useTimeseries, useTenancy, useApps) from the /react subpath. Use for "show the Telescope dashboard",
   "custom path", "call the Telescope API from React", "embed Telescope components".
 license: MIT
 metadata:
