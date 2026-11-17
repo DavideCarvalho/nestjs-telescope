@@ -12,6 +12,7 @@ import type {
   CursorPageRequest,
   EntriesQuery,
   JobActionName,
+  PulseRead,
   QueueState,
   TagCount,
   TelescopeClient,
@@ -133,10 +134,15 @@ export function prunesQuery(client: TelescopeClient, paused = false) {
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
-export function pulseQuery(client: TelescopeClient, window: string, paused = false) {
+export function pulseQuery(
+  client: TelescopeClient,
+  window: string,
+  paused = false,
+  read?: PulseRead,
+) {
   return queryOptions({
-    queryKey: ['telescope', 'pulse', window],
-    queryFn: () => client.pulse(window),
+    queryKey: ['telescope', 'pulse', window, read?.cards?.join(',') ?? null, read?.buckets ?? null],
+    queryFn: () => (read === undefined ? client.pulse(window) : client.pulse(window, read)),
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
   });
 }
@@ -166,11 +172,13 @@ export function timeseriesQuery(
   client: TelescopeClient,
   query: { window: string; buckets?: number; type?: string; tag?: string },
   paused = false,
+  enabled = true,
 ) {
   return queryOptions({
     queryKey: ['telescope', 'timeseries', query],
     queryFn: () => client.timeseries(query),
     refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+    enabled,
   });
 }
 
@@ -470,8 +478,8 @@ export function useTagsInfinite(prefix = '', search = '') {
 export function useStats(type: string, window: string) {
   return useQuery(statsQuery(useTelescopeClient(), type, window, usePaused()));
 }
-export function usePulse(window: string) {
-  return useQuery(pulseQuery(useTelescopeClient(), window, usePaused()));
+export function usePulse(window: string, read?: PulseRead) {
+  return useQuery(pulseQuery(useTelescopeClient(), window, usePaused(), read));
 }
 export function useAi(window: string) {
   return useQuery(aiQuery(useTelescopeClient(), window, usePaused()));
@@ -479,13 +487,18 @@ export function useAi(window: string) {
 export function useQueues(window: string) {
   return useQuery(queuesQuery(useTelescopeClient(), window, usePaused()));
 }
-export function useTimeseries(query: {
-  window: string;
-  buckets?: number;
-  type?: string;
-  tag?: string;
-}) {
-  return useQuery(timeseriesQuery(useTelescopeClient(), query, usePaused()));
+export function useTimeseries(
+  query: {
+    window: string;
+    buckets?: number;
+    type?: string;
+    tag?: string;
+  },
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery(
+    timeseriesQuery(useTelescopeClient(), query, usePaused(), options.enabled ?? true),
+  );
 }
 export function useTraces(window: string, size?: number) {
   return useQuery(tracesQuery(useTelescopeClient(), window, size, usePaused()));

@@ -70,6 +70,26 @@ describe('GET /telescope/api/pulse', () => {
     await request(app.getHttpServer()).get('/telescope/api/pulse?window=soon').expect(400);
   });
 
+  it('computes only the asked cards, and the throughput with buckets', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/telescope/api/pulse?cards=slowest,nope&buckets=6')
+      .expect(200);
+    const body = res.body as {
+      slowest: unknown[];
+      topExceptions: unknown[];
+      timeseries: { buckets: { total: number }[] };
+    };
+    expect(body.slowest).toHaveLength(2);
+    expect(body.topExceptions).toEqual([]);
+    expect(body.timeseries.buckets).toHaveLength(6);
+    expect(body.timeseries.buckets.reduce((sum, bucket) => sum + bucket.total, 0)).toBe(3);
+  });
+
+  it('rejects invalid buckets with 400', async () => {
+    await request(app.getHttpServer()).get('/telescope/api/pulse?buckets=0').expect(400);
+    await request(app.getHttpServer()).get('/telescope/api/pulse?buckets=two').expect(400);
+  });
+
   it('rejects a non-positive window with 400', async () => {
     await request(app.getHttpServer()).get('/telescope/api/pulse?window=0s').expect(400);
   });

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type {
   PulseReport,
@@ -14,6 +14,7 @@ import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
 import { settleUrlWrites } from '../settle-url.js';
 import {
+  OVERVIEW_PULSE,
   OverviewPage,
   QUEUE_WAITING_ATTENTION_THRESHOLD,
   deriveErrorRate,
@@ -170,6 +171,19 @@ function renderOverview(
   );
 }
 
+function renderWith(client: TelescopeClient) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <TelescopeProvider client={client}>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <OverviewPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </TelescopeProvider>,
+  );
+}
+
 describe('OverviewPage transforms', () => {
   it('maps timeseries totals to throughput points', () => {
     expect(toThroughputSeries(timeseries).map((point) => point.value)).toEqual([5, 8]);
@@ -299,6 +313,27 @@ describe('OverviewPage', () => {
     expect(screen.getByText('Queues needing attention')).toBeTruthy();
     expect(screen.getByText('TypeError')).toBeTruthy();
     expect(screen.getByText('select * from big')).toBeTruthy();
+  });
+
+  it('reads the window once: its cards and the charts come from one Pulse read', async () => {
+    const client = mockClient();
+    const pulseRead = vi.fn(async () => ({ ...pulse, timeseries }));
+    const timeseriesRead = vi.fn(async () => timeseries);
+    client.pulse = pulseRead;
+    client.timeseries = timeseriesRead;
+    renderWith(client);
+    expect(await screen.findByText('24 entries total')).toBeTruthy();
+    expect(pulseRead).toHaveBeenCalledWith('1h', OVERVIEW_PULSE);
+    expect(OVERVIEW_PULSE.cards).not.toContain('slowOutgoing');
+    expect(timeseriesRead).not.toHaveBeenCalled();
+  });
+
+  it('reads the chart apart from a server that answers Pulse without a timeseries', async () => {
+    const client = mockClient();
+    const timeseriesRead = vi.fn(async () => timeseries);
+    client.timeseries = timeseriesRead;
+    renderWith(client);
+    await waitFor(() => expect(timeseriesRead).toHaveBeenCalledWith({ window: '1h', buckets: 60 }));
   });
 
   it('derives and renders the error rate from exceptions ÷ requests', async () => {

@@ -62,7 +62,7 @@ export function appViewOf(selection: ConsoleAppSelection): TenantView | null {
   const key = tags.join(',');
   if (tags.length === 1) {
     const tag = tags[0] as string;
-    return { empty: false, key, tag, accept: (entry) => entry.tags.includes(tag) };
+    return { empty: false, key, tag, exact: true, accept: (entry) => entry.tags.includes(tag) };
   }
   const set = new Set(tags);
   return { empty: false, key, accept: (entry) => entry.tags.some((t) => set.has(t)) };

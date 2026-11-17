@@ -65,7 +65,7 @@ new MikroOrmStorageProvider({ driver: PostgreSqlDriver, clientUrl }, { schema: '
 How it works:
 
 - **Dedicated, scoped connection.** The provider opens its own MikroORM that knows *only* `TelescopeEntry`. The schema diff can therefore only ever touch `telescope_entries` (it can't alter your other tables), and it avoids a self-capture loop where every `INSERT INTO telescope_entries` would be recorded as a query.
-- **Self-healing schema at boot.** `init()` runs `ensureDatabase()` + `schema.update({ safe: true })`: creates the table if missing, adds missing columns, widens changed column types, and **never drops** anything. `ensureSchema: false` disables it.
+- **Self-healing schema at boot.** `init()` runs `ensureDatabase()` and the `schema.update({ safe: true })` diff: creates the table if missing, adds missing columns, widens changed column types, and **never drops** anything. MikroORM's diff would drop the indexes the entities do not declare; those statements are taken out, so an index you added to `telescope_entries` (or the [Overview indexes](#indexes-for-the-overview)) survives every upgrade. `ensureSchema: false` disables it.
 - **Millisecond timestamps.** `created_at` is `datetime(3)` on MySQL/MariaDB, so the trace waterfall can order and nest entries within a second. Existing tables are altered on the next boot. With `ensureSchema: false`, run it yourself (on a large table this rebuilds it, so pick a quiet moment):
 
   ```sql
@@ -75,6 +75,31 @@ How it works:
 - **Keyset pagination** is newest-first; the cursor encodes a `(createdAt, id)` position, so paging resumes even after older entries are pruned.
 - **Flushes are plain multi-row `INSERT`s.** A flush is written with `em.insertMany`, not through the unit of work: no managed entities, no change sets. Each statement holds at most the ORM's `batchSize` rows (MikroORM's default is 300), which keeps a large `recorder.flushBatchSize` under PostgreSQL's 65,535 bound-parameter limit and SQLite's variable limit. A flush that needs several statements runs them in one transaction, so it is stored whole or not at all and the recorder's retry never meets rows from the failed attempt.
 - **Rollups merge in the database.** `telescope_rollups` is written with one native upsert per 100 buckets (`ON DUPLICATE KEY UPDATE` on MySQL/MariaDB, `ON CONFLICT … DO UPDATE` on PostgreSQL and SQLite/libSQL). Count and sum add, max keeps the larger value, and the histogram adds cell by cell against the row as stored at write time, so pods writing the same minute never lose or reject each other's increments. Buckets are written in key order, so concurrent writers lock rows in the same order. Other drivers use a transactional read-modify-write, which is only safe with a single writer.
+
+### Indexes for the Overview
+
+The console's Overview and Pulse read a whole window (counts per type and per minute, the slowest entries, per-family durations, N+1 groups). The boot schema has no index those reads can answer from, so on a large table each one reads every row of the window. Opt-in indexes fix that. They are **not created at boot**: building an index on a table that already holds millions of entries is a one-off job, so you run it once, from a migration or a script:
+
+```ts
+// a one-off script, or the up() of a migration
+await storage.createOverviewIndexes(); // returns the names it created; the ones that exist are skipped
+```
+
+or with the statements, in your own migration tool:
+
+```ts
+import { overviewIndexStatements } from '@dudousxd/nestjs-telescope-mikro-orm';
+
+overviewIndexStatements('postgres', { schema: 'telescope' }); // run each one outside a transaction
+```
+
+| Dialect | Indexes |
+|---|---|
+| PostgreSQL | `(duration_ms) WHERE duration_ms IS NOT NULL`, `(created_at, type)`, `(type, created_at) INCLUDE (family_hash, batch_id, duration_ms)`, all `CREATE INDEX CONCURRENTLY IF NOT EXISTS` (writes go on while they build). It also lowers the table's autovacuum thresholds (`autovacuum_vacuum_scale_factor` / `autovacuum_vacuum_insert_scale_factor` = 0.02), so recent rows are read from the index too. |
+| MySQL / MariaDB | `(duration_ms)`, `(created_at, type)`, as online `ALTER TABLE … ALGORITHM=INPLACE, LOCK=NONE`. |
+| SQLite | `(duration_ms) WHERE duration_ms IS NOT NULL`, `(created_at, type)` (writes wait while they build). |
+
+On a 2.4M-row PostgreSQL 16 table they built in about 6 s and added about half to the size of the table's indexes (442 MB → 666 MB). A 24-hour Overview went from about 1.4 s to about 1.05 s; the N+1 grouping (every query entry of the window by batch) is what is left. On PostgreSQL 14 and later the per-minute counts use `date_bin`.
 
 <Callout type="info">
   This same package ships the MikroORM query watcher and N+1 detector — see [Watchers](/docs/packages/watchers).

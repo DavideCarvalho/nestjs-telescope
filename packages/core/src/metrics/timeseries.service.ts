@@ -4,9 +4,15 @@ import { EntryType } from '../entry/entry.js';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import { type RollupStore, floorToBucket, isRollupStore } from '../rollup/rollup-store.js';
 import type { EntryQuery, StorageProvider } from '../storage/storage-provider.js';
+import { ScopedAggregateUnsupported } from '../storage/tenant-scoped-storage.js';
 import { collectEntriesInWindow } from './collect-window.js';
 import { timeseriesFromRollups } from './timeseries-from-rollups.js';
-import { type TimeseriesBucket, type TimeseriesReport, bucketTimeseries } from './timeseries.js';
+import {
+  type TimeseriesReport,
+  bucketGeometry,
+  bucketTimeseries,
+  timeseriesFromCounts,
+} from './timeseries.js';
 
 /** Metric universe queried when no explicit `type` filter is supplied. */
 const BUILTIN_METRICS: string[] = Object.values(EntryType);
@@ -98,10 +104,7 @@ export class TimeseriesService {
     const storage = this.storage;
     if (typeof storage.aggregate !== 'function') return null;
     // The same geometry as bucketTimeseries.
-    const count = Math.max(1, Math.floor(buckets));
-    const startMs = windowStart.getTime();
-    const spanMs = Math.max(1, windowEnd.getTime() - startMs);
-    const bucketMs = Math.max(1, Math.floor(spanMs / count));
+    const { startMs, bucketMs } = bucketGeometry(windowStart, windowEnd, buckets);
     try {
       const result = await storage.aggregate({
         kind: 'count',
@@ -113,29 +116,12 @@ export class TimeseriesService {
         bucket: { startMs, widthMs: bucketMs },
       });
       if (result.kind !== 'count') throw new Error(`aggregate(count) answered ${result.kind}`);
-      const series: TimeseriesBucket[] = Array.from({ length: count }, (_, index) => ({
-        t: new Date(startMs + index * bucketMs).toISOString(),
-        total: 0,
-        byType: {},
-      }));
-      let scanned = 0;
-      for (const row of result.rows) {
-        const index = Math.min(count - 1, Math.max(0, row.bucket ?? 0));
-        const bucket = series[index];
-        if (!bucket) continue;
-        bucket.total += row.count;
-        bucket.byType[row.type] = (bucket.byType[row.type] ?? 0) + row.count;
-        scanned += row.count;
-      }
       return {
-        windowStart: windowStart.toISOString(),
-        windowEnd: windowEnd.toISOString(),
-        bucketMs,
-        buckets: series,
-        scanned,
+        ...timeseriesFromCounts(result.rows, windowStart, windowEnd, buckets),
         truncated: false,
       };
     } catch (error) {
+      if (error instanceof ScopedAggregateUnsupported) return null;
       this.logger.warn(
         `the store could not aggregate the timeseries, scanning instead: ${error instanceof Error ? error.message : String(error)}`,
       );

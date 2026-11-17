@@ -79,6 +79,11 @@ import {
 import type { EntityManager, EntityMetadata, FilterQuery, Options } from '@mikro-orm/core';
 import { MikroORM, raw } from '@mikro-orm/core';
 import { aggregateSql } from './aggregate-sql.js';
+import {
+  OVERVIEW_INDEX_NAMES,
+  keepForeignIndexes,
+  overviewIndexStatements,
+} from './overview-indexes.js';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
 import { TelescopeLease } from './telescope-lease.entity.js';
 import { TelescopeRollup, type TelescopeRollupRow } from './telescope-rollup.entity.js';
@@ -596,6 +601,8 @@ export class MikroOrmStorageProvider
   private readonly ensureSchema: boolean;
   private readonly schema: string | undefined;
   private orm: MikroORM | null = null;
+  /** `server_version_num` of a PostgreSQL connection (read once, on the first aggregation). */
+  private postgresVersion: number | null = null;
 
   constructor(
     source: MikroORM | MikroOrmStorageProviderOptions,
@@ -703,14 +710,58 @@ export class MikroOrmStorageProvider
       const reStored = await readStoredFingerprint(orm);
       if (reStored === expected) return;
 
-      // `{ safe: true }` disables BOTH table and column dropping, so the update
-      // is additive-only: it creates tables and adds missing columns/indexes but
-      // never drops anything that already exists.
-      await orm.schema.update({ safe: true });
+      // `{ safe: true }` disables BOTH table and column dropping, but not index dropping: the
+      // diff drops every index the entities do not declare. Those statements are taken out, so
+      // the update is additive-only and keeps the opt-in Overview indexes (and any index a host
+      // added) — see `keepForeignIndexes`.
+      const sql = keepForeignIndexes(await orm.schema.getUpdateSchemaSQL({ safe: true }));
+      if (sql.trim() !== '') await orm.schema.execute(sql);
       await writeStoredFingerprint(orm, expected);
     } finally {
       await lock.release();
     }
+  }
+
+  /**
+   * Creates the opt-in indexes the console's Overview and Pulse read through (see
+   * {@link overviewIndexStatements}), skipping those that exist. Run it once, from a migration or a
+   * one-off script, never on every boot: on PostgreSQL the indexes build `CONCURRENTLY` (writes go
+   * on), on MySQL online, on SQLite with writes blocked while they build. They add about a third
+   * to the size of the table's indexes. Returns the names it created.
+   */
+  async createOverviewIndexes(): Promise<string[]> {
+    await this.init();
+    const orm = this.orm;
+    if (orm === null) throw new Error('MikroOrmStorageProvider: init() must run before use');
+    const dialect = dialectOf(orm);
+    if (dialect === 'other') {
+      throw new Error(
+        'MikroOrmStorageProvider: Overview indexes exist for PostgreSQL, MySQL and SQLite only',
+      );
+    }
+    const schema = schemaOf(orm);
+    const connection = orm.em.getConnection();
+    const existing = new Set<string>(
+      (
+        (await connection.execute(
+          dialect === 'postgres'
+            ? 'select indexname as name from pg_indexes where tablename = ? and schemaname = coalesce(?, current_schema())'
+            : dialect === 'mysql'
+              ? 'select distinct index_name as name from information_schema.statistics where table_name = ? and table_schema = coalesce(?, database())'
+              : `select name from sqlite_master where type = 'index' and tbl_name = ? and ? is null`,
+          [TelescopeEntry.tableName, schema ?? null],
+        )) as { name: string }[]
+      ).map((row) => row.name),
+    );
+    const created: string[] = [];
+    const statements = overviewIndexStatements(dialect, schema !== undefined ? { schema } : {});
+    for (const statement of statements) {
+      const name = OVERVIEW_INDEX_NAMES.find((candidate) => statement.includes(candidate));
+      if (name !== undefined && existing.has(name)) continue;
+      await connection.execute(statement);
+      if (name !== undefined) created.push(name);
+    }
+    return created;
   }
 
   async close(): Promise<void> {
@@ -1076,9 +1127,20 @@ export class MikroOrmStorageProvider
     const schema = this.orm ? schemaOf(this.orm) : undefined;
     const quote = (identifier: string): string => platform.quoteIdentifier(identifier);
     const connection = em.getConnection();
+    if (dialect === 'postgres' && this.postgresVersion === null) {
+      try {
+        const [row] = (await connection.execute('show server_version_num', [], 'all')) as {
+          server_version_num?: string;
+        }[];
+        this.postgresVersion = Number(row?.server_version_num ?? 0);
+      } catch {
+        this.postgresVersion = 0;
+      }
+    }
     return aggregateSql(
       {
         dialect,
+        dateBin: dialect === 'postgres' && (this.postgresVersion ?? 0) >= 140_000,
         table: schema === undefined ? quote(tableName) : `${quote(schema)}.${quote(tableName)}`,
         date: (value) => platform.processDateProperty(value),
         execute: async (sql, params) =>
