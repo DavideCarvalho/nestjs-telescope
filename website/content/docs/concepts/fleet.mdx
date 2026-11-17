@@ -89,6 +89,12 @@ app.enableShutdownHooks();
 - **Health checks** run in a worker and ride its heartbeat; there is no HTTP route to probe. It sends no `url`, so service discovery never routes to it.
 - **Compatibility.** The role is an additive heartbeat field. A heartbeat without one (an older tenant) is `web`, and an older control plane ignores it.
 
+## Watchers in the heartbeat
+
+Each heartbeat also lists the watchers its process runs (`watchers`: `request`, `query`, `job`, …). A control plane's entries come from its tenants, so its console asks them, not itself, whether a type is recorded: `GET meta` `watchers` is the union of what the instances of the apps in view report (narrowed by `?app=` and the viewer's `apps`), plus the control plane's own when every app is in view. The watcher-driven nav and the Overview's "Not measured" notes follow it.
+
+When an app in view runs a version whose heartbeat carries no `watchers`, or the control plane keeps no fleet (`fleet: false`), `watchers` is left out of `meta`: the console then shows every type and claims nothing is off. Instances last seen before the retention window (`prune.after`, else 24 h) are not counted. A standalone app answers with its own watchers, as before.
+
 ## What the Fleet page shows
 
 Monitor → **Fleet** (also in ⌘K) re-reads every 15 s and shows, for each app:

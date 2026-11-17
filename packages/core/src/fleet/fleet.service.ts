@@ -45,6 +45,7 @@ import {
 import { FleetRegistry, InstanceReporter } from './registry.js';
 import { MemoryFleetStore } from './store.js';
 import { type FleetScope, type FleetView, readFleet } from './view.js';
+import { consoleWatchers } from './watchers.js';
 import { markedFleetWorkers } from './worker-marks.js';
 
 /** The tenant store's shipping counters, read through the storage proxies. */
@@ -145,6 +146,8 @@ export class TelescopeFleet
         // A worker serves no traffic: service discovery never routes to it.
         url: worker ? null : this.config.url,
         role,
+        // So a control plane can tell which entry types this app records at all.
+        watchers: () => this.service.enabledWatchers(),
         initialState: state,
         send: (heartbeat) => {
           if (tenantStore) tenantStore.setHeartbeat(heartbeat);
@@ -325,6 +328,25 @@ export class TelescopeFleet
       if (instance.app !== '' && instance.app !== this.selfApp) apps.add(instance.app);
     }
     return [...apps];
+  }
+
+  /**
+   * What `GET meta` lists as `watchers` for a view of `apps` (`null`: every app). `undefined` outside
+   * a control plane (this process's own list stands). On a control plane the union of what the
+   * instances of those apps report (plus this process's own when every app is in view), or `null`
+   * (unknown) when the fleet is off or an app in view runs a version that does not report them.
+   */
+  consoleWatchers(apps: readonly string[] | null): Promise<string[] | null | undefined> {
+    const registry = this.registry;
+    return consoleWatchers({
+      controlPlane: this.kind === 'control-plane',
+      instances: registry === null ? null : (scope) => registry.instances(scope),
+      apps,
+      selfApp: this.selfApp,
+      // Instances gone longer than the retention left no entry on screen.
+      since: Date.now() - (this.core.prune?.afterMs ?? 86_400_000),
+      own: () => this.service.enabledWatchers(),
+    });
   }
 
   /** The fleet as a viewer limited to `scope` sees it; `store` is the (scoped) entries store. */

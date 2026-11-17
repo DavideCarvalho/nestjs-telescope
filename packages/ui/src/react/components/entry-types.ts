@@ -125,9 +125,9 @@ export function allEntryTypes(
 
 export function visibleEntryTypes(
   types: readonly EntryTypeDef[],
-  watchers: readonly string[] | undefined,
+  watchers: readonly string[] | null | undefined,
 ): EntryTypeDef[] {
-  if (watchers === undefined) return [...types];
+  if (watchers === undefined || watchers === null) return [...types];
   const registered = new Set(watchers);
   return types.filter((type) => {
     if (ALWAYS_VISIBLE_TYPE_IDS.has(type.id)) return true;
@@ -136,4 +136,18 @@ export function visibleEntryTypes(
     const backingType = type.query?.type ?? type.id;
     return registered.has(type.id) || registered.has(backingType);
   });
+}
+
+/**
+ * Whether the server says the `name` watcher records the entries in view: `true`, `false`, or
+ * `null` when it does not say (meta still loading, an older server, or a control plane where an
+ * app in view does not report its watchers). A panel only says "not measured" on `false`: claiming
+ * a watcher is off when the server cannot tell would replace one wrong answer with another.
+ */
+export function watcherEnabled(
+  watchers: readonly string[] | null | undefined,
+  name: string,
+): boolean | null {
+  if (watchers === undefined || watchers === null) return null;
+  return watchers.includes(name);
 }

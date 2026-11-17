@@ -21,6 +21,7 @@ import {
   useServerStats,
   useServerStatsHistory,
   useTimeseries,
+  watcherEnabled,
 } from '../../react/index.js';
 import type {
   NPlusOneHotspot,
@@ -372,12 +373,29 @@ function ListCard({
  * already have dedicated overview cards, so we mount only the N+1 part here).
  * Rows pivot to the offending query family, mirroring PulsePanel's behavior.
  */
+/**
+ * What an Overview card says instead of "none" when meta POSITIVELY reports that the watcher its
+ * data comes from does not run for the apps in view: an empty list would claim good health from
+ * blindness. `null` (meta does not say) keeps the card's usual empty wording.
+ */
+function NotMeasured({ watcher, what }: { watcher: string; what: string }): React.JSX.Element {
+  return (
+    <p className="text-xs text-muted-foreground" data-testid={`not-measured-${watcher}`}>
+      Not measured. The <span className="mono">{watcher}</span> watcher is not enabled, so {what}{' '}
+      cannot be detected.
+    </p>
+  );
+}
+
 function NPlusOneCard({
   hotspots,
   onSelectFamily,
+  measured = null,
 }: {
   hotspots: NPlusOneHotspot[];
   onSelectFamily: (familyHash: string) => void;
+  /** Whether the `query` watcher records the entries in view (`null`: unknown). */
+  measured?: boolean | null;
 }): React.JSX.Element {
   return (
     <section className="aviary-surface rounded-lg border border-border p-4">
@@ -405,6 +423,8 @@ function NPlusOneCard({
             </li>
           ))}
         </ul>
+      ) : measured === false ? (
+        <NotMeasured watcher="query" what="N+1 queries" />
       ) : (
         <p className="text-xs text-muted-foreground">None detected</p>
       )}
@@ -475,7 +495,14 @@ function QueuesAttentionCard({
 }
 
 /** Slowest job families by p99 — the queue analogue of the slow-route hotspots. */
-function SlowJobsCard({ hotspots }: { hotspots: SlowRouteHotspot[] }): React.JSX.Element {
+function SlowJobsCard({
+  hotspots,
+  measured = null,
+}: {
+  hotspots: SlowRouteHotspot[];
+  /** Whether the `job` watcher records the entries in view (`null`: unknown). */
+  measured?: boolean | null;
+}): React.JSX.Element {
   return (
     <section className="aviary-surface rounded-lg border border-border p-4">
       <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
@@ -496,6 +523,8 @@ function SlowJobsCard({ hotspots }: { hotspots: SlowRouteHotspot[] }): React.JSX
             </li>
           ))}
         </ul>
+      ) : measured === false ? (
+        <NotMeasured watcher="job" what="slow jobs" />
       ) : (
         <p className="text-xs text-muted-foreground">No jobs in window.</p>
       )}
@@ -632,6 +661,7 @@ export function OverviewPage(): React.JSX.Element {
 
         <NPlusOneCard
           hotspots={pulse.data?.nPlusOne ?? []}
+          measured={watcherEnabled(meta.data?.watchers, 'query')}
           onSelectFamily={(familyHash) =>
             navigate(`/entries/query?familyHash=${encodeURIComponent(familyHash)}`)
           }
@@ -667,7 +697,10 @@ export function OverviewPage(): React.JSX.Element {
         over the window, plus the CPU/mem resource history.
       */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SlowJobsCard hotspots={pulse.data?.slowJobs ?? []} />
+        <SlowJobsCard
+          hotspots={pulse.data?.slowJobs ?? []}
+          measured={watcherEnabled(meta.data?.watchers, 'job')}
+        />
         <LoadByUserCard
           users={pulse.data?.loadByUser ?? []}
           onSelectUser={(user) => navigate(`/entries?tag=${encodeURIComponent(`user:${user}`)}`)}
