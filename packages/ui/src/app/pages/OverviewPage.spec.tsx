@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type {
   PulseReport,
   QueueMetricsReport,
@@ -11,6 +12,7 @@ import type {
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import {
   OverviewPage,
   QUEUE_WAITING_ATTENTION_THRESHOLD,
@@ -21,6 +23,8 @@ import {
   toByTypeRows,
   toThroughputSeries,
 } from './OverviewPage.js';
+
+afterEach(settleUrlWrites);
 
 const pulse: PulseReport = {
   windowStart: '',
@@ -146,7 +150,9 @@ function renderOverview(healthOverride: TelescopeHealth = health) {
     <TelescopeProvider client={mockClient(healthOverride)}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <OverviewPage />
+          <NuqsHashAdapter>
+            <OverviewPage />
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,

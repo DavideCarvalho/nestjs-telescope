@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type {
   CursorPage,
   QueueCapabilities,
@@ -11,7 +12,10 @@ import type {
 } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { QueueManagerPage } from './QueueManagerPage.js';
+
+afterEach(settleUrlWrites);
 
 const summaries: QueueSummary[] = [
   {
@@ -68,13 +72,16 @@ function mockClient(capabilities: QueueCapabilities): TelescopeClient {
   });
 }
 
-function renderPage(capabilities: QueueCapabilities) {
+function renderPage(capabilities: QueueCapabilities, hash = '#/queues') {
+  window.history.replaceState(null, '', `/${hash}`);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <TelescopeProvider client={mockClient(capabilities)}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <QueueManagerPage />
+          <NuqsHashAdapter>
+            <QueueManagerPage />
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,
@@ -93,6 +100,29 @@ describe('QueueManagerPage', () => {
     expect(screen.getAllByText('mail').length).toBeGreaterThan(0);
     // state tab label
     expect(screen.getByText('waiting')).toBeTruthy();
+  });
+
+  it('puts the auto-selected queue in the URL without a history step', async () => {
+    renderPage({ mutationsEnabled: false, actionsByDriver: {} });
+    const start = window.history.length;
+    await screen.findByText('send-digest');
+    await waitFor(() => expect(window.location.hash).toBe('#/queues?driver=bullmq&queue=mail'));
+    expect(window.history.length).toBe(start);
+  });
+
+  it('opens the queue and state tab named in the URL; a tab click adds a history step', async () => {
+    renderPage(
+      { mutationsEnabled: false, actionsByDriver: {} },
+      '#/queues?driver=bullmq&queue=mail&state=failed',
+    );
+    await screen.findByText('send-digest');
+    expect(screen.getByRole('tab', { name: /failed/i }).getAttribute('aria-selected')).toBe('true');
+
+    const start = window.history.length;
+    fireEvent.click(screen.getByRole('tab', { name: /waiting/i }));
+    // waiting is the default tab: it leaves the URL
+    await waitFor(() => expect(window.location.hash).toBe('#/queues?driver=bullmq&queue=mail'));
+    expect(window.history.length).toBe(start + 1);
   });
 
   it('hides job actions when mutationsEnabled is false', async () => {

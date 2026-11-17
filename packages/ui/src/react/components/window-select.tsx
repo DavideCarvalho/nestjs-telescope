@@ -1,6 +1,8 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/index.js';
 
-const WINDOWS = ['15m', '1h', '6h', '24h'] as const;
+/** The windows the select offers, shortest first. */
+export const WINDOWS = ['15m', '1h', '6h', '24h'] as const;
+export type WindowLabel = (typeof WINDOWS)[number];
 
 export function WindowSelect({
   value,

@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { ExportsPage } from './exports-page.js';
+
+afterEach(settleUrlWrites);
 
 function mockClient(): TelescopeClient {
   const unused = async (): Promise<never> => {
@@ -55,7 +59,9 @@ function renderPage() {
     <TelescopeProvider client={mockClient()}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <ExportsPage />
+          <NuqsHashAdapter>
+            <ExportsPage />
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,

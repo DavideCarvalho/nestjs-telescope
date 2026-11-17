@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { EntriesQuery, Entry, Page, TagCount, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { EntriesPage } from './entries-page.js';
+
+afterEach(settleUrlWrites);
 
 function entry(over: Partial<Entry> & { type: string }): Entry {
   return {
@@ -66,15 +70,19 @@ function mockClient(rows: Entry[], extra: Partial<Page<Entry>> = {}) {
 }
 
 function renderAt(initialPath: string, client: TelescopeClient) {
+  // The route path goes to the router; the filters are read from the real hash, as in the console.
+  window.history.replaceState(null, '', `/#${initialPath}`);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <TelescopeProvider client={client}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[initialPath]}>
-          <Routes>
-            <Route path="/entries" element={<EntriesPage />} />
-            <Route path="/entries/:type" element={<EntriesPage />} />
-          </Routes>
+          <NuqsHashAdapter>
+            <Routes>
+              <Route path="/entries" element={<EntriesPage />} />
+              <Route path="/entries/:type" element={<EntriesPage />} />
+            </Routes>
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,
@@ -190,6 +198,66 @@ describe('EntriesPage', () => {
     const chip = await screen.findByText('User: 42');
     expect(chip).toBeTruthy();
     expect(screen.queryByText('tag:user:42')).toBeNull();
+  });
+
+  it('keeps the filters in the URL, so a reload opens the same filtered view', async () => {
+    const first = mockClient([]);
+    const view = renderAt('/entries/query', first.client);
+    const input = screen.getByLabelText('Search content');
+    fireEvent.change(input, { target: { value: 'orders' } });
+    // typing alone does not touch the URL; the submitted search does
+    expect(window.location.hash).toBe('#/entries/query');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(window.location.hash).toBe('#/entries/query?q=orders'));
+
+    // "reload": a fresh page at the same URL
+    view.unmount();
+    const second = mockClient([]);
+    renderAt('/entries/query?q=orders', second.client);
+    await waitFor(() => {
+      expect(second.entries).toHaveBeenCalledWith({ type: 'query', search: 'orders' });
+    });
+    expect((screen.getByLabelText('Search content') as HTMLInputElement).value).toBe('orders');
+  });
+
+  it('a submitted search rewrites the history entry; a picked tag adds one, so Back undoes it', async () => {
+    const { client, entries } = mockClient([]);
+    renderAt('/entries', client);
+    const start = window.history.length;
+
+    const input = screen.getByLabelText('Search content');
+    fireEvent.change(input, { target: { value: 'orders' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(window.location.hash).toBe('#/entries?q=orders'));
+    expect(window.history.length).toBe(start);
+
+    fireEvent.change(screen.getByLabelText('Filter by tag'), { target: { value: 'slow' } });
+    fireEvent.mouseDown(await screen.findByText('slow-query'));
+    await waitFor(() => expect(window.location.hash).toBe('#/entries?q=orders&tag=slow-query'));
+    expect(window.history.length).toBe(start + 1);
+
+    act(() => window.history.back());
+    await waitFor(() => {
+      expect(entries).toHaveBeenLastCalledWith({ search: 'orders' });
+    });
+    expect(screen.queryByText('tag:slow-query')).toBeNull();
+  });
+
+  it('clearing the family filter keeps the other filters', async () => {
+    const { client, entries } = mockClient([]);
+    renderAt('/entries/query?familyHash=abc123&tag=slow-query', client);
+    await waitFor(() => {
+      expect(entries).toHaveBeenCalledWith({
+        type: 'query',
+        tag: 'slow-query',
+        familyHash: 'abc123',
+      });
+    });
+    fireEvent.click(await screen.findByText('abc123'));
+    await waitFor(() => expect(window.location.hash).toBe('#/entries/query?tag=slow-query'));
+    await waitFor(() => {
+      expect(entries).toHaveBeenLastCalledWith({ type: 'query', tag: 'slow-query' });
+    });
   });
 
   it('applies a user filter via the dedicated User control and shows a User chip', async () => {

@@ -2,10 +2,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { TelescopeClient, TelescopeMeta } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { OverviewPage } from './OverviewPage.js';
+
+afterEach(settleUrlWrites);
 
 const EMPTY_PULSE = {
   windowStart: '',
@@ -111,7 +115,9 @@ function renderOverview(pruneEnabled: boolean, prune: () => Promise<{ pruned: nu
     <TelescopeProvider client={mockClient(pruneEnabled, prune)}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <OverviewPage />
+          <NuqsHashAdapter>
+            <OverviewPage />
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,

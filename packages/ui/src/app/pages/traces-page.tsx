@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { TraceSummary } from '../../client/index.js';
 import { WindowSelect, dotForType, relativeTime, useTraces } from '../../react/index.js';
 import { PageEmpty, RowsSkeleton, TelescopePage } from '../page-chrome.js';
+import { useWindowParam } from '../url-state.js';
 import { useAppLabels } from './trace-page.js';
 
 function formatDuration(ms: number): string {
@@ -58,7 +58,7 @@ function TraceRow({
 }
 
 export function TracesPage(): React.JSX.Element {
-  const [window, setWindow] = useState('1h');
+  const [window, setWindow] = useWindowParam();
   const { data, isLoading } = useTraces(window);
   const traces = data?.data ?? [];
   const appLabels = useAppLabels();

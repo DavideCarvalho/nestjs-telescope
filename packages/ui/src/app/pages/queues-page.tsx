@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   BarChartCard,
   type BarChartDatum,
@@ -9,6 +8,7 @@ import {
   useQueues,
 } from '../../react/index.js';
 import { RowsSkeleton } from '../page-chrome.js';
+import { useWindowParam } from '../url-state.js';
 
 const FAIL_BAR = 'var(--aviary-bad)';
 const OK_BAR = 'var(--aviary-good)';
@@ -22,7 +22,7 @@ export function toFailureRateBars(report: QueueMetricsReport | undefined): BarCh
 }
 
 export function QueuesPage(): React.JSX.Element {
-  const [window, setWindow] = useState('1h');
+  const [window, setWindow] = useWindowParam();
   const { data, isLoading } = useQueues(window);
   return (
     <div className="flex flex-col gap-4">

@@ -1,5 +1,6 @@
+import { parseAsString, parseAsStringLiteral, useQueryStates } from 'nuqs';
 import { useEffect, useState } from 'react';
-import type { QueueState } from '../../react/index.js';
+import { QUEUE_STATE_ORDER } from '../../react/components/queues/queue-format.js';
 import {
   EnqueueJobForm,
   JobDetailDrawer,
@@ -11,26 +12,40 @@ import {
   useLiveQueues,
 } from '../../react/index.js';
 
-interface Selection {
-  driver: string;
-  queue: string;
-}
+/**
+ * The open queue and its state tab in the URL: `#/queues?driver=bullmq&queue=emails&state=failed`.
+ * No queue param opens the first queue; `waiting` is the default tab.
+ */
+const QUEUE_VIEW = {
+  driver: parseAsString,
+  queue: parseAsString,
+  state: parseAsStringLiteral(QUEUE_STATE_ORDER).withDefault('waiting'),
+};
 
 export function QueueManagerPage(): React.JSX.Element {
   const { data } = useLiveQueues();
   const queues = data?.queues ?? [];
   const capabilities = data?.capabilities;
 
-  const [selected, setSelected] = useState<Selection | undefined>(undefined);
-  const [state, setState] = useState<QueueState>('waiting');
+  const [view, setView] = useQueryStates(QUEUE_VIEW);
+  const { state } = view;
+  const selected =
+    view.driver !== null && view.queue !== null
+      ? { driver: view.driver, queue: view.queue }
+      : undefined;
   const [openJobId, setOpenJobId] = useState<string | null>(null);
 
-  // Auto-select the first queue once data arrives (if nothing is selected yet).
+  // Auto-select the first queue once data arrives (if nothing is selected yet). It rewrites the
+  // current history entry: Back leaves the page rather than returning to "no queue".
   useEffect(() => {
     if (selected || queues.length === 0) return;
     const first = queues[0];
-    if (first) setSelected({ driver: first.driver, queue: first.queue });
-  }, [queues, selected]);
+    if (first) void setView({ driver: first.driver, queue: first.queue });
+  }, [queues, selected, setView]);
+
+  function setState(next: (typeof QUEUE_STATE_ORDER)[number]): void {
+    void setView({ state: next }, { history: 'push' });
+  }
 
   // Keep counts for the selected queue fresh from the live list (already polled).
   const selectedSummary = queues.find(
@@ -38,7 +53,7 @@ export function QueueManagerPage(): React.JSX.Element {
   );
 
   function handleSelect(driver: string, queue: string): void {
-    setSelected({ driver, queue });
+    void setView({ driver, queue }, { history: 'push' });
     setOpenJobId(null);
   }
 

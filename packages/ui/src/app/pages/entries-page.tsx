@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useQueryStates } from 'nuqs';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { PageHeader, Toolbar } from '../../aviary-kit/blocks/page-header';
 import { PageBody } from '../../aviary-kit/shell/app-shell';
+import { readHashSearch } from '../../aviary-kit/url-state/hash-url';
 import {
   EntriesTable,
   EntryInsights,
@@ -17,6 +19,14 @@ import {
 } from '../../react/index.js';
 import { Button, Input } from '../../react/ui/index.js';
 import { PageEmpty, RowsSkeleton } from '../page-chrome.js';
+import { textParam } from '../url-state.js';
+
+/**
+ * The entries filters in the URL: `?tag=` (a tag, or `user:<id>` for the User control),
+ * `?q=` (the submitted content search) and `?familyHash=` (a query family, from Pulse's N+1
+ * hotspots). The type is the route path (`#/entries/query`).
+ */
+const ENTRY_FILTERS = { tag: textParam, q: textParam, familyHash: textParam };
 
 function emptyMessage(type: string | undefined, tag: string): string {
   if (tag.trim() !== '') return `No entries match tag '${tag.trim()}'`;
@@ -27,14 +37,17 @@ function emptyMessage(type: string | undefined, tag: string): string {
 export function EntriesPage(): React.JSX.Element {
   const { type: routeType } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  // Seed the tag filter from `?tag=` so a deep link (e.g. the "View all activity
-  // for this user" pivot) lands pre-filtered — same approach as `?familyHash=`.
-  const [tag, setTag] = useState(() => searchParams.get('tag') ?? '');
-  // `searchDraft` tracks the input; `search` is the submitted value that actually
-  // drives the query, so typing never refetches — only Enter commits.
-  const [searchDraft, setSearchDraft] = useState('');
-  const [search, setSearch] = useState('');
+  // `?tag=` is also how a deep link (e.g. the "View all activity for this user" pivot) lands
+  // pre-filtered. Picking or clearing a filter adds a history entry; committing a search rewrites
+  // the current one.
+  const [{ tag, q: search, familyHash }, setFilters] = useQueryStates(ENTRY_FILTERS);
+  const setTag = (next: string) => void setFilters({ tag: next }, { history: 'push' });
+  const setSearch = (next: string) => void setFilters({ q: next.trim() });
+  // `searchDraft` tracks the input; `?q=` is the submitted value that actually drives the query,
+  // so typing never refetches — only Enter (or leaving the box) commits. The draft follows the URL
+  // when Back/Forward or a link changes `?q=`.
+  const [searchDraft, setSearchDraft] = useState(search);
+  useEffect(() => setSearchDraft(search), [search]);
   // Both comboboxes drive the single `tag` filter but each keeps its own draft
   // input. Bumping the opposite control's key remounts it, clearing the stale
   // text it left behind when a selection lands in the other one.
@@ -61,7 +74,6 @@ export function EntriesPage(): React.JSX.Element {
   const activeUserTag = isUserTag(trimmedTag) ? trimmedTag : '';
   const activeGenericTag = activeUserTag === '' ? trimmedTag : '';
   const trimmedSearch = search.trim();
-  const familyHash = searchParams.get('familyHash') ?? '';
   const hasFamilyHash = familyHash !== '';
   const hasSearch = trimmedSearch !== '';
   const hasFilters = activeType !== undefined || trimmedTag !== '' || hasFamilyHash || hasSearch;
@@ -84,13 +96,13 @@ export function EntriesPage(): React.JSX.Element {
   }
 
   function clearFilters(): void {
-    setTag('');
-    clearSearch();
+    setSearchDraft('');
+    // A new route path drops the whole query (tag, search, family).
     navigate('/entries');
   }
 
   function clearFamilyHash(): void {
-    navigate(activeType ? `/entries/${activeType}` : '/entries');
+    void setFilters({ familyHash: null }, { history: 'push' });
   }
 
   return (
@@ -108,7 +120,7 @@ export function EntriesPage(): React.JSX.Element {
         {activeType ? (
           <Button
             variant="ghost"
-            onClick={() => navigate('/entries')}
+            onClick={() => navigate({ pathname: '/entries', search: readHashSearch().toString() })}
             className="bg-panel text-foreground hover:bg-panel-2"
           >
             <span className={`h-2 w-2 rounded-full ${dotForType(activeType)}`} aria-hidden="true" />

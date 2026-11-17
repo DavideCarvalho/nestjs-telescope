@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { TelescopeClient, TraceSummary, TracesResult } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { TracesPage } from './traces-page.js';
+
+afterEach(settleUrlWrites);
 
 function trace(over: Partial<TraceSummary> & { traceId: string }): TraceSummary {
   return {
@@ -47,16 +51,20 @@ function mockClient(rows: TraceSummary[]) {
   return { client, traces };
 }
 
-function renderPage(client: TelescopeClient) {
+function renderPage(client: TelescopeClient, hash = '#/traces') {
+  // The route goes to the router; the view state (`?window=`) is read from the real hash.
+  window.history.replaceState(null, '', `/${hash}`);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <TelescopeProvider client={client}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={['/traces']}>
-          <Routes>
-            <Route path="/traces" element={<TracesPage />} />
-            <Route path="/traces/:traceId" element={<div>trace detail</div>} />
-          </Routes>
+          <NuqsHashAdapter>
+            <Routes>
+              <Route path="/traces" element={<TracesPage />} />
+              <Route path="/traces/:traceId" element={<div>trace detail</div>} />
+            </Routes>
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,
@@ -64,6 +72,19 @@ function renderPage(client: TelescopeClient) {
 }
 
 describe('TracesPage', () => {
+  it('reads the time window from the URL', async () => {
+    const { client, traces } = mockClient([]);
+    renderPage(client, '#/traces?window=24h');
+    await waitFor(() => expect(traces.mock.calls[0]?.[0]).toBe('24h'));
+    expect(screen.getByRole('combobox', { name: 'Time window' }).textContent).toContain('24h');
+  });
+
+  it('falls back to the default window for an unknown value', async () => {
+    const { client, traces } = mockClient([]);
+    renderPage(client, '#/traces?window=bogus');
+    await waitFor(() => expect(traces.mock.calls[0]?.[0]).toBe('1h'));
+  });
+
   it('renders a row per trace with label, dots, and entry count', async () => {
     const { client } = mockClient([
       trace({

@@ -1,3 +1,4 @@
+import { parseAsInteger, parseAsString, parseAsStringLiteral, useQueryStates } from 'nuqs';
 import { useId, useState } from 'react';
 import { PageHeader } from '../../aviary-kit/blocks/page-header';
 import { PageBody } from '../../aviary-kit/shell/app-shell';
@@ -27,7 +28,8 @@ import {
   TableRow,
 } from '../../react/ui/index.js';
 
-type ExportFormat = 'json' | 'csv';
+const FORMATS = ['json', 'csv'] as const;
+type ExportFormat = (typeof FORMATS)[number];
 
 /** Value→label maps for the two selects, so the trigger shows the label not the id. */
 const FORMAT_ITEMS: Record<string, string> = { json: 'JSON', csv: 'CSV' };
@@ -55,6 +57,18 @@ const WINDOW_MS: Record<string, number> = {
   '1h': 60 * 60_000,
   '6h': 6 * 60 * 60_000,
   '24h': 24 * 60 * 60_000,
+};
+
+/**
+ * The export form in the URL (`#/exports?type=query&window=24h&q=users&limit=500&format=csv`), so
+ * a prepared export can be shared. Every field leaves the URL at its default.
+ */
+const EXPORT_FORM = {
+  type: parseAsString.withDefault('all'),
+  window: parseAsStringLiteral(Object.keys(WINDOW_MS)).withDefault('1h'),
+  q: parseAsString.withDefault(''),
+  limit: parseAsInteger.withDefault(DEFAULT_LIMIT),
+  format: parseAsStringLiteral(FORMATS).withDefault('json'),
 };
 
 /** Backend filter for the chosen type; 'all' means no type filter. */
@@ -138,11 +152,13 @@ export function ExportsPage(): React.JSX.Element {
   const client = useTelescopeClient();
   const searchId = useId();
   const limitId = useId();
-  const [type, setType] = useState('all');
-  const [window, setWindow] = useState('1h');
-  const [search, setSearch] = useState('');
-  const [limit, setLimit] = useState(DEFAULT_LIMIT);
-  const [format, setFormat] = useState<ExportFormat>('json');
+  const [{ type, window, q: search, limit, format }, setForm] = useQueryStates(EXPORT_FORM);
+  // Picking an option adds a history entry; typing (search, limit) rewrites the current one.
+  const setType = (next: string) => void setForm({ type: next }, { history: 'push' });
+  const setWindow = (next: string) => void setForm({ window: next }, { history: 'push' });
+  const setFormat = (next: ExportFormat) => void setForm({ format: next }, { history: 'push' });
+  const setSearch = (next: string) => void setForm({ q: next });
+  const setLimit = (next: number) => void setForm({ limit: next });
   const [exporting, setExporting] = useState(false);
   const [liveCount, setLiveCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);

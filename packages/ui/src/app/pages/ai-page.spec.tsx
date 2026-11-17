@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { AiRunRow, AiUsageReport } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { AiPage, formatMs, formatUsd } from './ai-page.js';
+
+afterEach(settleUrlWrites);
 
 const run: AiRunRow = {
   entryId: 'entry-1',
@@ -125,7 +129,9 @@ function renderPage(data: AiUsageReport) {
     <TelescopeProvider client={client}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={['/ai']}>
-          <AiPage />
+          <NuqsHashAdapter>
+            <AiPage />
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,

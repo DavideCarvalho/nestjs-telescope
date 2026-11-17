@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   PulsePanel,
@@ -9,10 +8,11 @@ import {
   useTimeseries,
 } from '../../react/index.js';
 import { RowsSkeleton, TelescopePage } from '../page-chrome.js';
+import { useWindowParam } from '../url-state.js';
 import { toByTypeRows } from './OverviewPage.js';
 
 export function PulsePage(): React.JSX.Element {
-  const [window, setWindow] = useState('1h');
+  const [window, setWindow] = useWindowParam();
   const navigate = useNavigate();
   const { data, isLoading } = usePulse(window);
   const series = useTimeseries({ window, buckets: 60 });

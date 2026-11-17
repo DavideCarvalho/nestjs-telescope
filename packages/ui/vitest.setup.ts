@@ -5,6 +5,9 @@ import { afterEach } from 'vitest';
 // unmount the DOM between tests so repeated renders don't leak into each other.
 afterEach(() => {
   cleanup();
+  // Pages keep their filters in the URL hash (`#/entries?tag=…`). jsdom keeps one `location` per
+  // file, so reset it: a filter left by one test must not open the next one filtered.
+  window.history.replaceState(null, '', '/');
 });
 
 // `findBy*`/`waitFor` give up after 1s by default. Some components only settle after a debounce
