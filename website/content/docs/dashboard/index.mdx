@@ -199,6 +199,8 @@ When a `new-exception` or `every-exception` rule fires, the payload adds an `exc
 }
 ```
 
+`app` is the app that recorded the exception, from its `app:<name>` tag (else its sibling request's), or `null` when untagged. On a control plane that is the tenant the exception came from, not the server that evaluated the rule, so the Slack card shows it as an **App** field and the integrations' **App** (and incident key) use it. An untagged exception (a standalone app) behaves as before.
+
 `clientIp` is the sibling request's `ip` (`request.ip` / first `x-forwarded-for` hop) for a server exception, or the server-filled browser IP for a `client_exception` — **never** sourced from an untrusted body. `geo` is populated only when a `geoLookup` hook is configured and the alert has a `clientIp`; `componentStack` and `extra` are present only for browser-reported errors that supplied them.
 
 The raw-webhook JSON keeps every v1 field (`rule`, `value`, `threshold`, `firedAt`, `instanceId`) unchanged; `exception`/`dashboardUrl` and the enrichment fields (`clientIp`, `geo`, `referer`, `userAgent`, `componentStack`, `extra`) are purely additive.
