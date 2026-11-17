@@ -41,7 +41,11 @@ import {
 import type { StatsResult } from '../metrics/stats.js';
 import { StatsService } from '../metrics/stats.service.js';
 import { type TimeseriesResult, TimeseriesService } from '../metrics/timeseries.service.js';
-import { type TracesResult, TracesService } from '../metrics/traces.service.js';
+import {
+  InvalidTracesCursor,
+  type TracesResult,
+  TracesService,
+} from '../metrics/traces.service.js';
 import { type Waterfall, buildWaterfall } from '../metrics/waterfall.js';
 import { CPU_PROFILE_ENTRY_TYPE, ProfilerService } from '../profiling/profiler.service.js';
 import type { CpuProfileContent } from '../profiling/types.js';
@@ -150,11 +154,14 @@ const PROFILE_PAGE = { defaultSize: 50, maxSize: 200 } as const;
 /** Jobs per page of `GET queues/live/:driver/:queue/jobs`. */
 const JOB_PAGE = { defaultSize: 50, maxSize: 200 } as const;
 
-/** `GET traces`: the summaries in `data`, with the scan's side data next to it. */
+/** `GET traces`: the summaries in `data`, with the read's side data next to it. */
 export interface TracesList {
   data: TracesResult['traces'];
   scanned: number;
   truncated: boolean;
+  /** Pass as `after` for the next page; `null` on the last one. */
+  nextCursor: string | null;
+  hasNext: boolean;
 }
 
 export interface QueueCapabilities {
@@ -494,17 +501,36 @@ export class TelescopeController {
   }
 
   /**
-   * The window's most recent traces (a top-N, not a paged list): `window`, `size` (default 50, max
-   * 500). `{ data, scanned, truncated }`.
+   * The window's traces, most recently active first, a page at a time: `window`, `size` (default
+   * 50, max 500), `after` (the previous page's `nextCursor`). `{ data, scanned, truncated,
+   * nextCursor, hasNext }`. A page walks the entries newest-first from the cursor only until it has
+   * its traces (see {@link TracesService}), whatever its depth; no total is counted.
    */
   @Get('traces')
   async traces(@Query() query: Record<string, unknown>): Promise<TracesList> {
     rejectRemovedParams(query, { limit: '"size"' });
-    rejectUnknownListParams(query, ['window', 'size']);
+    rejectUnknownListParams(query, ['window', 'size', 'after']);
     const windowMs = parseWindowMs(typeof query.window === 'string' ? query.window : undefined);
     const size = readSize(query, { defaultSize: 50, maxSize: 500 });
-    const result = await this.tracesService.getTraces({ windowMs, limit: size });
-    return { data: result.traces, scanned: result.scanned, truncated: result.truncated };
+    const after = typeof query.after === 'string' && query.after !== '' ? query.after : undefined;
+    let result: TracesResult;
+    try {
+      result = await this.tracesService.getTraces({
+        windowMs,
+        limit: size,
+        ...(after !== undefined ? { cursor: after } : {}),
+      });
+    } catch (error) {
+      if (error instanceof InvalidTracesCursor) throw new BadRequestException(error.message);
+      throw error;
+    }
+    return {
+      data: result.traces,
+      scanned: result.scanned,
+      truncated: result.truncated,
+      nextCursor: result.nextCursor,
+      hasNext: result.hasNext,
+    };
   }
 
   // Nested span waterfall for ONE trace. Returns 404 when the trace has no

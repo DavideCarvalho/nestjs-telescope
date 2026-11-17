@@ -40,7 +40,8 @@ describe('TracesService', () => {
     const t1 = result.traces.find((t) => t.traceId === 't1');
     expect(t1?.entryCount).toBe(2);
     expect(t1?.totalDurationMs).toBe(10);
-    expect(result.scanned).toBe(3);
+    // The walk's 3 entries, then the 2 traces read in full (3 entries).
+    expect(result.scanned).toBe(6);
   });
 
   it('applies the limit', async () => {
@@ -57,15 +58,21 @@ describe('TracesService', () => {
     expect(result.traces.map((t) => t.traceId)).toEqual(['c', 'b']);
   });
 
-  it('scans content-less (only traceId/type/createdAt/durationMs needed)', async () => {
+  it('walks and reads traces content-less; only the request entries get their content (labels)', async () => {
     const storage = new InMemoryStorageProvider();
-    await storage.store([entry('request', 't1', new Date(Date.now() - 1000))]);
+    await storage.store([
+      {
+        ...entry('request', 't1', new Date(Date.now() - 1000)),
+        content: { method: 'GET', uri: '/a' },
+      },
+      entry('query', 't1', new Date(Date.now() - 900)),
+    ]);
     const getSpy = vi.spyOn(storage, 'get');
-    await new TracesService(storage).getTraces({ windowMs: 300_000 });
-    expect(getSpy).toHaveBeenCalled();
-    for (const call of getSpy.mock.calls) {
-      expect((call[0] as EntryQuery).omitContent).toBe(true);
-    }
+    const result = await new TracesService(storage).getTraces({ windowMs: 300_000 });
+    expect(result.traces[0]?.rootLabel).toBe('GET /a');
+    const withContent = getSpy.mock.calls.filter((call) => !(call[0] as EntryQuery).omitContent);
+    expect(withContent).toHaveLength(1);
+    expect((withContent[0]?.[0] as EntryQuery).ids).toHaveLength(1);
   });
 
   it('rejects a non-positive window', async () => {

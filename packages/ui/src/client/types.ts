@@ -599,6 +599,9 @@ export interface TracesResult {
   data: TraceSummary[];
   scanned: number;
   truncated: boolean;
+  /** Pass as `after` for the next page; `null` on the last one (absent on older servers). */
+  nextCursor?: string | null;
+  hasNext?: boolean;
 }
 
 /** One node of a trace waterfall. Mirrors core's `WaterfallSpan`. */
