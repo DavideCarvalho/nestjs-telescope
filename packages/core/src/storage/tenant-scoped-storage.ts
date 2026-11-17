@@ -7,6 +7,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Entry } from '../entry/entry.js';
 import type { ConsoleTenantSelection } from '../nest/console-tenant-scope.js';
 import type {
+  EntryAggregateResult,
+  EntryAggregation,
   EntryQuery,
   EntryWithBatch,
   Page,
@@ -21,7 +23,23 @@ export interface TenantView {
   /** Names the organization the view shows (its tenant tag), for per-organization caches. */
   key: string;
   tag?: string;
+  /**
+   * `true` when the view lets through exactly the entries carrying `tag` (`accept` adds nothing to
+   * it). Then the store's aggregations can be asked for that tag instead of scanning the view.
+   */
+  exact?: boolean;
   accept(entry: Pick<Entry, 'tags'>): boolean;
+}
+
+/**
+ * Thrown by a scoped store's `aggregate` for a request it cannot narrow to the view (one already
+ * filtered by another tag): the caller reads the view by scanning, as it does without `aggregate`.
+ */
+export class ScopedAggregateUnsupported extends Error {
+  constructor() {
+    super('this aggregation cannot be narrowed to the console view');
+    this.name = 'ScopedAggregateUnsupported';
+  }
 }
 
 interface ViewState {
@@ -51,7 +69,7 @@ export function tenantViewOf(
       accept: (entry) => entry.tags.includes(tag) || !entry.tags.some((t) => t.startsWith(own)),
     };
   }
-  return { empty: false, key: tag, tag, accept: (entry) => entry.tags.includes(tag) };
+  return { empty: false, key: tag, tag, exact: true, accept: (entry) => entry.tags.includes(tag) };
 }
 
 /**
@@ -198,12 +216,26 @@ export function asTenantScopedStorage<T extends StorageProvider>(storage: T): T 
     get(target, prop) {
       // Rollups are not tagged: inside a view the store answers as if it kept none, so the metrics
       // fall back to scanning the view's entries.
-      // Aggregations neither: they read the whole window, so inside a view the metrics scan it.
-      if (
-        (prop === 'queryRollups' || prop === 'recordRollups' || prop === 'aggregate') &&
-        activeTenantView() !== null
-      ) {
+      if ((prop === 'queryRollups' || prop === 'recordRollups') && activeTenantView() !== null) {
         return undefined;
+      }
+      // Aggregations read the whole window: inside a view that is exactly one tag (one app, or one
+      // organization without shared rows) they are asked for that tag, which every store's
+      // `aggregate` honours; inside any other view the metrics scan it.
+      if (prop === 'aggregate') {
+        const view = activeTenantView();
+        if (view === null) return Reflect.get(target, prop, target);
+        const aggregate = target.aggregate;
+        const tag = view.tag;
+        if (view.empty || view.exact !== true || tag === undefined || aggregate === undefined) {
+          return undefined;
+        }
+        return async (request: EntryAggregation): Promise<EntryAggregateResult> => {
+          if (request.window.tag !== undefined && request.window.tag !== tag) {
+            throw new ScopedAggregateUnsupported();
+          }
+          return aggregate.call(target, { ...request, window: { ...request.window, tag } });
+        };
       }
       const read = typeof prop === 'string' && Object.hasOwn(reads, prop) ? reads[prop] : undefined;
       const view = read !== undefined ? activeTenantView() : null;

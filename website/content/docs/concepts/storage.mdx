@@ -30,7 +30,7 @@ interface StorageProvider {
 }
 ```
 
-The SQL stores (SQLite, MikroORM on SQLite/MySQL/PostgreSQL, ClickHouse) implement `aggregate`: Pulse and the timeseries read a window as a few `GROUP BY`s in the database, with no scan cap, instead of paging up to 50 000 entries into Node. The other stores (Redis, in-memory, tiered/Parquet) and third-party ones keep the scan, with the same results.
+The SQL stores (SQLite, MikroORM on SQLite/MySQL/PostgreSQL, ClickHouse) implement `aggregate`: Pulse and the timeseries read a window as a few `GROUP BY`s in the database, with no scan cap, instead of paging up to 50 000 entries into Node. The other stores (Redis, in-memory, tiered/Parquet) and third-party ones keep the scan, with the same results. A console view of one app (`?app=` on a control plane), or of one organization when tenancy keeps untagged entries out of it (`nullRows: 'tenantless'`), keeps those `GROUP BY`s: the store is asked for the view's tag (`AggregateWindow.tag`, which every `aggregate` must honour). A view that is not exactly one tag scans as before: several apps, an organization that also sees the shared untagged entries (`nullRows: 'shared'`), or an organization and an app at once.
 
 Reads are **keyset-paginated newest-first** (`createdAt DESC, id DESC`), so paging resumes correctly even after older entries are pruned out from under the cursor.
 

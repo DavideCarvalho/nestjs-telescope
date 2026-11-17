@@ -445,10 +445,33 @@ export class TelescopeController {
     return this.queueMetrics.getQueueMetrics(windowMs);
   }
 
+  /**
+   * `window`, plus `cards=slowest,nPlusOne,…` (only those cards; the others come back empty, and
+   * the reads they need are skipped) and `buckets=60` (also `timeseries`, the throughput over the
+   * window, from the same read as the counts).
+   */
   @Get('pulse')
-  pulseHealth(@Query('window') window?: string): Promise<PulseResult> {
+  pulseHealth(
+    @Query('window') window?: string,
+    @Query('cards') cards?: string,
+    @Query('buckets') buckets?: string,
+  ): Promise<PulseResult> {
     const windowMs = parseWindowMs(window);
-    return this.pulse.getHealth(windowMs);
+    const asked = cards
+      ?.split(',')
+      .map((card) => card.trim())
+      .filter((card) => card !== '');
+    let bucketCount: number | undefined;
+    if (buckets !== undefined && buckets !== '') {
+      bucketCount = Number(buckets);
+      if (!Number.isInteger(bucketCount) || bucketCount < 1) {
+        throw new BadRequestException(`Invalid buckets: ${buckets}`);
+      }
+    }
+    return this.pulse.getHealth(windowMs, {
+      ...(asked !== undefined && asked.length > 0 ? { cards: asked } : {}),
+      ...(bucketCount !== undefined ? { buckets: bucketCount } : {}),
+    });
   }
 
   @Get('timeseries')

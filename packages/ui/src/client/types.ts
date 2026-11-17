@@ -464,6 +464,16 @@ export interface PulseReport {
   loadByUser?: UserLoad[];
   scanned: number;
   truncated: boolean;
+  /** The throughput over the window, when the read asked for `buckets` (newer servers). */
+  timeseries?: TimeseriesReport;
+}
+
+/** What one Pulse read computes besides the counts (`GET pulse?cards=&buckets=`). */
+export interface PulseRead {
+  /** Only these cards (`slowest`, `exceptions`, `nPlusOne`, `slowRoutes`, `slowOutgoing`, `slowJobs`, `loadByUser`). */
+  cards?: readonly string[];
+  /** Also the throughput over the window in this many buckets. */
+  buckets?: number;
 }
 
 /** A user's share of load in the window — mirrors core's `UserLoad`. */

@@ -76,7 +76,7 @@ describe('MikroOrmStorageProvider schema fingerprint gate (file sqlite)', () => 
 
   beforeAll(async () => {
     const probe = await bareOrm(':memory:');
-    schemaProto = protoOwning(probe.schema, 'update');
+    schemaProto = protoOwning(probe.schema, 'getUpdateSchemaSQL');
     connProto = protoOwning(probe.em.getConnection(), 'execute');
     await probe.close(true);
   });
@@ -104,7 +104,7 @@ describe('MikroOrmStorageProvider schema fingerprint gate (file sqlite)', () => 
       await seed.em.getConnection().execute('update telescope_schema_meta set applied_at = 1');
       await seed.close(true);
 
-      const updateSpy = vi.spyOn(schemaProto, 'update');
+      const updateSpy = vi.spyOn(schemaProto, 'getUpdateSchemaSQL');
       const second = new MikroOrmStorageProvider({ driver: SqliteDriver, dbName: dbFile });
       await second.init();
       await second.close();
@@ -124,7 +124,7 @@ describe('MikroOrmStorageProvider schema fingerprint gate (file sqlite)', () => 
     let provider: MikroOrmStorageProvider | null = null;
     try {
       const ensureSpy = vi.spyOn(schemaProto, 'ensureDatabase');
-      const updateSpy = vi.spyOn(schemaProto, 'update');
+      const updateSpy = vi.spyOn(schemaProto, 'getUpdateSchemaSQL');
 
       provider = new MikroOrmStorageProvider({ driver: SqliteDriver, dbName: dbFile });
       await provider.init();
@@ -164,7 +164,7 @@ describe('MikroOrmStorageProvider schema fingerprint gate (file sqlite)', () => 
         .execute("update telescope_schema_meta set fingerprint = 'stale', applied_at = 1");
       await seed.close(true);
 
-      const updateSpy = vi.spyOn(schemaProto, 'update');
+      const updateSpy = vi.spyOn(schemaProto, 'getUpdateSchemaSQL');
       const second = new MikroOrmStorageProvider({ driver: SqliteDriver, dbName: dbFile });
       await second.init();
       await second.close();

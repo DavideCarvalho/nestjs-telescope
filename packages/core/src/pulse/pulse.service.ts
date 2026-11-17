@@ -1,9 +1,16 @@
 // packages/core/src/pulse/pulse.service.ts
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
+import { type TimeseriesReport, bucketTimeseries } from '../metrics/timeseries.js';
 import { TELESCOPE_STORAGE } from '../nest/telescope.options.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
-import { aggregatePulseInStore } from './pulse-from-store.js';
+import { ScopedAggregateUnsupported } from '../storage/tenant-scoped-storage.js';
+import {
+  PULSE_CARDS,
+  type PulseCard,
+  type PulsePlan,
+  aggregatePulseInStore,
+} from './pulse-from-store.js';
 import {
   type PulseAggregates,
   type PulseSummary,
@@ -44,6 +51,67 @@ export interface PulseServiceOptions {
 export interface PulseResult extends PulseSummary {
   scanned: number;
   truncated: boolean;
+  /**
+   * The throughput over the window (the same report as `GET timeseries`), when the read asked for
+   * `buckets`: taken from the counts' read, so a page showing both reads the window once.
+   */
+  timeseries?: TimeseriesReport;
+}
+
+/** What one {@link PulseService.getHealth} read computes besides the counts. */
+export interface PulseReadOptions {
+  /**
+   * Only these cards (of {@link PULSE_CARDS}; unknown names are ignored, none left means all), so
+   * a page showing a few of them skips the reads the others need. The others come back empty.
+   */
+  cards?: readonly string[];
+  /** Also the throughput over the window in this many buckets (1..500), from the same read. */
+  buckets?: number;
+}
+
+const MAX_BUCKETS = 500;
+
+/** `asked` narrowed to the known cards; `undefined` (every card) when none is left. */
+function cardsOf(asked: readonly string[] | undefined): ReadonlySet<PulseCard> | undefined {
+  if (asked === undefined) return undefined;
+  const known = new Set<string>(PULSE_CARDS);
+  const cards = new Set(asked.filter((card): card is PulseCard => known.has(card)));
+  return cards.size > 0 ? cards : undefined;
+}
+
+/** `aggregates` with the cards not asked for emptied (nothing of theirs is hydrated either). */
+function narrowAggregates(
+  aggregates: PulseAggregates,
+  cards: ReadonlySet<PulseCard> | undefined,
+): PulseAggregates {
+  if (cards === undefined) return aggregates;
+  const keep = <T>(card: PulseCard, rows: T[]): T[] => (cards.has(card) ? rows : []);
+  const slowest = keep('slowest', aggregates.slowest);
+  const exceptions = keep('exceptions', aggregates.exceptions);
+  const nPlusOne = keep('nPlusOne', aggregates.nPlusOne);
+  return {
+    ...aggregates,
+    slowest,
+    exceptions,
+    nPlusOne,
+    slowRoutes: keep('slowRoutes', aggregates.slowRoutes),
+    slowOutgoing: keep('slowOutgoing', aggregates.slowOutgoing),
+    slowJobs: keep('slowJobs', aggregates.slowJobs),
+    loadByUser: keep('loadByUser', aggregates.loadByUser),
+    hydrationIds: {
+      slowest: slowest.map((candidate) => candidate.id),
+      exceptions: exceptions.map((group) => group.representativeId),
+      nPlusOne: nPlusOne.map((hotspot) => hotspot.representativeId),
+    },
+  };
+}
+
+/** Pass 1 of a Pulse read: the aggregates, how many entries they cover, and the series asked for. */
+interface PulseRead {
+  aggregates: PulseAggregates;
+  scanned: number;
+  truncated: boolean;
+  timeseries?: TimeseriesReport;
 }
 
 /** Computes a health snapshot by aggregating stored entries over a time window.
@@ -70,10 +138,19 @@ export class PulseService {
     this.slowRouteMs = options?.slowRouteMs ?? DEFAULT_SLOW_ROUTE_MS;
   }
 
-  async getHealth(windowMs: number): Promise<PulseResult> {
+  async getHealth(windowMs: number, read: PulseReadOptions = {}): Promise<PulseResult> {
     if (!Number.isFinite(windowMs) || windowMs <= 0) {
       throw new RangeError(`windowMs must be a positive, finite number (got ${windowMs}).`);
     }
+    const cards = cardsOf(read.cards);
+    const buckets =
+      read.buckets !== undefined && Number.isFinite(read.buckets)
+        ? Math.min(MAX_BUCKETS, Math.max(1, Math.floor(read.buckets)))
+        : undefined;
+    const plan: PulsePlan = {
+      ...(cards !== undefined ? { cards } : {}),
+      ...(buckets !== undefined ? { buckets } : {}),
+    };
     const windowEnd = new Date();
     const windowStart = new Date(windowEnd.getTime() - windowMs);
 
@@ -83,9 +160,11 @@ export class PulseService {
       slowRouteMinCount: this.slowRouteMinCount,
       slowRouteMs: this.slowRouteMs,
     };
-    const { aggregates, scanned, truncated } =
-      (await this.fromStore(windowStart, windowEnd, pulseOptions)) ??
-      (await this.fromScan(windowStart, windowEnd, pulseOptions));
+    const read1 =
+      (await this.fromStore(windowStart, windowEnd, pulseOptions, plan)) ??
+      (await this.fromScan(windowStart, windowEnd, pulseOptions, plan));
+    const { scanned, truncated, timeseries } = read1;
+    const aggregates = narrowAggregates(read1.aggregates, cards);
 
     // Pass 2: hydrate content for ONLY the handful of displayed rows — the top-N
     // slowest, one representative per reported exception family, and one per
@@ -94,7 +173,7 @@ export class PulseService {
     const summary = finalizePulse(aggregates, (id) =>
       contentById.has(id) ? contentById.get(id) : undefined,
     );
-    return { ...summary, scanned, truncated };
+    return { ...summary, scanned, truncated, ...(timeseries !== undefined ? { timeseries } : {}) };
   }
 
   /**
@@ -105,18 +184,21 @@ export class PulseService {
     windowStart: Date,
     windowEnd: Date,
     options: Parameters<typeof aggregatePulse>[3],
-  ): Promise<{ aggregates: PulseAggregates; scanned: number; truncated: boolean } | null> {
+    plan: PulsePlan,
+  ): Promise<PulseRead | null> {
     const storage = this.storage;
     if (typeof storage.aggregate !== 'function') return null;
     try {
-      const { aggregates, scanned } = await aggregatePulseInStore(
+      const read = await aggregatePulseInStore(
         { aggregate: storage.aggregate.bind(storage), get: storage.get.bind(storage) },
         windowStart,
         windowEnd,
         options,
+        plan,
       );
-      return { aggregates, scanned, truncated: false };
+      return { ...read, truncated: false };
     } catch (error) {
+      if (error instanceof ScopedAggregateUnsupported) return null;
       this.logger.warn(
         `the store could not aggregate pulse, scanning instead: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -129,7 +211,8 @@ export class PulseService {
     windowStart: Date,
     windowEnd: Date,
     options: Parameters<typeof aggregatePulse>[3],
-  ): Promise<{ aggregates: PulseAggregates; scanned: number; truncated: boolean }> {
+    plan: PulsePlan,
+  ): Promise<PulseRead> {
     const { entries, scanned, truncated } = await collectEntriesInWindow(
       this.storage,
       { after: windowStart, omitContent: true },
@@ -142,6 +225,9 @@ export class PulseService {
       aggregates: aggregatePulse(entries, windowStart, windowEnd, options),
       scanned,
       truncated,
+      ...(plan.buckets !== undefined
+        ? { timeseries: bucketTimeseries(entries, windowStart, windowEnd, plan.buckets) }
+        : {}),
     };
   }
 

@@ -6,3 +6,4 @@ export * from './telescope-entry.entity.js';
 export * from './telescope-lease.entity.js';
 export * from './mikro-orm-storage.provider.js';
 export * from './schema.js';
+export * from './overview-indexes.js';

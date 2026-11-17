@@ -24,6 +24,7 @@ import {
 } from '../../react/index.js';
 import type {
   NPlusOneHotspot,
+  PulseRead,
   PulseReport,
   QueueMetrics,
   QueueMetricsReport,
@@ -611,12 +612,30 @@ function ResourceHistoryCard({
   );
 }
 
+/**
+ * The Overview's one Pulse read: the cards it shows (not `slowOutgoing`, so the outgoing-call
+ * families are not read) and the throughput chart's 60 buckets, from the same read of the window
+ * as the counts instead of a second one through `GET timeseries`.
+ */
+export const OVERVIEW_PULSE: PulseRead = {
+  cards: ['slowest', 'exceptions', 'nPlusOne', 'slowRoutes', 'slowJobs', 'loadByUser'],
+  buckets: 60,
+};
+
 export function OverviewPage(): React.JSX.Element {
   const [window, setWindow] = useWindowParam();
   const navigate = useNavigate();
-  const pulse = usePulse(window);
+  const pulse = usePulse(window, OVERVIEW_PULSE);
   const queues = useQueues(window);
-  const series = useTimeseries({ window, buckets: 60 });
+  // A server predating `buckets` answers without `timeseries`, and a failed Pulse read answers
+  // nothing: the charts then read the series apart, as they did before.
+  const fallbackSeries = useTimeseries(
+    { window, buckets: 60 },
+    {
+      enabled: pulse.isError || (pulse.data !== undefined && pulse.data.timeseries === undefined),
+    },
+  );
+  const series = { data: pulse.data?.timeseries ?? fallbackSeries.data };
   const serverStats = useServerStats();
   const serverStatsHistory = useServerStatsHistory();
   const health = useHealth();

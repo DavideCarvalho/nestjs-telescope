@@ -5,6 +5,11 @@
 // into Node. Produces the same `PulseAggregates` the scan does, ranked by the same functions, so
 // the hydration pass and the output are shared.
 import { EntryType } from '../entry/entry.js';
+import {
+  type TimeseriesReport,
+  bucketGeometry,
+  timeseriesFromCounts,
+} from '../metrics/timeseries.js';
 import type {
   AggregateWindow,
   EntryAggregateResult,
@@ -41,6 +46,27 @@ async function run<K extends EntryAggregation['kind']>(
 }
 
 const USER_TAG_PREFIX = 'user:';
+
+/** The Pulse cards a caller can ask for alone (the counts are always computed). */
+export const PULSE_CARDS = [
+  'slowest',
+  'exceptions',
+  'nPlusOne',
+  'slowRoutes',
+  'slowOutgoing',
+  'slowJobs',
+  'loadByUser',
+] as const;
+
+export type PulseCard = (typeof PULSE_CARDS)[number];
+
+/** What one Pulse read computes besides the counts. */
+export interface PulsePlan {
+  /** Only these cards (all of them when absent); the others come back empty. */
+  cards?: ReadonlySet<PulseCard>;
+  /** Also the throughput over the window in this many buckets, from the counts' read. */
+  buckets?: number;
+}
 const QUANTILES = [0.99, 0.5];
 
 /**
@@ -53,29 +79,51 @@ export async function aggregatePulseInStore(
   windowStart: Date,
   windowEnd: Date,
   options: PulseOptions,
-): Promise<{ aggregates: PulseAggregates; scanned: number }> {
+  plan: PulsePlan = {},
+): Promise<{ aggregates: PulseAggregates; scanned: number; timeseries?: TimeseriesReport }> {
   const window: AggregateWindow = { after: windowStart };
+  const wants = (card: PulseCard) => plan.cards === undefined || plan.cards.has(card);
+  // The family types the asked cards rank (none: the read is skipped).
+  const familyTypes = [
+    ...(wants('slowRoutes') ? [EntryType.Request] : []),
+    ...(wants('slowOutgoing') ? [EntryType.HttpClient] : []),
+    ...(wants('slowJobs') ? [EntryType.Job] : []),
+    ...(wants('exceptions') ? [EntryType.Exception] : []),
+  ];
+  const none = Promise.resolve([] as never[]);
+  // With `buckets`, the per-type counts come bucketed: the same read answers the throughput chart.
+  const geometry =
+    plan.buckets !== undefined ? bucketGeometry(windowStart, windowEnd, plan.buckets) : null;
   const [counted, slowestRows, families, batchFamilies, tagSets] = await Promise.all([
-    run(storage, { kind: 'count', window }),
-    run(storage, { kind: 'slowest', window, limit: options.topN }),
     run(storage, {
-      kind: 'families',
-      window: {
-        ...window,
-        types: [EntryType.Request, EntryType.HttpClient, EntryType.Job, EntryType.Exception],
-      },
-      quantiles: QUANTILES,
+      kind: 'count',
+      window,
+      ...(geometry !== null
+        ? { bucket: { startMs: geometry.startMs, widthMs: geometry.bucketMs } }
+        : {}),
     }),
-    run(storage, {
-      kind: 'batchFamilies',
-      window: { ...window, type: EntryType.Query },
-      minCount: options.nPlusOneThreshold,
-    }),
-    run(storage, {
-      kind: 'tagSets',
-      window: { ...window, type: EntryType.Request },
-      tagPrefix: USER_TAG_PREFIX,
-    }),
+    wants('slowest') ? run(storage, { kind: 'slowest', window, limit: options.topN }) : none,
+    familyTypes.length > 0
+      ? run(storage, {
+          kind: 'families',
+          window: { ...window, types: familyTypes },
+          quantiles: QUANTILES,
+        })
+      : none,
+    wants('nPlusOne')
+      ? run(storage, {
+          kind: 'batchFamilies',
+          window: { ...window, type: EntryType.Query },
+          minCount: options.nPlusOneThreshold,
+        })
+      : none,
+    wants('loadByUser')
+      ? run(storage, {
+          kind: 'tagSets',
+          window: { ...window, type: EntryType.Request },
+          tagPrefix: USER_TAG_PREFIX,
+        })
+      : none,
   ]);
 
   const counts: Record<string, number> = {};
@@ -84,6 +132,12 @@ export async function aggregatePulseInStore(
     counts[row.type] = (counts[row.type] ?? 0) + row.count;
     scanned += row.count;
   }
+  const timeseries =
+    plan.buckets !== undefined
+      ? (({ scanned: _scanned, ...report }) => report)(
+          timeseriesFromCounts(counted, windowStart, windowEnd, plan.buckets),
+        )
+      : undefined;
 
   const slowest = rankSlowest(slowestRows, options);
 
@@ -175,6 +229,7 @@ export async function aggregatePulseInStore(
 
   return {
     scanned,
+    ...(timeseries !== undefined ? { timeseries } : {}),
     aggregates: {
       windowStart,
       windowEnd,

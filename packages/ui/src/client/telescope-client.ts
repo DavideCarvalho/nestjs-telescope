@@ -14,6 +14,7 @@ import type {
   Page,
   ProfilerStatus,
   PrunesInfo,
+  PulseRead,
   PulseReport,
   QueueCapabilities,
   QueueCounts,
@@ -187,7 +188,12 @@ export interface TelescopeClient {
   readonly baseUrl: string;
   entries(query?: EntriesQuery): Promise<Page<Entry>>;
   entry(id: string): Promise<EntryWithBatch>;
-  pulse(window?: string): Promise<PulseReport>;
+  /**
+   * The Pulse rollup. `read.cards` computes only those cards (the others come back empty) and
+   * `read.buckets` adds `timeseries` (the throughput) from the same read; a server predating them
+   * ignores both.
+   */
+  pulse(window?: string, read?: PulseRead): Promise<PulseReport>;
   queues(window?: string): Promise<QueueMetricsReport>;
   timeseries(query?: TimeseriesQuery): Promise<TimeseriesReport>;
   /** The window's most recent traces, at most `size` (`GET traces`): `{ data, scanned, truncated }`. */
@@ -452,7 +458,12 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         first: query.first,
       }),
     entry: (id) => get<EntryWithBatch>(`/entries/${encodeURIComponent(id)}`),
-    pulse: (window) => get<PulseReport>('/pulse', { window }),
+    pulse: (window, read) =>
+      get<PulseReport>('/pulse', {
+        window,
+        cards: read?.cards && read.cards.length > 0 ? read.cards.join(',') : undefined,
+        buckets: read?.buckets,
+      }),
     queues: (window) => get<QueueMetricsReport>('/queues', { window }),
     timeseries: (query = {}) =>
       get<TimeseriesReport>('/timeseries', {
