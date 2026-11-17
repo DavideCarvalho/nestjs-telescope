@@ -82,7 +82,7 @@ The console's Overview and Pulse read a whole window (counts per type and per mi
 
 ```ts
 // a one-off script, or the up() of a migration
-await storage.createOverviewIndexes(); // returns the names it created; the ones that exist are skipped
+await storage.createOverviewIndexes(); // returns the names it created; a rerun that creates none changes nothing
 ```
 
 or with the statements, in your own migration tool:

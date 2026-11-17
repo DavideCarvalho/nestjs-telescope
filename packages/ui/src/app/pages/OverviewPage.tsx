@@ -627,10 +627,13 @@ export function OverviewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const pulse = usePulse(window, OVERVIEW_PULSE);
   const queues = useQueues(window);
-  // A server predating `buckets` answers without `timeseries`: the charts then read it apart.
+  // A server predating `buckets` answers without `timeseries`, and a failed Pulse read answers
+  // nothing: the charts then read the series apart, as they did before.
   const fallbackSeries = useTimeseries(
     { window, buckets: 60 },
-    { enabled: pulse.data !== undefined && pulse.data.timeseries === undefined },
+    {
+      enabled: pulse.isError || (pulse.data !== undefined && pulse.data.timeseries === undefined),
+    },
   );
   const series = { data: pulse.data?.timeseries ?? fallbackSeries.data };
   const serverStats = useServerStats();

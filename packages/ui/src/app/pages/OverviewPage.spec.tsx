@@ -336,6 +336,17 @@ describe('OverviewPage', () => {
     await waitFor(() => expect(timeseriesRead).toHaveBeenCalledWith({ window: '1h', buckets: 60 }));
   });
 
+  it('still draws the charts when the Pulse read fails', async () => {
+    const client = mockClient();
+    client.pulse = vi.fn(async () => {
+      throw new Error('pulse down');
+    });
+    const timeseriesRead = vi.fn(async () => timeseries);
+    client.timeseries = timeseriesRead;
+    renderWith(client);
+    await waitFor(() => expect(timeseriesRead).toHaveBeenCalledWith({ window: '1h', buckets: 60 }));
+  });
+
   it('derives and renders the error rate from exceptions ÷ requests', async () => {
     renderOverview();
     expect(await screen.findByText('Error rate')).toBeTruthy();

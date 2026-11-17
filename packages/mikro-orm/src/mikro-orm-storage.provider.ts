@@ -726,8 +726,9 @@ export class MikroOrmStorageProvider
    * Creates the opt-in indexes the console's Overview and Pulse read through (see
    * {@link overviewIndexStatements}), skipping those that exist. Run it once, from a migration or a
    * one-off script, never on every boot: on PostgreSQL the indexes build `CONCURRENTLY` (writes go
-   * on), on MySQL online, on SQLite with writes blocked while they build. They add about a third
-   * to the size of the table's indexes. Returns the names it created.
+   * on), on MySQL online, on SQLite with writes blocked while they build. They add about half to
+   * the size of the table's indexes. Returns the names it created; a run that creates none
+   * changes nothing (PostgreSQL's autovacuum thresholds are set along with the indexes).
    */
   async createOverviewIndexes(): Promise<string[]> {
     await this.init();
@@ -757,7 +758,9 @@ export class MikroOrmStorageProvider
     const statements = overviewIndexStatements(dialect, schema !== undefined ? { schema } : {});
     for (const statement of statements) {
       const name = OVERVIEW_INDEX_NAMES.find((candidate) => statement.includes(candidate));
-      if (name !== undefined && existing.has(name)) continue;
+      // The table setting that goes with them (PostgreSQL's autovacuum thresholds) is applied
+      // with the indexes it serves: a run that creates nothing changes nothing.
+      if (name === undefined ? created.length === 0 : existing.has(name)) continue;
       await connection.execute(statement);
       if (name !== undefined) created.push(name);
     }
