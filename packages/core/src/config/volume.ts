@@ -43,8 +43,25 @@ export type VolumeFilter = (
   random: () => number,
 ) => VolumeDecision;
 
-/** The table a statement reads or writes first: `select … from t`, `insert into t`, `update t`, `delete from t`. */
-const PRIMARY_TABLE = /^(?:select\b.*?\bfrom|insert\s+into|update|delete\s+from)\s+([^\s(,;]+)/i;
+/**
+ * The table a statement reads or writes first: `select … from t`, `insert into t`, `update t`,
+ * `delete from t`. Run on {@link statementHead}, so newlines, comments and wrapping parentheses
+ * don't hide it. A `with …` (CTE) statement has no single primary table and is never matched.
+ */
+const PRIMARY_TABLE = /^(?:select\b.*?\bfrom|insert\s+into|update|delete\s+from)\s+([^\s(),;]+)/i;
+
+/** The sql with comments removed, whitespace collapsed and leading `(` dropped. */
+function statementHead(sql: string): string {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s(]+/, '');
+}
+
+/** Table decisions cached per raw sql string (an app runs the same few hundred statements). */
+const MAX_CACHED_TABLE_DECISIONS = 2_000;
+const MAX_CACHED_SQL_LENGTH = 4_096;
 
 /** A table name without quoting, lowercased: `"public"."Users"` → `public.users`. */
 function bareTable(name: string): string {
@@ -69,15 +86,27 @@ function compileQuery(options: QueryVolumeOptions | undefined): VolumeFilter | n
     (options?.ignoreTables ?? []).filter((table) => table.trim() !== '').map(bareTable),
   );
   if (sampleRate >= 1 && minMs <= 0 && tables.size === 0) return null;
+  const decisions = new Map<string, boolean>();
+  const ignoresTable = (sql: string): boolean => {
+    const cached = decisions.get(sql);
+    if (cached !== undefined) return cached;
+    const table = PRIMARY_TABLE.exec(statementHead(sql))?.[1];
+    let ignored = false;
+    if (table !== undefined) {
+      const bare = bareTable(table);
+      const unqualified = bare.slice(bare.lastIndexOf('.') + 1);
+      ignored = tables.has(bare) || tables.has(unqualified);
+    }
+    if (sql.length <= MAX_CACHED_SQL_LENGTH) {
+      if (decisions.size >= MAX_CACHED_TABLE_DECISIONS) decisions.clear();
+      decisions.set(sql, ignored);
+    }
+    return ignored;
+  };
   return (input, samplingKey, random) => {
     if (tables.size > 0) {
       const sql = contentOf(input)?.sql;
-      const table = typeof sql === 'string' ? PRIMARY_TABLE.exec(sql.trim())?.[1] : undefined;
-      if (table !== undefined) {
-        const bare = bareTable(table);
-        const unqualified = bare.slice(bare.lastIndexOf('.') + 1);
-        if (tables.has(bare) || tables.has(unqualified)) return 'ignored';
-      }
+      if (typeof sql === 'string' && ignoresTable(sql)) return 'ignored';
     }
     if (sampleRate >= 1 && minMs <= 0) return 'keep';
     // Failed and slow queries are what the console is for: never sampled away.

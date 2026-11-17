@@ -171,6 +171,9 @@ describe('query volume knobs', () => {
     recorder.record(query('select * from "public"."durable_workflow_runs" where id = $1'));
     recorder.record(query('UPDATE durable_workflow_runs SET status = ?'));
     recorder.record(query('insert into `durable_workflow_runs` (id) values (?)'));
+    recorder.record(query('SELECT id,\n  status\nFROM\n  "durable_workflow_runs"\nWHERE id = $1'));
+    recorder.record(query('/* poller */ -- tick\nselect * from durable_workflow_runs'));
+    recorder.record(query('(select * from public.durable_workflow_runs) union (select 1)'));
     recorder.record(query('select * from orders join durable_workflow_runs on 1=1'));
     recorder.record(query('select * from durable_workflow_runs_archive'));
     const sqls = (await stored(recorder, storage)).map(

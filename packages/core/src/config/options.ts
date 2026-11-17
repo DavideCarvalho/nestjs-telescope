@@ -192,8 +192,9 @@ export interface QueryVolumeOptions {
   /**
    * Tables whose statements are never recorded: the first table a `select` reads from, or the
    * table an `insert` / `update` / `delete` writes. Case-insensitive, with or without the schema
-   * (`'durable_workflow_runs'` also matches `"public"."durable_workflow_runs"`). For anything
-   * finer, use `ignoreQueries`.
+   * (`'durable_workflow_runs'` also matches `"public"."durable_workflow_runs"`). Newlines,
+   * comments and wrapping parentheses don't hide the table; a `WITH …` (CTE) statement is never
+   * matched. For anything finer, use `ignoreQueries`.
    */
   ignoreTables?: string[];
 }
