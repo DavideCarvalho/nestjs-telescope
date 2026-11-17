@@ -100,10 +100,11 @@ the access-denied screen). Every call carries the page's `?tenant=` and `?app=`
 `client.tenancy(search?)` reads the viewer's organizations from
 `GET <api>/tenancy` (`{ enabled: false }` on older servers),
 `client.apps(search?)` reads the viewer's apps from `GET <api>/apps` (`NO_APPS`,
-`{ enabled: false }`, on a standalone app or older servers), and the dashboard
+`{ enabled: false }`, on a standalone app without `federation` or older servers), and the dashboard
 header shows an "Organization" control (chip for one, searchable picker for
 several or all) plus an "App" control on a control plane receiving several
-apps' entries (hidden otherwise; labels from `apps.labels`). The entries table
+apps' entries or a federated console reading apps' own stores
+(hidden otherwise; labels from `apps.labels`, winning over each federated app's `label`). The entries table
 shows an App column when several apps are in view. `pageApp()` reads the page's
 `?app=` (like `pageTenant()`); `withConsoleScope(url)` adds the console's
 `?tenant=` / `?app=` to a URL the browser opens itself, such as the live tail's
