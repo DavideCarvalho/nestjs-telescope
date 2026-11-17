@@ -851,7 +851,12 @@ export class MikroOrmStorageProvider
     const rows = await em.find(
       TelescopeEntry,
       {},
-      { orderBy: { createdAt: 'desc', id: 'desc' }, limit: 10000, fields: ['tags'] },
+      {
+        orderBy: { createdAt: 'desc', id: 'desc' },
+        // The newest 10 000 rows at most; fewer when the caller asks for fewer (`recent`).
+        limit: query?.recent !== undefined ? Math.max(0, Math.min(10000, query.recent)) : 10000,
+        fields: ['tags'],
+      },
     );
 
     const search = query?.search?.trim().toLowerCase();

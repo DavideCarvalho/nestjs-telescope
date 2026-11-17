@@ -141,6 +141,13 @@ export interface TagQuery {
   search?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Count only the newest `recent` entries (by `createdAt`) instead of the whole store, for a
+   * caller that wants the tags in use (the App picker's fallback) without a scan that grows with
+   * the table. Unset (the tag browser) counts every entry. A provider that ignores it is still
+   * correct, only unbounded.
+   */
+  recent?: number;
 }
 
 /**

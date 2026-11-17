@@ -527,8 +527,19 @@ export class SqliteStorageProvider
     // page instead of re-cutting an arbitrary arrangement of equal counts.
     const where = conditions.length ? `where ${conditions.join(' and ')}` : '';
     const page = query?.limit !== undefined ? 'limit @limit offset @offset' : '';
+    // `recent`: only the newest rows (walked backwards on `ix_te_created`), so the count no longer
+    // grows with the table. Unset, every row is counted (the tag browser's totals).
+    const recent =
+      query?.recent !== undefined && Number.isFinite(query.recent)
+        ? Math.max(0, Math.floor(query.recent))
+        : null;
+    const source =
+      recent === null
+        ? 'telescope_entries'
+        : '(select tags from telescope_entries order by created_at desc, id desc limit @recent) as telescope_entries';
+    if (recent !== null) params.recent = recent;
     const sql = `select value as tag, count(*) as count
-       from telescope_entries, json_each(telescope_entries.tags)
+       from ${source}, json_each(telescope_entries.tags)
        ${where}
        group by value
        order by count desc, tag asc

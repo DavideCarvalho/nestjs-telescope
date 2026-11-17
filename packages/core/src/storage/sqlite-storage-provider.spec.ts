@@ -148,6 +148,20 @@ describe('SqliteStorageProvider', () => {
     expect((await store.get({})).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('counts only the newest entries with `recent`, every entry without it', async () => {
+    await store.store([
+      entry({ id: '1', tags: ['app:old'], createdAt: new Date('2026-01-01T00:00:00Z') }),
+      entry({ id: '2', tags: ['app:shop'], createdAt: new Date('2026-02-01T00:00:00Z') }),
+      entry({ id: '3', tags: ['app:shop'], createdAt: new Date('2026-03-01T00:00:00Z') }),
+    ]);
+    expect(await store.tags('app:', { recent: 2 })).toEqual([{ tag: 'app:shop', count: 2 }]);
+    expect(await store.tags('app:', { recent: 2, limit: 10, search: 'old' })).toEqual([]);
+    expect(await store.tags('app:')).toEqual([
+      { tag: 'app:shop', count: 2 },
+      { tag: 'app:old', count: 1 },
+    ]);
+  });
+
   describe('markFamilySeen (shared new-exception dedup)', () => {
     it('returns true once for a brand-new family, false on a repeat in window', async () => {
       const now = 1_000_000;

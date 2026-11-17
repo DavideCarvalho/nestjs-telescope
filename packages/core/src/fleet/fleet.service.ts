@@ -218,6 +218,21 @@ export class TelescopeFleet
     if (heartbeat !== null) await this.registry.beat(app, heartbeat);
   }
 
+  /**
+   * The apps of a control plane's instance registry (one row per instance, within the fleet's
+   * retention): the tenants that heartbeat, which the App picker lists without counting tags.
+   * The control plane's own app is left out (its entries carry no `app:` tag, so picking it would
+   * show nothing). `null` when there is no registry to read: any other topology, or `fleet: false`.
+   */
+  async instanceApps(): Promise<string[] | null> {
+    if (this.kind !== 'control-plane' || this.registry === null) return null;
+    const apps = new Set<string>();
+    for (const instance of await this.registry.instances()) {
+      if (instance.app !== '' && instance.app !== this.selfApp) apps.add(instance.app);
+    }
+    return [...apps];
+  }
+
   /** The fleet as a viewer limited to `scope` sees it; `store` is the (scoped) entries store. */
   read(scope: FleetScope, store: StorageProvider | null): Promise<FleetView> {
     const self = this.selfApp;

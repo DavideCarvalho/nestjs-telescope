@@ -125,7 +125,12 @@ export * from './topology/remote-store.js';
 export * from './topology/config.js';
 export { TelescopeIngestController, bearerToken } from './topology/ingest.controller.js';
 export { TelescopeIngest } from './topology/ingest.service.js';
-export { TelescopeKnownApps, KNOWN_APPS_REFRESH_MS } from './topology/known-apps.js';
+export {
+  TelescopeKnownApps,
+  KNOWN_APPS_REFRESH_MS,
+  KNOWN_APPS_RECENT_ENTRIES,
+  type KnownAppsSource,
+} from './topology/known-apps.js';
 export * from './topology/transports/index.js';
 
 export * from './fleet/checks.js';

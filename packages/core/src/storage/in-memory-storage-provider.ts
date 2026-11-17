@@ -154,7 +154,11 @@ export class InMemoryStorageProvider
   async tags(prefix?: string, query?: TagQuery): Promise<TagCount[]> {
     const search = query?.search?.trim().toLowerCase();
     const counts = new Map<string, number>();
-    for (const entry of this.entries) {
+    const entries =
+      query?.recent !== undefined
+        ? [...this.entries].sort(this.newestFirst).slice(0, Math.max(0, query.recent))
+        : this.entries;
+    for (const entry of entries) {
       for (const tag of entry.tags) {
         if (prefix && !tag.startsWith(prefix)) continue;
         // Before the bound below, for the same reason the SQL provider searches before its LIMIT.
