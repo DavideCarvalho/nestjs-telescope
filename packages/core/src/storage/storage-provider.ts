@@ -141,6 +141,77 @@ export interface TagQuery {
   search?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Count only the newest `recent` entries (by `createdAt`) instead of the whole store, for a
+   * caller that wants the tags in use (the App picker's fallback) without a scan that grows with
+   * the table. Unset (the tag browser) counts every entry. A provider that ignores it is still
+   * correct, only unbounded.
+   */
+  recent?: number;
+}
+
+/**
+ * The entries an aggregation reads: `after < createdAt` (and `createdAt < before`), of `type` or
+ * one of `types`, carrying `tag`. The same bounds as {@link EntryQuery}.
+ */
+export interface AggregateWindow {
+  after: Date;
+  before?: Date;
+  type?: string;
+  types?: string[];
+  tag?: string;
+}
+
+/**
+ * One aggregation over a window (see {@link StorageProvider.aggregate}). Each kind is a GROUP BY a
+ * SQL store answers in one statement, instead of shipping every entry of the window to Node.
+ *
+ * - `count`: entries per `type`, and per time bucket when `bucket` is set: the bucket is
+ *   `floor((createdAtMs - startMs) / widthMs)`, unclamped (the caller clamps).
+ * - `slowest`: the `limit` entries with a duration, longest first, ties by id ascending.
+ * - `families`: per (`type`, `familyHash`), entries with a non-null family only: how many, how
+ *   many have a duration, their sum, and the nearest-rank quantiles of those durations, one per
+ *   asked `quantiles` (the duration at 1-based rank `clamp(ceil(q * n), 1, n)` in ascending
+ *   order, where `n` counts the durations, computed in double precision; `0` when `n` is 0).
+ * - `batchFamilies`: per (`batchId`, `familyHash`) with a non-null family, the groups of at least
+ *   `minCount` entries, with their duration sum (a null duration counts 0).
+ * - `tagSets`: the entries carrying a tag that starts with `tagPrefix`, grouped by their whole tag
+ *   list (in stored order): how many, and their duration sum (a null duration counts 0).
+ */
+export type EntryAggregation =
+  | { kind: 'count'; window: AggregateWindow; bucket?: { startMs: number; widthMs: number } }
+  | { kind: 'slowest'; window: AggregateWindow; limit: number }
+  | { kind: 'families'; window: AggregateWindow; quantiles: number[] }
+  | { kind: 'batchFamilies'; window: AggregateWindow; minCount: number }
+  | { kind: 'tagSets'; window: AggregateWindow; tagPrefix: string };
+
+/** The rows of an {@link EntryAggregation}, tagged with its kind. Rows come in no given order. */
+export type EntryAggregateResult =
+  | { kind: 'count'; rows: { type: string; bucket: number | null; count: number }[] }
+  | {
+      kind: 'slowest';
+      rows: { id: string; type: string; durationMs: number; batchId: string }[];
+    }
+  | {
+      kind: 'families';
+      rows: {
+        type: string;
+        familyHash: string;
+        count: number;
+        durationCount: number;
+        durationSum: number;
+        quantiles: number[];
+      }[];
+    }
+  | {
+      kind: 'batchFamilies';
+      rows: { batchId: string; familyHash: string; count: number; durationSum: number }[];
+    }
+  | { kind: 'tagSets'; rows: { tags: string[]; count: number; durationSum: number }[] };
+
+/** The 1-based nearest rank of quantile `q` among `n` sorted values, as `aggregate` defines it. */
+export function quantileRank(q: number, n: number): number {
+  return Math.min(n, Math.max(1, Math.ceil(q * n)));
 }
 
 export interface StorageProvider {
@@ -262,6 +333,14 @@ export interface StorageProvider {
    * providers keep working unchanged.
    */
   markFamilySeen?(familyHash: string, nowMs: number, windowMs: number): Promise<boolean>;
+  /**
+   * Window aggregation in the store. ADDITIVE and OPTIONAL: pulse and the timeseries use it to
+   * read a window as a few GROUP BYs instead of paging every entry of it into Node (bounded by a
+   * scan cap). A store that omits it, or throws from it, is scanned as before, with the same
+   * results. See {@link EntryAggregation} for what each kind returns; the result's `kind` must
+   * be the request's.
+   */
+  aggregate?(request: EntryAggregation): Promise<EntryAggregateResult>;
   /**
    * Acquire resources / ensure schema. Optional; called ONCE at application boot,
    * before any other method, and awaited by the module during startup. Providers

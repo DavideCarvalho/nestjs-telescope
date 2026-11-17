@@ -181,4 +181,41 @@ describe('RedisCommandWatcher', () => {
     expect(() => new RedisCommandWatcher(notAClient).register(ctx)).not.toThrow();
     expect(recorded).toHaveLength(0);
   });
+
+  it('redacts the value of a write by default, keeping the key and options', async () => {
+    const client = fakeClient();
+    const { ctx, recorded } = makeHarness();
+    new RedisCommandWatcher(client).register(ctx);
+
+    const session = JSON.stringify({ csrfSecret: 's3cr3t', refreshToken: 'r3fr3sh' });
+    await client.sendCommand({ name: 'set', args: ['sess:abc', session, 'EX', 7200] });
+
+    const content = recorded[0]!.content as { command: string; args: unknown[] };
+    expect(content.command).toBe('SET');
+    expect(content.args).toEqual(['sess:abc', '[REDACTED]', 'EX', 7200]);
+    expect(JSON.stringify(recorded)).not.toContain('s3cr3t');
+    expect(JSON.stringify(recorded)).not.toContain('r3fr3sh');
+  });
+
+  it('records values verbatim only with recordValues: true', async () => {
+    const client = fakeClient();
+    const { ctx, recorded } = makeHarness();
+    new RedisCommandWatcher(client, { recordValues: true }).register(ctx);
+
+    await client.set('k', 'plain');
+
+    expect((recorded[0]!.content as { args: unknown[] }).args).toEqual(['k', 'plain']);
+  });
+
+  it('never records the reply', async () => {
+    const client = fakeClient();
+    const { ctx, recorded } = makeHarness();
+    new RedisCommandWatcher(client, { recordValues: true }).register(ctx);
+
+    await client.set('k', 'reply-value');
+    recorded.length = 0;
+    await client.get('k');
+
+    expect(JSON.stringify(recorded)).not.toContain('reply-value');
+  });
 });

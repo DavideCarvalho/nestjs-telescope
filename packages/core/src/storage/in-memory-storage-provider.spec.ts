@@ -202,6 +202,16 @@ describe('InMemoryStorageProvider', () => {
     expect((await store.get({})).data.map((e) => e.id)).toEqual(['2']);
   });
 
+  it('counts only the newest entries with `recent`', async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([
+      entry({ id: '1', tags: ['app:old'], createdAt: new Date('2026-01-01T00:00:00Z') }),
+      entry({ id: '2', tags: ['app:shop'], createdAt: new Date('2026-02-01T00:00:00Z') }),
+    ]);
+    expect(await store.tags('app:', { recent: 1 })).toEqual([{ tag: 'app:shop', count: 1 }]);
+    expect(await store.tags('app:')).toHaveLength(2);
+  });
+
   describe('pruneScoped', () => {
     const old = new Date('2026-01-01T00:00:00Z');
     const fresh = new Date('2026-03-01T00:00:00Z');

@@ -1,7 +1,8 @@
-// packages/core/src/config/options.ts
 import type { Entry } from '../entry/entry.js';
 import type { ProfilingOptions, ResolvedProfilingConfig } from '../profiling/profiling-config.js';
 import type { TelescopePruneLock } from '../prune/prune-lock.js';
+// packages/core/src/config/options.ts
+import type { QueryIgnoreRule } from '../query/ignore-queries.js';
 import type { RedactOptions } from '../redaction/redact.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { Tagger } from '../tagging/tagger.js';
@@ -195,6 +196,14 @@ export interface TelescopeCoreOptions {
   instanceId?: string;
   filter?: (entry: Entry) => boolean;
   /**
+   * Queries to drop before they are recorded: polling and other noise nobody reads (e.g.
+   * `'select * from durable_workflow_runs where id = ?'`). A string matches when the sql
+   * contains it (case-insensitive, whitespace-collapsed), a RegExp is tested against the sql, a
+   * function gets `(sql, content)` and returns `true` to drop. Dropped queries cost no store write
+   * and never reach the N+1 detector, which keeps working on the queries that are recorded.
+   */
+  ignoreQueries?: QueryIgnoreRule[];
+  /**
    * On-demand CPU flamegraph profiling. STRICTLY opt-in and OFF by default; when
    * absent or `{ enabled: false }` the profiler is never constructed, the Node
    * `inspector` module is never loaded, and the request path is untouched beyond
@@ -263,6 +272,7 @@ export interface ResolvedCoreConfig {
   taggers: Tagger[];
   instanceId: string;
   filter?: (entry: Entry) => boolean;
+  ignoreQueries?: QueryIgnoreRule[];
   /** Fully-defaulted profiling config. Always present; `enabled: false` by default. */
   profiling: ResolvedProfilingConfig;
   traceContext?: TraceContextProvider;

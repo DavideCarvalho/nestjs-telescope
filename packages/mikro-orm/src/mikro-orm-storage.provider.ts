@@ -55,6 +55,8 @@ import type {
   BoundedPruneResult,
   BoundedPruneScope,
   Entry,
+  EntryAggregateResult,
+  EntryAggregation,
   EntryQuery,
   EntryWithBatch,
   LeaseCapableStorage,
@@ -76,6 +78,7 @@ import {
 } from '@dudousxd/nestjs-telescope';
 import type { EntityManager, EntityMetadata, FilterQuery, Options } from '@mikro-orm/core';
 import { MikroORM, raw } from '@mikro-orm/core';
+import { aggregateSql } from './aggregate-sql.js';
 import { TelescopeEntry, type TelescopeEntryRow } from './telescope-entry.entity.js';
 import { TelescopeLease } from './telescope-lease.entity.js';
 import { TelescopeRollup, type TelescopeRollupRow } from './telescope-rollup.entity.js';
@@ -848,7 +851,12 @@ export class MikroOrmStorageProvider
     const rows = await em.find(
       TelescopeEntry,
       {},
-      { orderBy: { createdAt: 'desc', id: 'desc' }, limit: 10000, fields: ['tags'] },
+      {
+        orderBy: { createdAt: 'desc', id: 'desc' },
+        // The newest 10 000 rows at most; fewer when the caller asks for fewer (`recent`).
+        limit: query?.recent !== undefined ? Math.max(0, Math.min(10000, query.recent)) : 10000,
+        fields: ['tags'],
+      },
     );
 
     const search = query?.search?.trim().toLowerCase();
@@ -1051,6 +1059,33 @@ export class MikroOrmStorageProvider
         }
       }
     });
+  }
+
+  /**
+   * Window aggregation in SQL (pulse, timeseries) on SQLite, MySQL/MariaDB and PostgreSQL: a few
+   * GROUP BYs instead of paging the window into Node. Other drivers throw, and the core scans.
+   */
+  async aggregate(request: EntryAggregation): Promise<EntryAggregateResult> {
+    const em = this.forkEm();
+    const dialect = this.orm ? dialectOf(this.orm) : 'other';
+    if (dialect === 'other') {
+      throw new Error('MikroOrmStorageProvider: aggregate needs SQLite, MySQL or PostgreSQL');
+    }
+    const platform = em.getPlatform();
+    const tableName = em.getMetadata().get(TelescopeEntry).tableName;
+    const schema = this.orm ? schemaOf(this.orm) : undefined;
+    const quote = (identifier: string): string => platform.quoteIdentifier(identifier);
+    const connection = em.getConnection();
+    return aggregateSql(
+      {
+        dialect,
+        table: schema === undefined ? quote(tableName) : `${quote(schema)}.${quote(tableName)}`,
+        date: (value) => platform.processDateProperty(value),
+        execute: async (sql, params) =>
+          (await connection.execute(sql, params, 'all')) as Record<string, unknown>[],
+      },
+      request,
+    );
   }
 
   async queryRollups(

@@ -198,7 +198,11 @@ export function asTenantScopedStorage<T extends StorageProvider>(storage: T): T 
     get(target, prop) {
       // Rollups are not tagged: inside a view the store answers as if it kept none, so the metrics
       // fall back to scanning the view's entries.
-      if ((prop === 'queryRollups' || prop === 'recordRollups') && activeTenantView() !== null) {
+      // Aggregations neither: they read the whole window, so inside a view the metrics scan it.
+      if (
+        (prop === 'queryRollups' || prop === 'recordRollups' || prop === 'aggregate') &&
+        activeTenantView() !== null
+      ) {
         return undefined;
       }
       const read = typeof prop === 'string' && Object.hasOwn(reads, prop) ? reads[prop] : undefined;

@@ -70,6 +70,7 @@ export * from './schedule/schedule-manager.registry.js';
 
 export * from './query/query-family-hash.js';
 export * from './query/n-plus-one.js';
+export * from './query/ignore-queries.js';
 export * from './query/n-plus-one-pattern.js';
 
 export * from './rollup/rollup-store.js';
@@ -92,6 +93,7 @@ export * from './metrics/server-stats.service.js';
 export * from './agent-metrics/index.js';
 
 export * from './pulse/pulse-summary.js';
+export * from './pulse/pulse-from-store.js';
 export * from './pulse/pulse.service.js';
 
 export * from './http/http-client.watcher.js';
@@ -123,6 +125,12 @@ export * from './topology/remote-store.js';
 export * from './topology/config.js';
 export { TelescopeIngestController, bearerToken } from './topology/ingest.controller.js';
 export { TelescopeIngest } from './topology/ingest.service.js';
+export {
+  TelescopeKnownApps,
+  KNOWN_APPS_REFRESH_MS,
+  KNOWN_APPS_RECENT_ENTRIES,
+  type KnownAppsSource,
+} from './topology/known-apps.js';
 export * from './topology/transports/index.js';
 
 export * from './fleet/checks.js';

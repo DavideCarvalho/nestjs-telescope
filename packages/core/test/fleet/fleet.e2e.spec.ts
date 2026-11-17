@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { ExecutionContext, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type ConsoleAuthorizeResult,
   EntryType,
@@ -177,6 +177,27 @@ describe('control plane and tenants', () => {
     await tenant.close();
     const after = await fleetOf(cp.app);
     expect(after.apps.find((a: { app: string }) => a.app === 'shop').counts.draining).toBe(1);
+  });
+
+  it("the App picker lists the registry's apps without the control plane's own or a tag scan", async () => {
+    const cp = await controlPlane();
+    const tags = vi.spyOn(cp.storage, 'tags');
+    const now = new Date().toISOString();
+    await cp.app.get(TelescopeFleet).heartbeat('billing', {
+      v: 1,
+      instanceId: 'billing-1',
+      state: 'ready',
+      bootedAt: now,
+      sentAt: now,
+    });
+    await until(async () =>
+      (await fleetOf(cp.app)).apps.some((a: { app: string }) => a.app === 'ops'),
+    );
+    const body = (await request(cp.app.getHttpServer()).get('/telescope/api/apps').expect(200))
+      .body;
+    // `billing` never stored an entry: it is listed because it heartbeats. `ops` is not.
+    expect(body.apps.map((a: { id: string }) => a.id)).toEqual(['billing']);
+    expect(tags).not.toHaveBeenCalled();
   });
 
   it('scopes the fleet: app-limited viewers see their apps, organization-limited ones none', async () => {

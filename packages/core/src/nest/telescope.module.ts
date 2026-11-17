@@ -41,6 +41,7 @@ import { asTenantScopedStorage } from '../storage/tenant-scoped-storage.js';
 import { resolveTopology } from '../topology/config.js';
 import { TelescopeIngestController } from '../topology/ingest.controller.js';
 import { TelescopeIngest } from '../topology/ingest.service.js';
+import { TelescopeKnownApps } from '../topology/known-apps.js';
 import { RemoteTelescopeStore } from '../topology/remote-store.js';
 import { TelescopeTracing } from '../tracing/tracing.service.js';
 import { withStaticOptions } from './async-static-options.js';
@@ -185,6 +186,8 @@ const SHARED_PROVIDERS: Provider[] = [
   ScheduleManagerRegistry,
   // A control plane's ingest handler (HTTP route and broker consumer); idle elsewhere.
   TelescopeIngest,
+  // The apps a control plane has seen, for the App picker.
+  TelescopeKnownApps,
   // Checks, heartbeats and (control plane, or `fleet: true`) the fleet; idle when off.
   TelescopeFleet,
   // Tracing across apps (`propagation`); installs nothing when nothing is configured.
@@ -218,6 +221,7 @@ const TELESCOPE_EXPORTS = [
   QueueManagerRegistry,
   ScheduleManagerRegistry,
   TelescopeIngest,
+  TelescopeKnownApps,
   TelescopeFleet,
   TelescopeTracing,
   TelescopeDiscovery,

@@ -11,6 +11,7 @@ import {
 } from '../context/tenancy.js';
 // packages/core/src/recorder/recorder.ts
 import type { Entry, RecordInput } from '../entry/entry.js';
+import { type QueryIgnoreRule, compileQueryIgnore } from '../query/ignore-queries.js';
 import type { CompiledRedactSpec, RedactOptions } from '../redaction/redact.js';
 import { compileRedactSpec, redactBoundedWith } from '../redaction/redact.js';
 import { aggregateDeltas } from '../rollup/aggregate-deltas.js';
@@ -132,6 +133,11 @@ export interface RecorderOptions {
    * excludes it (an intentional exclusion, not counted as a drop).
    */
   filter?: (entry: Entry) => boolean;
+  /**
+   * Queries to drop before sampling and enrichment (see `ignoreQueries` in the options). An
+   * intentional exclusion, like `filter`: not a drop, no counter increment.
+   */
+  ignoreQueries?: QueryIgnoreRule[];
   /** Optional ambient trace-context source; read once per recorded entry. */
   traceContext?: TraceContextProvider;
   /**
@@ -253,6 +259,8 @@ export class Recorder {
    * every `enrich()` via {@link redactBoundedWith}.
    */
   private readonly redactSpec: CompiledRedactSpec;
+  /** `ignoreQueries` compiled once; `null` without rules. */
+  private readonly ignoreQuery: ((input: RecordInput) => boolean) | null;
 
   constructor(private readonly options: RecorderOptions) {
     this.now = options.now ?? Date.now;
@@ -260,6 +268,7 @@ export class Recorder {
     this.retryDelayMs = options.retryDelayMs ?? 1_000;
     this.delay = options.delay ?? defaultUnrefDelay;
     this.redactSpec = compileRedactSpec(options.redact);
+    this.ignoreQuery = compileQueryIgnore(options.ignoreQueries);
     // Pre-size the ring so slot access is always O(1).
     this.ring = new Array<Entry | undefined>(options.bufferSize).fill(undefined);
   }
@@ -410,6 +419,8 @@ export class Recorder {
         this.notifyDrop(1, 'overflow');
         return;
       }
+      // Ignored queries (polling noise) are excluded before any work is spent on them.
+      if (this.ignoreQuery?.(input)) return;
       const kept = this.passesSampling(input);
       this.notifySampled(input, kept);
       if (!kept) {

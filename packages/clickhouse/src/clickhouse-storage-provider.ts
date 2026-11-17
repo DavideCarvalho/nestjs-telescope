@@ -6,9 +6,12 @@ import {
   createClient,
 } from '@clickhouse/client';
 import {
+  type AggregateWindow,
   type BoundedPruneCapable,
   type BoundedPruneResult,
   type Entry,
+  type EntryAggregateResult,
+  type EntryAggregation,
   type EntryQuery,
   type EntryWithBatch,
   HISTOGRAM_BUCKET_COUNT,
@@ -273,6 +276,166 @@ export class ClickHouseStorageProvider implements BoundedPruneCapable, RollupSto
       data: page,
       nextCursor: hasMore && last ? encodeCursor(last.createdAt.getTime(), last.id) : null,
     };
+  }
+
+  /**
+   * Window aggregation in ClickHouse (pulse, timeseries): GROUP BYs over the window instead of
+   * paging it into Node. Quantiles are the nearest rank over the sorted durations, as the core
+   * computes them.
+   */
+  async aggregate(request: EntryAggregation): Promise<EntryAggregateResult> {
+    const params: Record<string, unknown> = {};
+    const where = this.windowWhere(request.window, params);
+    const num = (value: unknown): number =>
+      value === null || value === undefined ? 0 : Number(value);
+    switch (request.kind) {
+      case 'count': {
+        const bucket = request.bucket;
+        if (bucket !== undefined) {
+          params.bStart = Math.floor(bucket.startMs);
+          params.bWidth = Math.max(1, Math.floor(bucket.widthMs));
+        }
+        const rows = await this.select<{
+          type: string;
+          bucket: string | number | null;
+          cnt: string;
+        }>(
+          `SELECT type, ${
+            bucket !== undefined
+              ? 'intDiv(toUnixTimestamp64Milli(created_at) - {bStart:Int64}, {bWidth:Int64})'
+              : 'NULL'
+          } AS bucket, count() AS cnt
+           FROM ${this.table} FINAL WHERE ${where} GROUP BY type, bucket`,
+          params,
+        );
+        return {
+          kind: 'count',
+          rows: rows.map((row) => ({
+            type: row.type,
+            bucket: row.bucket === null ? null : Number(row.bucket),
+            count: num(row.cnt),
+          })),
+        };
+      }
+      case 'slowest': {
+        params.limit = Math.max(0, Math.floor(request.limit));
+        const rows = await this.select<{
+          id: string;
+          type: string;
+          duration_ms: number;
+          batch_id: string;
+        }>(
+          `SELECT id, type, duration_ms, batch_id FROM ${this.table} FINAL
+           WHERE ${where} AND duration_ms IS NOT NULL
+           ORDER BY duration_ms DESC, id ASC LIMIT {limit:UInt32}`,
+          params,
+        );
+        return {
+          kind: 'slowest',
+          rows: rows.map((row) => ({
+            id: row.id,
+            type: row.type,
+            durationMs: num(row.duration_ms),
+            batchId: row.batch_id,
+          })),
+        };
+      }
+      case 'families': {
+        const quantiles = request.quantiles
+          .map((q, index) => {
+            params[`q${index}`] = q;
+            return `if(dc = 0, 0, arrayElement(sorted, toUInt64(least(toFloat64(dc), greatest(1., ceil({q${index}:Float64} * dc)))))) AS q${index}`;
+          })
+          .join(', ');
+        const rows = await this.select<Record<string, unknown>>(
+          `SELECT type, family_hash, cnt, dc, ds${quantiles ? `, ${quantiles}` : ''} FROM (
+             SELECT type, family_hash, count() AS cnt, count(duration_ms) AS dc,
+                    ifNull(sum(duration_ms), 0) AS ds, arraySort(groupArray(duration_ms)) AS sorted
+             FROM ${this.table} FINAL WHERE ${where} AND family_hash IS NOT NULL
+             GROUP BY type, family_hash
+           )`,
+          params,
+        );
+        return {
+          kind: 'families',
+          rows: rows.map((row) => ({
+            type: String(row.type),
+            familyHash: String(row.family_hash),
+            count: num(row.cnt),
+            durationCount: num(row.dc),
+            durationSum: num(row.ds),
+            quantiles: request.quantiles.map((_, index) => num(row[`q${index}`])),
+          })),
+        };
+      }
+      case 'batchFamilies': {
+        params.minCount = Math.max(1, Math.floor(request.minCount));
+        const rows = await this.select<{
+          batch_id: string;
+          family_hash: string;
+          cnt: string;
+          ds: number;
+        }>(
+          `SELECT batch_id, family_hash, count() AS cnt, ifNull(sum(duration_ms), 0) AS ds
+           FROM ${this.table} FINAL WHERE ${where} AND family_hash IS NOT NULL
+           GROUP BY batch_id, family_hash HAVING count() >= {minCount:UInt32}`,
+          params,
+        );
+        return {
+          kind: 'batchFamilies',
+          rows: rows.map((row) => ({
+            batchId: row.batch_id,
+            familyHash: row.family_hash,
+            count: num(row.cnt),
+            durationSum: num(row.ds),
+          })),
+        };
+      }
+      case 'tagSets': {
+        params.tagPrefix = request.tagPrefix;
+        const rows = await this.select<{ tags: string[]; cnt: string; ds: number }>(
+          `SELECT tags, count() AS cnt, ifNull(sum(duration_ms), 0) AS ds
+           FROM ${this.table} FINAL
+           WHERE ${where} AND arrayExists(t -> startsWith(t, {tagPrefix:String}), tags)
+           GROUP BY tags`,
+          params,
+        );
+        return {
+          kind: 'tagSets',
+          rows: rows.map((row) => ({
+            tags: row.tags,
+            count: num(row.cnt),
+            durationSum: num(row.ds),
+          })),
+        };
+      }
+    }
+  }
+
+  /** The window of an aggregation as a where clause. */
+  private windowWhere(window: AggregateWindow, params: Record<string, unknown>): string {
+    const where = ["created_at > fromUnixTimestamp64Milli({after:Int64}, 'UTC')"];
+    params.after = window.after.getTime();
+    if (window.before !== undefined) {
+      where.push("created_at < fromUnixTimestamp64Milli({before:Int64}, 'UTC')");
+      params.before = window.before.getTime();
+    }
+    if (window.type !== undefined) {
+      where.push('type = {type:String}');
+      params.type = window.type;
+    }
+    if (window.types !== undefined) {
+      if (window.types.length === 0) where.push('0');
+      else {
+        where.push('type IN {types:Array(String)}');
+        params.types = window.types;
+      }
+    }
+    if (window.tag !== undefined) {
+      where.push('has(tags, {tag:String})');
+      params.tag = window.tag;
+    }
+    return where.join(' AND ');
   }
 
   async batch(batchId: string): Promise<Entry[]> {

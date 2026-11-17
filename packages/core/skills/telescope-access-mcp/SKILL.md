@@ -73,8 +73,9 @@ limited to some apps sees only theirs plus `hiddenSpans`, and a trace with none
 of theirs answers 404. `GET <path>/api/apps`
 lists the apps the viewer may see (labels from `apps.labels`); a viewer limited
 to some apps cannot run the console's global actions (they answer 403). Inside
-an organization or app view rollups are not read (they are not tagged), so
-latency percentiles come from the view's own entries.
+an organization or app view neither rollups (they are not tagged) nor store
+aggregations (they read the whole window) are used, so latency percentiles
+come from scanning the view's own entries.
 
 The page is a full-page navigation (cookies, no `Authorization` header), so its
 check must read a cookie session. `decorators` (e.g.

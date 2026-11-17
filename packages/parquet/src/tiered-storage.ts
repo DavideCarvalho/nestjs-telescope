@@ -160,9 +160,18 @@ export class TieredStorageProvider implements StorageProvider {
 
   async tags(prefix?: string, query?: TagQuery): Promise<TagCount[]> {
     const search = query?.search?.trim();
+    // `recent`: the newest entries are in the hot tier, so the cold tier is not read at all.
+    const recent = query?.recent;
     const [hot, cold] = await Promise.all([
-      this.hot.tags(prefix, search ? { search } : undefined),
-      this.coldOr(() => this.cold.tags(prefix, search), [] as TagCount[]),
+      this.hot.tags(
+        prefix,
+        search || recent !== undefined
+          ? { ...(search ? { search } : {}), ...(recent !== undefined ? { recent } : {}) }
+          : undefined,
+      ),
+      recent !== undefined
+        ? ([] as TagCount[])
+        : this.coldOr(() => this.cold.tags(prefix, search), [] as TagCount[]),
     ]);
     const counts = new Map<string, number>();
     for (const { tag, count } of [...hot, ...cold]) {
