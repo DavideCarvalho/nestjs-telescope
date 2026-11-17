@@ -21,6 +21,7 @@ import {
   deriveSlowRequestCount,
   formatErrorRate,
   queuesNeedingAttention,
+  slowWorkView,
   toByTypeRows,
   toThroughputSeries,
 } from './OverviewPage.js';
@@ -382,7 +383,7 @@ describe('OverviewPage', () => {
     const idle = { ...pulse, nPlusOne: [], slowJobs: [] };
     renderOverview(health, { watchers: ['request', 'exception'], pulse: idle });
     expect(await screen.findByTestId('not-measured-query')).toBeTruthy();
-    expect(await screen.findByTestId('not-measured-job')).toBeTruthy();
+    expect(await screen.findByTestId('not-measured-slow-work')).toBeTruthy();
     expect(screen.queryByText('None detected')).toBeNull();
   });
 
@@ -390,8 +391,44 @@ describe('OverviewPage', () => {
     const idle = { ...pulse, nPlusOne: [], slowJobs: [] };
     renderOverview(health, { watchers: null, pulse: idle });
     expect(await screen.findByText('None detected')).toBeTruthy();
-    expect(await screen.findByText('No jobs in window.')).toBeTruthy();
+    expect(await screen.findByText('No jobs or workflow steps in this window.')).toBeTruthy();
     expect(screen.queryByTestId('not-measured-query')).toBeNull();
+  });
+
+  it('lists durable workflow steps with the jobs, by p95 with max, count and failures', async () => {
+    renderOverview(health, {
+      watchers: ['request', 'exception', 'durable'],
+      pulse: {
+        ...pulse,
+        slowWork: [
+          {
+            source: 'durable',
+            name: 'charge-card',
+            count: 12,
+            failures: 2,
+            p50: 800,
+            p95: 4200,
+            max: 9100,
+          },
+        ],
+      },
+    });
+    expect(await screen.findByText('charge-card')).toBeTruthy();
+    expect(screen.getByText('step')).toBeTruthy();
+    expect(screen.getByText(/9100ms max · 12×/)).toBeTruthy();
+    expect(screen.getByText('· 2 failed')).toBeTruthy();
+    expect(screen.queryByTestId('not-measured-slow-work')).toBeNull();
+  });
+
+  it('durable on and a quiet window: no "Not measured" though no job watcher runs', async () => {
+    renderOverview(health, {
+      watchers: ['request', 'exception', 'durable'],
+      pulse: { ...pulse, slowJobs: [], slowWork: [] },
+    });
+    expect(
+      await screen.findByText('Durable is reporting. No workflow step finished in this window.'),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('not-measured-slow-work')).toBeNull();
   });
 
   it('keeps "None detected" when the query watcher runs and found nothing', async () => {
@@ -442,5 +479,71 @@ describe('OverviewPage', () => {
     const value = hint.previousElementSibling;
     expect(value?.textContent).toBe('9');
     expect(value?.className).toContain('text-warn');
+  });
+});
+
+describe('slowWorkView', () => {
+  const step = {
+    source: 'durable' as const,
+    name: 'charge-card',
+    count: 3,
+    failures: 0,
+    p50: 10,
+    p95: 20,
+    max: 30,
+  };
+  const off = { durable: false, queue: false };
+  const empty = { slowJobs: [], slowWork: [], counts: {} };
+
+  it('rows win whatever the flags say', () => {
+    expect(slowWorkView({ ...empty, slowWork: [step] }, off)).toEqual({
+      kind: 'rows',
+      rows: [step],
+    });
+  });
+
+  it('an older server (no slowWork) still lists its job hotspots', () => {
+    const view = slowWorkView(
+      { slowJobs: [{ route: 'mail:send', count: 3, p99: 700, p50: 100 }], counts: {} },
+      off,
+    );
+    expect(view).toEqual({
+      kind: 'rows',
+      rows: [
+        { source: 'queue', name: 'mail:send', count: 3, failures: 0, p50: 100, p95: 700, max: 700 },
+      ],
+    });
+  });
+
+  it('"not measured" only when neither durable nor a job watcher is on', () => {
+    expect(slowWorkView(empty, off)).toEqual({ kind: 'off' });
+    expect(slowWorkView(empty, { durable: true, queue: false }).kind).toBe('quiet');
+    expect(slowWorkView(empty, { durable: false, queue: true })).toEqual({
+      kind: 'quiet',
+      message: 'No jobs in window.',
+    });
+    expect(slowWorkView(empty, { durable: true, queue: true })).toEqual({
+      kind: 'quiet',
+      message: 'No job or workflow step finished in this window.',
+    });
+  });
+
+  it('unknown (null) never claims a source is off', () => {
+    expect(slowWorkView(empty, { durable: null, queue: null })).toEqual({
+      kind: 'quiet',
+      message: 'No jobs or workflow steps in this window.',
+    });
+  });
+
+  it('durable entries but no timed step (an older durable): names the release that times steps', () => {
+    const view = slowWorkView(
+      { ...empty, counts: { durable: 14 } },
+      { durable: true, queue: false },
+    );
+    expect(view.kind).toBe('quiet');
+    expect(view.kind === 'quiet' && view.message).toContain('14 workflow events');
+    expect(view.kind === 'quiet' && view.message).toContain(
+      '@dudousxd/nestjs-durable-telescope 0.13.0',
+    );
   });
 });

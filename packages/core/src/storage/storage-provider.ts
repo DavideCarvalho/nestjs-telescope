@@ -172,7 +172,9 @@ export interface AggregateWindow {
  * - `families`: per (`type`, `familyHash`), entries with a non-null family only: how many, how
  *   many have a duration, their sum, and the nearest-rank quantiles of those durations, one per
  *   asked `quantiles` (the duration at 1-based rank `clamp(ceil(q * n), 1, n)` in ascending
- *   order, where `n` counts the durations, computed in double precision; `0` when `n` is 0).
+ *   order, where `n` counts the durations, computed in double precision; `0` when `n` is 0). With
+ *   `countTag`, each row also says how many of its entries carry that tag (`tagged`); a store that
+ *   predates `countTag` leaves `tagged` out.
  * - `batchFamilies`: per (`batchId`, `familyHash`) with a non-null family, the groups of at least
  *   `minCount` entries, with their duration sum (a null duration counts 0).
  * - `tagSets`: the entries carrying a tag that starts with `tagPrefix`, grouped by their whole tag
@@ -181,7 +183,7 @@ export interface AggregateWindow {
 export type EntryAggregation =
   | { kind: 'count'; window: AggregateWindow; bucket?: { startMs: number; widthMs: number } }
   | { kind: 'slowest'; window: AggregateWindow; limit: number }
-  | { kind: 'families'; window: AggregateWindow; quantiles: number[] }
+  | { kind: 'families'; window: AggregateWindow; quantiles: number[]; countTag?: string }
   | { kind: 'batchFamilies'; window: AggregateWindow; minCount: number }
   | { kind: 'tagSets'; window: AggregateWindow; tagPrefix: string };
 
@@ -201,6 +203,8 @@ export type EntryAggregateResult =
         durationCount: number;
         durationSum: number;
         quantiles: number[];
+        /** How many of the group's entries carry the request's `countTag` (only when asked). */
+        tagged?: number;
       }[];
     }
   | {

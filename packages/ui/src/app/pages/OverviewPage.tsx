@@ -31,7 +31,7 @@ import type {
   RetentionInfo,
   ServerStats,
   ServerStatsHistory,
-  SlowRouteHotspot,
+  SlowWork,
   TelescopeHealth,
   TimeseriesReport,
   UserLoad,
@@ -495,39 +495,120 @@ function QueuesAttentionCard({
   );
 }
 
-/** Slowest job families by p99 — the queue analogue of the slow-route hotspots. */
+/**
+ * What "Slowest jobs" shows: the slowest background work, or why there is none. Rows win whatever
+ * the watcher flags say (the entries are the truth). With none: "not measured" only when neither
+ * source is on (`false` for both); a quiet window when one of them is; a neutral line when the
+ * server did not say (`null`).
+ */
+export type SlowWorkView =
+  | { kind: 'rows'; rows: SlowWork[] }
+  | { kind: 'off' }
+  | { kind: 'quiet'; message: string };
+
+/** The durable release that times its workflow steps for this card. */
+export const DURABLE_STEP_TIMINGS_SINCE = '@dudousxd/nestjs-durable-telescope 0.13.0';
+
+export function slowWorkView(
+  pulse: Pick<PulseReport, 'slowJobs' | 'slowWork' | 'counts'> | undefined,
+  sources: { durable: boolean | null; queue: boolean | null },
+): SlowWorkView {
+  // An older server has no `slowWork`: its job hotspots, p99 standing in for p95 and max.
+  const rows =
+    pulse?.slowWork ??
+    (pulse?.slowJobs ?? []).map(
+      (job): SlowWork => ({
+        source: 'queue',
+        name: job.route,
+        count: job.count,
+        failures: 0,
+        p50: job.p50,
+        p95: job.p99,
+        max: job.p99,
+      }),
+    );
+  if (rows.length > 0) return { kind: 'rows', rows };
+  const { durable, queue } = sources;
+  if (durable === false && queue === false) return { kind: 'off' };
+  if (durable === true) {
+    // Durable entries in the window but no timed step: steps of a release that does not time
+    // them carry no family, so they never rank here (or no step finished yet).
+    const events = pulse?.counts.durable ?? 0;
+    if (pulse?.slowWork !== undefined && events > 0) {
+      return {
+        kind: 'quiet',
+        message: `Durable recorded ${events} workflow ${events === 1 ? 'event' : 'events'} in this window, but no timed step. Step timings are recorded by ${DURABLE_STEP_TIMINGS_SINCE} and later.`,
+      };
+    }
+    return {
+      kind: 'quiet',
+      message:
+        queue === true
+          ? 'No job or workflow step finished in this window.'
+          : 'Durable is reporting. No workflow step finished in this window.',
+    };
+  }
+  if (queue === true) return { kind: 'quiet', message: 'No jobs in window.' };
+  return { kind: 'quiet', message: 'No jobs or workflow steps in this window.' };
+}
+
+/** Neither durable nor a job watcher reports: say how to turn either on. */
+function SlowWorkOff(): React.JSX.Element {
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="not-measured-slow-work">
+      Not measured. No background work is being recorded, so this card has nothing to show, which is
+      not the same as nothing being slow. Workflows on{' '}
+      <span className="mono">@dudousxd/nestjs-durable</span>: add{' '}
+      <span className="mono">durableTelescopeExtension()</span> to Telescope&apos;s{' '}
+      <span className="mono">extensions</span>. Jobs: enable a <span className="mono">job</span>{' '}
+      watcher (e.g. <span className="mono">BullMqJobWatcher</span>).
+    </p>
+  );
+}
+
+/** The slowest background work: queue jobs and durable workflow steps, by p95. */
 function SlowJobsCard({
-  hotspots,
-  measured = null,
+  pulse,
+  sources,
 }: {
-  hotspots: SlowRouteHotspot[];
-  /** Whether the `job` watcher records the entries in view (`null`: unknown). */
-  measured?: boolean | null;
+  pulse: PulseReport | undefined;
+  /** Whether durable and a job watcher record the entries in view (`null`: unknown). */
+  sources: { durable: boolean | null; queue: boolean | null };
 }): React.JSX.Element {
+  const view = slowWorkView(pulse, sources);
   return (
     <section className="aviary-surface rounded-lg border border-border p-4">
-      <h3 className="-mx-4 -mt-4 mb-3 border-b border-border px-4 py-3 text-[12.5px] font-semibold tracking-[0.02em] text-fg">
-        Slowest jobs
-      </h3>
-      {hotspots.length > 0 ? (
+      <div className="-mx-4 -mt-4 mb-3 flex items-baseline justify-between gap-3 border-b border-border px-4 py-3">
+        <h3 className="text-[12.5px] font-semibold tracking-[0.02em] text-fg">Slowest jobs</h3>
+        <span className="text-[11px] text-muted-foreground">queue jobs · durable steps</span>
+      </div>
+      {view.kind === 'rows' ? (
         <ul className="mono space-y-1.5 text-xs">
-          {hotspots.map((hotspot) => (
+          {view.rows.map((row) => (
             <li
-              key={hotspot.route}
+              key={`${row.source}:${row.name}`}
               className="flex items-center justify-between gap-3 border-t border-line-soft pt-1 first:border-0 first:pt-0"
             >
-              <span className="min-w-0 truncate text-foreground">{hotspot.route}</span>
+              <span className="min-w-0 truncate">
+                <span className="mr-1.5 text-[10.5px] text-muted-foreground">
+                  {row.source === 'durable' ? 'step' : 'job'}
+                </span>
+                <span className="text-foreground">{row.name}</span>
+              </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
-                <span className="text-warn">{Math.round(hotspot.p99)}ms</span> p99 · {hotspot.count}
-                ×
+                <span className="text-warn">{Math.round(row.p95)}ms</span> p95 ·{' '}
+                {Math.round(row.max)}ms max · {row.count}×
+                {row.failures > 0 ? (
+                  <span className="text-bad"> · {row.failures} failed</span>
+                ) : null}
               </span>
             </li>
           ))}
         </ul>
-      ) : measured === false ? (
-        <NotMeasured watcher="job" what="slow jobs" />
+      ) : view.kind === 'off' ? (
+        <SlowWorkOff />
       ) : (
-        <p className="text-xs text-muted-foreground">No jobs in window.</p>
+        <p className="text-xs text-muted-foreground">{view.message}</p>
       )}
     </section>
   );
@@ -717,8 +798,11 @@ export function OverviewPage(): React.JSX.Element {
       */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SlowJobsCard
-          hotspots={pulse.data?.slowJobs ?? []}
-          measured={watcherEnabled(meta.data?.watchers, 'job')}
+          pulse={pulse.data}
+          sources={{
+            durable: watcherEnabled(meta.data?.watchers, 'durable'),
+            queue: watcherEnabled(meta.data?.watchers, 'job'),
+          }}
         />
         <LoadByUserCard
           users={pulse.data?.loadByUser ?? []}

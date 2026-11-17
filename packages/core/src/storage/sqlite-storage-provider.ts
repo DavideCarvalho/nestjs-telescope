@@ -303,19 +303,26 @@ export class SqliteStorageProvider
         };
       }
       case 'families': {
+        const countTag = request.countTag;
         const groups = this.db
           .prepare(
             `select type, family_hash, count(*) as count, count(duration_ms) as duration_count,
-                    coalesce(sum(duration_ms), 0) as duration_sum
+                    coalesce(sum(duration_ms), 0) as duration_sum${
+                      countTag !== undefined
+                        ? `, sum(exists (select 1 from json_each(telescope_entries.tags)
+                                         where value = @countTag)) as tagged`
+                        : ''
+                    }
              from telescope_entries where ${where} and family_hash is not null
              group by type, family_hash`,
           )
-          .all(params) as {
+          .all(countTag !== undefined ? { ...params, countTag } : params) as {
           type: string;
           family_hash: string;
           count: number;
           duration_count: number;
           duration_sum: number;
+          tagged?: number;
         }[];
         // Nearest rank per quantile, in SQL: ceil(q * n) in double precision, clamped to [1, n].
         const rankOf = (index: number): string => {
@@ -358,6 +365,7 @@ export class SqliteStorageProvider
               count: Number(group.count),
               durationCount: n,
               durationSum: Number(group.duration_sum),
+              ...(countTag !== undefined ? { tagged: Number(group.tagged ?? 0) } : {}),
               quantiles: request.quantiles.map((q) =>
                 n === 0
                   ? 0

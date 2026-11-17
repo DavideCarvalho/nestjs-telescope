@@ -173,6 +173,9 @@ export function mergeAggregates(
           seen.row.count += row.count;
           seen.row.durationCount += row.durationCount;
           seen.row.durationSum += row.durationSum;
+          if (seen.row.tagged !== undefined || row.tagged !== undefined) {
+            seen.row.tagged = (seen.row.tagged ?? 0) + (row.tagged ?? 0);
+          }
           seen.weighted = seen.weighted.map((sum, index) => sum + (weighted[index] ?? 0));
         }
       }

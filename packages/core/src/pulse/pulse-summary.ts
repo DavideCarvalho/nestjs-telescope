@@ -63,6 +63,47 @@ export interface UserLoad {
   totalDurationMs: number;
 }
 
+/** Where a {@link SlowWork} row was measured. */
+export type SlowWorkSource = 'queue' | 'durable';
+
+/**
+ * A kind of background work that ran in the window, with how long it took: a queue job (`job`
+ * entries, by family) or a durable workflow step (the `durable` entries of
+ * `@dudousxd/nestjs-durable-telescope`, by step name).
+ */
+export interface SlowWork {
+  source: SlowWorkSource;
+  /** The job family (e.g. `mail:send`) or the durable step name. */
+  name: string;
+  /** Executions that finished in the window (with a duration). */
+  count: number;
+  /** How many of them failed (tagged `failed`: a failed job, a failed durable step). */
+  failures: number;
+  p50: number;
+  p95: number;
+  max: number;
+}
+
+/** The entry type `@dudousxd/nestjs-durable-telescope` records workflow events as. */
+export const DURABLE_ENTRY_TYPE = 'durable';
+
+/**
+ * The family prefix of a durable step's outcome (`step.completed` / `step.failed`), followed by the
+ * step name: `durable:step:<name>`. Recorded by `@dudousxd/nestjs-durable-telescope` 0.13.0 and
+ * later; older versions record steps without a family (and so never show here).
+ */
+export const DURABLE_STEP_FAMILY_PREFIX = 'durable:step:';
+
+/** The step name of a durable step family, or `null` for any other family. */
+export function durableStepName(familyHash: string): string | null {
+  return familyHash.startsWith(DURABLE_STEP_FAMILY_PREFIX)
+    ? familyHash.slice(DURABLE_STEP_FAMILY_PREFIX.length)
+    : null;
+}
+
+/** The tag a failed job or durable step carries. */
+export const FAILED_TAG = 'failed';
+
 export interface PulseSummary {
   windowStart: string;
   windowEnd: string;
@@ -75,6 +116,11 @@ export interface PulseSummary {
   slowOutgoing: SlowRouteHotspot[];
   /** Slowest job families (by p99), the queue analogue of `slowRoutes`. */
   slowJobs: SlowRouteHotspot[];
+  /**
+   * The slowest background work of the window, by p95: queue jobs and durable workflow steps
+   * together, each labelled with its source. Computed with the `slowJobs` card.
+   */
+  slowWork: SlowWork[];
   /** Top users by total request time in the window. */
   loadByUser: UserLoad[];
 }
@@ -242,6 +288,8 @@ export interface PulseAggregates {
   slowOutgoing: SlowRouteHotspot[];
   /** Slowest job families, already final (familyHash is the label). */
   slowJobs: SlowRouteHotspot[];
+  /** Slowest background work (jobs and durable steps), already final. */
+  slowWork: SlowWork[];
   /** Top users by request time, already final (no hydration needed). */
   loadByUser: UserLoad[];
   hydrationIds: PulseHydrationIds;
@@ -269,6 +317,8 @@ export function aggregatePulse(
   const outgoingDurations = new Map<string, number[]>();
   // Job durations grouped by job family — slow-jobs source.
   const jobDurations = new Map<string, number[]>();
+  // Durations and failures per background-work kind (jobs, durable steps) — slow-work source.
+  const work = new Map<string, WorkAccumulator>();
   // Per-user request load (count + total duration) from the user:<id> tag.
   const userLoad = new Map<string, { count: number; totalDurationMs: number }>();
 
@@ -283,6 +333,20 @@ export function aggregatePulse(
       const existing = jobDurations.get(entry.familyHash);
       if (existing) existing.push(entry.durationMs);
       else jobDurations.set(entry.familyHash, [entry.durationMs]);
+    }
+
+    // Executions are the timed entries of the family; failures, every one of them tagged `failed`
+    // (as the store's aggregation counts them).
+    const kind = entry.familyHash === null ? null : slowWorkKind(entry.type, entry.familyHash);
+    if (kind !== null) {
+      const key = `${kind.source}\u0000${kind.name}`;
+      let group = work.get(key);
+      if (group === undefined) {
+        group = { ...kind, durations: [], failures: 0 };
+        work.set(key, group);
+      }
+      if (typeof entry.durationMs === 'number') group.durations.push(entry.durationMs);
+      if (entry.tags.includes(FAILED_TAG)) group.failures += 1;
     }
 
     if (entry.type === EntryType.Request) {
@@ -419,6 +483,24 @@ export function aggregatePulse(
   // are NOT gated by the slow-request p99 threshold — a queue's slowest jobs are
   // always worth surfacing — so they rank by p99 over the min-count gate only.
   const slowJobs = toJobHotspots(jobDurations, options);
+  // Slow work: jobs and durable steps by p95, not gated by any threshold either.
+  const slowWork = rankSlowWork(
+    [...work.values()]
+      .filter((group) => group.durations.length > 0)
+      .map((group) => {
+        const sorted = group.durations.sort((a, b) => a - b);
+        return {
+          source: group.source,
+          name: group.name,
+          count: sorted.length,
+          failures: group.failures,
+          p50: percentile(sorted, 0.5),
+          p95: percentile(sorted, 0.95),
+          max: sorted[sorted.length - 1] ?? 0,
+        };
+      }),
+    options,
+  );
   // Load-by-user: top users by total request time spent serving them.
   const loadByUser = rankUserLoad(userLoad, options);
 
@@ -433,6 +515,7 @@ export function aggregatePulse(
     slowRoutes,
     slowOutgoing,
     slowJobs,
+    slowWork,
     loadByUser,
     hydrationIds: {
       slowest: slowest.map((candidate) => candidate.id),
@@ -440,6 +523,47 @@ export function aggregatePulse(
       nPlusOne: nPlusOne.map((hotspot) => hotspot.representativeId),
     },
   };
+}
+
+/** Accumulates one {@link SlowWork} row in the scan. */
+interface WorkAccumulator {
+  source: SlowWorkSource;
+  name: string;
+  durations: number[];
+  failures: number;
+}
+
+/**
+ * The kind of background work an entry of `type` and `familyHash` is: a job (by family), a durable
+ * step (by name), or `null` for anything else.
+ */
+export function slowWorkKind(
+  type: string,
+  familyHash: string,
+): { source: SlowWorkSource; name: string } | null {
+  if (type === EntryType.Job) return { source: 'queue', name: familyHash };
+  if (type !== DURABLE_ENTRY_TYPE) return null;
+  const name = durableStepName(familyHash);
+  return name === null ? null : { source: 'durable', name };
+}
+
+/**
+ * The top-N kinds of background work by p95 (then max, then executions). Not gated by a slow
+ * threshold: the slowest background work always matters. Shared by the scan and by the store's
+ * aggregation, so both rank alike.
+ */
+export function rankSlowWork(rows: SlowWork[], options: Pick<PulseOptions, 'topN'>): SlowWork[] {
+  return rows
+    .map((row) => ({ ...row, name: truncate(row.name) }))
+    .sort(
+      (a, b) =>
+        b.p95 - a.p95 ||
+        b.max - a.max ||
+        b.count - a.count ||
+        a.source.localeCompare(b.source) ||
+        a.name.localeCompare(b.name),
+    )
+    .slice(0, Math.max(0, options.topN));
 }
 
 /** The top-N slowest candidates, longest first, ties by id. */
@@ -583,6 +707,7 @@ export function finalizePulse(aggregates: PulseAggregates, hydrate: HydrateConte
     slowRoutes: aggregates.slowRoutes,
     slowOutgoing: aggregates.slowOutgoing,
     slowJobs: aggregates.slowJobs,
+    slowWork: aggregates.slowWork,
     loadByUser: aggregates.loadByUser,
   };
 }
