@@ -177,7 +177,9 @@ function renderWith(client: TelescopeClient) {
     <TelescopeProvider client={client}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <OverviewPage />
+          <NuqsHashAdapter>
+            <OverviewPage />
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,
