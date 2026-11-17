@@ -85,13 +85,13 @@ Replace `billing_app` with the role that owns the app's Telescope tables (the on
 
 Every read route is answered from the stores the App picker selects:
 
-- **One federated app** (`?app=billing`): every read goes to that app's store alone: entries, traces and the waterfall, Pulse, the Overview, metrics, exceptions, AI usage, the ⌘K search and the MCP tools. Aggregations and rollups run in that store, as on the app's own console.
+- **One federated app** (`?app=billing`): every read goes to that app's store alone: entries, traces, Pulse, the Overview, metrics, exceptions, AI usage, the ⌘K search and the MCP tools. Aggregations and rollups run in that store, as on the app's own console.
 - **One shipped app** (`?app=shop`): the central store, narrowed by the `app:shop` tag, as on a control plane.
 - **All apps**: the central store and every federated store, merged. Lists are merged newest first, and the `after` cursor carries each store's own position, so paging never repeats or skips an entry. Counts, Pulse cards and rollups are summed across stores. One estimate: a Pulse family (route, outgoing host, job, exception) found in several apps gets the duration-weighted mean of each app's p50/p99, since percentiles of separate stores can't be combined exactly. Pick the app for its exact percentiles.
 
 If a federated store can't be read (its database is down), the view leaves it out, the list says it is partial, and the log names the app. The other apps keep answering.
 
-`authorize` works as on a control plane: `{ allowed: true, apps: ['billing'] }` limits a viewer to those apps, federated or shipped, on every route, and an `?app=` outside the grant answers empty.
+`authorize` works as on a control plane: `{ allowed: true, apps: ['billing'] }` limits a viewer to those apps, federated or shipped, on every route, and an `?app=` outside the grant answers empty. A trace's waterfall reads across apps, as on a control plane: every store the viewer's apps reach, whatever app is picked, with `hiddenSpans` counting the spans of the other apps.
 
 ## What stays on the central app
 
@@ -101,7 +101,8 @@ Some features run in an app's process, not in its store. The central console can
 |---------|------------------------|
 | Clear entries, prune now | Act on the central app's own store only, and are refused while an app is selected. Each app's pruner keeps its own retention. |
 | Replay a request, EXPLAIN a query | Refused (409) for an entry in a federated app's store: they would run against the central app. Use that app's own console. |
-| Live queues, schedules, profiles, prune runs, extension panels | Show the central app's own, and nothing with an app selected. The console says so on those pages. |
+| Live queues, schedules, prune runs, extension panels | Show the central app's own, and nothing with an app selected. The console says so on those pages. |
+| Profiles | Recorded profiles are read from the app's store like entries. Arming the profiler runs in the central app's process. |
 | Live tail | Streams what the central app records (its own entries and shipped ones). Federated apps' new entries show on the next refresh. |
 | Alerts | The central app alerts on what it records. A federated app alerts from its own process, on its own store, with its own `alerts` config, so nothing pages twice. |
 | Fleet | Lists the instances that report to the central app (shipped apps). Federated apps report nowhere, so they don't appear in the fleet. |

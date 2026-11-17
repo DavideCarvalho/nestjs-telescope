@@ -15,7 +15,8 @@ export interface FederatedAppOptions {
   /**
    * The app's own telescope store, read in place (its entries never leave it): a provider, or a
    * function returning one. Point it at the app's database with a user that may only read it;
-   * set the provider so it creates no schema (e.g. `autoSchema: false`), since the app owns it.
+   * set the provider so it creates no schema (`MikroOrmStorageProvider`: `ensureSchema: false`), since
+   * the app owns it.
    */
   storage: FederatedStorageSource;
   /** The App picker's label for it. Default: the app's name (`apps.labels` wins over this). */

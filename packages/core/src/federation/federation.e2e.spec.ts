@@ -78,6 +78,11 @@ function shipped(app: string, at: number): Entry {
     tags: [`app:${app}`],
     createdAt: new Date(at),
     durationMs: 1,
+    sequence: 0,
+    origin: 'http',
+    instanceId: app,
+    traceId: null,
+    spanId: null,
   } as Entry;
 }
 
@@ -106,7 +111,7 @@ async function setup() {
       },
     },
   });
-  return { server: central.getHttpServer(), home, ordersStore };
+  return { server: central.getHttpServer(), home, ordersStore, billingStore };
 }
 
 async function pages(server: unknown, query: string, headers: Record<string, string> = {}) {
@@ -198,6 +203,45 @@ describe('federation: a central console reading apps’ own stores', () => {
     expect(other.body).toEqual({});
     const replay = await request(server).get(`/telescope/api/entries/${id}/replay`).expect(409);
     expect(replay.body.message).toContain('orders');
+  });
+
+  it('reads a trace across the stores the viewer’s apps reach, hiding the rest', async () => {
+    const { server, home, ordersStore, billingStore } = await setup();
+    const at = Date.now() - 10_000;
+    const span = (app: string, offset: number): Entry => ({
+      ...shipped(app, at + offset),
+      id: `span-${app}`,
+      traceId: 'trace-1',
+      tags: [],
+    });
+    await ordersStore.store([span('orders', 0)]);
+    await billingStore.store([span('billing', 5)]);
+    await home.store([{ ...span('shop', 10), tags: ['app:shop'] }]);
+
+    // An every-app viewer sees the whole trace, whatever app is picked.
+    const all = await request(server)
+      .get('/telescope/api/traces/trace-1/waterfall?app=orders')
+      .expect(200);
+    expect(all.body.spans).toHaveLength(3);
+    expect(all.body.hiddenSpans).toBeUndefined();
+
+    // A viewer of orders and shop: their spans, and the billing one counted, never shown.
+    const grant = { 'x-grant': JSON.stringify({ allowed: true, apps: ['orders', 'shop'] }) };
+    const limited = await request(server)
+      .get('/telescope/api/traces/trace-1/waterfall')
+      .set(grant)
+      .expect(200);
+    expect(limited.body.spans).toHaveLength(2);
+    expect(limited.body.hiddenSpans).toBe(1);
+
+    // A viewer of billing alone still opens it: billing's span comes from its own store.
+    const billingOnly = { 'x-grant': JSON.stringify({ allowed: true, apps: ['billing'] }) };
+    const one = await request(server)
+      .get('/telescope/api/traces/trace-1/waterfall?app=billing')
+      .set(billingOnly)
+      .expect(200);
+    expect(one.body.spans).toHaveLength(1);
+    expect(one.body.hiddenSpans).toBe(2);
   });
 
   it('keeps writes on its own store: clear never touches an app’s store', async () => {

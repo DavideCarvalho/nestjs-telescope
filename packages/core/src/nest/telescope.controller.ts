@@ -31,6 +31,7 @@ import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionActionCaller, Panel } from '../extension/types.js';
 import { isFederatedStorage } from '../federation/federated-storage.js';
+import { federationScopeOf, withFederationScope } from '../federation/scope.js';
 import { TelescopeFleet } from '../fleet/fleet.service.js';
 import type { FleetView } from '../fleet/view.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
@@ -77,6 +78,8 @@ import {
 import { TelescopeKnownApps } from '../topology/known-apps.js';
 import { APP_TAG_PREFIX } from '../topology/wire.js';
 import {
+  type ConsoleAppSelection,
+  type ConsoleApps,
   type ConsoleAppsInfo,
   appViewOf,
   restrictsApps,
@@ -522,6 +525,8 @@ export class TelescopeController {
     let waterfall: Waterfall | null;
     if (app === undefined || app.selection.kind === 'all') {
       waterfall = await this.tracesService.getWaterfall(traceId);
+    } else if (this.federatedApps() !== undefined) {
+      waterfall = await this.federatedWaterfall(traceId, app.apps, request);
     } else {
       const tenantView = consoleTenantViewOf(request) ?? null;
       const entries = await withTenantView(tenantView, () =>
@@ -895,6 +900,30 @@ export class TelescopeController {
         ? { federation: { selected: selected !== null && isFederated(selected) } }
         : {}),
     };
+  }
+
+  /**
+   * A federated console's waterfall: the trace's spans in every store the viewer's apps reach
+   * (federated stores whole, this app's own narrowed by the granted app tags), whatever `?app=`
+   * shows, and `hiddenSpans` counting the spans of every other app, within its organizations.
+   */
+  private async federatedWaterfall(
+    traceId: string,
+    apps: ConsoleApps | undefined,
+    request: unknown,
+  ): Promise<Waterfall | null> {
+    const names = this.federatedApps()?.names ?? [];
+    const tenantView = consoleTenantViewOf(request) ?? null;
+    const read = (selection: ConsoleAppSelection) =>
+      withFederationScope(federationScopeOf(selection, tenantView, tenantView, names), () =>
+        withTenantView(tenantView, () => this.tracesService.getTraceEntries(traceId)),
+      );
+    if (!restrictsApps(apps)) return buildWaterfall(await read({ kind: 'all' }));
+    const visible = await read(selectConsoleApp(apps, undefined));
+    const waterfall = buildWaterfall(visible);
+    const hidden = (await read({ kind: 'all' })).length - visible.length;
+    if (waterfall !== null && hidden > 0) waterfall.hiddenSpans = hidden;
+    return waterfall;
   }
 
   /** The federated apps (`federation`) and their labels, or `undefined` without it. */
