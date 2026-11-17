@@ -61,13 +61,33 @@ TelescopeModule.forRoot({
 
 The **Slowest** entries list is a deliberate top-N ranking with no threshold — it answers "what were the slowest things in the window" regardless of how fast that is.
 
+### Slowest jobs
+
+The Overview's **Slowest jobs** card ranks the window's background work by p95: queue jobs (the `job` watcher, e.g. `BullMqJobWatcher`) and the workflow steps of `@dudousxd/nestjs-durable`, side by side, each row marked `job` or `step` with its p95, max, executions and failures (an entry tagged `failed`). It reads Pulse's `slowWork` list, computed with the `slowJobs` card:
+
+```ts
+interface SlowWork {
+  source: 'queue' | 'durable'
+  name: string      // the job family (e.g. `mail:send`) or the durable step name
+  count: number     // executions that finished in the window
+  failures: number  // of them, tagged `failed` (a failed job, a failed step)
+  p50: number
+  p95: number
+  max: number
+}
+```
+
+Durable steps show up when the app records durable's events in Telescope: add `durableTelescopeExtension()` from `@dudousxd/nestjs-durable-telescope` to `extensions`. From its 0.13.0 release on, a step's outcome is recorded with the step name in its family (`durable:step:<name>`) and its duration, which is what this card ranks; an older release records steps without either, so they never show here. `slowJobs` (jobs only, by p99) is unchanged.
+
+When there is nothing to list, the card says why. It says **Not measured** only when `meta.watchers` names neither `durable` nor `job`, and then names both ways to turn one on. With durable reporting it says no workflow step finished in the window, or, when the window holds durable entries but no timed step, that step timings need `@dudousxd/nestjs-durable-telescope` 0.13.0 or later. When the server does not say which watchers run (a control plane whose apps do not report them), it claims neither. On a control plane, durable's watcher records every tenant's steps itself, so it names `durable` as a watcher it runs for its tenants (`registerTenantWatchers()`), and `meta.watchers` counts it on for every app in view.
+
 <Screenshot src="/screenshots/overview.png" alt="Overview page: stat cards, server vitals, the Telescope health card, and the throughput / per-type area charts" />
 
 <Screenshot src="/screenshots/pulse.png" alt="Pulse page: throughput-by-type chart, entries-by-type counts, slowest entries, top exceptions, and slow request hotspots" />
 
 ## Entries, per type
 
-The entries view is the heart of the console: type tabs (request / query / job / exception / mail / cache / event / log / model / redis / client errors / …) with live polling. The per-type nav is **watcher-driven** — the sidebar and tabs render only the types whose watcher is actually registered (from `meta.watchers`), so you never see a dead "Redis" tab on an app that has no Redis watcher. `request` and `exception` always show (they're captured unconditionally), and direct URLs to a hidden type's page still work. While `meta` is loading, every type shows — there's no flash of hidden nav. On a [control plane](/docs/concepts/topologies) `meta.watchers` is what the apps in view report with their [heartbeats](/docs/concepts/fleet#watchers-in-the-heartbeat), not the control plane's own list; when an app in view does not report them, every type shows. The Overview's **N+1 query hotspots** and **Slowest jobs** cards say "Not measured" instead of "none" when `meta.watchers` lacks the `query` or `job` watcher. The **Client errors** tab (`client_exception`) follows the same rule — it appears only when you've opted into the public [frontend error endpoint](/docs/recipes/reporting-frontend-errors) (`clientErrors.enabled`); each entry renders the browser error's message, stack, component stack, URL and user-agent. The top-level **Traces** link follows the same rule: it appears only when the host wired a `traceContext` provider (`meta.tracesEnabled`), since without one every entry's `trace_id` is null and the page would be permanently empty.
+The entries view is the heart of the console: type tabs (request / query / job / exception / mail / cache / event / log / model / redis / client errors / …) with live polling. The per-type nav is **watcher-driven** — the sidebar and tabs render only the types whose watcher is actually registered (from `meta.watchers`), so you never see a dead "Redis" tab on an app that has no Redis watcher. `request` and `exception` always show (they're captured unconditionally), and direct URLs to a hidden type's page still work. While `meta` is loading, every type shows — there's no flash of hidden nav. On a [control plane](/docs/concepts/topologies) `meta.watchers` is what the apps in view report with their [heartbeats](/docs/concepts/fleet#watchers-in-the-heartbeat), not the control plane's own list; when an app in view does not report them, every type shows. The Overview's **N+1 query hotspots** card says "Not measured" instead of "none" when `meta.watchers` lacks the `query` watcher, and **Slowest jobs** when it lacks both `job` and `durable` (see [Slowest jobs](#slowest-jobs)). Watchers a control plane runs for its tenants (`registerTenantWatchers()`) count for every app in view. The **Client errors** tab (`client_exception`) follows the same rule — it appears only when you've opted into the public [frontend error endpoint](/docs/recipes/reporting-frontend-errors) (`clientErrors.enabled`); each entry renders the browser error's message, stack, component stack, URL and user-agent. The top-level **Traces** link follows the same rule: it appears only when the host wired a `traceContext` provider (`meta.tracesEnabled`), since without one every entry's `trace_id` is null and the page would be permanently empty.
 
 Open any entry to see its **correlated batch** — the request and *everything it caused*, in capture order. Each entry shows its type-specific content (the SQL of a query, the recipients of a mail, the stack of an exception), its tags, and its duration. Per-type **insights** surface query-latency percentiles per shape, cache hit/miss/ratio badges, and exception groupings.
 
@@ -190,7 +210,8 @@ When a `new-exception` or `every-exception` rule fires, the payload adds an `exc
     "familyHash": "ab12…", "class": "TypeError", "message": "cannot read x",
     "stack": "TypeError: cannot read x\n  at …",
     "route": "/checkout", "method": "POST", "statusCode": 500, "durationMs": 1234,
-    "user": "42", "userAgent": "curl/8.0", "referer": "https://app.example.com/pay",
+    "user": "42", "app": "checkout-api",
+    "userAgent": "curl/8.0", "referer": "https://app.example.com/pay",
     "clientIp": "198.51.100.9",
     "geo": { "city": "Reno", "region": "Nevada", "country": "United States", "countryCode": "US" },
     "componentStack": null, "extra": null,
@@ -198,6 +219,8 @@ When a `new-exception` or `every-exception` rule fires, the payload adds an `exc
   }
 }
 ```
+
+`app` is the app that recorded the exception, from its `app:<name>` tag (else its sibling request's), or `null` when untagged. On a control plane that is the tenant the exception came from, not the server that evaluated the rule, so the Slack card shows it as an **App** field and the integrations' **App** (and incident key) use it. An untagged exception (a standalone app) behaves as before.
 
 `clientIp` is the sibling request's `ip` (`request.ip` / first `x-forwarded-for` hop) for a server exception, or the server-filled browser IP for a `client_exception` — **never** sourced from an untrusted body. `geo` is populated only when a `geoLookup` hook is configured and the alert has a `clientIp`; `componentStack` and `extra` are present only for browser-reported errors that supplied them.
 

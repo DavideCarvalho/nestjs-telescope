@@ -842,6 +842,17 @@ export function describeStorageAggregation(
         expect(fromStore.slowRoutes.length).toBeGreaterThan(0);
         expect(fromStore.slowOutgoing.length).toBeGreaterThan(0);
         expect(fromStore.slowJobs.length).toBeGreaterThan(0);
+        expect(fromStore.slowWork.map((row) => `${row.source}:${row.name}`).sort()).toEqual([
+          'durable:charge',
+          'durable:ship',
+          'queue:mail:send',
+          'queue:reports:build',
+        ]);
+        expect(fromStore.slowWork.find((row) => row.name === 'charge')).toMatchObject({
+          count: 5,
+          failures: 3,
+        });
+        expect(fromStore.slowWork.find((row) => row.name === 'mail:send')?.failures).toBe(2);
         expect(fromStore.topExceptions.length).toBeGreaterThan(0);
         expect(fromStore.nPlusOne.length).toBeGreaterThan(0);
         expect(fromStore.loadByUser.length).toBeGreaterThan(0);
@@ -871,6 +882,25 @@ export function describeStorageAggregation(
         }
         expect(aggregated.failures).toEqual([]);
         expect(aggregated.calls).toBe(3);
+      });
+
+      it('families: counts the entries carrying `countTag`', async () => {
+        if (typeof provider.aggregate !== 'function') return;
+        await seed(aggregateDataset(base));
+        const result = await provider.aggregate({
+          kind: 'families',
+          window: { after: at(-1), types: ['job', 'durable'] },
+          quantiles: [0.95, 1],
+          countTag: 'failed',
+        });
+        expect(result.kind).toBe('families');
+        if (result.kind !== 'families') return;
+        const byFamily = new Map(result.rows.map((row) => [row.familyHash, row]));
+        expect(byFamily.get('durable:step:charge')).toMatchObject({ durationCount: 5, tagged: 3 });
+        expect(byFamily.get('durable:step:ship')).toMatchObject({ durationCount: 5, tagged: 0 });
+        expect(byFamily.get('durable:run.failed')).toMatchObject({ durationCount: 0, tagged: 1 });
+        expect(byFamily.get('mail:send')).toMatchObject({ durationCount: 6, tagged: 2 });
+        expect(byFamily.get('reports:build')?.tagged).toBe(1);
       });
 
       it('answers the kind it was asked', async () => {
@@ -987,8 +1017,39 @@ function aggregateDataset(base: number): Entry[] {
       familyHash: job % 2 === 0 ? 'mail:send' : 'reports:build',
       durationMs: 100 + Math.floor(random() * 2000),
       content: { queue: 'default', name: job % 2 === 0 ? 'send' : 'build' },
+      ...(job % 5 === 0 ? { tags: ['queue:default', 'failed'] } : { tags: ['queue:default'] }),
     });
   }
+  // Durable workflow steps (`@dudousxd/nestjs-durable-telescope`): completions and failures of a
+  // step share its family; a run event and an older, unfamilied step are not steps.
+  for (let step = 0; step < 10; step += 1) {
+    const failed = step % 4 === 0;
+    add({
+      batchId: `run-${step % 3}`,
+      type: 'durable',
+      origin: 'manual',
+      familyHash: `durable:step:${step % 2 === 0 ? 'charge' : 'ship'}`,
+      durationMs: 50 + Math.floor(random() * 3000),
+      tags: ['durable', failed ? 'step.failed' : 'step.completed', ...(failed ? ['failed'] : [])],
+      content: { event: failed ? 'step.failed' : 'step.completed' },
+    });
+  }
+  add({
+    batchId: 'run-0',
+    type: 'durable',
+    origin: 'manual',
+    familyHash: 'durable:run.failed',
+    tags: ['durable', 'run.failed', 'failed'],
+    content: { event: 'run.failed' },
+  });
+  add({
+    batchId: 'run-1',
+    type: 'durable',
+    origin: 'manual',
+    durationMs: 4_000,
+    tags: ['durable', 'step.completed'],
+    content: { event: 'step.completed' },
+  });
   // Extra TypeErrors so the exception ranking has a clear first.
   for (let extra = 0; extra < 3; extra += 1) {
     add({

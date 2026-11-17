@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { consoleWatchers, fleetWatchers } from '../../src/fleet/watchers.js';
-import { InstanceReporter, normalizeHeartbeat, normalizeWatchers } from '../../src/index.js';
+import {
+  InstanceReporter,
+  getTenantWatchers,
+  normalizeHeartbeat,
+  normalizeWatchers,
+  registerTenantWatchers,
+} from '../../src/index.js';
 
 const at = 1_000_000;
 const instance = (app: string, watchers?: string[], lastSeenAt = at) => ({
@@ -148,5 +154,43 @@ describe('consoleWatchers', () => {
         },
       }),
     ).toBeNull();
+  });
+
+  it('the watchers it runs for its tenants count for every app in view', async () => {
+    // durable's watcher records the tenants' workflow steps here; no tenant instance reports it.
+    const instances = async () => [instance('shop', ['query', 'request'])];
+    expect(
+      await consoleWatchers({
+        ...input,
+        apps: ['shop'],
+        instances,
+        forTenants: () => ['durable'],
+      }),
+    ).toEqual(['durable', 'query', 'request']);
+  });
+
+  it('tenant watchers do not turn an unknown answer into a list', async () => {
+    const instances = async () => [instance('shop')];
+    expect(
+      await consoleWatchers({
+        ...input,
+        apps: ['shop'],
+        instances,
+        forTenants: () => ['durable'],
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('registerTenantWatchers', () => {
+  it('adds to the runtime list until its last holder releases', () => {
+    const first = registerTenantWatchers(['durable']);
+    const second = registerTenantWatchers(['durable']);
+    expect(getTenantWatchers()).toContain('durable');
+    first();
+    first();
+    expect(getTenantWatchers()).toContain('durable');
+    second();
+    expect(getTenantWatchers()).not.toContain('durable');
   });
 });

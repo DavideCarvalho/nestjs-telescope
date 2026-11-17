@@ -341,6 +341,8 @@ export class ClickHouseStorageProvider implements BoundedPruneCapable, RollupSto
         };
       }
       case 'families': {
+        const countTag = request.countTag;
+        if (countTag !== undefined) params.countTag = countTag;
         const quantiles = request.quantiles
           .map((q, index) => {
             params[`q${index}`] = q;
@@ -348,9 +350,13 @@ export class ClickHouseStorageProvider implements BoundedPruneCapable, RollupSto
           })
           .join(', ');
         const rows = await this.select<Record<string, unknown>>(
-          `SELECT type, family_hash, cnt, dc, ds${quantiles ? `, ${quantiles}` : ''} FROM (
+          `SELECT type, family_hash, cnt, dc, ds${countTag !== undefined ? ', tagged' : ''}${quantiles ? `, ${quantiles}` : ''} FROM (
              SELECT type, family_hash, count() AS cnt, count(duration_ms) AS dc,
-                    ifNull(sum(duration_ms), 0) AS ds, arraySort(groupArray(duration_ms)) AS sorted
+                    ifNull(sum(duration_ms), 0) AS ds, arraySort(groupArray(duration_ms)) AS sorted${
+                      countTag !== undefined
+                        ? ', countIf(has(tags, {countTag:String})) AS tagged'
+                        : ''
+                    }
              FROM ${this.table} FINAL WHERE ${where} AND family_hash IS NOT NULL
              GROUP BY type, family_hash
            )`,
@@ -364,6 +370,7 @@ export class ClickHouseStorageProvider implements BoundedPruneCapable, RollupSto
             count: num(row.cnt),
             durationCount: num(row.dc),
             durationSum: num(row.ds),
+            ...(countTag !== undefined ? { tagged: num(row.tagged) } : {}),
             quantiles: request.quantiles.map((_, index) => num(row[`q${index}`])),
           })),
         };

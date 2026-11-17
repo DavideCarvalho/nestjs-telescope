@@ -154,6 +154,13 @@ Mechanism: `init()` is called ONCE at boot, before any other method, and is
 awaited by the module — so it must return its promise. Source:
 `packages/core/src/storage/storage-provider.ts` (`StorageProvider.init`).
 
+A provider that implements the optional `aggregate` must honour
+`AggregateWindow.tag`, and for `families` the optional `countTag` (return
+`tagged`: how many of the group's entries carry that tag). Pulse asks for
+`countTag: 'failed'` to count failed jobs and durable steps in "Slowest jobs";
+a provider that leaves `tagged` out shows no failures there. Source:
+`packages/core/src/storage/storage-provider.ts` (`EntryAggregation`).
+
 ### Mistake 3 — configuring `archive` without `prune`
 
 ```ts

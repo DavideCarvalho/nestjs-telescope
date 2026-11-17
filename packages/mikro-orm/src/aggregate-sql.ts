@@ -205,11 +205,18 @@ export async function aggregateSql(
       };
     }
     case 'families': {
-      const groupParams: unknown[] = [];
+      const countTag = request.countTag;
+      // The tag count is bound first (the select list), the window after: the space-padded tag
+      // list contains ` <tag> `.
+      const groupParams: unknown[] = countTag !== undefined ? [`% ${escapeLike(countTag)} %`] : [];
       const groupWhere = windowWhere(context, request.window, groupParams);
       const groups = await context.execute(
         `select type, family_hash, count(*) as cnt, count(duration_ms) as duration_count,
-                coalesce(sum(duration_ms), 0) as duration_sum
+                coalesce(sum(duration_ms), 0) as duration_sum${
+                  countTag !== undefined
+                    ? ", sum(case when tags_text like ? escape '!' then 1 else 0 end) as tagged"
+                    : ''
+                }
          from ${table} where ${groupWhere} and family_hash is not null
          group by type, family_hash`,
         groupParams,
@@ -251,6 +258,7 @@ export async function aggregateSql(
             count: num(group.cnt),
             durationCount: n,
             durationSum: num(group.duration_sum),
+            ...(countTag !== undefined ? { tagged: num(group.tagged) } : {}),
             quantiles: request.quantiles.map((q) =>
               n === 0
                 ? 0

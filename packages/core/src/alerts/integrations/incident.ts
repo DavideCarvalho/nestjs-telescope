@@ -51,11 +51,14 @@ export function statusOf(alert: AlertPayload): 'firing' | 'resolved' {
 }
 
 /**
- * The service an alert is about: the fleet app a fleet rule is about, else `alerts.app` when set,
- * else the reporting instance.
+ * The service an alert is about: the fleet app a fleet rule is about, else the app that recorded
+ * the exception (its `app:` tag; on a control plane, the tenant), else `alerts.app` when set, else
+ * the reporting instance.
  */
 export function appOf(alert: AlertPayload): string {
   if (alert.fleet !== undefined && alert.fleet.app !== '') return alert.fleet.app;
+  const exceptionApp = alert.exception?.app;
+  if (typeof exceptionApp === 'string' && exceptionApp !== '') return exceptionApp;
   return alert.app !== undefined && alert.app !== '' ? alert.app : alert.instanceId;
 }
 

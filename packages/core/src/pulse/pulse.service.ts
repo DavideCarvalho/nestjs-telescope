@@ -97,6 +97,7 @@ function narrowAggregates(
     slowRoutes: keep('slowRoutes', aggregates.slowRoutes),
     slowOutgoing: keep('slowOutgoing', aggregates.slowOutgoing),
     slowJobs: keep('slowJobs', aggregates.slowJobs),
+    slowWork: keep('slowJobs', aggregates.slowWork),
     loadByUser: keep('loadByUser', aggregates.loadByUser),
     hydrationIds: {
       slowest: slowest.map((candidate) => candidate.id),

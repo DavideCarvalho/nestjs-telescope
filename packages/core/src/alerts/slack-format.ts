@@ -266,6 +266,9 @@ export function formatSlackMessage(
 
   const exception = payload.exception;
   if (exception !== undefined) {
+    if (typeof exception.app === 'string' && exception.app !== '') {
+      contextFields.push(field('App', exception.app));
+    }
     contextFields.push(field('Error', `${exception.class}: ${exception.message}`));
     if (exception.route !== null) {
       // For a client_exception, `route` is the page URL (no method/status).

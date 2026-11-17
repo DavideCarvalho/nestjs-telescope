@@ -73,7 +73,11 @@ Every rule also takes `severity` (`info` | `warning` | `error` | `critical`) and
 `opsgenieChannel`, `betterStackIncidentChannel`, `incidentIoChannel`,
 `grafanaOnCallChannel`, `discordChannel`, `teamsChannel`, `telegramChannel`,
 `googleChatChannel`, `emailChannel({ to, transport })`) also get a `resolved`
-notification when an interval rule stops firing, keyed by `alerts.app` + rule.
+notification when an interval rule stops firing, keyed by the alert's app + rule.
+An alert's app is the fleet app (fleet rules), else the app that recorded the
+exception (`exception.app`, from the entry's `app:<name>` tag: on a control
+plane, the tenant), else `alerts.app`, else the instance id. The Slack card adds
+an **App** field for a tagged exception; an untagged one behaves as before.
 `alerts.heartbeats` / `alerts.statusPages` and `uptimeHandler()` read
 `alerts.checkStates` or `publishCheckStates()`.
 

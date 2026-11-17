@@ -315,6 +315,11 @@ export interface ExceptionAlertContext {
   durationMs: number | null;
   /** Authenticated user id from a `user:<id>` tag, or `null`. */
   user: string | null;
+  /**
+   * The app that recorded the exception, from its `app:<name>` tag, or `null` when untagged. On a
+   * control plane this is the tenant the exception came from, not the reporting instance.
+   */
+  app?: string | null;
   /** Times this family was seen in the window (>= 1; 1 on first-occurrence). */
   occurrences: number;
   /**

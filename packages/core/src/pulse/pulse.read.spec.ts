@@ -101,7 +101,9 @@ describe('PulseService read options', () => {
     const families = aggregate.mock.calls
       .map(([request]) => request as EntryAggregation)
       .find((request) => request.kind === 'families');
-    expect(families?.window.types).toEqual(['request', 'job', 'exception']);
+    // The slow-jobs card ranks durable workflow steps with the jobs, and counts their failures.
+    expect(families?.window.types).toEqual(['request', 'job', 'durable', 'exception']);
+    expect(families?.kind === 'families' && families.countTag).toBe('failed');
     await store.close?.();
   });
 

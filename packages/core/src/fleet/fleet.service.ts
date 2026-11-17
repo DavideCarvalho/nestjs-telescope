@@ -26,6 +26,7 @@ import {
   type TelescopeModuleOptions,
 } from '../nest/telescope.options.js';
 import { TelescopeService } from '../nest/telescope.service.js';
+import { getTenantWatchers } from '../otel/telescope-runtime.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { resolveTopology } from '../topology/config.js';
 import type { ShippingStats } from '../topology/remote-store.js';
@@ -346,6 +347,7 @@ export class TelescopeFleet
       // Instances gone longer than the retention left no entry on screen.
       since: Date.now() - (this.core.prune?.afterMs ?? 86_400_000),
       own: () => this.service.enabledWatchers(),
+      forTenants: getTenantWatchers,
     });
   }
 

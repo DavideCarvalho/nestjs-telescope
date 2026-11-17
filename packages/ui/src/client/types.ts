@@ -447,6 +447,20 @@ export interface SlowRouteHotspot {
   p50: number;
 }
 
+/** A kind of background work: a queue job or a durable workflow step (mirrors core's `SlowWork`). */
+export interface SlowWork {
+  source: 'queue' | 'durable';
+  /** The job family or the durable step name. */
+  name: string;
+  /** Executions that finished in the window. */
+  count: number;
+  /** How many of them failed. */
+  failures: number;
+  p50: number;
+  p95: number;
+  max: number;
+}
+
 export interface PulseReport {
   windowStart: string;
   windowEnd: string;
@@ -460,6 +474,11 @@ export interface PulseReport {
   slowOutgoing: SlowRouteHotspot[];
   /** Slowest job families by p99 (optional — older servers omit it). */
   slowJobs?: SlowRouteHotspot[];
+  /**
+   * The slowest background work by p95: queue jobs and durable workflow steps (optional — older
+   * servers omit it; their `slowJobs` stand in).
+   */
+  slowWork?: SlowWork[];
   /** Top users by total request time (optional — older servers omit it). */
   loadByUser?: UserLoad[];
   scanned: number;

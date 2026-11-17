@@ -5,6 +5,7 @@ import type { ClientExceptionContent, ExceptionContent, RequestContent } from '.
 import { type Entry, EntryType } from '../entry/entry.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
 import { percentile } from '../metrics/stats.js';
+import { appOfTraceEntry } from '../metrics/waterfall.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import type { AlertChannel } from './alert-channel.js';
 import type {
@@ -704,6 +705,8 @@ export class TelescopeAlerter {
           : null,
       durationMs: request?.durationMs ?? null,
       user: userFromTags(request?.tags ?? entry.tags),
+      app:
+        appOfTraceEntry(entry) ?? (request === null ? undefined : appOfTraceEntry(request)) ?? null,
       occurrences,
       isNew: occurrences === 1,
       entryId: entry.id,
@@ -737,6 +740,7 @@ export class TelescopeAlerter {
       statusCode: null,
       durationMs: null,
       user: userFromTags(entry.tags),
+      app: appOfTraceEntry(entry) ?? null,
       occurrences,
       isNew: occurrences === 1,
       entryId: entry.id,

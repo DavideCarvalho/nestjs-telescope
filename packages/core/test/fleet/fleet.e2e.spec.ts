@@ -16,6 +16,7 @@ import {
   TelescopeService,
   checks,
   hmacTenantVerifier,
+  registerTenantWatchers,
   signTenantToken,
   transports,
 } from '../../src/index.js';
@@ -272,6 +273,20 @@ describe('control plane and tenants', () => {
     await beat('legacy');
     expect((await metaOf({}, '?app=legacy')).watchers).toBeUndefined();
     expect((await metaOf()).watchers).toBeUndefined();
+    expect((await metaOf({}, '?app=shop')).watchers).toEqual(['exception', 'query', 'request']);
+
+    // A watcher the control plane runs for its tenants (durable's) is on for every app in view.
+    const release = registerTenantWatchers(['durable']);
+    try {
+      expect((await metaOf({}, '?app=shop')).watchers).toEqual([
+        'durable',
+        'exception',
+        'query',
+        'request',
+      ]);
+    } finally {
+      release();
+    }
     expect((await metaOf({}, '?app=shop')).watchers).toEqual(['exception', 'query', 'request']);
   });
 

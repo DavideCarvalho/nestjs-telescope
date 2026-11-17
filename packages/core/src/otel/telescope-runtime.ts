@@ -88,6 +88,14 @@ export interface TelescopeRuntime {
   captureBatch?: (() => unknown) | undefined;
   /** Record `input` inside a batch from {@link captureBatch}. Absent on older cores. */
   recordInBatch?: ((batch: unknown, input: RecordInput) => void) | undefined;
+  /**
+   * Watchers this process runs on behalf of the tenants whose entries it holds, with how many
+   * holders each has: on a control plane, a sibling library that records its tenants' work here
+   * (`@dudousxd/nestjs-durable-telescope`'s watcher adds `durable`). The console counts them on
+   * for every app in view, since no tenant instance reports them. Absent on older cores; a
+   * library adds to it only when it is there (see {@link registerTenantWatchers}).
+   */
+  tenantWatchers?: Map<string, number>;
 }
 
 const globalSlot = globalThis as Record<symbol, unknown>;
@@ -118,9 +126,38 @@ export function telescopeRuntime(): TelescopeRuntime {
     isTelescopeWork: () => selfScope.getStore() === true,
     isCoveredCall: () => coveredCall.getStore() === true,
     isSampled: () => false,
+    tenantWatchers: new Map(),
   };
   globalSlot[TELESCOPE_RUNTIME_KEY] = created;
   return created;
+}
+
+/**
+ * Name watchers this process runs for its tenants (see {@link TelescopeRuntime.tenantWatchers}).
+ * Returns the idempotent release; a name leaves the list with its last holder.
+ */
+export function registerTenantWatchers(names: Iterable<string>): () => void {
+  const runtime = telescopeRuntime();
+  // A runtime an older core created has no list yet.
+  runtime.tenantWatchers ??= new Map();
+  const held = runtime.tenantWatchers;
+  const added = [...new Set(names)];
+  for (const name of added) held.set(name, (held.get(name) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const name of added) {
+      const count = (held.get(name) ?? 1) - 1;
+      if (count <= 0) held.delete(name);
+      else held.set(name, count);
+    }
+  };
+}
+
+/** The watcher names this process runs for its tenants, sorted. */
+export function getTenantWatchers(): string[] {
+  return [...(telescopeRuntime().tenantWatchers?.keys() ?? [])].sort();
 }
 
 /**

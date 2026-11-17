@@ -17,16 +17,21 @@ import type {
   StorageProvider,
 } from '../storage/storage-provider.js';
 import {
+  DURABLE_ENTRY_TYPE,
+  FAILED_TAG,
   type NPlusOneAccumulator,
   type PulseAggregates,
   type PulseOptions,
   type SlowRouteHotspot,
+  type SlowWork,
   rankExceptionFamilies,
   rankJobHotspots,
   rankNPlusOne,
   rankRouteHotspots,
+  rankSlowWork,
   rankSlowest,
   rankUserLoad,
+  slowWorkKind,
   userFromTags,
 } from './pulse-summary.js';
 
@@ -68,6 +73,10 @@ export interface PulsePlan {
   buckets?: number;
 }
 const QUANTILES = [0.99, 0.5];
+/** With the slow-work card: also p95 and the max (the nearest rank of 1 is the last). */
+const SLOW_WORK_QUANTILES = [...QUANTILES, 0.95, 1];
+/** The entry types the slow-work card ranks: queue jobs and durable steps. */
+const SLOW_WORK_TYPES = [EntryType.Job, DURABLE_ENTRY_TYPE];
 
 /**
  * The pulse aggregates of the window after `windowStart`, from the store's {@link
@@ -87,7 +96,7 @@ export async function aggregatePulseInStore(
   const familyTypes = [
     ...(wants('slowRoutes') ? [EntryType.Request] : []),
     ...(wants('slowOutgoing') ? [EntryType.HttpClient] : []),
-    ...(wants('slowJobs') ? [EntryType.Job] : []),
+    ...(wants('slowJobs') ? SLOW_WORK_TYPES : []),
     ...(wants('exceptions') ? [EntryType.Exception] : []),
   ];
   const none = Promise.resolve([] as never[]);
@@ -107,7 +116,10 @@ export async function aggregatePulseInStore(
       ? run(storage, {
           kind: 'families',
           window: { ...window, types: familyTypes },
-          quantiles: QUANTILES,
+          // With the slow-work card: p95, the max, and the failures (the `failed` jobs and steps).
+          ...(wants('slowJobs')
+            ? { quantiles: SLOW_WORK_QUANTILES, countTag: FAILED_TAG }
+            : { quantiles: QUANTILES }),
         })
       : none,
     wants('nPlusOne')
@@ -153,6 +165,28 @@ export async function aggregatePulseInStore(
   const slowRoutes = rankRouteHotspots(hotspotsOf(EntryType.Request), options);
   const slowOutgoing = rankRouteHotspots(hotspotsOf(EntryType.HttpClient), options);
   const slowJobs = rankJobHotspots(hotspotsOf(EntryType.Job), options);
+
+  // Slow work: each job family and durable step with a duration, and how many of them failed.
+  const slowWork = wants('slowJobs')
+    ? rankSlowWork(
+        families.flatMap((row): SlowWork[] => {
+          const kind = slowWorkKind(row.type, row.familyHash);
+          if (kind === null || row.durationCount === 0) return [];
+          return [
+            {
+              ...kind,
+              count: row.durationCount,
+              // A store predating `countTag` cannot say: none counted.
+              failures: row.tagged ?? 0,
+              p50: row.quantiles[1] ?? 0,
+              p95: row.quantiles[2] ?? 0,
+              max: row.quantiles[3] ?? 0,
+            },
+          ];
+        }),
+        options,
+      )
+    : [];
 
   // Exceptions: ranked by count; the newest of each reported family is its representative.
   const exceptionFamilies = rankExceptionFamilies(
@@ -241,6 +275,7 @@ export async function aggregatePulseInStore(
       slowRoutes,
       slowOutgoing,
       slowJobs,
+      slowWork,
       loadByUser,
       hydrationIds: {
         slowest: slowest.map((candidate) => candidate.id),
