@@ -868,9 +868,25 @@ export class TelescopeController {
     }
   }
 
+  /**
+   * On a control plane `watchers` answers for the apps in view (`?app=`, the viewer's grant): the
+   * entries on screen are theirs, so the control plane's own watchers say nothing about them.
+   */
   @Get('meta')
-  meta(): Promise<TelescopeMeta> {
-    return this.service.getMeta();
+  async meta(@Req() request: unknown): Promise<TelescopeMeta> {
+    const app = consoleAppCallOf(request)?.selection ?? { kind: 'all' as const };
+    const apps = app.kind === 'all' ? null : app.kind === 'apps' ? app.ids : [];
+    const watchers = await this.fleetService()?.consoleWatchers(apps);
+    return this.service.getMeta(watchers === undefined ? {} : { watchers });
+  }
+
+  /** The fleet service, or `null` outside the module (a controller built by hand in a test). */
+  private fleetService(): TelescopeFleet | null {
+    try {
+      return this.moduleRef.get(TelescopeFleet, { strict: false });
+    } catch {
+      return null;
+    }
   }
 
   @Get('server-stats')

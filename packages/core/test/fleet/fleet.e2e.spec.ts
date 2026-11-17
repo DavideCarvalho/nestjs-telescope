@@ -59,6 +59,9 @@ describe('standalone', () => {
   it('keeps no fleet by default: unchanged', async () => {
     const app = await boot({ storage: new InMemoryStorageProvider() });
     const fleet = await fleetOf(app);
+    // meta.watchers is this process's own list, as before.
+    const meta = (await request(app.getHttpServer()).get('/telescope/api/meta').expect(200)).body;
+    expect(meta.watchers).toEqual(app.get(TelescopeService).enabledWatchers());
     expect(fleet).toMatchObject({ enabled: false, apps: [], self: null });
     await request(app.getHttpServer()).get('/telescope/api/probes/ready').expect(404);
   });
@@ -166,6 +169,8 @@ describe('control plane and tenants', () => {
     const fleet = await fleetOf(cp.app);
     const shop = fleet.apps.find((a: { app: string }) => a.app === 'shop');
     expect(shop.instances[0]).toMatchObject({ version: 'abc', health: 'down' });
+    // It reports the watchers it runs, so the control plane's console answers for it.
+    expect(shop.instances[0].watchers).toEqual(expect.arrayContaining(['exception', 'request']));
     expect(shop.instances[0].shipping).toMatchObject({ dropped: 0 });
     expect(shop.checks[0]).toMatchObject({ name: 'redis', status: 'down', affected: 1, of: 1 });
     expect(shop.checks[0].exceptions[0]).toMatchObject({ class: 'ReplyError', count: 1 });
@@ -226,6 +231,60 @@ describe('control plane and tenants', () => {
     expect(names(await fleetOf(cp.app, {}, '?app=billing'))).toEqual(['billing']);
     const text = JSON.stringify(await fleetOf(cp.app, shopOnly));
     expect(text).not.toContain('billing');
+  });
+
+  it("meta.watchers answers for the apps in view, from their heartbeats, not the control plane's own", async () => {
+    const cp = await controlPlane();
+    const fleet = cp.app.get(TelescopeFleet);
+    const beat = (app: string, watchers?: string[]) =>
+      fleet.heartbeat(app, {
+        v: 1,
+        instanceId: `${app}-1`,
+        state: 'ready',
+        bootedAt: new Date().toISOString(),
+        sentAt: new Date().toISOString(),
+        ...(watchers ? { watchers } : {}),
+      });
+    await beat('shop', ['request', 'exception', 'query']);
+    await beat('billing', ['request', 'exception', 'job']);
+    const own = cp.app.get(TelescopeService).enabledWatchers();
+    expect(own).not.toContain('query');
+    const metaOf = async (headers: Record<string, string> = {}, query = '') =>
+      (
+        await request(cp.app.getHttpServer())
+          .get(`/telescope/api/meta${query}`)
+          .set(headers)
+          .expect(200)
+      ).body;
+
+    // `?app=shop`: shop's watchers only (the control plane runs no query watcher of its own).
+    expect((await metaOf({}, '?app=shop')).watchers).toEqual(['exception', 'query', 'request']);
+    expect((await metaOf({}, '?app=billing')).watchers).toEqual(['exception', 'job', 'request']);
+    // Every app: the union, with the control plane's own (its own entries are shown too).
+    const all = (await metaOf()).watchers as string[];
+    expect(all).toEqual(expect.arrayContaining(['query', 'job', ...own]));
+    // A viewer limited to shop: shop's, whatever it asks for.
+    const shopOnly = { 'x-grant': JSON.stringify({ allowed: true, apps: ['shop'] }) };
+    expect((await metaOf(shopOnly)).watchers).toEqual(['exception', 'query', 'request']);
+    expect((await metaOf(shopOnly, '?app=billing')).watchers).toBeUndefined();
+
+    // An app in view on an older version (no watchers in its heartbeat): unknown, no claim.
+    await beat('legacy');
+    expect((await metaOf({}, '?app=legacy')).watchers).toBeUndefined();
+    expect((await metaOf()).watchers).toBeUndefined();
+    expect((await metaOf({}, '?app=shop')).watchers).toEqual(['exception', 'query', 'request']);
+  });
+
+  it('a control plane without the fleet reports its watchers as unknown, not its own list', async () => {
+    const app = await boot({
+      topology: 'control-plane',
+      verifyTenant: hmacTenantVerifier(SECRET),
+      storage: new InMemoryStorageProvider(),
+      fleet: false,
+    });
+    const meta = (await request(app.getHttpServer()).get('/telescope/api/meta').expect(200)).body;
+    expect(meta).toHaveProperty('enabled', true);
+    expect(meta.watchers).toBeUndefined();
   });
 
   it('a heartbeat over a broker lands in the same fleet', async () => {

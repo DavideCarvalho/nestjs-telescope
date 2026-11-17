@@ -110,16 +110,20 @@ const timeseries: TimeseriesReport = {
   ],
 };
 
-function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
+function mockClient(
+  healthOverride: TelescopeHealth = health,
+  watchers: string[] | null | undefined = undefined,
+  pulseOverride: PulseReport = pulse,
+): TelescopeClient {
   return mockTelescopeClient({
     entries: async () => ({ data: [], meta: LAST_PAGE_META }),
-    pulse: async () => pulse,
+    pulse: async () => pulseOverride,
     queues: async () => queues,
     timeseries: async () => timeseries,
     meta: async () => ({
       enabled: true,
       droppedCount: 0,
-      watchers: [],
+      ...(watchers !== undefined ? { watchers } : {}),
       traceLink: null,
       retention: { afterMs: 3_600_000, keepLast: null },
       pruneEnabled: true,
@@ -144,10 +148,17 @@ function mockClient(healthOverride: TelescopeHealth = health): TelescopeClient {
   });
 }
 
-function renderOverview(healthOverride: TelescopeHealth = health) {
+function renderOverview(
+  healthOverride: TelescopeHealth = health,
+  view: { watchers?: string[] | null; pulse?: PulseReport } = {},
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client =
+    'watchers' in view
+      ? mockClient(healthOverride, view.watchers, view.pulse ?? pulse)
+      : mockClient(healthOverride, undefined, view.pulse ?? pulse);
   return render(
-    <TelescopeProvider client={mockClient(healthOverride)}>
+    <TelescopeProvider client={client}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
           <NuqsHashAdapter>
@@ -317,6 +328,31 @@ describe('OverviewPage', () => {
     expect(await screen.findByText('mail:send')).toBeTruthy();
     expect(await screen.findByText('Load by user')).toBeTruthy();
     expect(await screen.findByText('alice')).toBeTruthy();
+  });
+
+  it('says "Not measured" on N+1 and slow jobs only when meta positively lists neither watcher', async () => {
+    const idle = { ...pulse, nPlusOne: [], slowJobs: [] };
+    renderOverview(health, { watchers: ['request', 'exception'], pulse: idle });
+    expect(await screen.findByTestId('not-measured-query')).toBeTruthy();
+    expect(await screen.findByTestId('not-measured-job')).toBeTruthy();
+    expect(screen.queryByText('None detected')).toBeNull();
+  });
+
+  it('keeps "None detected" when meta does not say (a control plane where an app does not report)', async () => {
+    const idle = { ...pulse, nPlusOne: [], slowJobs: [] };
+    renderOverview(health, { watchers: null, pulse: idle });
+    expect(await screen.findByText('None detected')).toBeTruthy();
+    expect(await screen.findByText('No jobs in window.')).toBeTruthy();
+    expect(screen.queryByTestId('not-measured-query')).toBeNull();
+  });
+
+  it('keeps "None detected" when the query watcher runs and found nothing', async () => {
+    renderOverview(health, {
+      watchers: ['request', 'query', 'job'],
+      pulse: { ...pulse, nPlusOne: [] },
+    });
+    expect(await screen.findByText('None detected')).toBeTruthy();
+    expect(screen.queryByTestId('not-measured-query')).toBeNull();
   });
 
   it('renders the Telescope health card with capture cost, buffer, flush, and dropped figures', async () => {

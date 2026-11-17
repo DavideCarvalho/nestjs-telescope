@@ -5,6 +5,7 @@ import {
   labelForType,
   resolveEntryQuery,
   visibleEntryTypes,
+  watcherEnabled,
 } from './entry-types.js';
 
 describe('ENTRY_TYPES dump', () => {
@@ -107,5 +108,18 @@ describe('ENTRY_TYPES span', () => {
     expect(ENTRY_TYPES.find((type) => type.id === 'span')?.label).toBe('Spans');
     expect(visibleEntryTypes(ENTRY_TYPES, ['request', 'span']).map((t) => t.id)).toContain('span');
     expect(visibleEntryTypes(ENTRY_TYPES, ['request']).map((t) => t.id)).not.toContain('span');
+  });
+});
+
+describe('watcherEnabled', () => {
+  it('is three-valued: unknown when meta does not say', () => {
+    expect(watcherEnabled(['query'], 'query')).toBe(true);
+    expect(watcherEnabled(['request'], 'query')).toBe(false);
+    expect(watcherEnabled(undefined, 'query')).toBeNull();
+    expect(watcherEnabled(null, 'query')).toBeNull();
+  });
+
+  it('a null watcher list (unknown, on a control plane) shows every type', () => {
+    expect(visibleEntryTypes(ENTRY_TYPES, null)).toHaveLength(ENTRY_TYPES.length);
   });
 });

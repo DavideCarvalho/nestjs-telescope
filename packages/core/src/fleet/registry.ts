@@ -14,6 +14,7 @@ import {
   type InstanceState,
   WEB_ROLE,
   normalizeRole,
+  normalizeWatchers,
 } from './heartbeat.js';
 import type { FleetStore } from './store.js';
 
@@ -83,6 +84,7 @@ export class FleetRegistry {
       shipping: heartbeat.shipping,
       url: heartbeat.url ?? null,
       role: normalizeRole(heartbeat.role),
+      ...(heartbeat.watchers !== undefined ? { watchers: heartbeat.watchers } : {}),
     };
     try {
       await this.store.upsert(record);
@@ -147,6 +149,8 @@ export interface InstanceReporterOptions {
   url?: string | null;
   /** `web`, or a worker's name. Default `web` (and then not sent, like an older sender). */
   role?: string;
+  /** The watchers this process runs, read for every heartbeat. Absent: not reported. */
+  watchers?: () => readonly string[];
   /** Where a heartbeat goes: the tenant's buffer, or the local registry. */
   send: (heartbeat: InstanceHeartbeat) => Promise<void> | void;
   instanceId?: string;
@@ -236,6 +240,9 @@ export class InstanceReporter {
       ...(this.options.url ? { url: this.options.url } : {}),
       ...(this.options.role !== undefined && this.options.role !== WEB_ROLE
         ? { role: this.options.role }
+        : {}),
+      ...(this.options.watchers !== undefined
+        ? { watchers: normalizeWatchers(this.options.watchers()) ?? [] }
         : {}),
     };
   }

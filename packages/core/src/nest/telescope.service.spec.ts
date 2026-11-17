@@ -329,7 +329,7 @@ describe('TelescopeService', () => {
     active = service;
     service.setWatchers(['request']);
     const meta = await service.getMeta();
-    meta.watchers.push('hacked');
+    meta.watchers?.push('hacked');
     expect((await service.getMeta()).watchers).toEqual(['request']);
   });
 

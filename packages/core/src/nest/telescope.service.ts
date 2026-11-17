@@ -49,7 +49,13 @@ import type { BatchHandle } from './watcher.js';
 export interface TelescopeMeta {
   enabled: boolean;
   droppedCount: number;
-  watchers: string[];
+  /**
+   * The watchers that recorded the entries in view, so a panel can tell "nothing happened" from
+   * "nothing is measured". This process's own on a standalone app; on a control plane the union of
+   * what the instances of the apps in view report with their heartbeats. Absent when unknown (an
+   * app in view runs a version that does not report them, or the fleet is off).
+   */
+  watchers?: string[];
   traceLink: string | null;
   /**
    * Whether the host wired a `traceContext` provider. When `false`, every entry's
@@ -439,15 +445,28 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
     return this.recorder.isPaused;
   }
 
-  async getMeta(): Promise<TelescopeMeta> {
+  /**
+   * The entry types this process's watchers record (`span` too while the OpenTelemetry span
+   * processor runs, which is not a watcher). What `meta.watchers` lists on a standalone app, and
+   * what this process's heartbeat reports.
+   */
+  enabledWatchers(): string[] {
+    return isTelescopeSpanProcessorActive() && !this.watcherTypes.includes(EntryType.Span)
+      ? [...this.watcherTypes, EntryType.Span]
+      : [...this.watcherTypes];
+  }
+
+  /**
+   * `watchers`: the watchers behind the entries in view when this process's own are not the
+   * answer (a control plane: what the tenants in view report). `null` leaves the field out
+   * (unknown), so the console claims nothing about a watcher being off.
+   */
+  async getMeta(options: { watchers?: string[] | null } = {}): Promise<TelescopeMeta> {
+    const watchers = options.watchers === undefined ? this.enabledWatchers() : options.watchers;
     return {
       enabled: this.config.enabled,
       droppedCount: this.recorder.droppedCount,
-      // `span` entries come from the OpenTelemetry span processor, which is not a watcher.
-      watchers:
-        isTelescopeSpanProcessorActive() && !this.watcherTypes.includes(EntryType.Span)
-          ? [...this.watcherTypes, EntryType.Span]
-          : [...this.watcherTypes],
+      ...(watchers !== null ? { watchers } : {}),
       traceLink: this.config.traceLink ?? null,
       // Also on with tracing across apps (`propagation`, a tenant, a control plane): telescope
       // then keeps trace ids itself.

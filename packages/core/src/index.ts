@@ -141,6 +141,7 @@ export * from './fleet/heartbeat.js';
 export * from './fleet/registry.js';
 export * from './fleet/store.js';
 export * from './fleet/view.js';
+export * from './fleet/watchers.js';
 export * from './fleet/worker-marks.js';
 export { TelescopeFleet, type ReadinessReport } from './fleet/fleet.service.js';
 export { TelescopeProbesController, type ProbeAnswer } from './fleet/probes.controller.js';

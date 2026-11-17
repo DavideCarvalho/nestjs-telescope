@@ -25,6 +25,8 @@ export interface InstanceRecord {
   url?: string | null;
   /** `web`, or a worker's name. Absent from older rows (and senders), which are web. */
   role?: string;
+  /** The watchers the instance runs. Absent (unknown) from older rows and senders. */
+  watchers?: string[];
 }
 
 /** What the fleet says about an instance right now. */

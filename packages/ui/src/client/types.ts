@@ -244,7 +244,12 @@ export type Panel =
 export interface TelescopeMeta {
   enabled: boolean;
   droppedCount: number;
-  watchers: string[];
+  /**
+   * The watchers that recorded the entries in view. On a control plane, what the apps in view
+   * report with their heartbeats. Absent (or `null`) when the server cannot tell (an app in view
+   * runs an older version, or the server predates the field): the console then claims nothing.
+   */
+  watchers?: string[] | null;
   traceLink: string | null;
   /**
    * Whether the host wired a `traceContext` provider. `false` hides the

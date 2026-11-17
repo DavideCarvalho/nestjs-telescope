@@ -189,7 +189,7 @@ describe('TelescopeController', () => {
 
   it('exposes meta', async () => {
     const { controller } = setup();
-    const meta = await controller.meta();
+    const meta = await controller.meta({});
     expect(meta.enabled).toBe(true);
   });
 });
