@@ -1,8 +1,8 @@
 import {
   type unstable_AdapterInterface as AdapterInterface,
+  type unstable_UpdateUrlFunction as UpdateUrlFunction,
   unstable_createAdapterProvider as createAdapterProvider,
   renderQueryString,
-  type unstable_UpdateUrlFunction as UpdateUrlFunction,
 } from 'nuqs/adapters/custom';
 import { type ReactNode, useRef, useSyncExternalStore } from 'react';
 import { readHashSearch, splitHash, subscribeHashUrl, writeHashSearch } from './hash-url';
