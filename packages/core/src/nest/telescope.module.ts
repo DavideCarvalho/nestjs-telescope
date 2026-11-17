@@ -116,6 +116,7 @@ const SHARED_PROVIDERS: Provider[] = [
               token: topology.token,
               ...pick(topology.options, [
                 'local',
+                'relay',
                 'bufferSize',
                 'batchSize',
                 'maxBatchBytes',

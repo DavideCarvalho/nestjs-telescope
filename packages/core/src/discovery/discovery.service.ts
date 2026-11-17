@@ -1,9 +1,3 @@
-// packages/core/src/discovery/discovery.service.ts
-//
-// Service discovery in a Nest app: `fetch('http://billing/…')` reaches the app named `billing`.
-// A tenant reads the control plane's map (snapshot at boot, then a long poll); a control plane
-// serves that map from its fleet and resolves names from it itself; a standalone app uses
-// `discovery.apps`. Nothing is installed when there is nothing to resolve.
 import {
   type BeforeApplicationShutdown,
   Inject,
@@ -25,6 +19,14 @@ import {
 import { TelescopeService } from '../nest/telescope.service.js';
 import { createWatcherContext } from '../nest/watcher-context.factory.js';
 import { type ResolvedTopology, resolveTopology } from '../topology/config.js';
+// packages/core/src/discovery/discovery.service.ts
+//
+// Service discovery in a Nest app: `fetch('http://billing/…')` reaches the app named `billing`.
+// A tenant reads the control plane's map (snapshot at boot, then a long poll); a control plane
+// serves that map from its fleet and resolves names from it itself; a standalone app uses
+// `discovery.apps`. Nothing is installed when there is nothing to resolve.
+import type { ServerUrl } from '../topology/server-url.js';
+import { SERVER_URL } from '../topology/transport.js';
 import { attachDiscoveryToAxios } from './axios.js';
 import { DiscoveryClient } from './client.js';
 import { type ResolvedDiscovery, defaultSnapshotPath, resolveDiscovery } from './config.js';
@@ -63,13 +65,13 @@ export class TelescopeDiscovery
   }
 
   /** The control plane's telescope URL a tenant reads the map from, or `null`. */
-  private tenantUrl(): string | null {
+  private tenantUrl(): string | ServerUrl | null {
     if (this.topology.kind !== 'tenant') return null;
     if (this.config.serverUrl !== null) return this.config.serverUrl;
-    const url = this.topology.options.url;
-    return this.topology.transport.kind === 'http' && typeof url === 'string' && url.trim() !== ''
-      ? url.trim()
-      : null;
+    if (this.topology.options.url === undefined) return null;
+    // On HTTP to `tenant.url`, the transport's URL (looked up once, shared with the batches).
+    const transport = this.topology.transport as Partial<Record<typeof SERVER_URL, ServerUrl>>;
+    return transport[SERVER_URL] ?? null;
   }
 
   async onModuleInit(): Promise<void> {

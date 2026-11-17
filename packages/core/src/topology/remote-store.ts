@@ -19,7 +19,7 @@ import type {
 } from '../storage/storage-provider.js';
 import { type TenantTokenSource, resolveTenantToken } from './tenant-auth.js';
 import type { TenantTransport } from './transport.js';
-import { type IngestBatch, ingestBatch } from './wire.js';
+import { APP_TAG_PREFIX, type IngestBatch, ingestBatch } from './wire.js';
 
 /** Shipping counters of a tenant, for its status and (later) its heartbeat. */
 export interface ShippingStats {
@@ -49,6 +49,11 @@ export interface RemoteTelescopeStoreOptions {
   token: TenantTokenSource;
   /** Also keep entries here, for the app's own console. Default: none (the console reads nothing). */
   local?: StorageProvider;
+  /**
+   * Relaying for other apps: an entry without an `app:` tag is tagged `app:<partition>` (sent and
+   * kept locally so), one tagged for another app is left as it is. Off, tags are never touched.
+   */
+  relay?: boolean;
   /** The most entries waiting to be sent; the oldest is dropped beyond it. Default 10 000. */
   bufferSize?: number;
   /** The most entries per batch. Default 200. */
@@ -138,12 +143,20 @@ export class RemoteTelescopeStore implements StorageProvider {
   }
 
   async store(entries: Entry[]): Promise<void> {
+    const tagged =
+      this.options.relay === true ? entries.map((entry) => this.ownAppTag(entry)) : entries;
     // The recorder retries a failed store with the same array: queue it once.
     if (!this.shipped.has(entries)) {
       this.shipped.add(entries);
-      this.enqueue(entries);
+      this.enqueue(tagged);
     }
-    await this.options.local?.store(entries);
+    await this.options.local?.store(tagged);
+  }
+
+  /** A relayer's own entry (no `app:` tag) gets `app:<partition>`; a relayed one is kept. */
+  private ownAppTag(entry: Entry): Entry {
+    if (entry.tags.some((tag) => tag.startsWith(`${APP_TAG_PREFIX}:`))) return entry;
+    return { ...entry, tags: [...entry.tags, `${APP_TAG_PREFIX}:${this.options.partition}`] };
   }
 
   private enqueue(entries: Entry[]): void {

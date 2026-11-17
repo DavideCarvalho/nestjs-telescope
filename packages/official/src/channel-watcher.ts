@@ -60,6 +60,10 @@ export class ChannelWatcher implements Watcher {
           return;
         }
         if (input === null) return;
+        const app = appOfEvent(message);
+        if (app !== null && !(input.tags ?? []).some((tag) => tag.startsWith('app:'))) {
+          input = { ...input, tags: [...(input.tags ?? []), `app:${app}`] };
+        }
         // Channels publish on completion: a mapped duration walks createdAt back to the start.
         if (input.startedAt === undefined && typeof input.durationMs === 'number') {
           input.startedAt = new Date(Date.now() - Math.max(0, input.durationMs));
@@ -86,6 +90,28 @@ export class ChannelWatcher implements Watcher {
     for (const [name, handler] of this.handlers) diagnostics_channel.unsubscribe(name, handler);
     this.handlers = [];
   }
+}
+
+/** An app name an event may carry (the partition syntax). */
+const APP_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
+
+/**
+ * The app an event is about: the `app` of a `@dudousxd/nestjs-diagnostics` envelope (`{ lib,
+ * event, payload, app? }`), else its payload's (or a bare payload's) `app`. Read structurally, so
+ * no diagnostics version is required; `null` when none is a valid app name. The entry is then
+ * tagged `app:<name>`: the local console's App picker lists it, and a tenant with `relay: true`
+ * (and a token allowed to relay) gets it stored as that app on its control plane.
+ */
+export function appOfEvent(message: unknown): string | null {
+  if (typeof message !== 'object' || message === null) return null;
+  const record = message as { app?: unknown; payload?: unknown };
+  if (typeof record.app === 'string' && APP_NAME.test(record.app)) return record.app;
+  const payload = record.payload;
+  if (typeof payload === 'object' && payload !== null) {
+    const app = (payload as { app?: unknown }).app;
+    if (typeof app === 'string' && APP_NAME.test(app)) return app;
+  }
+  return null;
 }
 
 /** `nestjs:<lib>:<type>` → `<type>`. */

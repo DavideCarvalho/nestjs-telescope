@@ -317,3 +317,31 @@ describe('installing the rewrite', () => {
     }
   });
 });
+
+describe('DiscoveryClient with a looked-up control plane URL', () => {
+  it('polls the resolved URL and looks it up again after a 404', async () => {
+    const { DiscoveryClient } = await import('./client.js');
+    const { ServiceDirectory } = await import('./directory.js');
+    const { ServerUrl } = await import('../topology/server-url.js');
+    let lookups = 0;
+    const server = new ServerUrl(async () => (lookups++ === 0 ? 'http://old/t' : 'http://new/t'));
+    const asked: string[] = [];
+    const client = new DiscoveryClient({
+      url: server,
+      token: 'tok',
+      partition: 'shop',
+      directory: new ServiceDirectory({}),
+      snapshotPath: join(mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'disc-')), 'map.json'),
+      fetch: async (input) => {
+        const url = String(input);
+        asked.push(url.split('?')[0] as string);
+        return url.startsWith('http://old')
+          ? new Response(null, { status: 404 })
+          : new Response(JSON.stringify({ version: 'v1', apps: {} }), { status: 200 });
+      },
+    });
+    expect(await client.pollOnce(10)).toBe(false);
+    expect(await client.pollOnce(10)).toBe(true);
+    expect(asked).toEqual(['http://old/t/api/discovery', 'http://new/t/api/discovery']);
+  });
+});
