@@ -66,6 +66,31 @@ function isTelescopePath(url: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
 
+/**
+ * Whether `url`'s path matches one of `ignoreRequestPaths`: a string as a segment-boundary
+ * prefix, a RegExp tested against the path without its query string. Blank strings never match.
+ */
+export function isIgnoredRequestPath(url: string, patterns: readonly (string | RegExp)[]): boolean {
+  if (patterns.length === 0) return false;
+  const queryStart = url.indexOf('?');
+  const path = queryStart === -1 ? url : url.slice(0, queryStart);
+  for (const pattern of patterns) {
+    if (typeof pattern === 'string') {
+      // An empty prefix (e.g. an unset env var) would match every path and silently stop all
+      // request recording — skip it instead.
+      const prefix = pattern.trim();
+      if (prefix === '') continue;
+      const bare = prefix.length > 1 && prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
+      if (bare === '/' || path === bare || path.startsWith(`${bare}/`)) return true;
+    } else {
+      // A /g or /y pattern keeps `lastIndex` between calls; reset it so each test starts fresh.
+      pattern.lastIndex = 0;
+      if (pattern.test(path)) return true;
+    }
+  }
+  return false;
+}
+
 function asFinishable(res: unknown): FinishableResponse | null {
   const r = res as { statusCode?: unknown; once?: unknown };
   return typeof r?.once === 'function' ? (res as FinishableResponse) : null;
@@ -188,6 +213,8 @@ function readUser(request: unknown, resolveUser?: (request: unknown) => unknown)
 export class TelescopeRequestMiddleware implements NestMiddleware {
   /** Resolved once at construction — the per-request hot path never rebuilds this. */
   private readonly captureConfig: ResolvedRequestCapture;
+  /** `ignoreRequestPaths`, copied once. */
+  private readonly ignoredPaths: (string | RegExp)[];
 
   constructor(
     @Inject(TelescopeService) private readonly service: TelescopeService,
@@ -211,6 +238,7 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     private readonly tracing: TelescopeTracing | undefined = undefined,
   ) {
     this.captureConfig = resolveRequestCapture(moduleOptions?.requestCapture);
+    this.ignoredPaths = [...(moduleOptions?.ignoreRequestPaths ?? [])];
     // Incoming requests are recorded here, so the span processor skips the HTTP server spans.
     // With `registerRequestMiddleware: false` the module never applies this instance, so it
     // must not claim coverage (the manual `telescopeRequestCapture` path builds its own).
@@ -262,12 +290,17 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
     // Tag its captured entry so the dashboard/agent can tell replays apart from
     // organic traffic (and a host could choose to skip them entirely).
     const isReplay = hasReplayHeader(request.headers);
+    // `ignoreRequestPaths`: the batch and trace stay open (queries made while serving the request
+    // still correlate to it); only the `request` entry itself is not recorded.
+    const ignored = isIgnoredRequestPath(request.url, this.ignoredPaths);
 
     if (response) {
       response.once('finish', () => {
         const record = () => this.recordRequest(request, req, response, route, startedAt, isReplay);
-        if (scope === undefined) record();
-        else runInTraceScope(scope, record);
+        if (!ignored) {
+          if (scope === undefined) record();
+          else runInTraceScope(scope, record);
+        }
         // Stop + record the profile within the same async context so its
         // `cpu_profile` entry shares this request's batchId/traceId. Fire-and-
         // forget: `end` never throws and never blocks the response.
@@ -335,18 +368,25 @@ export class TelescopeRequestMiddleware implements NestMiddleware {
  */
 export function telescopeRequestCapture(
   service: TelescopeService,
-  options?: Pick<TelescopeModuleOptions, 'requestCapture'>,
+  options?: Pick<TelescopeModuleOptions, 'requestCapture' | 'ignoreRequestPaths'>,
 ): (req: unknown, res: unknown, next: (error?: unknown) => void) => void {
   // Hosts on this manual path (setGlobalPrefix apps) don't go through module DI,
   // so the capture gates are passed here — same shape as the module option:
   // `telescopeRequestCapture(service, { requestCapture: { skipBody: ... } })`.
   // Omitted → the safe defaults (128 KiB cap + binary content-type list).
-  // Only `requestCapture` is forwarded, so this instance always marks requests as covered.
+  // Only `requestCapture` / `ignoreRequestPaths` are forwarded, so this instance always marks
+  // requests as covered.
   const capture = options?.requestCapture;
+  const ignoreRequestPaths = options?.ignoreRequestPaths;
   const middleware = new TelescopeRequestMiddleware(
     service,
     undefined,
-    capture === undefined ? undefined : { requestCapture: capture },
+    capture === undefined && ignoreRequestPaths === undefined
+      ? undefined
+      : {
+          ...(capture === undefined ? {} : { requestCapture: capture }),
+          ...(ignoreRequestPaths === undefined ? {} : { ignoreRequestPaths }),
+        },
   );
   return (req, res, next) => middleware.use(req, res, next);
 }

@@ -63,6 +63,11 @@ const optionsSchema = z.object({
     })
     .optional(),
   instanceId: z.string().optional(),
+  // Validated so a typo'd rate fails the boot; the ignore lists are copied from the typed options.
+  query: z
+    .object({ sampleRate: RATE.optional(), minMs: z.number().nonnegative().optional() })
+    .optional(),
+  cache: z.object({ hitSampleRate: RATE.optional() }).optional(),
 });
 
 type ParsedSampling = z.infer<typeof optionsSchema>['sampling'];
@@ -165,6 +170,24 @@ export function resolveConfig(options: TelescopeCoreOptions): ResolvedCoreConfig
   }
   if (options.ignoreQueries !== undefined && options.ignoreQueries.length > 0) {
     resolved.ignoreQueries = [...options.ignoreQueries];
+  }
+  if (options.query !== undefined) {
+    const query: NonNullable<ResolvedCoreConfig['query']> = {};
+    if (parsed.query?.sampleRate !== undefined) query.sampleRate = parsed.query.sampleRate;
+    if (parsed.query?.minMs !== undefined) query.minMs = parsed.query.minMs;
+    if (options.query.ignoreTables !== undefined) {
+      query.ignoreTables = [...options.query.ignoreTables];
+    }
+    resolved.query = query;
+  }
+  if (options.cache !== undefined) {
+    const cache: NonNullable<ResolvedCoreConfig['cache']> = {};
+    if (parsed.cache?.hitSampleRate !== undefined) cache.hitSampleRate = parsed.cache.hitSampleRate;
+    if (options.cache.ignoreStores !== undefined) {
+      cache.ignoreStores = [...options.cache.ignoreStores];
+    }
+    if (options.cache.ignoreKeys !== undefined) cache.ignoreKeys = [...options.cache.ignoreKeys];
+    resolved.cache = cache;
   }
   return resolved;
 }

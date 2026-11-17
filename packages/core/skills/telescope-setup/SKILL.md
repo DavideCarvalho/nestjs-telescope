@@ -18,7 +18,8 @@ metadata:
 # Setting up nestjs-telescope
 
 `@dudousxd/nestjs-telescope` is an observability console for NestJS. Importing the
-module wires **request and exception capture automatically** and turns on a
+module wires **request and exception capture automatically** (every request, except
+paths listed in `ignoreRequestPaths`) and turns on a
 zero-config in-memory SQLite store. Everything else (other watchers, storage,
 auth, alerts) is layered on through `forRoot` options.
 
@@ -118,6 +119,9 @@ TelescopeModule.forRoot({
 
 Per-type retention and archive-before-prune live in the
 `telescope-storage-retention` skill.
+Recording less in the first place (per-trace `query.sampleRate`, `query.minMs`,
+`cache.hitSampleRate`, ignore lists, `ignoreRequestPaths`) lives in the
+`telescope-watchers` skill (Pattern 4).
 
 Source: `packages/core/src/config/options.ts` (`PruneOptions`).
 

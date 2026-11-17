@@ -307,6 +307,16 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
    */
   requestCapture?: RequestCaptureOptions;
   /**
+   * Request paths the request middleware never records as `request` entries — health checks,
+   * static assets, a crawler-only sitemap. A string matches the path (query string ignored) as a
+   * PREFIX on a segment boundary (`'/assets'` matches `/assets` and `/assets/app.js`, not
+   * `/assets-old`); a RegExp is tested against the path. An empty or blank string is skipped
+   * (an unset env var must not silence every request). Queries and other entries made while
+   * serving the request are still recorded and still correlated to it; drop those with
+   * `ignoreQueries` / `query.ignoreTables`. Default `[]`.
+   */
+  ignoreRequestPaths?: (string | RegExp)[];
+  /**
    * Resolves the "authenticated user" recorded on a request entry from the raw
    * platform request. Defaults to reading `request.user` (the common
    * Passport/guard convention). Return `null`/`undefined` for anonymous. The

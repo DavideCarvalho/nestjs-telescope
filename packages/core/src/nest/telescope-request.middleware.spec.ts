@@ -504,3 +504,110 @@ describe('TelescopeRequestMiddleware requestCapture (pre-record body gate)', () 
     expect(content.payload).toBe(body);
   });
 });
+
+describe('TelescopeRequestMiddleware ignoreRequestPaths', () => {
+  async function recordedUris(
+    options: Pick<TelescopeModuleOptions, 'ignoreRequestPaths'>,
+    urls: string[],
+    viaCapture = false,
+  ): Promise<{ uris: string[]; queries: number; service: TelescopeService }> {
+    const storage = new InMemoryStorageProvider();
+    const service = new TelescopeService(resolveConfig({}), storage, {});
+    const handle = viaCapture
+      ? telescopeRequestCapture(service, options)
+      : (req: unknown, res: unknown, next: () => void) =>
+          new TelescopeRequestMiddleware(service, undefined, options).use(req, res, next);
+    for (const url of urls) {
+      const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+      handle(
+        { method: 'GET', url, headers: {}, socket: { remoteAddress: '10.0.0.1' } },
+        res,
+        () => {
+          // A query made while serving the request.
+          service.record({ type: 'query', content: { sql: 'select 1' } });
+        },
+      );
+      res.emit('finish');
+    }
+    await service.flush();
+    // The store lists newest first; read in request order.
+    const all = (await storage.get({})).data.reverse();
+    return {
+      uris: all
+        .filter((entry) => entry.type === 'request')
+        .map((entry) => (entry.content as { uri: string }).uri),
+      queries: all.filter((entry) => entry.type === 'query').length,
+      service,
+    };
+  }
+
+  it('does not record request entries for matching paths (segment-boundary prefix or RegExp)', async () => {
+    const { uris, queries } = await recordedUris(
+      { ignoreRequestPaths: ['/health', '/assets/', /\.map$/g] },
+      [
+        '/health',
+        '/health/ready?full=1',
+        '/healthy',
+        '/assets',
+        '/assets/app.js',
+        '/assets-old/x',
+        '/app.js.map',
+        '/app.js.map',
+        '/orders',
+      ],
+    );
+    expect(uris).toEqual(['/healthy', '/assets-old/x', '/orders']);
+    // Queries made while serving an ignored request are still recorded.
+    expect(queries).toBe(9);
+  });
+
+  it('skips empty and blank patterns instead of ignoring every path', async () => {
+    const { uris } = await recordedUris({ ignoreRequestPaths: ['', '  '] }, ['/orders', '/']);
+    expect(uris).toEqual(['/orders', '/']);
+  });
+
+  it('is honoured by the manual telescopeRequestCapture path', async () => {
+    const { uris } = await recordedUris(
+      { ignoreRequestPaths: ['/health'] },
+      ['/health', '/orders'],
+      true,
+    );
+    expect(uris).toEqual(['/orders']);
+  });
+
+  it('records every path by default', async () => {
+    const { uris } = await recordedUris({}, ['/health', '/orders']);
+    expect(uris).toEqual(['/health', '/orders']);
+  });
+});
+
+describe('TelescopeService volume knobs wiring', () => {
+  it('passes query and cache knobs to the recorder', async () => {
+    const storage = new InMemoryStorageProvider();
+    const service = new TelescopeService(
+      resolveConfig({ query: { sampleRate: 0 }, cache: { ignoreKeys: ['tmp:'] } }),
+      storage,
+      {},
+    );
+    service.record({ type: 'query', content: { sql: 'select 1' }, durationMs: 1 });
+    service.record({ type: 'query', content: { sql: 'select 2' }, tags: ['slow'] });
+    service.record({ type: 'cache', content: { operation: 'set', key: 'tmp:1', hit: null } });
+    service.record({ type: 'cache', content: { operation: 'set', key: 'user:1', hit: null } });
+    await service.flush();
+    const all = (await storage.get({})).data.reverse();
+    expect(
+      all.map(
+        (entry) =>
+          (entry.content as { sql?: string; key?: string }).sql ??
+          (entry.content as { key: string }).key,
+      ),
+    ).toEqual(['select 2', 'user:1']);
+  });
+
+  it('tells the span processor that query entries can be sampled away', () => {
+    new TelescopeService(resolveConfig({ query: { minMs: 5 } }), new InMemoryStorageProvider(), {});
+    expect(telescopeRuntime().isSampled?.('query')).toBe(true);
+    new TelescopeService(resolveConfig({}), new InMemoryStorageProvider(), {});
+    expect(telescopeRuntime().isSampled?.('query')).toBe(false);
+  });
+});

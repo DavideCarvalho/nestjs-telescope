@@ -8,6 +8,10 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 Core captures requests and exceptions on its own. Everything else is a watcher you add to the `watchers` array. Each is its own package — install the ones that match your stack. Every watcher records in the caller's async context, so each entry lands in the active request/job batch automatically (see [Capture & correlation](/docs/concepts/capture)). Recording failures are always swallowed: a Telescope error can never change the outcome of the thing it's watching.
 
+<Callout type="info" title="Recording fewer queries and cache hits">
+  Query and cache entries are usually most of what Telescope writes. The core `query` (`sampleRate`, `minMs`, `ignoreTables`) and `cache` (`hitSampleRate`, `ignoreStores`, `ignoreKeys`) options apply to every query and cache watcher below: sampling is decided once per trace, so a kept request keeps all its queries, and slow/failed queries and cache misses/writes/deletes/clears are always kept. See [the volume knobs](/docs/recipes/tags-and-redaction#record-fewer-queries-cache-hits-and-requests--the-volume-knobs).
+</Callout>
+
 ---
 
 ## Query watchers

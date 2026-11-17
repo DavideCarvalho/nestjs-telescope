@@ -13,6 +13,7 @@ import { resolveAlerts } from '../alerts/resolve-alerts.js';
 import { TelescopeAlerter } from '../alerts/telescope-alerter.js';
 import type { ResolvedCoreConfig } from '../config/options.js';
 import { samplingCanDrop, samplingRates } from '../config/sampling.js';
+import { querySamplingCanDrop } from '../config/volume.js';
 import { createBatch } from '../context/batch.js';
 import { CONTEXT_ACCESSOR, type ContextAccessor } from '../context/context-accessor.js';
 import { TelescopeContext } from '../context/telescope-context.js';
@@ -191,6 +192,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       idFactory: () => v7(),
       ...(config.filter ? { filter: config.filter } : {}),
       ...(config.ignoreQueries ? { ignoreQueries: config.ignoreQueries } : {}),
+      ...(config.query ? { query: config.query } : {}),
+      ...(config.cache ? { cache: config.cache } : {}),
       ...(config.traceContext ? { traceContext: config.traceContext } : {}),
       // Additive, opt-in context enrichment (traceId fallback + user/tenant
       // tags). Present only when nestjs-context bound the shared accessor token.
@@ -257,7 +260,8 @@ export class TelescopeService implements OnModuleInit, OnApplicationShutdown {
       runtime.isPaused = () => this.recorder.isPaused;
       runtime.selfPath = `/${this.config.path}`;
       runtime.isSampled = (operation) =>
-        samplingCanDrop(this.config.sampling, coveredEntryType(operation));
+        samplingCanDrop(this.config.sampling, coveredEntryType(operation)) ||
+        (operation === 'query' && querySamplingCanDrop(this.config.query));
       runtime.captureBatch = () => this.context.captureState();
       runtime.recordInBatch = (batch, input) =>
         this.context.runInState(batch, () => this.record(input));

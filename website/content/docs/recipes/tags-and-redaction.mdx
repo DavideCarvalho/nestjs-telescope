@@ -116,6 +116,37 @@ TelescopeModule.forRoot({
 
 The N+1 detector runs over the queries that are kept, so ignoring a polling query never hides a real N+1 elsewhere.
 
+### Record fewer queries, cache hits and requests — the volume knobs
+
+On a busy app, queries and cache operations are most of what Telescope writes. Three option blocks trim them without losing what you open the console for. Every default records everything, exactly as before.
+
+```ts
+TelescopeModule.forRoot({
+  query: {
+    sampleRate: 0.1, // keep the queries of 10% of requests/jobs
+    minMs: 2, // skip queries faster than 2 ms
+    ignoreTables: ['durable_workflow_runs'], // never record statements on this table
+  },
+  cache: {
+    hitSampleRate: 0.1, // keep 10% of cache hits; misses, writes, deletes and clears are always kept
+    ignoreStores: ['sessions'],
+    ignoreKeys: ['rate-limit:', /^lock:/],
+  },
+  // Health checks and static assets never become `request` entries.
+  ignoreRequestPaths: ['/health', '/assets', /\.map$/],
+});
+```
+
+- **Sampling is decided once per trace, not per entry.** The decision hashes the request or job's trace id (or its batch, when there is no trace), so a kept request keeps *all* of its queries — its timeline and N+1 detection stay complete — and a dropped one keeps none. Rates nest: a trace kept by `query.sampleRate: 0.1` is also kept by `cache.hitSampleRate: 0.5`. Queries outside any request or job are sampled at random.
+- **Slow and failed queries always survive.** A query tagged `slow` (by its watcher's `slowMs`) or `failed` is recorded whatever `sampleRate` and `minMs` say.
+- **`minMs` hides N+1 loops.** A fast query repeated in a loop is what an N+1 looks like, so prefer `sampleRate` when N+1 detection matters. A query whose watcher reports no duration (TypeORM's plain `logQuery`) is never dropped by `minMs`.
+- **`ignoreTables`** matches the first table a `select` reads from, or the table an `insert` / `update` / `delete` writes: case-insensitive, with or without schema and quoting (`'durable_workflow_runs'` matches `"public"."durable_workflow_runs"`). Use `ignoreQueries` for anything finer.
+- **`cache.ignoreStores`** matches `content.store` case-insensitively; **`cache.ignoreKeys`** matches a string as a key prefix and tests a RegExp as-is. While `hitSampleRate` is below 1 the hit-ratio you read from cache entries is lower than reality.
+- **`ignoreRequestPaths`** matches a string as a path prefix on a segment boundary (`'/assets'` matches `/assets` and `/assets/app.js`, not `/assets-old`; the query string is ignored) and tests a RegExp against the path. An empty or blank string is skipped, so an unset env var can't silence every request. Only the `request` entry is skipped: queries and other entries made while serving the request are still recorded and correlated to it. The manual `telescopeRequestCapture(service, { ignoreRequestPaths })` takes the same option.
+- Rates are validated at boot: a `sampleRate` outside 0–1 or a negative `minMs` fails `forRoot`.
+
+These run before `sampling`, so a per-type `sampling.query` rate still applies on top of them to whatever they keep.
+
 ---
 
 ## Sample high-volume types

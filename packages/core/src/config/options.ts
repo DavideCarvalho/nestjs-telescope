@@ -169,6 +169,51 @@ export interface SamplingRule {
  */
 export type SamplingConfig = Record<string, number | SamplingRule>;
 
+/**
+ * Volume knobs for `query` entries (any ORM watcher: TypeORM, MikroORM, Prisma…). Defaults record
+ * every query, exactly as before.
+ */
+export interface QueryVolumeOptions {
+  /**
+   * Fraction (0–1) of queries recorded, decided once per trace (the request or job's trace id,
+   * else its batch): a kept request keeps ALL of its queries, so its timeline and N+1 detection
+   * stay complete, and a dropped one keeps none. Slow queries (tagged `slow` by the watcher's
+   * `slowMs`) and failed ones are always recorded. Queries outside any request or job are sampled
+   * at random. Default `1`.
+   */
+  sampleRate?: number;
+  /**
+   * Queries faster than this many ms are not recorded. Slow and failed queries are always
+   * recorded, and a query whose watcher reports no duration (TypeORM's `logQuery`) is never
+   * dropped by it. A fast query repeated in a loop is what an N+1 looks like, so a floor hides
+   * those loops; prefer `sampleRate` when N+1 detection matters. Default `0`.
+   */
+  minMs?: number;
+  /**
+   * Tables whose statements are never recorded: the first table a `select` reads from, or the
+   * table an `insert` / `update` / `delete` writes. Case-insensitive, with or without the schema
+   * (`'durable_workflow_runs'` also matches `"public"."durable_workflow_runs"`). For anything
+   * finer, use `ignoreQueries`.
+   */
+  ignoreTables?: string[];
+}
+
+/**
+ * Volume knobs for `cache` entries. Defaults record every operation, exactly as before.
+ */
+export interface CacheVolumeOptions {
+  /**
+   * Fraction (0–1) of cache HITS recorded, decided once per trace like `query.sampleRate`.
+   * Misses, writes, deletes and clears are always recorded. The hit-ratio figures count recorded
+   * entries, so they read lower than reality while this is below 1. Default `1`.
+   */
+  hitSampleRate?: number;
+  /** Store names (`content.store`, case-insensitive) whose operations are not recorded. */
+  ignoreStores?: string[];
+  /** Keys whose operations are not recorded: a string matches as a PREFIX, a RegExp is tested as-is. */
+  ignoreKeys?: Array<string | RegExp>;
+}
+
 /** Author-facing options. NestJS-specific fields (watchers, decorators, path) are
  *  layered on in the Nest integration package; this shape is the agnostic subset. */
 export interface TelescopeCoreOptions {
@@ -203,6 +248,16 @@ export interface TelescopeCoreOptions {
    * and never reach the N+1 detector, which keeps working on the queries that are recorded.
    */
   ignoreQueries?: QueryIgnoreRule[];
+  /**
+   * Record fewer `query` entries on a busy app: per-trace `sampleRate`, a `minMs` floor and
+   * `ignoreTables`. Slow and failed queries are always kept. See {@link QueryVolumeOptions}.
+   */
+  query?: QueryVolumeOptions;
+  /**
+   * Record fewer `cache` entries: per-trace `hitSampleRate` (misses, writes, deletes and clears
+   * are always kept), `ignoreStores` and `ignoreKeys`. See {@link CacheVolumeOptions}.
+   */
+  cache?: CacheVolumeOptions;
   /**
    * On-demand CPU flamegraph profiling. STRICTLY opt-in and OFF by default; when
    * absent or `{ enabled: false }` the profiler is never constructed, the Node
@@ -273,6 +328,10 @@ export interface ResolvedCoreConfig {
   instanceId: string;
   filter?: (entry: Entry) => boolean;
   ignoreQueries?: QueryIgnoreRule[];
+  /** The `query` volume knobs, validated; absent when not configured. */
+  query?: QueryVolumeOptions;
+  /** The `cache` volume knobs, validated; absent when not configured. */
+  cache?: CacheVolumeOptions;
   /** Fully-defaulted profiling config. Always present; `enabled: false` by default. */
   profiling: ResolvedProfilingConfig;
   traceContext?: TraceContextProvider;

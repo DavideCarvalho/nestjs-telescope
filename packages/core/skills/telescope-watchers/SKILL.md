@@ -19,7 +19,8 @@ metadata:
 
 # Watchers & correlation
 
-Telescope's core captures **only** requests and exceptions. Every other source —
+Telescope's core captures **only** requests (every request, except paths listed in
+`ignoreRequestPaths`) and exceptions. Every other source —
 queries, jobs, mail, cache, schedules, outbound HTTP — is a `Watcher` you add to
 the `watchers` array. A watcher records inside the caller's async context, so its
 entry lands in the right **batch** (the request or job that caused it) automatically.
@@ -140,6 +141,35 @@ MikroOrmModule.forRootAsync({
 
 Source: `website/content/docs/getting-started.mdx`,
 `packages/core/src/nest/telescope.service.ts` (`record`).
+
+### Pattern 4 — record fewer queries and cache hits
+
+Query and cache entries dominate write volume on a busy app. The core `query` and
+`cache` options (on `TelescopeModule.forRoot`, not on the watcher) trim every query
+and cache watcher at once; defaults record everything:
+
+```ts
+TelescopeModule.forRoot({
+  query: { sampleRate: 0.1, minMs: 2, ignoreTables: ['durable_workflow_runs'] },
+  cache: { hitSampleRate: 0.1, ignoreStores: ['sessions'], ignoreKeys: ['rate-limit:', /^lock:/] },
+  ignoreRequestPaths: ['/health', '/assets'],
+});
+```
+
+- `query.sampleRate` / `cache.hitSampleRate` are decided ONCE per trace (the trace id,
+  else the request/job batch): a kept request keeps all of its queries, so its timeline
+  and N+1 detection stay complete. Do not emulate this with `sampling: { query: 0.1 }`,
+  which flips a coin per entry and leaves every request with a partial query list.
+- Queries tagged `slow` (by the watcher's `slowMs`) or `failed` always survive
+  `query.sampleRate` and `query.minMs`; a query without a duration is never dropped by `minMs`.
+- Only cache hits (`operation: 'get'`, `hit: true`) are sampled; misses, writes,
+  deletes and clears are always recorded.
+- `ignoreRequestPaths` only skips the `request` entry (segment-boundary prefix strings
+  or RegExps; blank strings are skipped); queries made while serving it are still recorded.
+
+Source: `packages/core/src/config/volume.ts`, `packages/core/src/recorder/recorder.ts`,
+`packages/core/src/nest/telescope-request.middleware.ts` (`isIgnoredRequestPath`),
+`website/content/docs/recipes/tags-and-redaction.mdx`.
 
 ## Common mistakes
 
