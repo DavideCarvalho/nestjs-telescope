@@ -1,5 +1,6 @@
-import type { SamplingConfig } from '../config/options.js';
+import type { CacheVolumeOptions, QueryVolumeOptions, SamplingConfig } from '../config/options.js';
 import { passesSampling } from '../config/sampling.js';
+import { type VolumeFilter, compileVolumeFilter } from '../config/volume.js';
 import type { ContextAccessor } from '../context/context-accessor.js';
 import type { TelescopeContext } from '../context/telescope-context.js';
 import {
@@ -138,6 +139,14 @@ export interface RecorderOptions {
    * intentional exclusion, like `filter`: not a drop, no counter increment.
    */
   ignoreQueries?: QueryIgnoreRule[];
+  /**
+   * `query` volume knobs (per-trace `sampleRate`, `minMs`, `ignoreTables`). Applied after
+   * `ignoreQueries` and before `sampling`. A sampled-out query reports `kept: false` to
+   * `onSampled`; an ignored table is an intentional exclusion like `ignoreQueries`.
+   */
+  query?: QueryVolumeOptions;
+  /** `cache` volume knobs (per-trace `hitSampleRate`, `ignoreStores`, `ignoreKeys`). */
+  cache?: CacheVolumeOptions;
   /** Optional ambient trace-context source; read once per recorded entry. */
   traceContext?: TraceContextProvider;
   /**
@@ -261,6 +270,8 @@ export class Recorder {
   private readonly redactSpec: CompiledRedactSpec;
   /** `ignoreQueries` compiled once; `null` without rules. */
   private readonly ignoreQuery: ((input: RecordInput) => boolean) | null;
+  /** `query` / `cache` volume knobs compiled once; `null` when none drops anything. */
+  private readonly volume: VolumeFilter | null;
 
   constructor(private readonly options: RecorderOptions) {
     this.now = options.now ?? Date.now;
@@ -269,6 +280,7 @@ export class Recorder {
     this.delay = options.delay ?? defaultUnrefDelay;
     this.redactSpec = compileRedactSpec(options.redact);
     this.ignoreQuery = compileQueryIgnore(options.ignoreQueries);
+    this.volume = compileVolumeFilter(options.query, options.cache);
     // Pre-size the ring so slot access is always O(1).
     this.ring = new Array<Entry | undefined>(options.bufferSize).fill(undefined);
   }
@@ -421,6 +433,14 @@ export class Recorder {
       }
       // Ignored queries (polling noise) are excluded before any work is spent on them.
       if (this.ignoreQuery?.(input)) return;
+      if (this.volume !== null) {
+        const decision = this.volume(input, () => this.samplingKey(input), this.random);
+        if (decision === 'ignored') return;
+        if (decision === 'sampled') {
+          this.notifySampled(input, false);
+          return;
+        }
+      }
       const kept = this.passesSampling(input);
       this.notifySampled(input, kept);
       if (!kept) {
@@ -598,6 +618,31 @@ export class Recorder {
    */
   private passesSampling(input: RecordInput): boolean {
     return passesSampling(this.options.sampling, input, this.random);
+  }
+
+  /**
+   * The key a per-trace sampling decision hashes: the trace id the entry will carry (same
+   * precedence as {@link enrich}), else the request/job batch id, else `null` (sampled at random).
+   * Only called when a volume knob actually samples, so the default path never pays for it.
+   */
+  private samplingKey(input: RecordInput): string | null {
+    if (input.traceId !== undefined) return input.traceId;
+    try {
+      const traceId = this.options.traceContext?.current()?.traceId;
+      if (traceId) return traceId;
+    } catch {
+      // A misbehaving provider falls through to the next source.
+    }
+    const scope = currentTraceScope();
+    if (scope?.upstreamTraceId) return scope.upstreamTraceId;
+    try {
+      const ctxTraceId = this.options.contextAccessor?.traceId();
+      if (typeof ctxTraceId === 'string' && ctxTraceId.length > 0) return ctxTraceId;
+    } catch {
+      // Degrade silently, like the enrichment read.
+    }
+    if (scope !== undefined) return scope.fallbackTraceId;
+    return this.options.context.current()?.id ?? null;
   }
 
   private enrich(input: RecordInput): Entry {
