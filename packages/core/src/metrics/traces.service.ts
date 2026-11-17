@@ -245,19 +245,12 @@ export class TracesService {
   }
 
   /**
-   * `entries` with the content of the request entry each trace is labelled from (its first one, as
-   * {@link summarizeTraces} reads them: the summary's "METHOD uri"), read by id in batched `get`s of
-   * at most {@link LABEL_CHUNK}. Everything else stays content-less.
+   * `entries` with the content of their request entries (the summary's "METHOD uri" label comes
+   * from the first one that has it, as {@link summarizeTraces} reads them), read by id in batched
+   * `get`s of at most {@link LABEL_CHUNK}. Everything else stays content-less.
    */
   private async withRequestContent(entries: Entry[]): Promise<Entry[]> {
-    const labelled = new Set<string>();
-    const ids: string[] = [];
-    for (const entry of entries) {
-      if (entry.type !== EntryType.Request || entry.traceId === null) continue;
-      if (labelled.has(entry.traceId)) continue;
-      labelled.add(entry.traceId);
-      ids.push(entry.id);
-    }
+    const ids = entries.filter((entry) => entry.type === EntryType.Request).map((e) => e.id);
     if (ids.length === 0) return entries;
     const content = new Map<string, unknown>();
     for (let start = 0; start < ids.length; start += LABEL_CHUNK) {

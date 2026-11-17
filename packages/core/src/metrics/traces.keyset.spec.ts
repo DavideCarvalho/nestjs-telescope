@@ -182,20 +182,29 @@ describe.each(stores)('traces by keyset (%s)', (_, make) => {
 });
 
 describe('trace labels', () => {
-  it('reads one request per trace, in batches of at most 100 ids', async () => {
+  it('reads the request entries by id in batches of at most 100', async () => {
     const store = new InMemoryStorageProvider();
     const rows: Entry[] = [];
-    for (let t = 0; t < 250; t++) {
-      // Two requests per trace: only the one the label comes from is read.
+    for (let t = 0; t < 125; t++) {
       rows.push(entry('request', `tr-${t}`, NOW - t * 1000));
       rows.push(entry('request', `tr-${t}`, NOW - t * 1000 - 1));
     }
     await store.store(rows);
     const get = vi.spyOn(store, 'get');
-    const page = await new TracesService(store).getTraces({ windowMs: WINDOW, limit: 250 });
+    const page = await new TracesService(store).getTraces({ windowMs: WINDOW, limit: 125 });
     expect(page.traces.every((trace) => trace.rootLabel === `GET /r/${trace.traceId}`)).toBe(true);
     const byId = get.mock.calls.map(([query]) => query.ids).filter((ids) => ids !== undefined);
     expect(byId.map((ids) => ids.length)).toEqual([100, 100, 50]);
+  });
+
+  it("labels from an older request when the newest one's content has no uri", async () => {
+    const store = new InMemoryStorageProvider();
+    await store.store([
+      entry('request', 'tr-x', NOW - 1000, { content: { note: 'no uri' } }),
+      entry('request', 'tr-x', NOW - 2000),
+    ]);
+    const page = await new TracesService(store).getTraces({ windowMs: WINDOW });
+    expect(page.traces[0]?.rootLabel).toBe('GET /r/tr-x');
   });
 });
 
