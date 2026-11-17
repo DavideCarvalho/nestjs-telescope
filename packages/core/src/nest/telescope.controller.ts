@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   ForbiddenException,
@@ -29,6 +30,7 @@ import type { QueryContent, RequestContent } from '../entry/content.js';
 import { type Entry, EntryType } from '../entry/entry.js';
 import { ExtensionRegistry } from '../extension/registry.js';
 import type { ExtensionActionCaller, Panel } from '../extension/types.js';
+import { isFederatedStorage } from '../federation/federated-storage.js';
 import { TelescopeFleet } from '../fleet/fleet.service.js';
 import type { FleetView } from '../fleet/view.js';
 import { collectEntriesInWindow } from '../metrics/collect-window.js';
@@ -384,6 +386,7 @@ export class TelescopeController {
     if (entry === null || entry.type !== EntryType.Request) {
       throw new NotFoundException('No request entry with that id.');
     }
+    await this.refuseFederatedEntry(id, 'replay');
     return replayRequest(entry.content as RequestContent, request);
   }
 
@@ -838,6 +841,7 @@ export class TelescopeController {
     const granted = call?.apps ?? '*';
     const selection = call?.selection ?? { kind: 'all' };
     const needle = search?.trim().toLowerCase() ?? '';
+    const federated = this.federatedApps();
     let ids: string[];
     if (granted === '*') {
       const prefix = `${APP_TAG_PREFIX}:`;
@@ -859,24 +863,61 @@ export class TelescopeController {
         );
         ids = rows.map((row) => row.tag.slice(prefix.length)).filter((id) => id !== '');
       }
+      // A federated console: its apps are pickable whether or not any entry names them.
+      for (const name of federated?.names ?? []) if (!ids.includes(name)) ids.push(name);
     } else {
       ids = granted;
     }
-    const labels = await this.appLabels(ids.slice(0, MAX_LABEL_SCAN));
+    const labels = {
+      ...federated?.labels,
+      ...(await this.appLabels(ids.slice(0, MAX_LABEL_SCAN))),
+    };
+    const isFederated = (id: string) => federated?.names.includes(id) === true;
     const apps = ids
-      .map((id) => ({ id, label: labels[id] ?? id }))
+      .map((id) => ({
+        id,
+        label: labels[id] ?? id,
+        ...(isFederated(id) ? { federated: true as const } : {}),
+      }))
       .filter(({ id, label }) => !needle || `${id} ${label}`.toLowerCase().includes(needle))
       .sort((a, b) => a.label.localeCompare(b.label))
       .slice(0, TENANT_OPTIONS);
+    // An app outside the grant is never echoed back.
+    const selected =
+      selection.kind === 'apps' && selection.ids.length === 1 ? (selection.ids[0] ?? null) : null;
     return {
       enabled: granted !== '*' || ids.length > 0,
       tag: APP_TAG_PREFIX,
       all: granted === '*',
-      // An app outside the grant is never echoed back.
-      selected:
-        selection.kind === 'apps' && selection.ids.length === 1 ? (selection.ids[0] ?? null) : null,
+      selected,
       apps,
+      ...(federated !== undefined
+        ? { federation: { selected: selected !== null && isFederated(selected) } }
+        : {}),
     };
+  }
+
+  /** The federated apps (`federation`) and their labels, or `undefined` without it. */
+  private federatedApps(): { names: string[]; labels: Record<string, string> } | undefined {
+    const apps = this.options.federation?.apps;
+    if (apps === undefined) return undefined;
+    const labels: Record<string, string> = {};
+    for (const [name, app] of Object.entries(apps)) if (app.label) labels[name] = app.label;
+    return { names: Object.keys(apps), labels };
+  }
+
+  /**
+   * Refuses an action that runs in this process (replay, EXPLAIN) for an entry read from a
+   * federated app's own store: it has to run in that app.
+   */
+  private async refuseFederatedEntry(id: string, action: string): Promise<void> {
+    if (!isFederatedStorage(this.storage)) return;
+    const app = await this.storage.federatedAppOf(id);
+    if (app !== null) {
+      throw new ConflictException(
+        `This entry is in the federated app "${app}"'s own store: ${action} runs in that app's process. Use that app's own console.`,
+      );
+    }
   }
 
   /** Labels of the App picker: `apps.labels` (a map or a function), else the id. */
@@ -1099,6 +1140,7 @@ export class TelescopeController {
     if (!entry || entry.type !== EntryType.Query || !isQueryContentWithSql(entry.content)) {
       throw new NotFoundException('No query entry with SQL for that id.');
     }
+    await this.refuseFederatedEntry(body.entryId, 'EXPLAIN');
     try {
       // Pass the SQL/bindings EXACTLY as captured — plans carry no user data.
       const plan = await explainQuery(entry.content.sql, entry.content.bindings ?? []);

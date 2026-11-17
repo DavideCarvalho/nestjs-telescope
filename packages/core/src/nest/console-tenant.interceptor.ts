@@ -13,6 +13,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
+import { openFederationScope } from '../federation/scope.js';
 import { type TenantView, openTenantView } from '../storage/tenant-scoped-storage.js';
 import { type ConsoleAppSelection, consoleAppsFor, requestedApp } from './console-app-scope.js';
 import { type ConsoleTenantSelection, consoleTenantsFor } from './console-tenant-scope.js';
@@ -106,12 +107,18 @@ export class ConsoleTenantInterceptor implements NestInterceptor {
     if (call.tenant) logForgedTenant(call.tenant.selection, where);
     logForgedApp(call.app.selection, where);
     const view = call.view;
-    if (view === null) return next.handle();
+    const federation = call.federation;
+    if (view === null && federation === undefined) return next.handle();
     return new Observable((subscriber) => {
-      const handle = openTenantView(view);
-      const subscription = handle.run(() => next.handle().subscribe(subscriber));
+      // `federation`: the stores the call reads, opened around the view.
+      const scope = federation !== undefined ? openFederationScope(federation) : null;
+      const handle = view !== null ? openTenantView(view) : null;
+      const subscribe = () => next.handle().subscribe(subscriber);
+      const inView = () => (handle !== null ? handle.run(subscribe) : subscribe());
+      const subscription = scope !== null ? scope.run(inView) : inView();
       return () => {
-        handle.close();
+        handle?.close();
+        scope?.close();
         subscription.unsubscribe();
       };
     });

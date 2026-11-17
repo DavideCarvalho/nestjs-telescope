@@ -21,6 +21,8 @@ import { resolveConfig } from '../config/resolve-config.js';
 import { TelescopeDiscoveryController } from '../discovery/discovery.controller.js';
 import { TelescopeDiscovery } from '../discovery/discovery.service.js';
 import { ExtensionRegistry } from '../extension/registry.js';
+import { resolveFederation } from '../federation/config.js';
+import { FederatedStorage } from '../federation/federated-storage.js';
 import { TelescopeFleet } from '../fleet/fleet.service.js';
 import { TelescopeProbesController } from '../fleet/probes.controller.js';
 import { QueueMetricsService } from '../metrics/queue-metrics.service.js';
@@ -124,8 +126,15 @@ const SHARED_PROVIDERS: Provider[] = [
               ]),
             })
           : (options.storage ?? new SqliteStorageProvider());
-      const storage = asTelescopeWorkStorage(base);
-      return options.tenancy === false ? storage : asTenantScopedStorage(storage);
+      const scoped = (store: StorageProvider): StorageProvider => {
+        const storage = asTelescopeWorkStorage(store);
+        return options.tenancy === false ? storage : asTenantScopedStorage(storage);
+      };
+      // `federation`: the console also reads other apps' own stores, each wrapped as this one is.
+      const federation = resolveFederation(options);
+      return federation === undefined
+        ? scoped(base)
+        : new FederatedStorage(scoped(base), federation.apps, scoped);
     },
     inject: [TELESCOPE_OPTIONS],
   },

@@ -811,8 +811,16 @@ export interface ConsoleAppsInfo {
   all: boolean;
   /** The app this view shows; `null` for every granted app. */
   selected: string | null;
-  /** Apps to pick from, narrowed by the search. */
-  apps: { id: string; label: string }[];
+  /**
+   * Apps to pick from, narrowed by the search. `federated`: read from the app's own store by a
+   * federated console.
+   */
+  apps: { id: string; label: string; federated?: true }[];
+  /**
+   * Set on a federated console: whether the app in view is a federated one (its live queues,
+   * schedules and profiler run in its own process, not this console's).
+   */
+  federation?: { selected: boolean };
 }
 
 /**

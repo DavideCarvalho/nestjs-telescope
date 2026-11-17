@@ -14,6 +14,10 @@ By default every app runs its own Telescope: it records, stores and shows its ow
 | `'control-plane'` | Stores its own entries and the ones tenant apps send it. Its console gets the App picker. Needs `verifyTenant`. |
 | `'tenant'` | Sends its entries to a control plane. Keeps a local copy only with `tenant.local`. |
 
+<Callout title="Apps that keep their own store">
+To get one console without moving any entry, let each app keep its standalone Telescope and have a central app read their stores in place with `federation`. It composes with a control plane: some apps ship, some are read in place. See [Federated console](/docs/recipes/federated-console).
+</Callout>
+
 ## The control plane
 
 ```ts

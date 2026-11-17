@@ -70,7 +70,7 @@ export function AppPicker(): React.JSX.Element | null {
   }
 
   const apps = listed.data?.enabled ? listed.data.apps : info.apps;
-  const choices: { id: string | null; label: string }[] = [
+  const choices: { id: string | null; label: string; federated?: true }[] = [
     ...(debounced === '' || ALL.toLowerCase().includes(debounced.toLowerCase())
       ? [{ id: null, label: ALL }]
       : []),
@@ -141,6 +141,9 @@ export function AppPicker(): React.JSX.Element | null {
                 }`}
               >
                 {choice.label}
+                {'federated' in choice && choice.federated ? (
+                  <span className="ml-1 text-muted-foreground">· own store</span>
+                ) : null}
               </div>
             ))}
             {choices.length === 0 ? (

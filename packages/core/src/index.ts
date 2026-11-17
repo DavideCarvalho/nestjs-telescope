@@ -124,6 +124,7 @@ export * from './topology/transport.js';
 export * from './topology/server-url.js';
 export * from './topology/remote-store.js';
 export * from './topology/config.js';
+export * from './federation/index.js';
 export { TelescopeIngestController, bearerToken } from './topology/ingest.controller.js';
 export { TelescopeIngest } from './topology/ingest.service.js';
 export {

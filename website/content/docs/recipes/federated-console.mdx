@@ -1,0 +1,108 @@
+---
+title: Federated console
+description: One console for several apps that keep their own Telescope stores. The central app reads each app's store in place, with an App picker, instead of the apps shipping their entries to it.
+icon: Waypoints
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A [control plane](/docs/concepts/topologies) gets one console for several apps by having the apps **ship** their entries to it. A **federated console** gets the same console without moving any entry: every app keeps recording into its own Telescope store, and a central app **reads those stores in place**. Its console has the same App picker (`?app=` in the URL), the same `authorize` app grants, and an **All apps** view that merges every store.
+
+## Federated or shipped?
+
+| | Shipping (`topology: 'tenant'` → `'control-plane'`) | Federated (`federation`) |
+|---|---|---|
+| Where entries live | In the control plane's store | In each app's own store |
+| What the apps run | A transport that buffers and sends batches | Nothing new: their usual standalone Telescope |
+| What the central app needs | An ingest route, tokens, `verifyTenant` | Read access to each app's store (for example, `SELECT` on each app's schema) |
+| Retention, pruning, alerts | One place, on the control plane | Each app prunes and alerts on its own store |
+| Each app's own console | Empty unless `tenant.local` | Unchanged: it still shows the app's data |
+| All apps view | One store, one query | One query per app's store, merged |
+| Best when | Apps live in different places, or you want one retention policy and one set of alerts | The apps share a database server (for example, one Postgres with a schema per app), or you can't add a transport to them |
+
+You can use both: a control plane can also federate. Apps that ship appear in its picker as before, and federated apps appear next to them. A `topology: 'tenant'` app can't federate: it has no console store of its own.
+
+## Set it up
+
+Each app keeps its standalone Telescope, with its tables in its own schema:
+
+```ts title="billing (an app)"
+import { MikroOrmStorageProvider } from '@dudousxd/nestjs-telescope-mikro-orm';
+
+TelescopeModule.forRoot({
+  storage: new MikroOrmStorageProvider(orm, { schema: 'billing_telescope' }),
+  prune: { after: '7d' },
+});
+```
+
+The central app lists the apps it reads. Each app's `storage` is a store pointed at that app's tables, or a function that builds one (called once, at boot):
+
+```ts title="the central console"
+import { PostgreSqlDriver } from '@mikro-orm/postgresql';
+import { MikroOrmStorageProvider } from '@dudousxd/nestjs-telescope-mikro-orm';
+
+const readOnly = (schema: string) =>
+  new MikroOrmStorageProvider(
+    { driver: PostgreSqlDriver, clientUrl: process.env.TELESCOPE_CONSOLE_DATABASE_URL! },
+    // The app owns its tables: never create or alter them from here.
+    { schema, ensureSchema: false },
+  );
+
+TelescopeModule.forRoot({
+  storage: new MikroOrmStorageProvider(orm, { schema: 'console_telescope' }), // its own entries
+  authorize: (ctx) => ctx.switchToHttp().getRequest().user?.isStaff === true,
+  federation: {
+    apps: {
+      billing: { storage: () => readOnly('billing_telescope'), label: 'Billing' },
+      orders: { storage: () => readOnly('orders_telescope'), label: 'Orders' },
+    },
+  },
+});
+```
+
+App names follow the same rule as a tenant's `partition`: 1–255 printable ASCII characters, without spaces. They're the `?app=` values and the ids `authorize` grants. `apps.labels` still applies and wins over `label`. Use `forRootAsync` when building a store needs something from DI.
+
+<Callout type="warn">
+Set `ensureSchema: false` (or your provider's equivalent) on every federated store. With it on, the central app would try to create or migrate the app's tables at boot, which a read-only user can't do and shouldn't.
+</Callout>
+
+## Grant the central app read access
+
+On one Postgres server, give the central app's database user `SELECT` on each app's Telescope schema, and nothing else:
+
+```sql
+-- Once per app schema.
+GRANT USAGE ON SCHEMA billing_telescope TO telescope_console;
+GRANT SELECT ON ALL TABLES IN SCHEMA billing_telescope TO telescope_console;
+-- Tables the app's role creates later (a new Telescope version) are readable too.
+ALTER DEFAULT PRIVILEGES FOR ROLE billing_app IN SCHEMA billing_telescope
+  GRANT SELECT ON TABLES TO telescope_console;
+```
+
+Replace `billing_app` with the role that owns the app's Telescope tables (the one its `MikroOrmStorageProvider` connects as). The central app reads `telescope_entries` and `telescope_rollups` and never writes to an app's schema, so it needs no `INSERT`, `UPDATE`, `DELETE` or `CREATE` there. On MySQL / MariaDB, where a schema is a database, grant `SELECT ON billing_telescope.*`.
+
+## What the console shows
+
+Every read route is answered from the stores the App picker selects:
+
+- **One federated app** (`?app=billing`): every read goes to that app's store alone: entries, traces and the waterfall, Pulse, the Overview, metrics, exceptions, AI usage, the ⌘K search and the MCP tools. Aggregations and rollups run in that store, as on the app's own console.
+- **One shipped app** (`?app=shop`): the central store, narrowed by the `app:shop` tag, as on a control plane.
+- **All apps**: the central store and every federated store, merged. Lists are merged newest first, and the `after` cursor carries each store's own position, so paging never repeats or skips an entry. Counts, Pulse cards and rollups are summed across stores. One estimate: a Pulse family (route, outgoing host, job, exception) found in several apps gets the duration-weighted mean of each app's p50/p99, since percentiles of separate stores can't be combined exactly. Pick the app for its exact percentiles.
+
+If a federated store can't be read (its database is down), the view leaves it out, the list says it is partial, and the log names the app. The other apps keep answering.
+
+`authorize` works as on a control plane: `{ allowed: true, apps: ['billing'] }` limits a viewer to those apps, federated or shipped, on every route, and an `?app=` outside the grant answers empty.
+
+## What stays on the central app
+
+Some features run in an app's process, not in its store. The central console can only run them for itself:
+
+| Feature | In a federated console |
+|---------|------------------------|
+| Clear entries, prune now | Act on the central app's own store only, and are refused while an app is selected. Each app's pruner keeps its own retention. |
+| Replay a request, EXPLAIN a query | Refused (409) for an entry in a federated app's store: they would run against the central app. Use that app's own console. |
+| Live queues, schedules, profiles, prune runs, extension panels | Show the central app's own, and nothing with an app selected. The console says so on those pages. |
+| Live tail | Streams what the central app records (its own entries and shipped ones). Federated apps' new entries show on the next refresh. |
+| Alerts | The central app alerts on what it records. A federated app alerts from its own process, on its own store, with its own `alerts` config, so nothing pages twice. |
+| Fleet | Lists the instances that report to the central app (shipped apps). Federated apps report nowhere, so they don't appear in the fleet. |
+| Server stats, health | The central app's own process. |
