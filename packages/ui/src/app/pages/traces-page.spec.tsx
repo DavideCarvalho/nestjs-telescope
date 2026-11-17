@@ -149,6 +149,27 @@ describe('TracesPage', () => {
     expect(await screen.findByText('first')).toBeTruthy();
   });
 
+  it('starts at the first page again when the window changes in the URL', async () => {
+    const { client, traces } = mockClient([]);
+    traces.mockImplementation(async (window, _size, after) => ({
+      data: [trace({ traceId: `${window}-${after ?? 'first'}` })],
+      scanned: 1,
+      truncated: false,
+      nextCursor: after === undefined ? 'c1' : null,
+      hasNext: after === undefined,
+    }));
+    renderPage(client);
+    expect(await screen.findByText('1h-first')).toBeTruthy();
+    screen.getByLabelText('Older traces').click();
+    expect(await screen.findByText('1h-c1')).toBeTruthy();
+    // Back/forward or an edited link: the hash moves without the picker.
+    window.location.hash = '#/traces?window=24h';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(await screen.findByText('24h-first')).toBeTruthy();
+    const [lastWindow, , lastAfter] = traces.mock.calls.at(-1) ?? [];
+    expect([lastWindow, lastAfter]).toEqual(['24h', undefined]);
+  });
+
   it('shows no pager on a single page (or an older server without cursors)', async () => {
     const { client } = mockClient([trace({ traceId: 'only' })]);
     renderPage(client);
