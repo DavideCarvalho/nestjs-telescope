@@ -48,7 +48,7 @@ TelescopeModule.forRoot({
 });
 ```
 
-Watchers, redaction, sampling, filters and tags run in the tenant as usual, so the control plane only receives what the tenant would have stored. Entries are buffered and sent in batches every second:
+Watchers, redaction, sampling, filters and tags run in the tenant as usual, so the control plane only receives what the tenant would have stored. Entries are buffered and sent in batches every second (every 5 seconds with `transports.redis`), and a full batch goes at once:
 
 | `tenant` option | Default | What it does |
 |-----------------|---------|--------------|
@@ -60,7 +60,7 @@ Watchers, redaction, sampling, filters and tags run in the tenant as usual, so t
 | `bufferSize` | `10000` | Entries waiting to be sent. Beyond it the oldest is dropped. |
 | `batchSize` | `200` | Entries per batch. |
 | `maxBatchBytes` | `64000` | A larger batch is split; a single larger entry is dropped. |
-| `intervalMs` | `1000` | How often waiting entries are sent. |
+| `intervalMs` | `1000` (`5000` with `transports.redis`) | How often waiting entries are sent. Overrides the transport's default. |
 | `relay` | `false` | This app sends entries for other apps. See [Relaying for other apps](#relaying-for-other-apps). |
 
 A failed send is retried with the same batch (backoff up to 30 s), so a control plane that was down receives everything once it is back, up to `bufferSize`. On shutdown the tenant keeps sending for up to 5 seconds.
@@ -150,7 +150,21 @@ TelescopeModule.forRoot({
 |--------|--------------|---------------------|--------------|------------------------------|
 | `transports.http({ url, fetch?, timeoutMs? })` (default) | `POST <url>/api/ingest` | the ingest route | none: the tenant drops a batch answered 400/413 | none |
 | `transports.bullmq({ connection, queue?, prefix?, attempts?, concurrency? })` | one job per batch on `telescope-ingest` | a BullMQ worker | BullMQ's failed set (last `keepFailed`, 10 000) | `bullmq` |
-| `transports.redis({ connection \| client, prefix?, group?, maxAttempts?, minIdleMs? })` | `XADD <prefix>:ingest` (capped with `MAXLEN ~ maxLen`) | a consumer group, non-blocking reads | `<prefix>:ingest:dead` | `ioredis` (unless you pass `client`) |
+| `transports.redis({ connection \| client, prefix?, group?, maxAttempts?, minIdleMs?, blockMs?, reclaimIntervalMs?, trimIntervalMs?, sendIntervalMs? })` | `XADD <prefix>:ingest` (capped with `MAXLEN ~ maxLen`) | a consumer group, blocking reads on a connection of its own | `<prefix>:ingest:dead` | `ioredis` (unless you pass `client`) |
+
+### Redis streams and command cost
+
+Managed Redis is often billed per command, so `transports.redis` keeps the count low:
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `blockMs` | `10000` | Control plane: one read waits this long on the server (`XREADGROUP ... BLOCK`). A message is read as soon as it lands; an idle control plane sends about one read per `blockMs`. `0` polls every `pollMs` instead. |
+| `pollMs` | `500` | Control plane: the read interval when the read cannot block, and the pause after a failed read. |
+| `reclaimIntervalMs` | `30000` | Control plane: how often unacknowledged messages are looked at for a take-over (also on start and after a failed read). |
+| `trimIntervalMs` | `30000` | Control plane: how often messages every consumer group acknowledged are removed (`XTRIM MINID ~`), when there were any. Pending and unread messages are never removed. `0`: only `maxLen` caps the stream. |
+| `sendIntervalMs` | `5000` | Tenant: how often the buffer is sent when `tenant.intervalMs` is not set. |
+
+The blocking read runs on `client.duplicate()` (or a second connection built from `connection`), closed when the control plane stops; your client is never blocked. A `client` without `duplicate()` is polled every `pollMs`. Keep any ioredis `commandTimeout` above `blockMs`. The messages of one read are acknowledged with a single `XACK`.
 
 The same rules hold whatever the transport:
 

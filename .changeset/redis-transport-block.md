@@ -1,0 +1,5 @@
+---
+'@dudousxd/nestjs-telescope': minor
+---
+
+`transports.redis()` sends far fewer Redis commands. The control plane waits for new messages with `XREADGROUP ... BLOCK` (new `blockMs`, default 10 s) on a connection of its own (`client.duplicate()`, closed on stop), so a message is read as soon as it lands and an idle control plane sends about one read per `blockMs` (measured: 4 → 0.13 commands/s). A `client` without `duplicate()`, or `blockMs: 0`, polls every `pollMs` as before. Unacknowledged messages are taken over on start, after a failed read and every `reclaimIntervalMs` (default 30 s) instead of on every read, with one `XCLAIM` for all of them. The messages of one read are acknowledged with a single `XACK`, and messages every consumer group is done with are trimmed with `XTRIM MINID ~` every `trimIntervalMs` (default 30 s) when any was acknowledged. A tenant on the redis transport sends its buffer every 5 s instead of every second (new `sendIntervalMs`; `tenant.intervalMs` still overrides it), and a full batch is now sent at once on every transport. Transports can declare a `sendIntervalMs`.

@@ -16,6 +16,7 @@ import { TelescopeModule } from '../nest/telescope.module.js';
 import type { TelescopeModuleOptions } from '../nest/telescope.options.js';
 import { TelescopeService } from '../nest/telescope.service.js';
 import { InMemoryStorageProvider } from '../storage/in-memory-storage-provider.js';
+import { TELESCOPE_RELAY_CAPABILITY } from './ingest.js';
 import { hmacTenantVerifier, signTenantToken } from './tenant-auth.js';
 import { ingestBatch } from './wire.js';
 
@@ -194,6 +195,55 @@ describe('topology: control plane and tenants', () => {
     const picker = await request(server).get('/telescope/api/apps?app=billing');
     expect(picker.body).toMatchObject({ all: true, selected: 'billing' });
     expect(picker.body.apps.map((a: { id: string }) => a.id)).toEqual(['billing', 'shop']);
+  });
+});
+
+describe('topology: relayed apps in the App picker', () => {
+  it('lists an app another app relays for as soon as its batch is stored', async () => {
+    const verify = hmacTenantVerifier(SECRET);
+    const app = await boot(
+      {
+        topology: 'control-plane',
+        // `durable` may relay entries for any app.
+        verifyTenant: async (input) => {
+          const verified = await verify(input);
+          return verified?.tenant === 'durable'
+            ? { ...verified, capabilities: [TELESCOPE_RELAY_CAPABILITY] }
+            : verified;
+        },
+        storage: new InMemoryStorageProvider(),
+      },
+      true,
+    );
+    const server = app.getHttpServer();
+    // The picker has read the store once already: no refresh is due for minutes.
+    expect((await request(server).get('/telescope/api/apps').expect(200)).body.apps).toEqual([]);
+
+    const relayed: Entry = {
+      id: 'r1',
+      batchId: 'b1',
+      type: EntryType.Request,
+      familyHash: null,
+      content: { uri: '/charge' },
+      tags: ['app:shop'],
+      sequence: 1,
+      durationMs: 3,
+      origin: 'http',
+      instanceId: 'pod-1',
+      traceId: null,
+      spanId: null,
+      createdAt: new Date(),
+    };
+    await request(server)
+      .post('/telescope/api/ingest')
+      .set('authorization', `Bearer ${signTenantToken('durable', SECRET)}`)
+      .send(JSON.parse(JSON.stringify(ingestBatch([relayed]))))
+      .expect((res) => expect(res.status).toBeLessThan(300));
+
+    const ids = (await request(server).get('/telescope/api/apps').expect(200)).body.apps.map(
+      (a: { id: string }) => a.id,
+    );
+    expect(ids).toContain('shop');
   });
 });
 

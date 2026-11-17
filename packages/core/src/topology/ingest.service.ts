@@ -52,13 +52,17 @@ export class TelescopeIngest implements OnApplicationBootstrap, BeforeApplicatio
             heartbeat: (app, heartbeat) => this.fleet.heartbeat(app, heartbeat),
           })
         : null;
-    // Every stored batch names its app: the App picker lists it without counting tags.
+    // Every stored batch names its apps: the App picker lists them without counting tags.
     this.handler =
       handler === null
         ? null
         : async (delivery) => {
             const outcome = await handler(delivery);
-            if (outcome.status === 'stored') this.knownApps?.note(outcome.app);
+            if (outcome.status === 'stored') {
+              this.knownApps?.note(outcome.app);
+              // A relayer's batch also names the apps it stored entries for: list them at once.
+              for (const app of outcome.apps) this.knownApps?.note(app);
+            }
             return outcome;
           };
   }

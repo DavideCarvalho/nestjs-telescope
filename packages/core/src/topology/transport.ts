@@ -33,6 +33,11 @@ export interface TransportListener {
 export interface TenantTransport {
   /** `http`, or the broker's name, for logs and status. */
   readonly kind: string;
+  /**
+   * Tenant: how often waiting entries are sent when `tenant.intervalMs` is not set. Default 1 000 ms;
+   * a broker whose sends cost commands may ask for fewer, fuller batches.
+   */
+  readonly sendIntervalMs?: number;
   send(batch: IngestBatch, credentials: { token: string; partition: string }): Promise<SendResult>;
   /**
    * Control plane: consume the broker's messages, handing each to `handler` (which verifies the

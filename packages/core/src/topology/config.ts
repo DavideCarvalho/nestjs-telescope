@@ -46,7 +46,10 @@ export interface TelescopeTenantOptions {
   batchSize?: number;
   /** The largest serialized batch in bytes. Default 64 000. */
   maxBatchBytes?: number;
-  /** How often waiting entries are sent, in ms. Default 1 000. */
+  /**
+   * How often waiting entries are sent, in ms (a full batch is sent at once). Default 1 000, or the
+   * transport's own default (5 000 for `transports.redis`).
+   */
   intervalMs?: number;
 }
 

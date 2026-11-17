@@ -75,6 +75,35 @@ describe.skipIf(!url)('real Redis', () => {
     await client.del(`${prefix}:ingest`, `${prefix}:ingest:dead`);
   });
 
+  it('redis streams: blocks on its own connection, one XACK per read, trims, stops at once', async () => {
+    const client = new Redis(url as string);
+    clients.push(client);
+    const prefix = `telescope-test-${randomUUID()}`;
+    const stream = `${prefix}:ingest`;
+    const transport = redisTransport({ client, prefix, blockMs: 30_000, trimIntervalMs: 1 });
+    const creds = { token: signTenantToken('shop', SECRET), partition: 'shop' };
+    // Three messages before the consumer starts: one read, one XACK.
+    for (const id of ['a', 'b', 'c']) await transport.send(ingestBatch([entry(id)]), creds);
+    const cp = controlPlane();
+    const listener = await transport.listen?.(cp.handler, cp.logger);
+    await until(() => cp.stored.length === 3);
+    // While it waits on a 30 s BLOCK, a new message is read at once.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await transport.send(ingestBatch([entry('d')]), creds);
+    await until(() => cp.stored.length === 4);
+    // Every message was acknowledged and trimmed away (the trim runs after a read).
+    await until(async () => (await client.xlen(stream)) <= 1);
+    const stopAt = Date.now();
+    await listener?.stop();
+    expect(Date.now() - stopAt).toBeLessThan(1_000);
+    expect(cp.logger.warn).not.toHaveBeenCalled();
+    const pending = (await client.xpending(stream, 'telescope')) as unknown[];
+    expect(pending[0]).toBe(0);
+    // The shared client is still usable: only the duplicated reader was closed.
+    expect(await client.ping()).toBe('PONG');
+    await client.del(stream, `${prefix}:ingest:dead`);
+  });
+
   it('bullmq: round trip and failed set', async () => {
     const connection = { url: url as string, maxRetriesPerRequest: null };
     const queue = `telescope-test-${randomUUID()}`;
