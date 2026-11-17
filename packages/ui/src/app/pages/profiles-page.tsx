@@ -1,3 +1,4 @@
+import { parseAsString, useQueryState } from 'nuqs';
 import { type JSX, useState } from 'react';
 import type { CpuProfileContent, Entry, HotFrame } from '../../client/index.js';
 import {
@@ -144,7 +145,11 @@ export function ProfilesPage(): React.JSX.Element {
   const status = useProfilerStatus();
   const { data, isLoading } = useProfiles(100);
   const profiles = data?.data ?? [];
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // `?profile=<id>`; no param opens the newest. Opening a profile adds a history entry.
+  const [selectedId, setSelectedId] = useQueryState(
+    'profile',
+    parseAsString.withOptions({ history: 'push' }),
+  );
 
   const enabled = meta.data?.profiling?.enabled ?? status.data?.enabled ?? false;
   const activeId = selectedId ?? profiles[0]?.id ?? null;
@@ -196,7 +201,7 @@ export function ProfilesPage(): React.JSX.Element {
                 key={profile.id}
                 profile={profile}
                 selected={profile.id === activeId}
-                onSelect={() => setSelectedId(profile.id)}
+                onSelect={() => void setSelectedId(profile.id)}
               />
             ))
           )}

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { parseAsString, useQueryState } from 'nuqs';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '../../aviary-kit/blocks/page-header';
 import { PageBody } from '../../aviary-kit/shell/app-shell';
 import { StatCard } from '../../react/components/extensions/stat-card.js';
@@ -25,6 +26,7 @@ import {
   TableRow,
 } from '../../react/ui/index.js';
 import { LoadError, RowsSkeleton } from '../page-chrome.js';
+import { useWindowParam } from '../url-state.js';
 
 /**
  * Categorical hues for a run's time split. They encode DATA (which slice of the run), not state,
@@ -510,10 +512,13 @@ export function AiEmptyState({ report }: { report: AiUsageReport }): React.JSX.E
 }
 
 export function AiPage(): React.JSX.Element {
-  const [window, setWindow] = useState('24h');
-  const [params, setParams] = useSearchParams();
+  const [window, setWindow] = useWindowParam('24h');
+  // `?run=<entry id>` opens a run's detail; opening or closing one adds a history entry.
+  const [selectedId, setSelectedId] = useQueryState(
+    'run',
+    parseAsString.withOptions({ history: 'push' }),
+  );
   const { data, isLoading, error } = useAi(window);
-  const selectedId = params.get('run');
 
   const selected = useMemo(() => {
     if (!data || selectedId === null) return null;
@@ -525,12 +530,7 @@ export function AiPage(): React.JSX.Element {
     );
   }, [data, selectedId]);
 
-  const select = (run: AiRunRow | null) => {
-    const next = new URLSearchParams(params);
-    if (run === null) next.delete('run');
-    else next.set('run', run.entryId);
-    setParams(next, { replace: true });
-  };
+  const select = (run: AiRunRow | null) => void setSelectedId(run?.entryId ?? null);
 
   const spend = data?.spend;
   const hasAny =

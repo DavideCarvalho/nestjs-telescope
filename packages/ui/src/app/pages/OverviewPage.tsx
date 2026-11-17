@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../../aviary-kit/blocks/page-header';
 import { PageBody } from '../../aviary-kit/shell/app-shell';
@@ -35,6 +34,7 @@ import type {
   TimeseriesReport,
   UserLoad,
 } from '../../react/index.js';
+import { useWindowParam } from '../url-state.js';
 
 function formatUptime(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -583,7 +583,7 @@ function ResourceHistoryCard({
 }
 
 export function OverviewPage(): React.JSX.Element {
-  const [window, setWindow] = useState('1h');
+  const [window, setWindow] = useWindowParam();
   const navigate = useNavigate();
   const pulse = usePulse(window);
   const queues = useQueues(window);

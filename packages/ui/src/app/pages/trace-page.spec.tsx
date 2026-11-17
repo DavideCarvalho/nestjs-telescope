@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { EntriesQuery, Entry, Page, TelescopeClient, Waterfall } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { TracePage } from './trace-page.js';
+
+afterEach(settleUrlWrites);
 
 function entry(over: Partial<Entry> & { type: string; id: string }): Entry {
   return {
@@ -79,14 +83,18 @@ function mockClient(rows: Entry[]) {
 }
 
 function renderAt(initialPath: string, client: TelescopeClient) {
+  // The route goes to the router; the tab (`?view=`) is read from the real hash.
+  window.history.replaceState(null, '', `/#${initialPath}`);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <TelescopeProvider client={client}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[initialPath]}>
-          <Routes>
-            <Route path="/traces/:traceId" element={<TracePage />} />
-          </Routes>
+          <NuqsHashAdapter>
+            <Routes>
+              <Route path="/traces/:traceId" element={<TracePage />} />
+            </Routes>
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,
@@ -119,6 +127,17 @@ describe('TracePage', () => {
     // header shows the traceId and the count
     expect(screen.getByText('trace-1')).toBeTruthy();
     expect(screen.getByText('3 entries')).toBeTruthy();
+  });
+
+  it('keeps the tab in the URL: ?view=entries opens the Entries table', async () => {
+    const { client } = mockClient([]);
+    const first = renderAt('/traces/trace-empty', client);
+    fireEvent.click(screen.getByText('Entries'));
+    await waitFor(() => expect(window.location.hash).toBe('#/traces/trace-empty?view=entries'));
+    first.unmount();
+
+    renderAt('/traces/trace-empty?view=entries', mockClient([]).client);
+    expect(await screen.findByText('No entries in this trace')).toBeTruthy();
   });
 
   it('shows an empty state when no entries match the trace', async () => {

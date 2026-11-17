@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { QueueMetricsReport, TelescopeClient } from '../../client/index.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { LAST_PAGE_META, mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { QueuesPage, toFailureRateBars } from './queues-page.js';
+
+afterEach(settleUrlWrites);
 
 const report: QueueMetricsReport = {
   windowStart: '',
@@ -82,7 +86,9 @@ describe('QueuesPage', () => {
       <TelescopeProvider client={mockClient()}>
         <QueryClientProvider client={queryClient}>
           <MemoryRouter>
-            <QueuesPage />
+            <NuqsHashAdapter>
+              <QueuesPage />
+            </NuqsHashAdapter>
           </MemoryRouter>
         </QueryClientProvider>
       </TelescopeProvider>,

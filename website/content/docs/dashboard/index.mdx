@@ -213,6 +213,23 @@ The raw-webhook JSON keeps every v1 field (`rule`, `value`, `threshold`, `firedA
 
 When you run the [OpenTelemetry provider](/docs/packages/watchers), each entry is stamped with the ambient `traceId` / `spanId`. The dashboard then offers a `#/traces/:traceId` route that lists every entry sharing that trace — the in-app correlation view — alongside a deep-link out to your trace backend (Jaeger / Grafana / …) via the configured `traceLink` template. The **Traces** nav item only appears once a `traceContext` provider is configured; without one there are no trace ids to correlate, so the link is hidden (the route still resolves on a direct visit).
 
+## Shareable views: filters in the URL
+
+A page's view state lives in the URL, in the hash's query, so a filtered view can be shared, bookmarked and reloaded, and the browser's Back and Forward step through it:
+
+| Page | Params |
+| --- | --- |
+| Entries | `tag` (a tag, or `user:<id>`), `q` (content search), `familyHash` (the type stays the path: `#/entries/query`) |
+| Overview, Pulse, Traces, Queues → Metrics, AI | `window` (`15m`, `1h`, `6h`, `24h`) |
+| A trace | `view=entries` (the Entries tab) |
+| Queues | `driver`, `queue`, `state` (the open queue and its tab) |
+| Fleet | `role` |
+| CPU profiles | `profile` (the open profile) |
+| AI | `run` (the open run) |
+| Exports | `type`, `window`, `q`, `limit`, `format` |
+
+For example `#/entries/request?tag=user:42&q=checkout`. A value at its default is left out, so existing `#/<page>` links open as before. Submitting a search rewrites the current history entry; picking a filter, tab, window or row adds one.
+
 ## Switching between consoles
 
 When the app mounts other Aviary consoles too (durable's Workflows, the Agents console, Media), the **Telescope** brand at the top of the sidebar becomes a menu that lists the ones the viewer may open, and links to them. Each is listed only when its own `authorize` allows the viewer, and that check runs once each time the page loads. With no other console, or none the viewer may open, the brand stays as it is.

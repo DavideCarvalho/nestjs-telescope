@@ -1,7 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type { FleetApp, FleetInstance, FleetView } from '../../client/index.js';
 import { visibleTopNav } from '../dashboard-layout.js';
+import { settleUrlWrites } from '../settle-url.js';
 import {
   FleetSection,
   formatDuration,
@@ -9,6 +12,11 @@ import {
   narrowToRole,
   rolloutLabel,
 } from './fleet-page.js';
+
+afterEach(settleUrlWrites);
+
+/** The role filter lives in the URL, so the page needs the console's nuqs adapter. */
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: NuqsHashAdapter });
 
 const NOW = Date.parse('2026-11-16T12:00:00.000Z');
 const MIN = 60_000;
@@ -229,5 +237,28 @@ describe('Fleet page', () => {
       draining: 0,
       gone: 1,
     });
+  });
+
+  it('keeps the picked role in the URL and opens on it', async () => {
+    const mixed = app({
+      instances: [
+        instance(),
+        instance({ instanceId: 'w-1', host: 'shop-worker-0', role: 'bullmq' }),
+      ],
+    });
+    window.history.replaceState(null, '', '/#/fleet');
+    const first = render(<FleetSection view={view({ apps: [mixed] })} onOpenEntry={() => {}} />);
+    const start = window.history.length;
+    fireEvent.click(screen.getByRole('button', { name: 'bullmq' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/fleet?role=bullmq'));
+    // picking a role is a history step
+    expect(window.history.length).toBe(start + 1);
+    first.unmount();
+
+    render(<FleetSection view={view({ apps: [mixed] })} onOpenEntry={() => {}} />);
+    expect(screen.getByRole('button', { name: 'bullmq' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.queryByText('shop-web-0')).toBeNull();
   });
 });

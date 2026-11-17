@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { parseAsString, useQueryState } from 'nuqs';
 import { EmptyState } from '../../aviary-kit/blocks/empty-state';
 import { MetricCard, MetricGrid, MetricGridSkeleton } from '../../aviary-kit/blocks/metric-card';
 import { PageHeader } from '../../aviary-kit/blocks/page-header';
@@ -374,7 +374,8 @@ function FleetApps({
   view: FleetView;
   onOpenEntry: (id: string) => void;
 }): React.JSX.Element {
-  const [role, setRole] = useState<string | null>(null);
+  // `?role=<role>`; no param is All roles. Picking a role adds a history entry.
+  const [role, setRole] = useQueryState('role', parseAsString.withOptions({ history: 'push' }));
   const roles = rolesOf(view.apps);
   // A role that left the fleet (or one picked before a refresh dropped it) shows everything.
   const selected = role !== null && roles.includes(role) ? role : null;
@@ -391,7 +392,7 @@ function FleetApps({
               key={option ?? '*'}
               type="button"
               aria-pressed={selected === option}
-              onClick={() => setRole(option)}
+              onClick={() => void setRole(option)}
               className={`rounded border px-2 py-0.5 font-mono ${selected === option ? 'border-info bg-info/10 text-info' : 'border-line text-muted-foreground hover:bg-panel-2'}`}
             >
               {option ?? 'All roles'}

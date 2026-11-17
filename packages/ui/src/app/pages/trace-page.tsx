@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { parseAsStringLiteral, useQueryState } from 'nuqs';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PageBody } from '../../aviary-kit/shell/app-shell';
 import { downloadJson } from '../../react/components/export-json.js';
 import { WaterfallView } from '../../react/components/waterfall-view.js';
 import { EntriesTable, useApps, useEntries, useWaterfall } from '../../react/index.js';
 
-type View = 'waterfall' | 'entries';
+const VIEWS = ['waterfall', 'entries'] as const;
 
 /** The App picker's labels by app id (a control plane), for the waterfall's app column. */
 export function useAppLabels(): Record<string, string> {
@@ -18,7 +18,11 @@ export function useAppLabels(): Record<string, string> {
 export function TracePage(): React.JSX.Element {
   const { traceId = '' } = useParams();
   const navigate = useNavigate();
-  const [view, setView] = useState<View>('waterfall');
+  // The tab is `?view=entries` (the waterfall is the default); switching tabs adds a history entry.
+  const [view, setView] = useQueryState(
+    'view',
+    parseAsStringLiteral(VIEWS).withDefault('waterfall').withOptions({ history: 'push' }),
+  );
 
   const { data, isLoading } = useEntries({ traceId });
   const entries = data?.data ?? [];
@@ -46,7 +50,7 @@ export function TracePage(): React.JSX.Element {
           <div className="flex overflow-hidden rounded border border-line text-[11px]">
             <button
               type="button"
-              onClick={() => setView('waterfall')}
+              onClick={() => void setView('waterfall')}
               className={`px-2.5 py-1 transition-colors ${
                 view === 'waterfall'
                   ? 'bg-panel-2 text-foreground'
@@ -57,7 +61,7 @@ export function TracePage(): React.JSX.Element {
             </button>
             <button
               type="button"
-              onClick={() => setView('entries')}
+              onClick={() => void setView('entries')}
               className={`border-l border-line px-2.5 py-1 transition-colors ${
                 view === 'entries'
                   ? 'bg-panel-2 text-foreground'

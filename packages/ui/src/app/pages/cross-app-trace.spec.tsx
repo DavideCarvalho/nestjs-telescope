@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NuqsHashAdapter } from '../../aviary-kit/url-state/nuqs-hash-adapter';
 import type {
   ConsoleAppsInfo,
   TelescopeClient,
@@ -12,7 +13,10 @@ import type {
 import { WaterfallView } from '../../react/components/waterfall-view.js';
 import { TelescopeProvider } from '../../react/index.js';
 import { mockTelescopeClient } from '../../testing/mock-telescope-client.js';
+import { settleUrlWrites } from '../settle-url.js';
 import { TracesPage } from './traces-page.js';
+
+afterEach(settleUrlWrites);
 
 const crossApp: Waterfall = {
   traceStartMs: 0,
@@ -108,9 +112,11 @@ function renderTraces(rows: TraceSummary[]) {
     <TelescopeProvider client={client}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={['/traces']}>
-          <Routes>
-            <Route path="/traces" element={<TracesPage />} />
-          </Routes>
+          <NuqsHashAdapter>
+            <Routes>
+              <Route path="/traces" element={<TracesPage />} />
+            </Routes>
+          </NuqsHashAdapter>
         </MemoryRouter>
       </QueryClientProvider>
     </TelescopeProvider>,
