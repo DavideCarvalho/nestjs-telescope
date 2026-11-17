@@ -11,6 +11,7 @@
     "request-context",
     "archiving-exceptions-to-s3",
     "reporting-frontend-errors",
+    "federated-console",
     "alert-integrations",
     "ai-exception-diagnosis"
   ]

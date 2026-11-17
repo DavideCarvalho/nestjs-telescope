@@ -62,21 +62,29 @@ no tenant and no grant instead answers the context's 403). Every API call takes
 `?tenant=<id>`, kept within that scope; a `tenant` outside it answers empty
 and is logged.
 
-On a control plane (a console receiving several apps' entries), `{ allowed:
-true, apps: '*' | string[] }` scopes the viewer to those apps (`'*'`, the
-default when omitted, is every app). Every read (entries, traces, metrics,
-Pulse, live tail, ⌘K search, MCP tools) follows `?app=`, kept within that
-grant; an `app` outside it answers empty and is logged — except the trace
+On a control plane (a console receiving several apps' entries) or a federated
+console (`federation`, a console reading other apps' own stores in place),
+`{ allowed: true, apps: '*' | string[] }` scopes the viewer to those apps
+(`'*'`, the default when omitted, is every app). Every read (entries, traces,
+metrics, Pulse, live tail, ⌘K search, MCP tools) follows `?app=`, kept within
+that grant; an `app` outside it answers empty and is logged — except the trace
 waterfall (`GET <path>/api/traces/:traceId/waterfall`), which a trace crosses:
 `?app=` does not cut it, a viewer of every app sees every span, a viewer
 limited to some apps sees only theirs plus `hiddenSpans`, and a trace with none
-of theirs answers 404. `GET <path>/api/apps`
-lists the apps the viewer may see (labels from `apps.labels`); a viewer limited
+of theirs answers 404. On a federated console the live tail streams only what
+the central app records (its own entries and shipped ones); a federated app's
+new entries arrive on the next refresh. `GET <path>/api/apps`
+lists the apps the viewer may see (federated apps are always listed, even with
+no shipped entries; labels from `apps.labels`, winning over each federated
+app's `label`; federated ones carry `federated: true`, and a federated console
+adds `federation: { selected }`); a viewer limited
 to some apps cannot run the console's global actions (they answer 403). Inside
-an organization or app view that is exactly one tag (one app, or one
+an organization or shipped-app view that is exactly one tag (one app, or one
 organization without shared rows) Pulse and the timeseries run as the store's
 `GROUP BY`s for that tag (`AggregateWindow.tag`); rollups stay hidden in any
-view (they are not tagged), and any other view scans.
+such view (they are not tagged), and any other view scans. A federated app's
+view reads its own store, so its rollups and aggregations run there as on that
+app's own console, and All apps sums every store's counts, Pulse and rollups.
 
 The page is a full-page navigation (cookies, no `Authorization` header), so its
 check must read a cookie session. `decorators` (e.g.

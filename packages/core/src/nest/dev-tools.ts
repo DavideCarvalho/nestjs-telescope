@@ -11,13 +11,14 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
 import type { ExtensionRegistry } from '../extension/registry.js';
+import { type FederationScope, withFederationScope } from '../federation/scope.js';
 import { TelescopeFleet } from '../fleet/fleet.service.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { type TenantView, withTenantView } from '../storage/tenant-scoped-storage.js';
 import { consoleAppsFor, rememberConsoleApps } from './console-app-scope.js';
 import { type ConsoleDecide, resolveConsoleAuthorize } from './console-authorize.js';
 import { consoleTenantsFor, rememberConsoleTenants } from './console-tenant-scope.js';
-import { resolveConsoleView } from './console-view.js';
+import { type ConsoleViewCall, resolveConsoleView } from './console-view.js';
 import { auditExtensionAction } from './extension-audit.js';
 import { type TelescopeToolArgs, TelescopeTools, isToolNotice } from './telescope-tools.js';
 import {
@@ -137,8 +138,21 @@ async function found(result: Promise<unknown>, notFound?: string): Promise<unkno
 export function telescopeDevTools(
   server: TelescopeTools,
   viewFor?: (call?: DevToolCall) => TenantView | null,
+  /** The stores a call reads (a federated console); resolved with the view when given. */
+  scopeFor?: (call?: DevToolCall) => { view: TenantView | null; federation?: FederationScope },
 ): TelescopeDevTool[] {
   const tools = telescopeTools(server);
+  if (scopeFor !== undefined) {
+    return tools.map((tool) => ({
+      ...tool,
+      run: (input, call) => {
+        const { view, federation } = scopeFor(call);
+        return withFederationScope(federation, () =>
+          withTenantView(view, () => tool.run(input, call)),
+        );
+      },
+    }));
+  }
   if (viewFor === undefined) return tools;
   return tools.map((tool) => ({
     ...tool,
@@ -368,7 +382,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
   ) {}
 
   /** The view of a dev-tools call: as the console's, with no `?tenant=` / `?app=`. */
-  private viewFor(call?: DevToolCall): TenantView | null {
+  private viewFor(call?: DevToolCall): ConsoleViewCall {
     // A call without an HTTP context (a test harness, a stdio transport) has no grant: every app.
     const context = call?.context;
     const request =
@@ -379,7 +393,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
       options: this.options,
       accessor: this.accessor,
       granted: { tenants: consoleTenantsFor(request), apps: consoleAppsFor(request) },
-    }).view;
+    });
   }
 
   /**
@@ -402,7 +416,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
           typeof context?.getType === 'function' && context.getType() === 'http'
             ? context.switchToHttp().getRequest()
             : undefined;
-        const { tenant, app, view } = resolveConsoleView({
+        const { tenant, app, view, federation } = resolveConsoleView({
           options: this.options,
           accessor: this.accessor,
           granted: { tenants: consoleTenantsFor(request), apps: consoleAppsFor(request) },
@@ -414,7 +428,9 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
         const hidden = tenant?.scope != null && tenant.scope.tenants !== '*';
         const fleet = this.moduleRef.get(TelescopeFleet, { strict: false });
         const storage = this.moduleRef.get<StorageProvider>(TELESCOPE_STORAGE, { strict: false });
-        return withTenantView(view, () => fleet.read({ apps, hidden }, storage));
+        return withFederationScope(federation, () =>
+          withTenantView(view, () => fleet.read({ apps, hidden }, storage)),
+        );
       },
     };
   }
@@ -426,7 +442,10 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
     const decide = await resolveConsoleAuthorize(this.options.authorize, this.moduleRef, {
       warnIfMissing: false,
     });
-    const own = [...telescopeDevTools(this.server, (call) => this.viewFor(call)), this.fleetTool()];
+    const own = [
+      ...telescopeDevTools(this.server, undefined, (call) => this.viewFor(call)),
+      this.fleetTool(),
+    ];
     try {
       this.#unregister = slot.register({
         lib: TELESCOPE_DEV_TOOLS_LIB,
@@ -437,7 +456,7 @@ export class TelescopeDevToolsRegistration implements OnModuleInit, OnModuleDest
           ...extensionDevTools(
             this.extensions?.devTools() ?? [],
             (tool) => this.extensions?.devToolOwner(tool),
-            (call) => this.viewFor(call),
+            (call) => this.viewFor(call).view,
             this.options.mutations === true,
             own.map((tool) => tool.name),
           ),

@@ -102,8 +102,16 @@ export interface ConsoleAppsInfo {
   all: boolean;
   /** The app this view shows; `null` for every granted app. */
   selected: string | null;
-  /** Apps to pick from (narrowed by `search`), with a label each. */
-  apps: { id: string; label: string }[];
+  /**
+   * Apps to pick from (narrowed by `search`), with a label each. `federated`: a federated app,
+   * read from its own store (see `federation`).
+   */
+  apps: { id: string; label: string; federated?: true }[];
+  /**
+   * Set on a federated console: whether the app this view shows is a federated one, so pages that
+   * run in an app's process (live queues, schedules, server stats) can say they show this app.
+   */
+  federation?: { selected: boolean };
 }
 
 /** `apps` in `TelescopeModule.forRoot()`. */

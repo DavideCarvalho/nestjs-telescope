@@ -3,6 +3,8 @@
 // The one place that turns what `authorize` granted (organizations and apps) and what a call asked
 // for (`?tenant=`, `?app=`) into the view every read of the call goes through.
 import { readTenancy, tenantTagPrefix } from '../context/tenancy.js';
+import { federatedAppNames } from '../federation/config.js';
+import { type FederationScope, federationScopeOf } from '../federation/scope.js';
 import { type TenantView, intersectViews, tenantViewOf } from '../storage/tenant-scoped-storage.js';
 import {
   type ConsoleAppSelection,
@@ -38,10 +40,12 @@ export interface ConsoleViewCall {
   view: TenantView | null;
   /** The organization part of {@link view} alone (`null`: every organization, or tenancy off). */
   tenantView: TenantView | null;
+  /** The stores the call reads, with `federation` set (`undefined` otherwise). */
+  federation?: FederationScope;
 }
 
 export interface ConsoleViewInput {
-  options: Pick<TelescopeModuleOptions, 'tenancy'> | undefined;
+  options: Pick<TelescopeModuleOptions, 'tenancy' | 'federation'> | undefined;
   accessor: unknown;
   granted: { tenants?: ConsoleTenants | undefined; apps?: ConsoleApps | undefined };
   requested?: { tenant?: string | undefined; app?: string | undefined };
@@ -62,10 +66,15 @@ export function resolveConsoleView(input: ConsoleViewInput): ConsoleViewCall {
     tenantView = tenantViewOf(selection, tenantTagPrefix(input.options?.tenancy), tenancy.nullRows);
   }
   const appSelection = selectConsoleApp(input.granted.apps, input.requested?.app);
+  const view = intersectViews(tenantView, appViewOf(appSelection));
+  const federated = federatedAppNames(input.options?.federation);
   return {
     tenant,
     app: { apps: input.granted.apps, selection: appSelection },
-    view: intersectViews(tenantView, appViewOf(appSelection)),
+    view,
     tenantView,
+    ...(federated !== undefined
+      ? { federation: federationScopeOf(appSelection, tenantView, view, federated) }
+      : {}),
   };
 }

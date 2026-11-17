@@ -6,6 +6,7 @@ import type { TelescopeTenancyOption } from '../context/tenancy.js';
 // packages/core/src/nest/telescope.options.ts
 import type { DiscoveryOptions } from '../discovery/config.js';
 import type { TelescopeExtension } from '../extension/types.js';
+import type { TelescopeFederationOptions } from '../federation/config.js';
 import type { TelescopeCheck } from '../fleet/checks.js';
 import type { FleetConfig } from '../fleet/config.js';
 import type { PulseServiceOptions } from '../pulse/pulse.service.js';
@@ -497,6 +498,14 @@ export interface TelescopeModuleOptions extends TelescopeCoreOptions {
   discovery?: DiscoveryOptions | false;
   /** The App picker of a control plane's console: labels for app ids. */
   apps?: TelescopeAppsOptions;
+  /**
+   * A federated console: this console also reads other apps' own telescope stores, in place (they
+   * keep their entries; nothing is shipped). Each app is picked like a control plane's app
+   * (`?app=<name>`, the `authorize` `apps` grant), and "All apps" merges every store with this
+   * app's own. Composes with `topology: 'control-plane'` (some apps ship, some are read in place);
+   * not with `'tenant'`. Writes, pruning and alerts stay on this app's own store.
+   */
+  federation?: TelescopeFederationOptions;
   /**
    * Class decorators applied to the console controllers this module mounts —
    * the API (`TelescopeController`) and the live feed (`StreamController`) —

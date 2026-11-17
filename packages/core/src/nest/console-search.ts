@@ -2,6 +2,7 @@
 import type { ExecutionContext } from '@nestjs/common';
 import type { ModuleRef } from '@nestjs/core';
 import { CONTEXT_ACCESSOR } from '../context/context-accessor.js';
+import { withFederationScope } from '../federation/scope.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { withTenantView } from '../storage/tenant-scoped-storage.js';
 import type { ConsoleDecide } from './console-authorize.js';
@@ -45,35 +46,37 @@ export function telescopeConsoleSearch(
     const options = optional<TelescopeModuleOptions>(moduleRef, TELESCOPE_OPTIONS);
     const decision = await decide(context);
     if (!decision.allowed) return [];
-    const { view } = resolveConsoleView({
+    const { view, federation } = resolveConsoleView({
       options,
       accessor: optional(moduleRef, CONTEXT_ACCESSOR),
       granted: { tenants: decision.tenants, apps: decision.apps },
     });
-    return withTenantView(view, async () => {
-      const hits: AviaryConsoleSearchHit[] = [];
-      const found = await storage.find(q).catch(() => null);
-      if (found !== null) {
-        hits.push({
-          title: `${found.type} ${found.id}`,
-          subtitle: clip(summarizeEntry(found)),
-          href: `${base}#/entries/view/${encodeURIComponent(found.id)}`,
-        });
-      }
-      if (hits.length < limit) {
-        // A failing tag listing keeps the id hit.
-        const tags = await storage
-          .tags(undefined, { search: q, limit: limit - hits.length })
-          .catch(() => []);
-        for (const { tag, count } of tags) {
+    return withFederationScope(federation, () =>
+      withTenantView(view, async () => {
+        const hits: AviaryConsoleSearchHit[] = [];
+        const found = await storage.find(q).catch(() => null);
+        if (found !== null) {
           hits.push({
-            title: tag,
-            subtitle: `${count} ${count === 1 ? 'entry' : 'entries'} tagged`,
-            href: `${base}#/entries?tag=${encodeURIComponent(tag)}`,
+            title: `${found.type} ${found.id}`,
+            subtitle: clip(summarizeEntry(found)),
+            href: `${base}#/entries/view/${encodeURIComponent(found.id)}`,
           });
         }
-      }
-      return hits.slice(0, limit);
-    });
+        if (hits.length < limit) {
+          // A failing tag listing keeps the id hit.
+          const tags = await storage
+            .tags(undefined, { search: q, limit: limit - hits.length })
+            .catch(() => []);
+          for (const { tag, count } of tags) {
+            hits.push({
+              title: tag,
+              subtitle: `${count} ${count === 1 ? 'entry' : 'entries'} tagged`,
+              href: `${base}#/entries?tag=${encodeURIComponent(tag)}`,
+            });
+          }
+        }
+        return hits.slice(0, limit);
+      }),
+    );
   };
 }

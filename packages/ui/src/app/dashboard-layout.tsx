@@ -24,6 +24,7 @@ import {
   visibleEntryTypes,
 } from '../react/index.js';
 import { AppPicker } from './app-picker.js';
+import { FederatedAppNotice } from './federated-app-notice.js';
 import {
   AiIcon,
   DashboardIcon,
@@ -346,7 +347,10 @@ export function DashboardLayout({ children }: { children: ReactNode }): React.JS
             description="Choose an organization to see its data."
           />
         ) : (
-          children
+          <>
+            <FederatedAppNotice pathname={pathname} />
+            {children}
+          </>
         )}
       </ErrorBoundary>
     </AppShell>
