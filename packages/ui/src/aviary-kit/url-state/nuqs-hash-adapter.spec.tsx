@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+// @vitest-environment happy-dom
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -17,13 +18,16 @@ function goTo(url: string) {
   window.history.replaceState(null, '', url);
 }
 
-/** jsdom does not fire `hashchange` when a test writes `location.hash`; a browser does. */
+/** A test DOM may not fire `hashchange` when a test writes `location.hash`; a browser does. */
 function setHash(hash: string) {
   window.location.hash = hash;
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
 
-afterEach(() => goTo('/'));
+afterEach(() => {
+  cleanup();
+  goTo('/');
+});
 
 describe('splitHash / joinHash', () => {
   it('splits the route path from the query on the first `?`', () => {
