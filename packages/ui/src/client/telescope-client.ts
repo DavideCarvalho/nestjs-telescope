@@ -196,8 +196,11 @@ export interface TelescopeClient {
   pulse(window?: string, read?: PulseRead): Promise<PulseReport>;
   queues(window?: string): Promise<QueueMetricsReport>;
   timeseries(query?: TimeseriesQuery): Promise<TimeseriesReport>;
-  /** The window's most recent traces, at most `size` (`GET traces`): `{ data, scanned, truncated }`. */
-  traces(window?: string, size?: number): Promise<TracesResult>;
+  /**
+   * The window's traces, most recently active first, at most `size` (`GET traces`): `{ data,
+   * scanned, truncated, nextCursor, hasNext }`. `after` is the previous page's `nextCursor`.
+   */
+  traces(window?: string, size?: number, after?: string): Promise<TracesResult>;
   /** Nested span waterfall for one trace (`GET traces/:traceId/waterfall`). */
   waterfall(traceId: string): Promise<Waterfall>;
   stats(type: string, window: string): Promise<StatsResult>;
@@ -472,7 +475,7 @@ export function createTelescopeClient(options: TelescopeClientOptions = {}): Tel
         type: query.type,
         tag: query.tag,
       }),
-    traces: (window, size) => get<TracesResult>('/traces', { window, size }),
+    traces: (window, size, after) => get<TracesResult>('/traces', { window, size, after }),
     waterfall: (traceId) => get<Waterfall>(`/traces/${encodeURIComponent(traceId)}/waterfall`),
     stats: (type, window) => get<StatsResult>('/stats', { type, window }),
     ai: (window, opts) =>

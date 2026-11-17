@@ -211,6 +211,8 @@ The raw-webhook JSON keeps every v1 field (`rule`, `value`, `threshold`, `firedA
 
 ## Traces
 
+The **Traces** page lists the window's traces, most recently active first, 50 per page, with **Older** / **Newer** to move through them. A page walks the entries newest-first only until it has its 50 traces (and one more, to know whether there is a next page), then reads those traces in full; it never groups the whole window, so it costs about the same on the first page and the two-hundredth (about 50–70 ms on a 2.4M-entry PostgreSQL table, where the old top-50 read 50,000 entries in about 1 s and stopped there). A trace that becomes active again while you page is shown on the first page, not twice.
+
 When you run the [OpenTelemetry provider](/docs/packages/watchers), each entry is stamped with the ambient `traceId` / `spanId`. The dashboard then offers a `#/traces/:traceId` route that lists every entry sharing that trace — the in-app correlation view — alongside a deep-link out to your trace backend (Jaeger / Grafana / …) via the configured `traceLink` template. The **Traces** nav item only appears once a `traceContext` provider is configured; without one there are no trace ids to correlate, so the link is hidden (the route still resolves on a direct visit).
 
 ## Shareable views: filters in the URL

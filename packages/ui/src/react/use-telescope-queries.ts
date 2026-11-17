@@ -187,11 +187,14 @@ export function tracesQuery(
   window: string,
   size?: number,
   paused = false,
+  after?: string,
 ) {
   return queryOptions({
-    queryKey: ['telescope', 'traces', window, size],
-    queryFn: () => client.traces(window, size),
-    refetchInterval: intervalWhenLive(REFETCH_MS, paused),
+    queryKey: ['telescope', 'traces', window, size, after ?? null],
+    queryFn: () =>
+      after === undefined ? client.traces(window, size) : client.traces(window, size, after),
+    // Only the first page follows live traffic; an older page stays put while it is read.
+    refetchInterval: after === undefined ? intervalWhenLive(REFETCH_MS, paused) : false,
   });
 }
 
@@ -500,8 +503,8 @@ export function useTimeseries(
     timeseriesQuery(useTelescopeClient(), query, usePaused(), options.enabled ?? true),
   );
 }
-export function useTraces(window: string, size?: number) {
-  return useQuery(tracesQuery(useTelescopeClient(), window, size, usePaused()));
+export function useTraces(window: string, size?: number, after?: string) {
+  return useQuery(tracesQuery(useTelescopeClient(), window, size, usePaused(), after));
 }
 export function useWaterfall(traceId: string) {
   return useQuery(waterfallQuery(useTelescopeClient(), traceId));

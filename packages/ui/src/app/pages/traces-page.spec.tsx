@@ -23,11 +23,13 @@ function trace(over: Partial<TraceSummary> & { traceId: string }): TraceSummary 
 }
 
 function mockClient(rows: TraceSummary[]) {
-  const traces = vi.fn<(window?: string, size?: number) => Promise<TracesResult>>(async () => ({
-    data: rows,
-    scanned: rows.length,
-    truncated: false,
-  }));
+  const traces = vi.fn<(window?: string, size?: number, after?: string) => Promise<TracesResult>>(
+    async () => ({
+      data: rows,
+      scanned: rows.length,
+      truncated: false,
+    }),
+  );
   const client: TelescopeClient = mockTelescopeClient({
     traces,
     meta: async () => ({
@@ -116,6 +118,63 @@ describe('TracesPage', () => {
     await waitFor(() => {
       expect(screen.getByText('trace detail')).toBeTruthy();
     });
+  });
+
+  it('pages older with the nextCursor, and back to the newer page', async () => {
+    const { client, traces } = mockClient([]);
+    traces.mockImplementation(async (_window, _size, after) =>
+      after === undefined
+        ? {
+            data: [trace({ traceId: 'first' })],
+            scanned: 1,
+            truncated: false,
+            nextCursor: 'c1',
+            hasNext: true,
+          }
+        : {
+            data: [trace({ traceId: 'second' })],
+            scanned: 1,
+            truncated: false,
+            nextCursor: null,
+            hasNext: false,
+          },
+    );
+    renderPage(client);
+    expect(await screen.findByText('first')).toBeTruthy();
+    screen.getByLabelText('Older traces').click();
+    expect(await screen.findByText('second')).toBeTruthy();
+    expect(traces).toHaveBeenLastCalledWith('1h', undefined, 'c1');
+    expect((screen.getByLabelText('Older traces') as HTMLButtonElement).disabled).toBe(true);
+    screen.getByLabelText('Newer traces').click();
+    expect(await screen.findByText('first')).toBeTruthy();
+  });
+
+  it('starts at the first page again when the window changes in the URL', async () => {
+    const { client, traces } = mockClient([]);
+    traces.mockImplementation(async (window, _size, after) => ({
+      data: [trace({ traceId: `${window}-${after ?? 'first'}` })],
+      scanned: 1,
+      truncated: false,
+      nextCursor: after === undefined ? 'c1' : null,
+      hasNext: after === undefined,
+    }));
+    renderPage(client);
+    expect(await screen.findByText('1h-first')).toBeTruthy();
+    screen.getByLabelText('Older traces').click();
+    expect(await screen.findByText('1h-c1')).toBeTruthy();
+    // Back/forward or an edited link: the hash moves without the picker.
+    window.location.hash = '#/traces?window=24h';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(await screen.findByText('24h-first')).toBeTruthy();
+    const [lastWindow, , lastAfter] = traces.mock.calls.at(-1) ?? [];
+    expect([lastWindow, lastAfter]).toEqual(['24h', undefined]);
+  });
+
+  it('shows no pager on a single page (or an older server without cursors)', async () => {
+    const { client } = mockClient([trace({ traceId: 'only' })]);
+    renderPage(client);
+    expect(await screen.findByText('only')).toBeTruthy();
+    expect(screen.queryByTestId('traces-pager')).toBeNull();
   });
 
   it('shows an empty state when there are no traces', async () => {

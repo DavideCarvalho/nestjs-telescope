@@ -81,7 +81,7 @@ The dashboard is optional — everything it shows comes from a plain JSON API yo
 | `GET /telescope/api/queues?window=1h` | Per-queue throughput, runtime/wait-time percentiles, failure rate. |
 | `GET /telescope/api/timeseries?window=1h&buckets=60` | Bucketed throughput — the data behind the sparkline. |
 | `GET /telescope/api/tags?search=slo` | Tag counts, most used first, as a cursor list (`filter[tag][startsWith]=user:`, `search`, `after` / `first`). |
-| `GET /telescope/api/traces?window=1h&size=50` | The window's most recent traces: `{ data, scanned, truncated }`. |
+| `GET /telescope/api/traces?window=1h&size=50&after=` | The window's traces, most recently active first, a page at a time: `{ data, scanned, truncated, nextCursor, hasNext }`; pass `nextCursor` as `after` for the next page. |
 | `GET /telescope/api/health` | Telescope's own self-overhead: capture cost, buffer pressure, flush stats, drops. |
 
 Every list follows the Aviary list API: filters as `filter[field]=value`, cursor lists paged with `after` / `first` and answered as `{ data, meta }`, offset lists (extension tables) with `page` / `size`. An unknown filter, a malformed cursor or a removed parameter (`limit`, `cursor`, `offset`, a bare `?type=`) answers `400`.

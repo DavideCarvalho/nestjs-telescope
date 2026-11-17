@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronLeftIcon, ChevronRightIcon } from '../../aviary-kit/icons';
+import { Button } from '../../aviary-kit/ui/button';
 import type { TraceSummary } from '../../client/index.js';
 import { WindowSelect, dotForType, relativeTime, useTraces } from '../../react/index.js';
 import { PageEmpty, RowsSkeleton, TelescopePage } from '../page-chrome.js';
@@ -57,9 +60,63 @@ function TraceRow({
   );
 }
 
+/**
+ * Previous / Next over the cursor-paged traces list: the cursors of the pages walked so far are
+ * kept, so Previous goes back to the page shown before (the server pages forward only).
+ */
+function TracesPager({
+  page,
+  hasNext,
+  onPrevious,
+  onNext,
+}: {
+  page: number;
+  hasNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}): React.JSX.Element | null {
+  if (page === 1 && !hasNext) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 px-1 py-2" data-testid="traces-pager">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Newer traces"
+        disabled={page === 1}
+        onClick={onPrevious}
+      >
+        <ChevronLeftIcon />
+        <span className="hidden sm:inline">Newer</span>
+      </Button>
+      <span className="mono tnum px-2 text-[11px] text-fg-2">page {page}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Older traces"
+        disabled={!hasNext}
+        onClick={onNext}
+      >
+        <span className="hidden sm:inline">Older</span>
+        <ChevronRightIcon />
+      </Button>
+    </div>
+  );
+}
+
 export function TracesPage(): React.JSX.Element {
   const [window, setWindow] = useWindowParam();
-  const { data, isLoading } = useTraces(window);
+  /** The `after` cursor of each page walked past the first, for the window they were walked in. */
+  const [paging, setPaging] = useState<{ window: string; cursors: string[] }>({
+    window,
+    cursors: [],
+  });
+  // A new window (the picker, back/forward, an edited link) starts again at the first page.
+  if (paging.window !== window) setPaging({ window, cursors: [] });
+  const cursors = paging.window === window ? paging.cursors : [];
+  const setCursors = (update: (previous: string[]) => string[]) =>
+    setPaging((previous) => ({ window, cursors: update(previous.cursors) }));
+  const after = cursors[cursors.length - 1];
+  const { data, isLoading } = useTraces(window, undefined, after);
   const traces = data?.data ?? [];
   const appLabels = useAppLabels();
   // An Apps column once a trace in the window carries apps (a control plane).
@@ -79,11 +136,27 @@ export function TracesPage(): React.JSX.Element {
           description="Traces appear once a traceContext provider or `propagation` tags entries with a trace id."
         />
       ) : (
-        <div className="aviary-surface overflow-hidden rounded-lg border border-border">
-          {traces.map((trace) => (
-            <TraceRow key={trace.traceId} trace={trace} showApps={showApps} appLabels={appLabels} />
-          ))}
-        </div>
+        <>
+          <div className="aviary-surface overflow-hidden rounded-lg border border-border">
+            {traces.map((trace) => (
+              <TraceRow
+                key={trace.traceId}
+                trace={trace}
+                showApps={showApps}
+                appLabels={appLabels}
+              />
+            ))}
+          </div>
+          <TracesPager
+            page={cursors.length + 1}
+            hasNext={data?.hasNext === true && typeof data.nextCursor === 'string'}
+            onPrevious={() => setCursors((walked) => walked.slice(0, -1))}
+            onNext={() => {
+              const next = data?.nextCursor;
+              if (typeof next === 'string') setCursors((walked) => [...walked, next]);
+            }}
+          />
+        </>
       )}
     </TelescopePage>
   );

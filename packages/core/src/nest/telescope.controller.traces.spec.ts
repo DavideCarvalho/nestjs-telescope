@@ -74,6 +74,27 @@ describe('GET /telescope/api/traces', () => {
     expect(body.data).toHaveLength(1);
   });
 
+  it('pages with the nextCursor as after, and says when there is no next page', async () => {
+    const first = (
+      await request(app.getHttpServer()).get('/telescope/api/traces?window=1h&size=1').expect(200)
+    ).body as { data: TraceSummary[]; nextCursor: string | null; hasNext: boolean };
+    expect(first.data.map((t) => t.traceId)).toEqual(['t2']);
+    expect(first.hasNext).toBe(true);
+    const second = (
+      await request(app.getHttpServer())
+        .get(`/telescope/api/traces?window=1h&size=1&after=${first.nextCursor}`)
+        .expect(200)
+    ).body as { data: TraceSummary[]; nextCursor: string | null; hasNext: boolean };
+    expect(second.data.map((t) => t.traceId)).toEqual(['t1']);
+    expect(second).toMatchObject({ hasNext: false, nextCursor: null });
+  });
+
+  it('rejects an invalid cursor with 400', async () => {
+    await request(app.getHttpServer())
+      .get('/telescope/api/traces?window=1h&after=junk')
+      .expect(400);
+  });
+
   it('rejects an unparseable window with 400', async () => {
     await request(app.getHttpServer()).get('/telescope/api/traces?window=soon').expect(400);
   });
