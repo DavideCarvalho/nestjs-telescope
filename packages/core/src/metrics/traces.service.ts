@@ -15,6 +15,8 @@ const WALK_MAX_PAGE = 5000;
 const HYDRATE_CONCURRENCY = 8;
 /** Entries read per trace at most (a trace past it is summarized from its newest ones). */
 const TRACE_ENTRY_CAP = 5000;
+/** Request entries whose content one `get` reads (the labels of a page). */
+const LABEL_CHUNK = 100;
 
 export interface TracesQuery {
   windowMs: number;
@@ -27,7 +29,12 @@ export interface TracesQuery {
 }
 
 export interface TracesServiceOptions {
+  /**
+   * @deprecated Ignored: the keyset walk sizes its own reads (from `(size + 1) * 20` entries,
+   * doubling up to 5,000). Kept so existing callers still compile.
+   */
   pageSize?: number;
+  /** Entries the walk reads at most for one page before it answers `truncated`. Default 50,000. */
   scanCap?: number;
 }
 
@@ -185,7 +192,8 @@ export class TracesService {
         // one: wait for the walk.
         const ready = next.filter((key) => confirmed(key));
         if (ready.length === 0) break;
-        pending = pending.slice(ready.length);
+        const taken = new Set(ready);
+        pending = pending.filter((key) => !taken.has(key));
         const read = await Promise.all(ready.map((key) => this.traceEntries(key, windowStart)));
         for (const trace of read) {
           scanned += trace.entries.length;
@@ -237,14 +245,26 @@ export class TracesService {
   }
 
   /**
-   * `entries` with the content of their request entries (the summary's "METHOD uri" label), read
-   * in one batched `get` by id. Everything else stays content-less.
+   * `entries` with the content of the request entry each trace is labelled from (its first one, as
+   * {@link summarizeTraces} reads them: the summary's "METHOD uri"), read by id in batched `get`s of
+   * at most {@link LABEL_CHUNK}. Everything else stays content-less.
    */
   private async withRequestContent(entries: Entry[]): Promise<Entry[]> {
-    const ids = entries.filter((entry) => entry.type === EntryType.Request).map((e) => e.id);
+    const labelled = new Set<string>();
+    const ids: string[] = [];
+    for (const entry of entries) {
+      if (entry.type !== EntryType.Request || entry.traceId === null) continue;
+      if (labelled.has(entry.traceId)) continue;
+      labelled.add(entry.traceId);
+      ids.push(entry.id);
+    }
     if (ids.length === 0) return entries;
-    const page = await this.storage.get({ ids, limit: ids.length });
-    const content = new Map(page.data.map((entry) => [entry.id, entry.content]));
+    const content = new Map<string, unknown>();
+    for (let start = 0; start < ids.length; start += LABEL_CHUNK) {
+      const chunk = ids.slice(start, start + LABEL_CHUNK);
+      const page = await this.storage.get({ ids: chunk, limit: chunk.length });
+      for (const entry of page.data) content.set(entry.id, entry.content);
+    }
     return entries.map((entry) =>
       content.has(entry.id) ? { ...entry, content: content.get(entry.id) } : entry,
     );

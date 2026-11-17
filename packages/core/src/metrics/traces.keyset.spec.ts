@@ -181,6 +181,24 @@ describe.each(stores)('traces by keyset (%s)', (_, make) => {
   });
 });
 
+describe('trace labels', () => {
+  it('reads one request per trace, in batches of at most 100 ids', async () => {
+    const store = new InMemoryStorageProvider();
+    const rows: Entry[] = [];
+    for (let t = 0; t < 250; t++) {
+      // Two requests per trace: only the one the label comes from is read.
+      rows.push(entry('request', `tr-${t}`, NOW - t * 1000));
+      rows.push(entry('request', `tr-${t}`, NOW - t * 1000 - 1));
+    }
+    await store.store(rows);
+    const get = vi.spyOn(store, 'get');
+    const page = await new TracesService(store).getTraces({ windowMs: WINDOW, limit: 250 });
+    expect(page.traces.every((trace) => trace.rootLabel === `GET /r/${trace.traceId}`)).toBe(true);
+    const byId = get.mock.calls.map(([query]) => query.ids).filter((ids) => ids !== undefined);
+    expect(byId.map((ids) => ids.length)).toEqual([100, 100, 50]);
+  });
+});
+
 describe('traces cursor', () => {
   it('round-trips, and rejects anything else', () => {
     const key = { traceId: 'abc', lastAt: NOW };
