@@ -92,7 +92,10 @@ export interface AlertRuleRouting {
  * (an app, an app's check, a looping host) and resolved once it clears (a `status: 'resolved'`
  * payload, for the channels that accept resolves):
  * - `instances-up`: fewer than `below` instances up (0 included, and an app never seen), held for
- *   `for` (default `'1m'`) so a rolling deploy does not page.
+ *   `for` (default `'1m'`) so a rolling deploy does not page. `role` narrows it to `'web'`, a
+ *   worker's name, or `'*'` (every instance); without `app` only the apps running that role are
+ *   checked. Without `role`, an app's web instances count, and an app that only runs workers
+ *   counts its workers, so a live worker never hides a web outage.
  * - `restart-loop`: a host booted `fleet.restartLoop.restarts` times within its window.
  * - `check-down`: a check (`check`, else any) down on an app's instance for `for`.
  * - `entries-dropped`: a tenant dropped at least `threshold` (default 1) entries within `window`.
@@ -100,7 +103,7 @@ export interface AlertRuleRouting {
  * Like every rule they take the routing fields ({@link AlertRuleRouting}).
  */
 type FleetAlertRuleKind =
-  | { type: 'instances-up'; app?: string; below: number; for?: string }
+  | { type: 'instances-up'; app?: string; below: number; for?: string; role?: string }
   | { type: 'restart-loop'; app?: string }
   | { type: 'check-down'; check?: string; app?: string; for: string }
   | { type: 'entries-dropped'; app?: string; window: string; threshold?: number };
@@ -113,6 +116,8 @@ export interface FleetAlertContext {
   app: string;
   check?: string;
   host?: string;
+  /** The process role the subject is about, when it is a worker (absent for `web`). */
+  role?: string;
   /** One line: `Redis: down for 12 min on 4 of 4 instances`. */
   detail: string;
 }

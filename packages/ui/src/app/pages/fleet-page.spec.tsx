@@ -2,7 +2,13 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { FleetApp, FleetInstance, FleetView } from '../../client/index.js';
 import { visibleTopNav } from '../dashboard-layout.js';
-import { FleetSection, formatDuration, incidentLabel, rolloutLabel } from './fleet-page.js';
+import {
+  FleetSection,
+  formatDuration,
+  incidentLabel,
+  narrowToRole,
+  rolloutLabel,
+} from './fleet-page.js';
 
 const NOW = Date.parse('2026-11-16T12:00:00.000Z');
 const MIN = 60_000;
@@ -169,5 +175,59 @@ describe('Fleet page', () => {
     expect(visibleTopNav(nav, true, false, undefined)).toEqual([]);
     expect(visibleTopNav(nav, true, false, false)).toEqual([]);
     expect(visibleTopNav(nav, true, false, true)).toEqual(nav);
+  });
+
+  it('shows each instance role; an older server without roles shows web and no filter', () => {
+    render(<FleetSection view={view()} onOpenEntry={() => {}} />);
+    expect(screen.getAllByText('web')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'All roles' })).toBeNull();
+  });
+
+  it('filters by role: recounts the cards and narrows instances and restart loops', () => {
+    const mixed = app({
+      instances: [
+        instance(),
+        instance({ instanceId: 'w-1', host: 'shop-worker-0', role: 'bullmq' }),
+        instance({ instanceId: 'w-2', host: 'shop-worker-1', role: 'bullmq', status: 'gone' }),
+      ],
+      counts: { up: 2, starting: 0, draining: 0, gone: 1 },
+      restartLoops: [
+        {
+          host: 'shop-worker-0',
+          role: 'bullmq',
+          restarts: 3,
+          since: NOW - 7 * MIN,
+          lastBootAt: NOW - MIN,
+        },
+      ],
+    });
+    render(
+      <FleetSection
+        view={view({ apps: [mixed, app({ app: 'billing', restartLoops: [] })] })}
+        onOpenEntry={() => {}}
+      />,
+    );
+    expect(screen.getByText(/\(bullmq\)/)).toBeTruthy();
+    const all = screen.getByRole('button', { name: 'All roles' });
+    expect(all.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'web' }));
+    expect(screen.getByRole('button', { name: 'web' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByText('shop-worker-0')).toBeNull();
+    expect(screen.queryByText(/restarted 3 times/)).toBeNull();
+    // billing (web only) stays.
+    expect(screen.getByRole('heading', { name: 'billing' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'bullmq' }));
+    expect(screen.queryByText('shop-web-0')).toBeNull();
+    expect(screen.getByText('shop-worker-1')).toBeTruthy();
+    // billing runs no worker: hidden; shop's cards recount its 2 workers (1 up, 1 gone).
+    expect(screen.queryByRole('heading', { name: 'billing' })).toBeNull();
+    expect(narrowToRole(mixed, 'bullmq').counts).toEqual({
+      up: 1,
+      starting: 0,
+      draining: 0,
+      gone: 1,
+    });
   });
 });

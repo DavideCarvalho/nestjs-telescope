@@ -44,6 +44,22 @@ export interface InstanceHeartbeat {
   shipping: HeartbeatShipping | null;
   /** The URL other apps reach this one at (`fleet.url`), or `null`. Absent from older senders. */
   url?: string | null;
+  /**
+   * What the process is: `web` (the HTTP server) or a worker's name (`bullmq`, `durable`, a
+   * `fleet.role`). Absent from older senders, which are web.
+   */
+  role?: string;
+}
+
+/** The role of the HTTP server, and of every instance that says none. */
+export const WEB_ROLE = 'web';
+
+/** A role: 1-64 of `A-Z a-z 0-9 _ . : @ / + -`. */
+export const ROLE_RE = /^[A-Za-z0-9_.:@/+-]{1,64}$/;
+
+/** A sender's role, or `web` when it says none (an older sender) or an invalid one. */
+export function normalizeRole(value: unknown): string {
+  return typeof value === 'string' && ROLE_RE.test(value) ? value : WEB_ROLE;
 }
 
 const STATES: readonly InstanceState[] = ['starting', 'ready', 'draining'];
@@ -136,5 +152,6 @@ export function normalizeHeartbeat(raw: unknown): InstanceHeartbeat | null {
     checks,
     shipping,
     url: normalizeAppUrl(h.url),
+    role: normalizeRole(h.role),
   };
 }

@@ -4,6 +4,7 @@ import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { durationToMs } from '../config/parse-duration.js';
 import { normalizeAppUrl } from '../discovery/config.js';
+import { ROLE_RE } from './heartbeat.js';
 import type { FleetStore } from './store.js';
 
 /** `fleet` in `TelescopeModule.forRoot()`: this instance's heartbeat, and how the fleet is read. */
@@ -42,6 +43,26 @@ export interface FleetConfig {
    * none when unset.
    */
   url?: string;
+  /**
+   * What this process is in the fleet: `'web'`, or a worker's name (`'billing-consumer'`). Default:
+   * detected. A process serving HTTP (`NestFactory.create`) is `web` and reports from boot. A
+   * process without an HTTP server (`NestFactory.createApplicationContext`, a microservice) is a
+   * worker: it reports once it has run for `workerAfter`, so a short command (a migration, a
+   * script) never becomes an instance, named after what marked it (`markFleetWorker('bullmq')`,
+   * which the BullMQ watcher calls when the app has processors; `bullmq+durable` for several) or
+   * `worker`. Setting `role` reports right away under that name.
+   */
+  role?: string;
+  /**
+   * Which kinds of process report a heartbeat. Default `['web', 'worker']`; `['web']` keeps
+   * workers out of the fleet.
+   */
+  report?: Array<'web' | 'worker'>;
+  /**
+   * How long a process without an HTTP server (and without `role`) runs before it reports as a
+   * worker. Default `'30s'`.
+   */
+  workerAfter?: number | string;
 }
 
 /** {@link FleetConfig} with defaults. */
@@ -57,6 +78,10 @@ export interface ResolvedFleetConfig {
   store: FleetStore | null;
   /** This app's URL (`fleet.url`, else `APP_URL`), or `null`. */
   url: string | null;
+  /** `fleet.role`, or `null` to detect it. */
+  role: string | null;
+  report: { web: boolean; worker: boolean };
+  workerAfterMs: number;
 }
 
 const PREFIX = '[@dudousxd/nestjs-telescope]';
@@ -104,6 +129,19 @@ export function resolveFleetConfig(
   if (!Number.isInteger(goneAfter) || goneAfter < 1) {
     throw new Error(`${PREFIX} fleet.goneAfter must be a whole number of heartbeats (1 or more)`);
   }
+  if (fleet.role !== undefined && !ROLE_RE.test(fleet.role)) {
+    throw new Error(`${PREFIX} fleet.role must be 1-64 of A-Z a-z 0-9 _ . : @ / + -`);
+  }
+  const report = fleet.report ?? ['web', 'worker'];
+  if (
+    !Array.isArray(report) ||
+    report.length === 0 ||
+    report.some((kind) => kind !== 'web' && kind !== 'worker')
+  ) {
+    throw new Error(
+      `${PREFIX} fleet.report must list 'web' and/or 'worker' (turn the fleet off with fleet: false)`,
+    );
+  }
   const restarts = fleet.restartLoop?.restarts ?? 3;
   if (!Number.isInteger(restarts) || restarts < 2) {
     throw new Error(`${PREFIX} fleet.restartLoop.restarts must be 2 or more`);
@@ -122,6 +160,9 @@ export function resolveFleetConfig(
     },
     store,
     url: resolveAppUrl(fleet.url),
+    role: fleet.role ?? null,
+    report: { web: report.includes('web'), worker: report.includes('worker') },
+    workerAfterMs: positiveMs(fleet.workerAfter, 30_000, 'workerAfter'),
   };
 }
 

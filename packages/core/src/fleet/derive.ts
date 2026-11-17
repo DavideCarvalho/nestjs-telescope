@@ -2,7 +2,7 @@
 //
 // What follows from the instances' last heartbeats: who is up, deploys, restart loops, failing checks.
 import type { CheckState, CheckStatus } from './checks.js';
-import type { HeartbeatShipping, InstanceState } from './heartbeat.js';
+import { type HeartbeatShipping, type InstanceState, WEB_ROLE } from './heartbeat.js';
 
 /** One instance as the fleet store keeps it (one row per app + instance id). */
 export interface InstanceRecord {
@@ -23,6 +23,8 @@ export interface InstanceRecord {
   shipping: HeartbeatShipping | null;
   /** The URL the instance said other apps reach it at, or `null`. Absent from older rows. */
   url?: string | null;
+  /** `web`, or a worker's name. Absent from older rows (and senders), which are web. */
+  role?: string;
 }
 
 /** What the fleet says about an instance right now. */
@@ -54,6 +56,8 @@ export function instanceStatus(
 
 /** One instance in the fleet view. */
 export interface FleetInstance extends InstanceRecord {
+  /** Always set in the view (`web` for an older row). */
+  role: string;
   status: InstanceStatus;
   uptimeMs: number;
   /** Worst check status among this instance's checks (`ok` without checks). */
@@ -78,9 +82,11 @@ export interface DeployEvent {
   complete: boolean;
 }
 
-/** A host that keeps restarting. */
+/** A host that keeps restarting (one process kind on it: its role). */
 export interface RestartLoop {
   host: string;
+  /** The role of the restarting processes (`web`, or a worker's name). */
+  role: string;
   /** Boots within the window. */
   restarts: number;
   /** Epoch ms of the first boot in the window. */
@@ -113,6 +119,8 @@ export interface FleetApp {
   checks: CheckIncident[];
   /** Sum of the live instances' shipping stats, or `null` when none ship entries. */
   shipping: { buffered: number; dropped: number; maxLagMs: number } | null;
+  /** The counts per role (`web` first, then workers by name). */
+  roles: Array<{ role: string; counts: InstanceCounts }>;
 }
 
 const RANK: Record<CheckStatus, number> = { ok: 0, unknown: 1, warn: 2, down: 3 };
@@ -155,30 +163,47 @@ export function deploysOf(instances: FleetInstance[]): DeployEvent[] {
   return deploys;
 }
 
-/** Hosts with at least `restarts` boots within `withinMs` before `now`. */
+/**
+ * Hosts with at least `restarts` boots of one role within `withinMs` before `now`. Counted per host
+ * and role: one container booting its web process and a worker is not two restarts.
+ */
 export function restartLoopsOf(
-  instances: Pick<InstanceRecord, 'host' | 'bootedAt'>[],
+  instances: Array<Pick<InstanceRecord, 'host' | 'bootedAt'> & { role?: string | undefined }>,
   now: number,
   options: FleetDeriveOptions['restartLoop'] = DEFAULT_DERIVE.restartLoop,
 ): RestartLoop[] {
-  const boots = new Map<string, number[]>();
+  const boots = new Map<string, { host: string; role: string; times: number[] }>();
   for (const instance of instances) {
     if (now - instance.bootedAt > options.withinMs) continue;
-    const list = boots.get(instance.host) ?? [];
-    list.push(instance.bootedAt);
-    boots.set(instance.host, list);
+    const role = instance.role ?? WEB_ROLE;
+    const key = `${instance.host}\u0000${role}`;
+    const group = boots.get(key) ?? { host: instance.host, role, times: [] };
+    group.times.push(instance.bootedAt);
+    boots.set(key, group);
   }
   const loops: RestartLoop[] = [];
-  for (const [host, times] of boots) {
+  for (const { host, role, times } of boots.values()) {
     if (times.length < options.restarts) continue;
     loops.push({
       host,
+      role,
       restarts: times.length,
       since: Math.min(...times),
       lastBootAt: Math.max(...times),
     });
   }
-  return loops.sort((a, b) => b.restarts - a.restarts || a.host.localeCompare(b.host));
+  return loops.sort(
+    (a, b) =>
+      b.restarts - a.restarts || a.host.localeCompare(b.host) || compareRoles(a.role, b.role),
+  );
+}
+
+/** `web` first, then workers by name. */
+export function compareRoles(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a === WEB_ROLE) return -1;
+  if (b === WEB_ROLE) return 1;
+  return a.localeCompare(b);
 }
 
 /** Checks that are not ok on a live instance, worst first. */
@@ -226,6 +251,7 @@ export function deriveFleet(
     const status = instanceStatus(record, now, options.goneAfterIntervals);
     const instance: FleetInstance = {
       ...record,
+      role: record.role ?? WEB_ROLE,
       status,
       uptimeMs: Math.max(0, (status === 'gone' ? record.lastSeenAt : now) - record.bootedAt),
       health: worst(record.checks),
@@ -237,10 +263,17 @@ export function deriveFleet(
   const apps: FleetApp[] = [];
   for (const [app, instances] of byApp) {
     const counts: InstanceCounts = { up: 0, starting: 0, draining: 0, gone: 0 };
+    const roles = new Map<string, InstanceCounts>();
     const versions = new Map<string | null, number>();
     let shipping: FleetApp['shipping'] = null;
     for (const instance of instances) {
       counts[instance.status] += 1;
+      let roleCounts = roles.get(instance.role);
+      if (roleCounts === undefined) {
+        roleCounts = { up: 0, starting: 0, draining: 0, gone: 0 };
+        roles.set(instance.role, roleCounts);
+      }
+      roleCounts[instance.status] += 1;
       if (instance.status === 'gone') continue;
       versions.set(instance.version, (versions.get(instance.version) ?? 0) + 1);
       if (instance.shipping !== null) {
@@ -268,6 +301,9 @@ export function deriveFleet(
       restartLoops: restartLoopsOf(instances, now, options.restartLoop),
       checks: checkIncidentsOf(instances),
       shipping,
+      roles: [...roles]
+        .sort(([a], [b]) => compareRoles(a, b))
+        .map(([role, roleCounts]) => ({ role, counts: roleCounts })),
     });
   }
   return apps.sort((a, b) => a.app.localeCompare(b.app));

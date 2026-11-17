@@ -78,6 +78,8 @@ function ruleIdentity(rule: AlertRule): string {
     // A fleet rule's filters: two `check-down` rules on different checks or apps are two incidents.
     'app',
     'check',
+    // A fleet rule narrowed to a process role (absent on rules from before roles).
+    'role',
   ]) {
     const value = loose[field];
     if (typeof value === 'string' || typeof value === 'number') parts.push(String(value));
@@ -87,8 +89,8 @@ function ruleIdentity(rule: AlertRule): string {
 
 /**
  * The deduplication key for an alert: `telescope:<app>:<rule>[:<exception family>]`, and for a
- * fleet rule `telescope:<fleet app>:<rule>[:<check>][:<host>]`, so each fleet subject (an app, an
- * app's check, a looping host) is its own incident and its resolve closes that one.
+ * fleet rule `telescope:<fleet app>:<rule>[:<check>][:<host>][:<worker role>]`, so each fleet
+ * subject (an app, an app's check, a looping host and role) is its own incident and its resolve closes that one.
  * PagerDuty's `dedup_key`, Opsgenie's `alias`, incident.io's `deduplication_key`
  * and Grafana OnCall's `alert_uid` all use it, so a trigger repeated while the
  * incident is open is folded into it, and the resolve closes the right one.
@@ -99,6 +101,8 @@ export function incidentKey(alert: AlertPayload): string {
   if (family !== undefined) parts.push(family);
   if (alert.fleet?.check !== undefined) parts.push(alert.fleet.check);
   if (alert.fleet?.host !== undefined) parts.push(alert.fleet.host);
+  // A worker subject (a worker's restart loop) is its own incident; web keys are unchanged.
+  if (alert.fleet?.role !== undefined && alert.fleet.role !== 'web') parts.push(alert.fleet.role);
   return parts.join(':');
 }
 

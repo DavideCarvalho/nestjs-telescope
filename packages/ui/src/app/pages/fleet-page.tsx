@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { EmptyState } from '../../aviary-kit/blocks/empty-state';
 import { MetricCard, MetricGrid, MetricGridSkeleton } from '../../aviary-kit/blocks/metric-card';
 import { PageHeader } from '../../aviary-kit/blocks/page-header';
@@ -58,6 +59,55 @@ const INCIDENT_SURFACE: Record<string, string> = {
   // `unknown` is neutral, like its badge: the check has not answered yet.
   unknown: 'border-line',
 };
+
+/** The HTTP server's role; every instance of an older server is one. */
+const WEB_ROLE = 'web';
+
+/** An instance's role (`web` from an older server). */
+export function roleOf(item: { role?: string }): string {
+  return item.role ?? WEB_ROLE;
+}
+
+/** Every role in the view, `web` first, then workers by name. */
+export function rolesOf(apps: FleetApp[]): string[] {
+  const roles = new Set<string>();
+  for (const app of apps) for (const instance of app.instances) roles.add(roleOf(instance));
+  return [...roles].sort((a, b) =>
+    a === b ? 0 : a === WEB_ROLE ? -1 : b === WEB_ROLE ? 1 : a.localeCompare(b),
+  );
+}
+
+/**
+ * An app narrowed to one role: its instances and restart loops of that role, and the cards
+ * recounted from them. Deploys, failing checks and the send buffer are computed by the server over
+ * every role, so they are left out of a narrowed app rather than shown wrong. `null` keeps the
+ * app as the server sent it.
+ */
+export function narrowToRole(app: FleetApp, role: string | null): FleetApp {
+  if (role === null) return app;
+  const instances = app.instances.filter((instance) => roleOf(instance) === role);
+  const counts = { up: 0, starting: 0, draining: 0, gone: 0 };
+  for (const instance of instances) counts[instance.status] += 1;
+  return {
+    ...app,
+    counts,
+    instances,
+    restartLoops: app.restartLoops.filter((loop) => roleOf(loop) === role),
+    deploys: [],
+    checks: [],
+    shipping: null,
+  };
+}
+
+function RoleBadge({ role }: { role: string }): React.JSX.Element {
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${role === WEB_ROLE ? 'bg-panel-2 text-muted-foreground' : 'bg-info/10 text-info'}`}
+    >
+      {role}
+    </span>
+  );
+}
 
 function versionLabel(version: string | null): string {
   return version ?? 'unknown version';
@@ -151,6 +201,7 @@ function InstancesTable({
         <TableHeader>
           <TableRow className="text-[10px] uppercase tracking-[0.12em] text-faint">
             <TableHead>Host</TableHead>
+            <TableHead>Role</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Version</TableHead>
             <TableHead>Uptime</TableHead>
@@ -166,6 +217,9 @@ function InstancesTable({
               <TableRow key={instance.instanceId} className="border-t border-line/60">
                 <TableCell className="font-mono" title={instance.instanceId}>
                   {instance.host}
+                </TableCell>
+                <TableCell>
+                  <RoleBadge role={roleOf(instance)} />
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={instance.status} />
@@ -240,9 +294,15 @@ function AppFleet({
         <Section title="Restart loops">
           <ul className="space-y-1 text-xs">
             {app.restartLoops.map((loop) => (
-              <li key={loop.host} className="rounded border border-bad/40 bg-bad/5 px-2 py-1">
-                <span className="font-mono">{loop.host}</span> restarted {loop.restarts} times in{' '}
-                {formatDuration(now - loop.since)}
+              <li
+                key={`${loop.host}:${roleOf(loop)}`}
+                className="rounded border border-bad/40 bg-bad/5 px-2 py-1"
+              >
+                <span className="font-mono">{loop.host}</span>
+                {roleOf(loop) !== WEB_ROLE ? (
+                  <span className="text-muted-foreground"> ({roleOf(loop)})</span>
+                ) : null}{' '}
+                restarted {loop.restarts} times in {formatDuration(now - loop.since)}
               </li>
             ))}
           </ul>
@@ -303,9 +363,49 @@ export function FleetSection({
       />
     );
   }
+  return <FleetApps view={view} onOpenEntry={onOpenEntry} />;
+}
+
+/** The apps, with a role filter once the fleet runs more than one kind of process. */
+function FleetApps({
+  view,
+  onOpenEntry,
+}: {
+  view: FleetView;
+  onOpenEntry: (id: string) => void;
+}): React.JSX.Element {
+  const [role, setRole] = useState<string | null>(null);
+  const roles = rolesOf(view.apps);
+  // A role that left the fleet (or one picked before a refresh dropped it) shows everything.
+  const selected = role !== null && roles.includes(role) ? role : null;
+  const apps = view.apps
+    .map((app) => narrowToRole(app, selected))
+    .filter((app) => selected === null || app.instances.length > 0);
   return (
     <div className="space-y-6">
-      {view.apps.map((app) => (
+      {roles.length > 1 && (
+        <fieldset className="flex flex-wrap items-center gap-1 text-xs">
+          <legend className="sr-only">Role</legend>
+          {[null, ...roles].map((option) => (
+            <button
+              key={option ?? '*'}
+              type="button"
+              aria-pressed={selected === option}
+              onClick={() => setRole(option)}
+              className={`rounded border px-2 py-0.5 font-mono ${selected === option ? 'border-info bg-info/10 text-info' : 'border-line text-muted-foreground hover:bg-panel-2'}`}
+            >
+              {option ?? 'All roles'}
+            </button>
+          ))}
+        </fieldset>
+      )}
+      {selected !== null && (
+        <p className="text-xs text-faint">
+          Showing {selected} instances and restart loops. Deploys, failing checks and the send
+          buffer cover every role: pick All roles to see them.
+        </p>
+      )}
+      {apps.map((app) => (
         <AppFleet key={app.app} app={app} now={view.now} onOpenEntry={onOpenEntry} />
       ))}
     </div>
@@ -331,7 +431,7 @@ export function FleetPage(): React.JSX.Element {
     <PageBody>
       <PageHeader
         title="Fleet"
-        description="Every instance's last heartbeat: who is up, deploys and their rollout, restart loops, and failing health checks with the exceptions recorded since."
+        description="Every instance's last heartbeat (web servers and workers): who is up, deploys and their rollout, restart loops, and failing health checks with the exceptions recorded since."
       />
       <QueryBoundary query={fleet} label="Fleet" skeleton={<FleetSkeleton />}>
         {(view) => <FleetSection view={view} onOpenEntry={openEntry} />}

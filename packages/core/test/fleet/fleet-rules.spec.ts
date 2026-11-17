@@ -304,3 +304,63 @@ describe('config', () => {
     expect(sent).toEqual([]);
   });
 });
+
+describe('workers', () => {
+  it('instances-up counts web instances: a live worker does not hide a web outage', async () => {
+    const h = harness([{ type: 'instances-up', app: 'shop', below: 1, for: '0s' }]);
+    await h.beat('shop', 'worker', { role: 'bullmq' });
+    await h.service.evaluateOnce();
+    // shop runs only a worker: it follows its workers (as before roles).
+    expect(h.sent).toEqual([]);
+    await h.beat('shop', 'web');
+    h.advance(61_000);
+    await h.beat('shop', 'worker', { role: 'bullmq' });
+    await h.service.evaluateOnce();
+    expect(states(h.sent)).toEqual(['firing:shop']);
+    expect(h.sent[0]?.fleet?.detail).toBe('no instance is up');
+  });
+
+  it('instances-up per role, or every instance with *; without app only apps running the role', async () => {
+    const h = harness([
+      { type: 'instances-up', role: 'bullmq', below: 2, for: '0s' },
+      { type: 'instances-up', role: '*', app: 'shop', below: 3, for: '0s' },
+    ]);
+    await h.beat('shop', 'web');
+    await h.beat('shop', 'worker', { role: 'bullmq' });
+    await h.beat('billing', 'web');
+    await h.service.evaluateOnce();
+    // billing runs no bullmq worker: not paged for it.
+    expect(states(h.sent).sort()).toEqual(['firing:shop', 'firing:shop']);
+    expect(h.sent.map((p) => p.fleet?.detail).sort()).toEqual([
+      '1 bullmq instance up (expected at least 2)',
+      '2 instances up (expected at least 3)',
+    ]);
+  });
+
+  it('restart loops are per host and role, and name a worker role', async () => {
+    const h = harness([{ type: 'restart-loop' }]);
+    for (const id of ['w1', 'w2', 'w3']) {
+      await h.beat('shop', id, {
+        host: 'pod-1',
+        role: 'bullmq',
+        bootedAt: new Date(h.now() - MIN).toISOString(),
+      });
+    }
+    // One web boot on the same host: not part of the worker's loop.
+    await h.beat('shop', 'web', { host: 'pod-1', bootedAt: new Date(h.now() - MIN).toISOString() });
+    await h.service.evaluateOnce();
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]?.fleet?.detail).toMatch(/^pod-1 \(bullmq\) restarted 3 times/);
+    expect(h.sent[0]?.fleet?.role).toBe('bullmq');
+    const { incidentKey } = await import('../../src/alerts/integrations/incident.js');
+    const key = incidentKey(h.sent[0] as AlertPayload);
+    expect(key.endsWith(':pod-1:bullmq')).toBe(true);
+    // A web subject keeps its key from before roles.
+    expect(
+      incidentKey({
+        ...(h.sent[0] as AlertPayload),
+        fleet: { app: 'shop', host: 'pod-1', detail: '' },
+      }),
+    ).toBe(key.replace(/:bullmq$/, ''));
+  });
+});
