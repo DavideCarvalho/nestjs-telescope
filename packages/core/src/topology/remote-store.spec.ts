@@ -67,6 +67,38 @@ afterEach(async () => {
 });
 
 describe('RemoteTelescopeStore', () => {
+  it("sends at the transport's sendIntervalMs unless intervalMs is set; a full batch at once", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = Object.assign(fakeTransport(), { sendIntervalMs: 5_000 });
+      const store = new RemoteTelescopeStore({
+        transport,
+        partition: 'shop',
+        token: 't',
+        batchSize: 3,
+      });
+      stores.push(store);
+      await store.init();
+      await store.store([entry('a')]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(transport.sent).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(transport.sent).toHaveLength(1);
+      await store.store([entry('b'), entry('c'), entry('d')]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(transport.sent).toHaveLength(2);
+
+      const other = Object.assign(fakeTransport(), { sendIntervalMs: 5_000 });
+      const own = remote({ transport: other, intervalMs: 1_000 });
+      await own.store.init();
+      await own.store.store([entry('e')]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(other.sent).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ships stored entries with the token and partition, in batches', async () => {
     const { store, transport } = remote({ batchSize: 2 });
     await store.store([entry('a'), entry('b'), entry('c')]);

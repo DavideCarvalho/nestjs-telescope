@@ -110,6 +110,7 @@ describe('transports.redis', () => {
       client: redis.client,
       pollMs: 5,
       minIdleMs: 1_000,
+      reclaimIntervalMs: 0,
       ...options,
     });
     const cp = controlPlane(fail);
@@ -193,6 +194,98 @@ describe('transports.redis', () => {
     const dead = t.redis.streams.get('telescope:ingest:dead')?.entries ?? [];
     expect(dead).toHaveLength(1);
     expect(t.redis.pending('telescope:ingest')).toBe(0);
+  });
+
+  it('blocks on a duplicated connection: idle costs one read per blockMs, stop() does not wait', async () => {
+    const redis = fakeRedis({ duplicate: true });
+    const transport = redisTransport({ client: redis.client, blockMs: 60, pollMs: 5 });
+    const cp = controlPlane();
+    const listener = await transport.listen?.(cp.handler, cp.logger);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    // ~200 ms idle: a polling consumer at 5 ms would have sent dozens of reads and take-overs.
+    expect(redis.count('xreadgroup')).toBeLessThanOrEqual(5);
+    expect(redis.count('xpending')).toBe(1); // on start only
+    // A message is read as soon as it lands, not at the end of the block.
+    const sentAt = Date.now();
+    await send(transport, 'shop', ['a']);
+    for (let i = 0; i < 40 && cp.stored.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    expect(cp.stored.map((e) => e.id)).toEqual(['a']);
+    expect(Date.now() - sentAt).toBeLessThan(50);
+    const stopAt = Date.now();
+    await listener?.stop();
+    expect(Date.now() - stopAt).toBeLessThan(50);
+    expect(redis.pending('telescope:ingest')).toBe(0);
+  });
+
+  it('stop() cuts a long block short', async () => {
+    const redis = fakeRedis({ duplicate: true });
+    const transport = redisTransport({ client: redis.client, blockMs: 30_000 });
+    const cp = controlPlane();
+    const listener = await transport.listen?.(cp.handler, cp.logger);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const stopAt = Date.now();
+    await listener?.stop();
+    expect(Date.now() - stopAt).toBeLessThan(100);
+    expect(cp.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges one read with one XACK', async () => {
+    const t = await setup();
+    await send(t.transport, 'shop', ['a']);
+    await send(t.transport, 'shop', ['b']);
+    await send(t.transport, 'shop', ['c'], 'forged');
+    await t.listen();
+    await t.settle();
+    await t.stop();
+    expect(t.cp.stored.map((e) => e.id)).toEqual(['a', 'b']);
+    expect(t.redis.count('xack')).toBe(1);
+    expect(t.redis.pending('telescope:ingest')).toBe(0);
+  });
+
+  it('takes over pending messages every reclaimIntervalMs, not on every read', async () => {
+    const t = await setup({ reclaimIntervalMs: 60_000 });
+    await t.listen();
+    await t.settle();
+    await t.stop();
+    expect(t.redis.count('xreadgroup')).toBeGreaterThan(2);
+    expect(t.redis.count('xpending')).toBe(1);
+  });
+
+  it('trims what every group acknowledged, never a pending message', async () => {
+    let fail = false;
+    const t = await setup({ trimIntervalMs: 1, reclaimIntervalMs: 60_000 }, () => fail);
+    await t.listen();
+    await send(t.transport, 'shop', ['a']);
+    await t.settle();
+    fail = true;
+    await send(t.transport, 'shop', ['b']); // left pending
+    await t.settle();
+    fail = false;
+    await send(t.transport, 'shop', ['c']);
+    await t.settle();
+    await t.stop();
+    const entries = t.redis.streams.get('telescope:ingest')?.entries ?? [];
+    // `a` is gone; `b` (pending) and everything after it stay.
+    expect(entries.map(([id]) => id)).toEqual(['2-0', '3-0']);
+    expect(t.redis.count('xtrim')).toBeGreaterThan(0);
+  });
+
+  it('idles without trimming when nothing was acknowledged', async () => {
+    const t = await setup({ trimIntervalMs: 1 });
+    await t.listen();
+    await t.settle();
+    await t.stop();
+    expect(t.redis.count('xinfo')).toBe(0);
+    expect(t.redis.count('xtrim')).toBe(0);
+  });
+
+  it('a tenant sends every 5 s by default over redis (configurable)', () => {
+    const client = fakeRedis().client;
+    expect(redisTransport({ client }).sendIntervalMs).toBe(5_000);
+    expect(redisTransport({ client, sendIntervalMs: 1_000 }).sendIntervalMs).toBe(1_000);
+    expect(transports.http({ url: 'http://x' }).sendIntervalMs).toBeUndefined();
   });
 
   it('reads RESP2 and RESP3 reply shapes', () => {

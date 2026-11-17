@@ -63,7 +63,10 @@ export interface RemoteTelescopeStoreOptions {
    * dropped. Default 64 000, under the 100 KB default JSON body limit of Express.
    */
   maxBatchBytes?: number;
-  /** How often waiting entries are sent. Default 1 000 ms. */
+  /**
+   * How often waiting entries are sent (a full batch is sent at once). Default: the transport's
+   * `sendIntervalMs` (5 000 ms for `transports.redis`), else 1 000 ms.
+   */
   intervalMs?: number;
   /** First retry delay after a failed send, doubled per failure up to 30 s. Default 1 000 ms. */
   retryDelayMs?: number;
@@ -137,7 +140,7 @@ export class RemoteTelescopeStore implements StorageProvider {
 
   async init(): Promise<void> {
     await this.options.local?.init?.();
-    const interval = this.options.intervalMs ?? 1_000;
+    const interval = this.options.intervalMs ?? this.options.transport.sendIntervalMs ?? 1_000;
     this.timer = setInterval(() => void this.ship(), interval);
     this.timer.unref?.();
   }
@@ -166,6 +169,8 @@ export class RemoteTelescopeStore implements StorageProvider {
       this.buffer.splice(0, over);
       this.drop(over, 'the send buffer is full');
     }
+    // A full batch goes at once rather than at the next interval (once running).
+    if (this.timer !== null && this.buffer.length >= this.batchSize) void this.ship();
   }
 
   private drop(count: number, reason: string): void {
