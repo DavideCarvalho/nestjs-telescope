@@ -1,5 +1,11 @@
 # @dudousxd/nestjs-telescope
 
+## 5.14.0
+
+### Minor Changes
+
+- [#214](https://github.com/DavideCarvalho/nestjs-telescope/pull/214) [`cefdabd`](https://github.com/DavideCarvalho/nestjs-telescope/commit/cefdabdacc2e5546a0e681b0e3ae76d82ddb6426) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - A federated console: `federation: { apps: { [name]: { storage, label? } } }` lets a central console read other apps' own telescope stores in place, instead of the apps shipping their entries to it. Each app is picked like a control plane's app (`?app=<name>`, `authorize` `apps` grants) and every read route answers from its store; "All apps" merges every store with the console's own (lists newest first with a per-store cursor, counts, Pulse and rollups summed). Writes, pruning, alerts and process-bound actions (replay, EXPLAIN, live queues, schedules) stay on the central app, and the UI says so on those pages. Composes with `topology: 'control-plane'`.
+
 ## 5.13.0
 
 ### Minor Changes
