@@ -16,7 +16,7 @@ import { type NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres';
 import { integer, pgTable, text } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startPostgres } from '../test/postgres.js';
 import { DrizzleStorageProvider } from './drizzle-storage.provider.js';
 import { telescopeDrizzleLogger } from './telescope-drizzle.logger.js';
@@ -82,9 +82,24 @@ describe.skipIf(postgres.skipReason !== null)('telescopeDrizzleLogger in a Nest 
     return (res.body as { data: Entry[] }).data;
   };
 
+  // The request entry is recorded when the response finishes, which can land just after supertest
+  // resolves, so read until it is there.
+  const entriesWithRequest = (uri: string): Promise<Entry[]> =>
+    vi.waitFor(
+      async () => {
+        const all = await entries();
+        const found = all.find(
+          (e) => e.type === 'request' && (e.content as { uri: string }).uri === uri,
+        );
+        if (!found) throw new Error(`no request entry for ${uri} yet`);
+        return all;
+      },
+      { timeout: 5_000, interval: 50 },
+    );
+
   it('records the query and correlates it to the request batch', async () => {
     await request(app.getHttpServer()).get('/authors').expect(200);
-    const all = await entries();
+    const all = await entriesWithRequest('/authors');
     const req = all.find(
       (e) => e.type === 'request' && (e.content as { uri: string }).uri === '/authors',
     );
@@ -96,7 +111,7 @@ describe.skipIf(postgres.skipReason !== null)('telescopeDrizzleLogger in a Nest 
 
   it('lets the N+1 detector see a loop of identical queries in one request', async () => {
     await request(app.getHttpServer()).get('/authors/repeated').expect(200);
-    const all = await entries();
+    const all = await entriesWithRequest('/authors/repeated');
     const req = all.find(
       (e) => e.type === 'request' && (e.content as { uri: string }).uri === '/authors/repeated',
     );
