@@ -11,7 +11,7 @@ Every store implements the same [`StorageProvider`](/docs/concepts/storage) cont
 | Rung | Store | Fits | Move up when |
 |---|---|---|---|
 | **0 — Embedded** | SQLite file (the default) | Local dev, one process | You run more than one replica |
-| **1 — Your database** | [MikroORM, TypeORM, Prisma](/docs/packages/storages) on the app's DB, or Redis | Multi-replica apps at modest volume | Telescope competes with your app for its database |
+| **1 — Your database** | [MikroORM, Drizzle, TypeORM, Prisma](/docs/packages/storages) on the app's DB, or Redis | Multi-replica apps at modest volume | Telescope competes with your app for its database |
 | **2 — A dedicated database** | The same adapters on their own connection | Isolation, no new infrastructure | The pruner can't keep up, or you want longer retention than a row store holds cheaply |
 | **3 — Tiered** | Hot: a rung 1/2 store, minutes deep. Cold: Parquet on S3 or disk, read in pure JS (or DuckDB) | High volume, long retention, no new database to run | Cold queries are too slow for how often you run them |
 | **4 — ClickHouse** | One columnar store with TTL retention | High volume, long retention, fast analytics over all of it | — |

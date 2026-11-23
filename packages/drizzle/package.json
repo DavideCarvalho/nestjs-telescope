@@ -1,0 +1,71 @@
+{
+  "name": "@dudousxd/nestjs-telescope-drizzle",
+  "version": "0.0.0",
+  "description": "Drizzle ORM (node-postgres) storage provider and query logger for @dudousxd/nestjs-telescope.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DavideCarvalho/nestjs-telescope.git",
+    "directory": "packages/drizzle"
+  },
+  "homepage": "https://davidecarvalho.github.io/aviary/docs/telescope",
+  "bugs": {
+    "url": "https://github.com/DavideCarvalho/nestjs-telescope/issues"
+  },
+  "keywords": [
+    "nestjs",
+    "telescope",
+    "drizzle",
+    "drizzle-orm",
+    "postgres",
+    "observability",
+    "query"
+  ],
+  "author": "Davi Carvalho <davi@goflip.ai>",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.spec.json --noEmit"
+  },
+  "peerDependencies": {
+    "@dudousxd/nestjs-telescope": "^5.7.0",
+    "drizzle-orm": ">=0.36.0 <1",
+    "pg": "^8.0.0"
+  },
+  "devDependencies": {
+    "@dudousxd/nestjs-telescope": "workspace:*",
+    "@dudousxd/nestjs-telescope-testing": "workspace:*",
+    "@nestjs/common": "12.0.3",
+    "@nestjs/core": "12.0.3",
+    "@nestjs/testing": "12.0.3",
+    "@testcontainers/postgresql": "12.0.4",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "@types/supertest": "6.0.3",
+    "drizzle-kit": "0.31.11",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "supertest": "7.2.2",
+    "testcontainers": "12.0.4",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -104,6 +104,7 @@ Swap the default by passing a `storage` provider to `forRoot`. Every adapter imp
 |---|---|---|
 | **SQLite (default)** | Local dev, single process. | _built into core_ |
 | **MikroORM (MySQL / SQLite)** | You already run MikroORM and want Telescope in your own DB — no Redis. | [`-mikro-orm`](/docs/packages/storages) |
+| **Drizzle (PostgreSQL)** | You already run Drizzle on PostgreSQL and want Telescope in your own DB. | [`-drizzle`](/docs/packages/storages) |
 | **Redis** | Multi-instance: every replica reads/writes one shared store, so the dashboard aggregates the whole cluster. | [`-redis`](/docs/packages/storages) |
 | **In-memory** | Tests. | [`-testing`](/docs/packages/testing) |
 
