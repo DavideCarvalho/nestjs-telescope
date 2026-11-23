@@ -1,6 +1,6 @@
 {
   "name": "@dudousxd/nestjs-telescope-drizzle",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Drizzle ORM (node-postgres) storage provider and query logger for @dudousxd/nestjs-telescope.",
   "license": "MIT",
   "repository": {
