@@ -59,6 +59,10 @@ new DrizzleStorageProvider(db, {
   instance wraps a single `pg.Client` (which cannot run Telescope's transactions next to yours),
   the provider opens a pool of its own with your connection settings (`pickHostConnection`) and
   closes it at shutdown.
+- **Sharing your pool is the default**, unlike the MikroORM package, which always opens its own.
+  Telescope's flushes, prunes and Overview reads then take connections from your pool and run
+  under its settings (`statement_timeout` included). On a small pool, set `dedicatedPool: true`
+  (or `{ max }`).
 - **Tables at boot, behind a fingerprint.** `init()` runs additive, idempotent DDL
   (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS` for the nullable columns, `CREATE INDEX
   IF NOT EXISTS`) under an advisory lock, then stores a sha256 of it in `telescope_schema_meta`.
@@ -116,6 +120,10 @@ await storage.createOverviewIndexes(); // returns the names it created; a rerun 
 overviewIndexStatements({ schema: 'telescope' });
 ```
 
+The exported tables do not declare these indexes, so if your own `drizzle-kit` config includes
+the Telescope tables, `drizzle-kit push` will offer to drop them. Exclude the tables with
+`telescopeManagedTables()` (as above), or skip those drops.
+
 They are `(duration_ms) WHERE duration_ms IS NOT NULL`, `(created_at, type)` and
 `(type, created_at) INCLUDE (family_hash, batch_id, duration_ms)`, built `CONCURRENTLY`, plus lower
 autovacuum thresholds for the table.
@@ -140,7 +148,9 @@ Options:
 - `echo: true` also logs each query the way Drizzle's `logger: true` does (or pass a Drizzle
   `Logger` to forward to).
 - `coverQueries: false` keeps the OpenTelemetry bridge's `pg` spans (by default the logger marks
-  queries as covered and the bridge skips them, so nothing is recorded twice).
+  queries as covered and the bridge skips them, so nothing is recorded twice). That default is
+  process-wide: it also drops `pg` spans from code that does not use Drizzle (raw `pg` calls,
+  another ORM), and with them their durations and `slow` tags. Pass `false` if you rely on those.
 
 Drizzle's logger is called before a query runs and never after, so query entries carry no
 duration, and none is tagged `slow`. If you need query timings, run the OpenTelemetry `pg`

@@ -41,9 +41,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.spec.json --noEmit"
   },
   "peerDependencies": {
-    "@dudousxd/nestjs-telescope": "^5.0.0",
-    "drizzle-orm": ">=0.36.0",
-    "pg": ">=8.0.0"
+    "@dudousxd/nestjs-telescope": "^5.7.0",
+    "drizzle-orm": ">=0.36.0 <1",
+    "pg": "^8.0.0"
   },
   "devDependencies": {
     "@dudousxd/nestjs-telescope": "workspace:*",

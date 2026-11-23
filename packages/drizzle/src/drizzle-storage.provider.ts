@@ -286,10 +286,17 @@ export class DrizzleStorageProvider
   async init(): Promise<void> {
     if (this.db) return;
     const { pool, owned } = this.resolvePool();
+    // The schema first: a failed reconcile leaves no half-initialized provider behind, so a later
+    // init() tries again, and a pool opened here is closed instead of leaking.
+    try {
+      if (this.ensureSchema) await reconcileSchema(pool, this.schema);
+    } catch (error) {
+      if (owned) await pool.end().catch(() => undefined);
+      throw error;
+    }
     this.pool = pool;
     this.ownsPool = owned;
     this.db = drizzle({ client: pool });
-    if (this.ensureSchema) await reconcileSchema(pool, this.schema);
   }
 
   async close(): Promise<void> {

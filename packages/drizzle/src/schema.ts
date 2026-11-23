@@ -14,8 +14,8 @@
 //
 // Column types, lengths and index names match what `@dudousxd/nestjs-telescope-mikro-orm` creates
 // on PostgreSQL, so a host can move between the two packages on the same database. The boot DDL in
-// `boot-ddl.ts` creates exactly these definitions; a spec checks that `drizzle-kit push` finds
-// nothing to change after it.
+// `boot-ddl.ts` creates exactly these definitions; a spec compares the catalog it leaves with
+// drizzle-kit's `generateMigration` output for these tables.
 import {
   bigint,
   index,
