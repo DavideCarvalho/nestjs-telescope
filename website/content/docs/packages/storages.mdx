@@ -1,6 +1,6 @@
 ---
 title: Storage adapters
-description: Persist Telescope entries in your own database (MikroORM — MySQL/SQLite), share one store across replicas (Redis), tier hot entries into Parquet on S3, or run on ClickHouse. Same StorageProvider contract everywhere.
+description: Persist Telescope entries in your own database (MikroORM — MySQL/SQLite; Drizzle — PostgreSQL), share one store across replicas (Redis), tier hot entries into Parquet on S3, or run on ClickHouse. Same StorageProvider contract everywhere.
 icon: Database
 ---
 
@@ -103,6 +103,80 @@ On a 2.4M-row PostgreSQL 16 table they built in about 6 s and added about half t
 
 <Callout type="info">
   This same package ships the MikroORM query watcher and N+1 detector — see [Watchers](/docs/packages/watchers).
+</Callout>
+
+---
+
+## Drizzle (PostgreSQL) — `@dudousxd/nestjs-telescope-drizzle`
+
+Persists entries to your PostgreSQL through Drizzle ORM (`drizzle-orm/node-postgres`). **No migration, no manual table setup.** Hand it your Drizzle database:
+
+```ts
+import { TelescopeModule } from '@dudousxd/nestjs-telescope';
+import { DrizzleStorageProvider } from '@dudousxd/nestjs-telescope-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+const db = drizzle({ client: pool });
+
+TelescopeModule.forRoot({ storage: new DrizzleStorageProvider(db) });
+```
+
+It also takes a `pg` Pool, or Pool options for a database of its own:
+
+```ts
+new DrizzleStorageProvider({ connectionString: process.env.TELESCOPE_DATABASE_URL });
+```
+
+Settings, the second argument:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `schema` | none | A PostgreSQL schema for every Telescope table, written into each statement and created at boot when missing. Telescope never sets `search_path`. |
+| `ensureSchema` | `true` | Create and heal the tables at boot. Turn it off when your drizzle-kit migrations create them. |
+| `dedicatedPool` | `false` | `true` (or `{ max }`) opens a pool of the provider's own with your pool's connection settings, closed at shutdown. |
+| `batchSize` | `500` | Rows per `INSERT`. |
+
+How it works:
+
+- **Your pool, its own Drizzle instance.** The provider borrows your pool and wraps it in a Drizzle instance of its own, built without a logger. Drizzle keeps the logger on the instance, not the pool, so your Telescope query logger never records Telescope's writes and there is no capture loop. The borrowed pool is never closed. When your instance wraps a single `pg.Client`, which cannot run Telescope's transactions next to yours, the provider opens a pool of its own with that client's settings.
+- **Tables at boot, behind a fingerprint.** `init()` runs additive, idempotent DDL (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS` for the nullable columns, `CREATE INDEX IF NOT EXISTS`) under an advisory lock, then stores its sha256 in `telescope_schema_meta`. Every later boot reads that one row and runs nothing else, because `ALTER TABLE` takes the table's exclusive lock even when the column exists. Nothing is ever dropped.
+- **The same tables as the MikroORM package.** Column types, lengths and index names match what `@dudousxd/nestjs-telescope-mikro-orm` creates on PostgreSQL, so either package runs on a database the other created.
+- **Flushes, rollups, pruning and aggregation** work as in the MikroORM adapter: multi-row `INSERT`s in one transaction when a flush needs several, rollups merged by `ON CONFLICT DO UPDATE`, bounded oldest-first prune batches under a lease taken with one atomic upsert, and Pulse and the timeseries as SQL `GROUP BY`s (`date_bin` on PostgreSQL 14+).
+
+### Managing the tables with drizzle-kit
+
+The `pgTable` definitions are exported. Re-export them from your schema file and drizzle-kit creates them with your migrations; then pass `ensureSchema: false`:
+
+```ts
+// db/schema.ts
+export {
+  telescopeEntries,
+  telescopeRollups,
+  telescopeLeases,
+  telescopeSchemaMeta,
+} from '@dudousxd/nestjs-telescope-drizzle';
+
+// or in a schema of their own (export `namespace` too, so drizzle-kit creates the schema):
+import { telescopeTables } from '@dudousxd/nestjs-telescope-drizzle';
+export const { entries, rollups, leases, schemaMeta, namespace } = telescopeTables('telescope');
+```
+
+The package's tests check that what drizzle-kit generates from these definitions and what the boot DDL creates are identical. If you leave the tables to the provider, keep them out of your migrations:
+
+```ts
+// drizzle.config.ts
+import { telescopeManagedTables } from '@dudousxd/nestjs-telescope-drizzle';
+
+export default defineConfig({
+  // ...
+  tablesFilter: ['*', ...telescopeManagedTables().map((name) => `!${name}`)],
+});
+```
+
+The opt-in [Overview indexes](#indexes-for-the-overview) are the PostgreSQL ones above, under the same names: `await storage.createOverviewIndexes()`, or `overviewIndexStatements({ schema })` in your own migration.
+
+<Callout type="info">
+  The same package ships the Drizzle query logger. See [Watchers](/docs/packages/watchers).
 </Callout>
 
 ---

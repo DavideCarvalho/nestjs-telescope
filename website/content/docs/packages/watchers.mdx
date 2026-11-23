@@ -1,6 +1,6 @@
 ---
 title: Watchers
-description: Query watchers (MikroORM, TypeORM, Prisma) and behavioral watchers (mail, cache, schedule, events, logs, redis, model) — each a small package you add to the watchers array.
+description: Query watchers (MikroORM, TypeORM, Prisma, Drizzle) and behavioral watchers (mail, cache, schedule, events, logs, redis, model) — each a small package you add to the watchers array.
 icon: Eye
 ---
 
@@ -118,6 +118,23 @@ TelescopeModule.forRoot({ watchers: [new PrismaQueryWatcher(prisma, { slowMs: 50
 
 <Callout type="warn" title="No request/job correlation (Prisma engine limit)">
   `prisma.$on('query', cb)` fires **detached from the caller's async context** — the engine emits query events on its own channel, after the fact. So Prisma query entries are **orphaned**: they don't correlate to the request/job that issued them, and per-batch N+1 detection doesn't apply. They're still captured because a full query log plus slow-query visibility is valuable on its own. If per-request query correlation matters, prefer the MikroORM or TypeORM adapter.
+</Callout>
+
+### Drizzle — `@dudousxd/nestjs-telescope-drizzle`
+
+Records every statement a Drizzle instance runs (SQL and bindings) as a `query` entry. Give the instance the Telescope logger:
+
+```ts
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { telescopeDrizzleLogger } from '@dudousxd/nestjs-telescope-drizzle';
+
+const db = drizzle({ client: pool, logger: telescopeDrizzleLogger() });
+```
+
+Drizzle calls its logger inside the caller's async context, so each query correlates to the request or job that ran it, and per-batch N+1 detection applies. With no argument the logger records through core's global sink, so it works even when Drizzle is created before `TelescopeModule` (queries before that are dropped); pass a `record` function to send entries elsewhere. `echo: true` keeps Drizzle's own console logging. The same package ships a [PostgreSQL storage adapter](/docs/packages/storages), whose writes never reach this logger.
+
+<Callout type="info" title="No durations">
+  Drizzle's logger runs before a query and never after, so Drizzle query entries have no duration and none is tagged `slow`. For timings, run the OpenTelemetry `pg` instrumentation and pass `coverQueries: false`, so the bridge keeps the `pg` spans instead of deferring to this logger.
 </Callout>
 
 ---

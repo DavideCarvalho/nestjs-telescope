@@ -230,6 +230,7 @@ extra `@Can(...)` (re-declare the route decorators on the override).
 | `@dudousxd/nestjs-telescope` | Core: request + exception watchers, recorder, ALS correlation, SQLite store, headless API, pruner |
 | `@dudousxd/nestjs-telescope-ui` | Bundled dashboard SPA + composable React components / hooks / client |
 | `@dudousxd/nestjs-telescope-mikro-orm` | MikroORM query watcher + N+1 detector |
+| `@dudousxd/nestjs-telescope-drizzle` | Drizzle ORM storage on PostgreSQL + query logger |
 | `@dudousxd/nestjs-telescope-typeorm` | TypeORM query watcher (host-wired logger) |
 | `@dudousxd/nestjs-telescope-prisma` | Prisma query watcher (`$on('query')`) |
 | `@dudousxd/nestjs-telescope-bullmq` | BullMQ job watcher: per-job capture + correlation |
